@@ -18,7 +18,6 @@ const metrics: [string, string, string][] = [
   ['Labor % of revenue', 'Labor cost ÷ revenue, compared with target_labor_pct from settings.', 'Month · job / account'],
   ['Labor variance', 'Labor cost − budget labor. Null when the site has no labor budget in the range; such sites are excluded from variance totals and the labor-over-budget rule.', 'Range · job'],
   ['Subcontract / supplies vs budget', 'Actuals from the job-cost P&L lines (finance reference source) against the job budget; on the WinTeam API source these lines carry budgets only.', 'Range · portfolio'],
-  ['Hours variance', 'Actual hours − scheduled hours.', 'Day / week / month · job'],
   ['Overtime', 'Derived from timekeeping per the overtime_rule setting; OT % = overtime hours ÷ hours. Overtime cost estimate = OT hours × blended hourly labor × overtime_multiplier.', 'Week · employee / job'],
   ['AR aging', 'Open invoices as of the aging snapshot date (source.ar_as_of) in the WinTeam aging groups: current, 1-30, 31-60, 61-90, 90+. collectible_open excludes intercompany and settlement customers per the ar_treatment_rules setting; by_customer rows carry is_collectible.', 'Snapshot · customer / company'],
   ['AP open balance', 'Real open vendor balance and past-due amount from the latest vendor aging snapshot (finance reference source); invoiced and paid cover the selected range.', 'Snapshot · vendor'],

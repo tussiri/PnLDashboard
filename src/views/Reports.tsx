@@ -7,7 +7,7 @@ const reports: { name: string; owner: string; cadence: string; description: stri
   { name: 'Financial summary', owner: 'Finance', cadence: 'Monthly', description: 'P&L lines, direct-cost mix, top sites and monthly detail.', page: 'financial', exportNote: 'CSV: P&L lines, monthly detail' },
   { name: 'Site profitability', owner: 'Operations', cadence: 'Weekly', description: 'Margin, labor variance and hours variance by site.', page: 'jobs', exportNote: 'CSV: sites grid' },
   { name: 'Labor cost control', owner: 'Operations', cadence: 'Daily', description: 'Month-end labor pace, labor % of revenue vs target, overtime, sites over budget.', page: 'labor', exportNote: 'CSV: account summary, pace by account, OT employees' },
-  { name: 'Timekeeping audit', owner: 'Payroll', cadence: 'Daily', description: 'Scheduled vs worked hours by site and branch; overtime watchlist.', page: 'timekeeping', exportNote: 'CSV: scheduled vs actual by site' },
+  { name: 'Timekeeping audit', owner: 'Payroll', cadence: 'Daily', description: 'Worked hours by site and branch; overtime watchlist.', page: 'timekeeping', exportNote: 'CSV: scheduled vs actual by site' },
   { name: 'AR aging', owner: 'Finance', cadence: 'Weekly', description: 'Aging buckets, customer balances, open invoices, DSO.', page: 'billing', exportNote: 'CSV: open invoices (all pages)' },
   { name: 'Budget variance', owner: 'FP&A', cadence: 'Monthly', description: 'Actual vs budget by line, account and site.', page: 'budget', exportNote: 'CSV: by account, by site' },
   { name: 'Vendor spend', owner: 'Finance', cadence: 'Monthly', description: 'AP invoiced vs paid by vendor and month; due in the next 30 days.', page: 'expenses', exportNote: 'CSV: AP by vendor' },
