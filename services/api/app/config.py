@@ -33,6 +33,7 @@ RESOURCE_NAMES: tuple[str, ...] = (
     "job_schedules",
     "gl_budgets",
     "ap_invoices",
+    "ap_invoice_details",
     "ar_invoices",
     "ap_payments",
 )
@@ -163,6 +164,7 @@ class Settings:
     max_pages_per_sync: int
     allow_insecure_http: bool
     max_retries: int
+    ap_detail_invoice_limit: int
     ingestion_idle_in_transaction_timeout_seconds: int
     mart_rebuild_lock_timeout_seconds: int
 
@@ -212,6 +214,12 @@ class Settings:
             # against the mart rebuild and every reader behind it. 0 = server default (disabled).
             ingestion_idle_in_transaction_timeout_seconds=_integer(
                 env, "WINTEAM_IDLE_IN_TRANSACTION_TIMEOUT_SECONDS", 60, minimum=0, maximum=3600
+            ),
+            # ap_invoice_details is one GET per AP invoice. Only invoices whose distributions are not
+            # already landed are fetched, so the first run backfills and later runs cost roughly the
+            # month's new invoices. 0 = no cap.
+            ap_detail_invoice_limit=_integer(
+                env, "WINTEAM_AP_DETAIL_INVOICE_LIMIT", 0, minimum=0, maximum=100000
             ),
             # The mart rebuild TRUNCATEs and refills mart.*; behind a stuck writer it should fail fast
             # with a diagnosable message rather than queue up. 0 = wait indefinitely (old behaviour).

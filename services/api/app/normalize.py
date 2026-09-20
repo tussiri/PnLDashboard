@@ -1045,6 +1045,64 @@ def normalize_gl_budgets(conn: Any, seen_ids: Collection[str] | None = None) -> 
 
 
 # ── accounts payable invoices ────────────────────────────────────────────────
+def normalize_ap_invoice_details(conn: Any, seen_ids: Collection[str] | None = None) -> int:
+    """GL distribution lines -> core.fact_ap_distribution.
+
+    This is the only path by which a payable reaches a site. job_number is resolved to a job_key
+    through the same wt_job_map the other API facts use, so a collision number lands on the tenant's
+    row rather than the other namespace's; a line coding a job we have never seen keeps its
+    job_number and a null job_key rather than being dropped, because the cost is real either way.
+    """
+    params = {"resource": "ap_invoice_details", "source": SOURCE, **_company_context(conn)}
+    with conn.cursor() as cursor:
+        stage_job_map(cursor)
+        cursor.execute(
+            f"""
+            WITH src AS ({SOURCE_SQL}),
+            parsed AS (
+              SELECT
+                {txt('invoiceNumber')} AS invoice_number,
+                {integer('lineIndex')} AS line_index,
+                {txt('companyNumber')} AS company_number,
+                {txt('vendorNumber')} AS vendor_number,
+                {txt('accountNumber')} AS gl_account_number,
+                {txt('jobNumber')} AS job_number,
+                {num('amount')} AS amount,
+                {txt('ticketNumber')} AS ticket_number,
+                {txt('notes')} AS notes,
+                {day('invoiceDate')} AS invoice_date,
+                {day('postingDate')} AS posting_date,
+                {num('invoiceAmount')} AS invoice_amount
+              FROM src
+            )
+            INSERT INTO core.fact_ap_distribution AS d (
+              source, company_number, vendor_number, invoice_number, line_index, gl_account_number,
+              job_number, job_key, amount, ticket_number, notes, invoice_date, posting_date, invoice_amount
+            )
+            SELECT %(source)s, x.company_number, x.vendor_number, x.invoice_number, x.line_index,
+                   x.gl_account_number, x.job_number, {job_key_for('x.job_number')}, x.amount,
+                   x.ticket_number, x.notes, x.invoice_date, x.posting_date, x.invoice_amount
+            FROM parsed x
+            WHERE x.invoice_number IS NOT NULL AND x.line_index IS NOT NULL
+            ON CONFLICT (source, invoice_number, line_index) DO UPDATE SET
+              company_number = excluded.company_number,
+              vendor_number = excluded.vendor_number,
+              gl_account_number = excluded.gl_account_number,
+              job_number = excluded.job_number,
+              job_key = excluded.job_key,
+              amount = excluded.amount,
+              ticket_number = excluded.ticket_number,
+              notes = excluded.notes,
+              invoice_date = excluded.invoice_date,
+              posting_date = excluded.posting_date,
+              invoice_amount = excluded.invoice_amount,
+              warehouse_updated_at = now()
+            """,
+            params,
+        )
+        return int(cursor.rowcount or 0)
+
+
 def normalize_ap_invoices(conn: Any, seen_ids: Collection[str] | None = None) -> int:
     params = {"resource": "ap_invoices", "source": SOURCE, **_company_context(conn)}
     label = company_label_sql()
@@ -1350,6 +1408,7 @@ NORMALIZERS = {
     "job_schedules": normalize_job_schedules,
     "gl_budgets": normalize_gl_budgets,
     "ap_invoices": normalize_ap_invoices,
+    "ap_invoice_details": normalize_ap_invoice_details,
     "ar_invoices": normalize_ar_invoices,
     "ap_payments": normalize_ap_payments,
 }

@@ -125,7 +125,11 @@ def test_catalogue_matches_documentation() -> None:
     assert RESOURCES["gl_budgets"].envelope == "data_array"
     assert RESOURCES["ar_invoices"].kind == "per_customer"
     assert RESOURCES["job_schedules"].kind == "per_job_date_window"
-    assert list(RESOURCES) == ["jobs", "vendors", "timekeeping", "job_schedules", "gl_budgets", "ap_invoices", "ar_invoices", "ap_payments"]
+    assert RESOURCES["ap_invoice_details"].path == "/accounts/v1/api/payables/invoices/{invoiceNumber}"
+    assert RESOURCES["ap_invoice_details"].kind == "per_invoice"
+    assert RESOURCES["ap_invoice_details"].envelope == "data_array"
+    assert list(RESOURCES) == ["jobs", "vendors", "timekeeping", "job_schedules", "gl_budgets",
+                               "ap_invoices", "ap_invoice_details", "ar_invoices", "ap_payments"]
 
 
 # ── windows and watermarks ───────────────────────────────────────────────────
@@ -610,3 +614,40 @@ def test_land_writes_its_batch_in_one_transaction(monkeypatch) -> None:
     ing._land(conn, uuid4(), RESOURCES["vendors"], [{"vendorNumber": 1}, {"vendorNumber": 2}], result)
     assert inside == [True, True] and result.fetched == 2
     assert conn.in_transaction is False
+
+
+# ── AP GL distributions ──────────────────────────────────────────────────────
+def test_flatten_ap_distribution_carries_the_header_onto_every_line() -> None:
+    """The list endpoint returns headers alone; only this per-invoice shape attributes cost to a job."""
+    from app.winteam import flatten_ap_distribution
+
+    lines = flatten_ap_distribution({
+        "invoiceNumber": "9010236526", "vendorNumber": 1033, "companyNumber": 3,
+        "invoiceDate": "2026-09-17", "postingDate": "2026-09-17", "invoiceAmount": 906.21,
+        "generalLedgerDistributions": [
+            {"accountNumber": 40902, "jobNumber": "900", "amount": 906.21},
+            {"accountNumber": 41000, "jobNumber": "901", "amount": 0},
+        ],
+    })
+    assert [l["lineIndex"] for l in lines] == [0, 1]
+    assert [l["jobNumber"] for l in lines] == ["900", "901"]
+    assert all(l["invoiceNumber"] == "9010236526" and l["vendorNumber"] == 1033 for l in lines)
+    assert all(l["invoiceDate"] == "2026-09-17" for l in lines)
+
+
+def test_flatten_ap_distribution_yields_nothing_without_distributions() -> None:
+    from app.winteam import flatten_ap_distribution
+
+    assert flatten_ap_distribution({"invoiceNumber": "X", "generalLedgerDistributions": []}) == []
+    assert flatten_ap_distribution({"invoiceNumber": "X"}) == []
+    assert flatten_ap_distribution({"invoiceNumber": "X", "generalLedgerDistributions": "nope"}) == []
+
+
+def test_distribution_identity_separates_repeated_job_and_account() -> None:
+    """One invoice may code the same job and account twice; the line position is what disambiguates."""
+    from app.winteam import id_ap_distributions
+
+    base = {"companyNumber": 3, "vendorNumber": 1033, "invoiceNumber": "9010236526",
+            "accountNumber": 40902, "jobNumber": "900"}
+    assert id_ap_distributions({**base, "lineIndex": 0}) != id_ap_distributions({**base, "lineIndex": 1})
+    assert id_ap_distributions({**base, "lineIndex": 0}) == "3:1033:9010236526:0"

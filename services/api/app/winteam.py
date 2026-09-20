@@ -111,6 +111,39 @@ def id_gl_budgets(record: dict[str, Any]) -> str:
     return f"{job_number}:{fiscal_year}:{detail_id}"
 
 
+def id_ap_distributions(record: dict[str, Any]) -> str:
+    """One raw record per GL distribution line, keyed by its position on the invoice.
+
+    accountNumber and jobNumber can repeat on one invoice (two lines can code the same job and
+    account), so the line index is what makes the key unique. A reordered invoice therefore lands as
+    new versions rather than updates; normalization replaces an invoice's lines as a set, so that
+    costs an extra raw row and changes nothing downstream.
+    """
+    _require(record, "invoiceNumber", "lineIndex")
+    return (f"{_text(record, 'companyNumber')}:{_text(record, 'vendorNumber')}"
+            f":{_text(record, 'invoiceNumber')}:{_text(record, 'lineIndex')}")
+
+
+def flatten_ap_distribution(invoice: dict[str, Any]) -> list[dict[str, Any]]:
+    """Explode one AP invoice into its generalLedgerDistributions, carrying the header down.
+
+    This is the only place the API attributes a payable to a site: the AP *list* endpoint returns
+    headers alone, which is why AP was long believed to be company-wide. An invoice with no
+    distributions yields nothing.
+    """
+    lines = invoice.get("generalLedgerDistributions") or []
+    if not isinstance(lines, list):
+        return []
+    header = {key: invoice.get(key) for key in
+              ("invoiceNumber", "vendorNumber", "companyNumber", "invoiceDate", "postingDate", "invoiceAmount")}
+    out: list[dict[str, Any]] = []
+    for index, line in enumerate(lines):
+        if not isinstance(line, dict):
+            continue
+        out.append({**header, **line, "lineIndex": index})
+    return out
+
+
 def id_ap_invoices(record: dict[str, Any]) -> str:
     _require(record, "invoiceNumber")
     return f"{_text(record, 'companyNumber')}:{_text(record, 'vendorNumber')}:{_text(record, 'invoiceNumber')}"
@@ -168,6 +201,12 @@ RESOURCES: dict[str, Resource] = {
     "ap_invoices": Resource(
         "ap_invoices", "/accounts/v1/api/payables/invoices", "date_window", "paged", id_ap_invoices,
         "Accounts payable invoices by date window.", ("dateFrom", "dateTo"),
+    ),
+    "ap_invoice_details": Resource(
+        "ap_invoice_details", "/accounts/v1/api/payables/invoices/{invoiceNumber}", "per_invoice", "data_array",
+        id_ap_distributions,
+        "GL distributions per AP invoice (accountNumber, jobNumber, amount) - the only endpoint that "
+        "attributes a payable to a site; the list endpoint returns headers alone.",
     ),
     "ar_invoices": Resource(
         "ar_invoices", "/accounts/v1/api/receivables/invoices/", "per_customer", "paged", id_ar_invoices,
@@ -649,6 +688,8 @@ class WinTeamIngestion:
             self._pull_per_job(resource, client, conn, run_id, result, today, options)
         elif kind == "per_job_date_window":
             self._pull_per_job_windows(resource, client, conn, run_id, result, today, options)
+        elif kind == "per_invoice":
+            self._pull_per_invoice(resource, client, conn, run_id, result, options)
         elif kind == "per_customer":
             self._pull_per_customer(resource, client, conn, run_id, result, options)
         else:  # pragma: no cover - guarded by the catalogue
@@ -693,6 +734,42 @@ class WinTeamIngestion:
                 logger.info("WinTeam %s: %s/%s jobs processed", resource.name, index, len(jobs))
         if jobs:
             result.message = f"{len(jobs)} job(s) x {len(years)} fiscal year(s) probed; {no_budget} job-year(s) without a budget"
+
+    def _pull_per_invoice(
+        self, resource: Resource, client: WinTeamClient, conn: Any, run_id: UUID, result: PullResult, options: PullOptions
+    ) -> None:
+        """One GET per AP invoice, for invoices whose distributions are not landed yet.
+
+        The work is bounded by what is missing rather than by a date window: the first run backfills
+        the whole AP history, later runs cost about the month's new invoices. Some invoice numbers
+        answer 404 (numbers carrying spaces or slashes, and vendors whose invoices are not keyed this
+        way); those are counted and skipped, never raised, so one odd invoice cannot fail the run.
+        """
+        invoices = self._ap_invoices_missing_details(conn, self.config.ap_detail_invoice_limit)
+        if not invoices:
+            result.message = "No AP invoices awaiting GL distributions"
+            return
+        missing, no_lines = 0, 0
+        for index, invoice_number in enumerate(invoices, start=1):
+            path = resource.path.format(invoiceNumber=quote(str(invoice_number), safe=""))
+            try:
+                payload = client.get(path)
+            except WinTeamError as exc:
+                if isinstance(exc, WinTeamError) and exc.status_code in {400, 404}:
+                    missing += 1
+                    continue
+                raise
+            records = [line for entry in parse_data_array(payload) for line in flatten_ap_distribution(entry)]
+            if not records:
+                no_lines += 1
+                continue
+            self._land(conn, run_id, resource, records, result)
+            if index % 250 == 0:
+                logger.info("WinTeam %s: %s/%s invoices processed", resource.name, index, len(invoices))
+        result.message = (
+            f"{len(invoices)} invoice(s) probed; {missing} not retrievable by invoice number; "
+            f"{no_lines} with no GL distributions"
+        )
 
     def _pull_per_job_windows(
         self, resource: Resource, client: WinTeamClient, conn: Any, run_id: UUID, result: PullResult, today: date, options: PullOptions
@@ -817,6 +894,31 @@ class WinTeamIngestion:
                 """
             )
             numbers = [row["job_number"] for row in cursor.fetchall()]
+        return numbers[:limit] if limit > 0 else numbers
+
+    def _ap_invoices_missing_details(self, conn: Any, limit: int = 0) -> list[str]:
+        """AP invoice numbers with no distribution landed yet, newest first.
+
+        Driving off what is missing keeps the fan-out proportional to new work instead of to the
+        size of AP: the backfill runs once, then each poll asks only about invoices that arrived
+        since. Invoices that answer 404 are re-probed on later runs - cheap, and they start working
+        if the number is ever corrected in WinTeam.
+        """
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT a.invoice_number
+                FROM core.fact_ap_invoice a
+                WHERE a.source = 'winteam_api' AND a.invoice_number IS NOT NULL
+                  AND NOT EXISTS (
+                    SELECT 1 FROM raw.winteam_record r
+                    WHERE r.resource_name = 'ap_invoice_details'
+                      AND r.payload->>'invoiceNumber' = a.invoice_number
+                  )
+                ORDER BY a.invoice_date DESC NULLS LAST, a.invoice_number
+                """
+            )
+            numbers = [row["invoice_number"] for row in cursor.fetchall()]
         return numbers[:limit] if limit > 0 else numbers
 
     def _customer_numbers(self, conn: Any) -> list[str]:
