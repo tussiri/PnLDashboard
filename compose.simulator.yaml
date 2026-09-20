@@ -1,0 +1,62 @@
+# Compose overlay: run the WinTeam "wtnextgen" API simulator alongside the stack
+# and point the api/worker at it instead of the real TEAM Software gateway.
+#
+#   docker compose -f compose.yaml -f compose.simulator.yaml up -d --build
+#
+# The simulator is NOT WinTeam. It serves deterministic synthetic data so that
+# ingestion -> marts -> forecasts -> UI can be exercised before tenant
+# credentials exist. See services/winteam-sim/README.md.
+#
+# Optional .env values (all have defaults):
+#   SIM_SEED=7  SIM_JOBS=48  SIM_MONTHS=24
+#   SIM_TENANT_ID=11111111-1111-4111-8111-111111111111
+#   SIM_CUSTOMER_NUMBERS=1001,1002,1003,1004,1005,1006,1007,1008,1009,1010
+#   SIM_SUBSCRIPTION_KEY=   (set to force the Ocp-Apim-Subscription-Key header)
+#   SIM_RATE_LIMIT_EVERY=0  (N>0 -> every Nth request answers 429 + Retry-After: 1)
+#   SIM_PORT=18081          (host port for poking the simulator directly)
+
+x-winteam-sim-environment: &winteam-sim-environment
+  WINTEAM_ENABLED: "true"
+  WINTEAM_BASE_URL: "http://winteam-sim:8081"
+  WINTEAM_ALLOW_INSECURE_HTTP: "true"
+  WINTEAM_TENANT_ID: "${SIM_TENANT_ID:-11111111-1111-4111-8111-111111111111}"
+  WINTEAM_CUSTOMER_NUMBERS: "${SIM_CUSTOMER_NUMBERS:-1001,1002,1003,1004,1005,1006,1007,1008,1009,1010}"
+  # Header map for the generic connector shape (tenantId is the only header WinTeam requires).
+  WINTEAM_HEADERS_JSON: '{"tenantId": "${SIM_TENANT_ID:-11111111-1111-4111-8111-111111111111}"}'
+
+services:
+  winteam-sim:
+    build:
+      context: ./services/winteam-sim
+    restart: unless-stopped
+    environment:
+      SIM_SEED: ${SIM_SEED:-7}
+      SIM_JOBS: ${SIM_JOBS:-48}
+      SIM_MONTHS: ${SIM_MONTHS:-24}
+      SIM_TENANT_ID: ${SIM_TENANT_ID:-11111111-1111-4111-8111-111111111111}
+      SIM_SUBSCRIPTION_KEY: ${SIM_SUBSCRIPTION_KEY:-}
+      SIM_RATE_LIMIT_EVERY: ${SIM_RATE_LIMIT_EVERY:-0}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    ports:
+      - "127.0.0.1:${SIM_PORT:-18081}:8081"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8081/__sim/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    networks: [egress, backend]
+
+  api:
+    environment:
+      <<: *winteam-sim-environment
+    depends_on:
+      winteam-sim:
+        condition: service_healthy
+
+  worker:
+    environment:
+      <<: *winteam-sim-environment
+    depends_on:
+      winteam-sim:
+        condition: service_healthy

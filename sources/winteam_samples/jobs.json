@@ -1,0 +1,123 @@
+{
+  "captured": "2026-09-03",
+  "record": {
+    "address": {
+      "jobAddress1": "[redacted]",
+      "jobAddress2": null,
+      "jobCity": "Tucker",
+      "jobState": "GA",
+      "jobZip": "[redacted]"
+    },
+    "companyNumber": 1,
+    "customFields": [],
+    "dateToStart": null,
+    "hoursCategoryID": 1,
+    "hoursRuleId": 1,
+    "jobAttention": null,
+    "jobDescription": "Babcock & Wilcox (Diamond Pwr)",
+    "jobId": "83671b6e-5e3b-4276-ae85-e8208ef21d20",
+    "jobJoinedDescription": "10 Babcock & Wilcox (Diamond Pwr)",
+    "jobNumber": "10",
+    "jobPayrollTaxStateId": 8,
+    "jobTiers": [
+      {
+        "tierID": 1,
+        "tierValue": "27",
+        "tierValueDescription": "Tucker"
+      },
+      {
+        "tierID": 2,
+        "tierValue": "4",
+        "tierValueDescription": "Georgia"
+      },
+      {
+        "tierID": 3,
+        "tierValue": "4",
+        "tierValueDescription": "Southeast"
+      },
+      {
+        "tierID": 4,
+        "tierValue": "2",
+        "tierValueDescription": "Contract Janitorial"
+      },
+      {
+        "tierID": 5,
+        "tierValue": "2",
+        "tierValueDescription": "House Account"
+      },
+      {
+        "tierID": 6,
+        "tierValue": "3",
+        "tierValueDescription": "Self-Service"
+      },
+      {
+        "tierID": 7,
+        "tierValue": "1",
+        "tierValueDescription": "None"
+      },
+      {
+        "tierID": 8,
+        "tierValue": "1",
+        "tierValueDescription": "None"
+      },
+      {
+        "tierID": 9,
+        "tierValue": "0",
+        "tierValueDescription": "None"
+      },
+      {
+        "tierID": 10,
+        "tierValue": "0",
+        "tierValueDescription": "None"
+      },
+      {
+        "tierID": 11,
+        "tierValue": "0",
+        "tierValueDescription": "None"
+      },
+      {
+        "tierID": 12,
+        "tierValue": "0",
+        "tierValueDescription": "None"
+      }
+    ],
+    "lighthouseApplication": null,
+    "links": [
+      {
+        "href": "https://api.myteamsoftware.com/wtnextgen/jobs/{jobKey}/api/jobs/{jobKey}/budgets",
+        "method": "GET",
+        "rel": "gl-budgets"
+      },
+      {
+        "href": "https://api.myteamsoftware.com/wtnextgen/jobs/{jobKey}/api/jobs/{jobKey}/gl-budgets",
+        "method": "GET",
+        "rel": "gl-budget-details"
+      }
+    ],
+    "locationId": 1,
+    "notes": null,
+    "parentJobNumber": null,
+    "phone1": null,
+    "phone1Description": null,
+    "phone2": null,
+    "phone2Description": null,
+    "phone3": null,
+    "phone3Description": null,
+    "salesTaxStateId": 3,
+    "supervisorId": 26,
+    "taxAddress": {
+      "address1": "[redacted]",
+      "address2": null,
+      "city": "Tucker",
+      "latitude": "33.857383",
+      "locationCode": "[redacted]",
+      "longitude": "-84.194628",
+      "state": "GA",
+      "zip": "[redacted]"
+    },
+    "taxesInsuranceId": 6,
+    "typeId": 5
+  },
+  "redaction": "employeeNumber/vendorName hashed; person names, addresses, phones, free text replaced by [redacted]; coordinates rounded to 0.1",
+  "resource": "jobs"
+}

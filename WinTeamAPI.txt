@@ -1,0 +1,3955 @@
+Timekeeping (v2)
+
+v2
+
+API definition
+Changelog
+API endpoints used to manage Timekeeping in WinTeam.
+
+
+Retrieve Timekeeping
+Try it 
+This function gets the timekeeping records based on the DateFrom and DateTo date.
+
+Timekeeping
+Request
+http://apim.myteamsoftware.com/wtnextgen/timekeeping/v2/api/timekeeping?dateFrom={dateFrom}&dateTo={dateTo}[&pageSize][&pageNumber][&orderBy][&ascending]
+Request parameters
+Name
+In
+Required
+Type
+Description
+dateFrom
+template
+true
+string
+Format - date-time (as date-time in RFC3339). Date from when the user wants to filter the results.
+
+dateTo
+template
+true
+string
+Format - date-time (as date-time in RFC3339). Date to when the user wants to filter the results.
+
+pageSize
+query
+false
+integer
+The size of the page.
+
+pageNumber
+query
+false
+integer
+The page number you want to retrieve.
+
+orderBy
+query
+false
+string
+A datapoint you�d like to sort records by. Possible values are: "timekeepingId", "employeeNumber", "jobNumber", "workDate", "hours", "categoryDetailId", "rate", "workTicketNumber".
+
+ascending
+query
+false
+boolean
+Indicates whether or not the order should be ascending (true) or descending (false).
+
+Request headers
+Name
+Required
+Type
+Description
+tenantId
+true
+string
+We'll provide a description of what this value represents and how to obtain one.
+
+Request body
+Response: 200 OK
+OK
+
+
+application/json
+TeamSoftware.WinTeam.Timekeeping.Functions.Models.Responses.GetTimekeepingOkResponse
+
+
+Name
+Required
+Type
+Description
+Data
+false
+TeamSoftware.WinteamAPI.Utilities.DAL.Models.PagedResults_TeamSoftware.WinTeam.Timekeeping.Models.GetTimekeepingResponse_[]
+Success
+false
+boolean
+ServerResponse
+false
+string
+default
+default - json
+ Copy
+{
+    "data": [{
+        "pageNumber": 1,
+        "pageSize": 100,
+        "totalPages": 1,
+        "totalCount": 1,
+        "results": [{
+            "timekeepingId": 12345,
+            "employeeNumber": 65,
+            "jobNumber": "10002B",
+            "workDate": "2022-10-01T12:00:00Z",
+            "hours": 8,
+            "categoryDetailId": 2,
+            "inTime": "2026-04-09T08:00:00Z",
+            "outTime": "2026-04-09T05:00:00Z",
+            "lunch": 1,
+            "rate": 12.5,
+            "workTicketNumber": 45643
+        }]
+    }],
+    "success": true,
+    "serverResponse": "OK."
+}
+Response: 204 No Content
+No Content
+
+
+Response: 400 Bad Request
+Bad Request
+
+
+application/json
+TeamSoftware.Azure.Handler.Http.Models.ErrorResponse
+
+
+Name
+Required
+Type
+Description
+Errors
+false
+TeamSoftware.Azure.Handler.Models.ValidationError[]
+Success
+false
+boolean
+ServerResponse
+false
+string
+default
+default - json
+ Copy
+{
+    "errors": [{
+        "attemptedValue": null,
+        "fieldName": "TenantId",
+        "errorMessage": "TenantId must be a GUID."
+    }],
+    "success": false,
+    "serverResponse": "Operation failed! See the Errors for more information."
+}
+Response: 422 Unprocessable Entity
+Unprocessable Entity
+
+
+application/json
+TeamSoftware.Azure.Handler.Http.Models.ErrorResponse
+
+
+Name
+Required
+Type
+Description
+Errors
+false
+TeamSoftware.Azure.Handler.Models.ValidationError[]
+Success
+false
+boolean
+ServerResponse
+false
+string
+default
+default - json
+ Copy
+{
+    "errors": [{
+        "attemptedValue": null,
+        "fieldName": "TenantId",
+        "errorMessage": "TenantId must be a GUID."
+    }],
+    "success": false,
+    "serverResponse": "Operation failed! See the Errors for more information."
+}
+Response: 500 Internal Server Error
+Internal Server Error
+
+
+application/json
+TeamSoftware.Azure.Handler.Http.Models.Response
+
+
+Name
+Required
+Type
+Description
+Success
+false
+boolean
+ServerResponse
+false
+string
+default
+default - json
+ Copy
+{
+    "success": false,
+    "serverResponse": "Oops, something went wrong."
+}
+Definitions
+Name
+Description
+TeamSoftware.WinTeam.Timekeeping.Functions.Models.Responses.GetTimekeepingOkResponse
+TeamSoftware.WinteamAPI.Utilities.DAL.Models.PagedResults_TeamSoftware.WinTeam.Timekeeping.Models.GetTimekeepingResponse_
+TeamSoftware.WinTeam.Timekeeping.Models.GetTimekeepingResponse
+TeamSoftware.Azure.Handler.Http.Models.ErrorResponse
+TeamSoftware.Azure.Handler.Models.ValidationError
+TeamSoftware.Azure.Handler.Http.Models.Response
+TeamSoftware.WinTeam.Timekeeping.Functions.Models.Responses.GetTimekeepingOkResponse
+
+
+Name
+Required
+Type
+Description
+Data
+false
+TeamSoftware.WinteamAPI.Utilities.DAL.Models.PagedResults_TeamSoftware.WinTeam.Timekeeping.Models.GetTimekeepingResponse_[]
+Success
+false
+boolean
+ServerResponse
+false
+string
+TeamSoftware.WinteamAPI.Utilities.DAL.Models.PagedResults_TeamSoftware.WinTeam.Timekeeping.Models.GetTimekeepingResponse_
+
+
+Name
+Required
+Type
+Description
+PageNumber
+false
+integer (int32)
+PageSize
+false
+integer (int32)
+TotalPages
+false
+integer (int32)
+TotalCount
+false
+integer (int32)
+Results
+false
+TeamSoftware.WinTeam.Timekeeping.Models.GetTimekeepingResponse[]
+TeamSoftware.WinTeam.Timekeeping.Models.GetTimekeepingResponse
+
+
+Name
+Required
+Type
+Description
+TimekeepingId
+false
+integer (int32)
+EmployeeNumber
+false
+string
+JobNumber
+false
+string
+WorkDate
+false
+string
+Hours
+false
+number (double)
+CategoryDetailId
+false
+integer (int32)
+InTime
+false
+string
+OutTime
+false
+string
+Lunch
+false
+number (double)
+Rate
+false
+number (double)
+WorkTicketNumber
+false
+string
+TeamSoftware.Azure.Handler.Http.Models.ErrorResponse
+
+
+Name
+Required
+Type
+Description
+Errors
+false
+TeamSoftware.Azure.Handler.Models.ValidationError[]
+Success
+false
+boolean
+ServerResponse
+false
+string
+TeamSoftware.Azure.Handler.Models.ValidationError
+
+
+Name
+Required
+Type
+Description
+AttemptedValue
+false
+string
+FieldName
+false
+string
+ErrorMessage
+false
+string
+TeamSoftware.Azure.Handler.Http.Models.Response
+
+
+Name
+Required
+Type
+Description
+Success
+false
+boolean
+ServerResponse
+false
+string
+
+
+
+Jobs (v2)
+
+v2
+
+API definition
+Changelog
+API endpoints used to manage jobs in WinTeam.
+
+
+Retrieve GL Budgets for Job
+Try it 
+This API endpoint will retrieve GL Budgets for a particular Job.
+
+Jobs
+Request
+http://apim.myteamsoftware.com/wtnextgen/jobs/v2/api/jobs/{jobKey}/gl-budgets[?fiscalYear][&financialStatement][&jobCostAnalysis]
+Request parameters
+Name
+In
+Required
+Type
+Description
+jobKey
+template
+true
+string
+Job number or Job ID for which the information is retrieved.
+
+fiscalYear
+query
+false
+integer
+Fiscal year to filter the budgets. If no value provided, it will use the current year
+
+financialStatement
+query
+false
+boolean
+Financial Statement filter for the regular view. Default true.
+
+jobCostAnalysis
+query
+false
+boolean
+Job Cost Analysis filter for the regular view. Default true.
+
+Request headers
+Name
+Required
+Type
+Description
+tenantId
+true
+string
+We'll provide a description of what this value represents and how to obtain one.
+
+Request body
+Response: 200 OK
+OK
+
+
+application/json
+TeamSoftware.WinTeam.Jobs.Functions.Models.Responses.GetGLBudgetsOkResponse
+
+
+Name
+Required
+Type
+Description
+Data
+false
+TeamSoftware.WinTeam.Jobs.Models.GLBudgetDetailGet[]
+Success
+false
+boolean
+ServerResponse
+false
+string
+default
+default - json
+ Copy
+{
+    "data": [{
+        "jobNumber": "40035N",
+        "fiscalYear": 2021,
+        "glBudgetId": 1668,
+        "glBudgetDetails": [{
+            "id": 5390,
+            "glAccountNumber": 3010,
+            "glAccountDescription": "Service Income",
+            "financialStatement": 0,
+            "jobCostAnalysis": 0,
+            "budgetTotal": 130,
+            "period1": 10,
+            "period2": 120,
+            "period3": 0,
+            "period4": 0,
+            "period5": 0,
+            "period6": 0,
+            "period7": 0,
+            "period8": 0,
+            "period9": 0,
+            "period10": 0,
+            "period11": 0,
+            "period12": 0
+        }]
+    }],
+    "success": true,
+    "serverResponse": "OK."
+}
+Response: 400 Bad Request
+Bad Request
+
+
+application/json
+TeamSoftware.Azure.Handler.Http.Models.ErrorResponse
+
+
+Name
+Required
+Type
+Description
+Errors
+false
+TeamSoftware.Azure.Handler.Models.ValidationError[]
+Success
+false
+boolean
+ServerResponse
+false
+string
+default
+default - json
+ Copy
+{
+    "errors": [{
+        "attemptedValue": "MalformedTenant",
+        "fieldName": "TenantId",
+        "errorMessage": "TenantId must be a GUID."
+    }],
+    "success": false,
+    "serverResponse": "Operation failed! See the Errors for more information."
+}
+Response: 404 Not Found
+Not Found
+
+
+Response: 422 Unprocessable Entity
+Unprocessable Entity
+
+
+application/json
+TeamSoftware.Azure.Handler.Http.Models.ErrorResponse
+
+
+Name
+Required
+Type
+Description
+Errors
+false
+TeamSoftware.Azure.Handler.Models.ValidationError[]
+Success
+false
+boolean
+ServerResponse
+false
+string
+default
+default - json
+ Copy
+{
+    "errors": [{
+        "attemptedValue": "MalformedTenant",
+        "fieldName": "TenantId",
+        "errorMessage": "TenantId must be a GUID."
+    }],
+    "success": false,
+    "serverResponse": "Operation failed! See the Errors for more information."
+}
+Response: 500 Internal Server Error
+Internal Server Error
+
+
+application/json
+TeamSoftware.Azure.Handler.Http.Models.Response
+
+
+Name
+Required
+Type
+Description
+Success
+false
+boolean
+ServerResponse
+false
+string
+default
+default - json
+ Copy
+{
+    "success": false,
+    "serverResponse": "Oops, something went wrong."
+}
+Definitions
+Name
+Description
+TeamSoftware.WinTeam.Jobs.Functions.Models.Responses.GetGLBudgetsOkResponse
+TeamSoftware.WinTeam.Jobs.Models.GLBudgetDetailGet
+System.Int16
+TeamSoftware.Azure.Handler.Http.Models.ErrorResponse
+TeamSoftware.Azure.Handler.Models.ValidationError
+TeamSoftware.Azure.Handler.Http.Models.Response
+TeamSoftware.WinTeam.Jobs.Functions.Models.Responses.GetGLBudgetsOkResponse
+
+
+Name
+Required
+Type
+Description
+Data
+false
+TeamSoftware.WinTeam.Jobs.Models.GLBudgetDetailGet[]
+Success
+false
+boolean
+ServerResponse
+false
+string
+TeamSoftware.WinTeam.Jobs.Models.GLBudgetDetailGet
+
+
+Name
+Required
+Type
+Description
+ID
+false
+integer (int32)
+GLAccountNumber
+false
+integer (int32)
+GLAccountDescription
+false
+string
+FinancialStatement
+false
+System.Int16
+JobCostAnalysis
+false
+System.Int16
+BudgetTotal
+false
+number (double)
+Period1
+false
+number (double)
+Period2
+false
+number (double)
+Period3
+false
+number (double)
+Period4
+false
+number (double)
+Period5
+false
+number (double)
+Period6
+false
+number (double)
+Period7
+false
+number (double)
+Period8
+false
+number (double)
+Period9
+false
+number (double)
+Period10
+false
+number (double)
+Period11
+false
+number (double)
+Period12
+false
+number (double)
+System.Int16
+
+
+TeamSoftware.Azure.Handler.Http.Models.ErrorResponse
+
+
+Name
+Required
+Type
+Description
+Errors
+false
+TeamSoftware.Azure.Handler.Models.ValidationError[]
+Success
+false
+boolean
+ServerResponse
+false
+string
+TeamSoftware.Azure.Handler.Models.ValidationError
+
+
+Name
+Required
+Type
+Description
+AttemptedValue
+false
+string
+FieldName
+false
+string
+ErrorMessage
+false
+string
+TeamSoftware.Azure.Handler.Http.Models.Response
+
+
+Name
+Required
+Type
+Description
+Success
+false
+boolean
+ServerResponse
+false
+string
+
+Jobs (v2)
+
+v2
+
+API definition
+Changelog
+API endpoints used to manage jobs in WinTeam.
+
+
+Add Job Budgets
+Try it 
+This API endpoint will add Budget History and Budget Details for a particular Job.
+
+Jobs
+Request
+http://apim.myteamsoftware.com/wtnextgen/jobs/v2/api/jobs/{jobKey}/budgets
+Request parameters
+Name
+In
+Required
+Type
+Description
+jobKey
+template
+true
+string
+Job number or Job ID for which the information is retrieved.
+
+Request headers
+Name
+Required
+Type
+Description
+tenantId
+true
+string
+We'll provide a description of what this value represents and how to obtain one.
+
+Request body
+Sample
+
+application/json
+TeamSoftware.WinTeam.Jobs.Models.Requests.PostBudget
+
+
+Name
+Required
+Type
+Description
+EffectiveDate
+false
+string (date-time)
+Use the Effective Date to enter or view the beginning date for this budget history record. The system lists records in ascending order, with the most current record at the top of the list.
+
+Notes
+false
+string
+Use the Notes field to enter any notes pertaining to this budget record. The system will automatically record auditable information in this field.
+
+Details
+false
+TeamSoftware.WinTeam.Jobs.Models.BudgetDetails[]
+The Budget Details array contains the budgeted hours and rate for the employees who work at this Job. The system uses this information in the Job Cost report and the On Screen Job Cost Report.
+
+default
+default - json
+ Copy
+{
+    "effectiveDate": "2021-01-01T12:00:00Z",
+    "notes": "Some notes.",
+    "details": [{
+        "hours": {
+            "description": "Day Custodian",
+            "type": 1,
+            "salaried": null,
+            "dayOfWeek": {
+                "sun": null,
+                "mon": 35,
+                "tue": 35,
+                "wed": 35,
+                "thu": 35,
+                "fri": 35,
+                "sat": null,
+                "hol": null
+            }
+        },
+        "rates": {
+            "billRate": 10,
+            "payRate": 6.5
+        }
+    }, {
+        "hours": {
+            "description": "Night Custodian",
+            "type": 6,
+            "salaried": null,
+            "dayOfWeek": {
+                "sun": 8,
+                "mon": 25,
+                "tue": 25,
+                "wed": 25,
+                "thu": 25,
+                "fri": 25,
+                "sat": 8,
+                "hol": null
+            }
+        },
+        "rates": {
+            "billRate": 12,
+            "payRate": 7.5
+        }
+    }]
+}
+Response: 201 Created
+Created
+
+
+application/json
+TeamSoftware.WinTeam.Jobs.Functions.Models.Responses.PostJobBudgetsOkResponse
+
+
+Name
+Required
+Type
+Description
+Data
+false
+TeamSoftware.WinTeam.Jobs.Models.Requests.PostBudget[]
+Success
+false
+boolean
+ServerResponse
+false
+string
+default
+default - json
+ Copy
+{
+    "effectiveDate": "2021-01-01T12:00:00Z",
+    "notes": "Some notes.",
+    "details": [{
+        "hours": {
+            "description": "Day Custodian",
+            "type": 1,
+            "salaried": null,
+            "dayOfWeek": {
+                "sun": null,
+                "mon": 35,
+                "tue": 35,
+                "wed": 35,
+                "thu": 35,
+                "fri": 35,
+                "sat": null,
+                "hol": null
+            }
+        },
+        "rates": {
+            "billRate": 10,
+            "payRate": 6.5
+        }
+    }, {
+        "hours": {
+            "description": "Night Custodian",
+            "type": 6,
+            "salaried": null,
+            "dayOfWeek": {
+                "sun": 8,
+                "mon": 25,
+                "tue": 25,
+                "wed": 25,
+                "thu": 25,
+                "fri": 25,
+                "sat": 8,
+                "hol": null
+            }
+        },
+        "rates": {
+            "billRate": 12,
+            "payRate": 7.5
+        }
+    }]
+}
+Response: 400 Bad Request
+Bad Request
+
+
+application/json
+TeamSoftware.Azure.Handler.Http.Models.ErrorResponse
+
+
+Name
+Required
+Type
+Description
+Errors
+false
+TeamSoftware.Azure.Handler.Models.ValidationError[]
+Success
+false
+boolean
+ServerResponse
+false
+string
+default
+default - json
+ Copy
+{
+    "errors": [{
+        "attemptedValue": "MalformedTenant",
+        "fieldName": "TenantId",
+        "errorMessage": "TenantId must be a GUID."
+    }],
+    "success": false,
+    "serverResponse": "Operation failed! See the Errors for more information."
+}
+Response: 422 Unprocessable Entity
+Unprocessable Entity
+
+
+application/json
+TeamSoftware.Azure.Handler.Http.Models.ErrorResponse
+
+
+Name
+Required
+Type
+Description
+Errors
+false
+TeamSoftware.Azure.Handler.Models.ValidationError[]
+Success
+false
+boolean
+ServerResponse
+false
+string
+default
+default - json
+ Copy
+{
+    "errors": [{
+        "attemptedValue": "MalformedTenant",
+        "fieldName": "TenantId",
+        "errorMessage": "TenantId must be a GUID."
+    }],
+    "success": false,
+    "serverResponse": "Operation failed! See the Errors for more information."
+}
+Response: 500 Internal Server Error
+Internal Server Error
+
+
+application/json
+TeamSoftware.Azure.Handler.Http.Models.Response
+
+
+Name
+Required
+Type
+Description
+Success
+false
+boolean
+ServerResponse
+false
+string
+default
+default - json
+ Copy
+{
+    "success": false,
+    "serverResponse": "Oops, something went wrong."
+}
+Definitions
+Name
+Description
+System.Int16
+TeamSoftware.Azure.Handler.Http.Models.ErrorResponse
+TeamSoftware.Azure.Handler.Models.ValidationError
+TeamSoftware.Azure.Handler.Http.Models.Response
+TeamSoftware.WinTeam.Jobs.Models.BudgetDetails
+TeamSoftware.WinTeam.Jobs.Models.BudgetHours
+System.Nullable_System.Int16_
+TeamSoftware.WinTeam.Jobs.Models.BudgetWeek
+TeamSoftware.WinTeam.Jobs.Models.BudgetRates
+TeamSoftware.WinTeam.Jobs.Models.Requests.PostBudget
+TeamSoftware.WinTeam.Jobs.Functions.Models.Responses.PostJobBudgetsOkResponse
+System.Int16
+
+
+TeamSoftware.Azure.Handler.Http.Models.ErrorResponse
+
+
+Name
+Required
+Type
+Description
+Errors
+false
+TeamSoftware.Azure.Handler.Models.ValidationError[]
+Success
+false
+boolean
+ServerResponse
+false
+string
+TeamSoftware.Azure.Handler.Models.ValidationError
+
+
+Name
+Required
+Type
+Description
+AttemptedValue
+false
+string
+FieldName
+false
+string
+ErrorMessage
+false
+string
+TeamSoftware.Azure.Handler.Http.Models.Response
+
+
+Name
+Required
+Type
+Description
+Success
+false
+boolean
+ServerResponse
+false
+string
+TeamSoftware.WinTeam.Jobs.Models.BudgetDetails
+
+
+Name
+Required
+Type
+Description
+Hours
+false
+TeamSoftware.WinTeam.Jobs.Models.BudgetHours
+Rates
+false
+TeamSoftware.WinTeam.Jobs.Models.BudgetRates
+TeamSoftware.WinTeam.Jobs.Models.BudgetHours
+
+
+Name
+Required
+Type
+Description
+Description
+false
+string
+The system uses this Description in Timekeeping, Budgeting, and Personnel Scheduling pertaining to this Job. The field can contain information specific only to this Job, such as Restroom Cleaner, Day Porter, Utility Cleaner, etc.
+
+Type
+false
+System.Nullable_System.Int16_
+Salaried
+false
+boolean
+Select this field as true if the Description is for a salaried employee. Set this field as true only if you want the system to show these salaried hours and labor dollars in both the Actual and Budgeted areas of the Hours Budget Comparison Report. It will also add to the Actuals on the Job Cost Analysis Report.
+
+DayOfWeek
+false
+TeamSoftware.WinTeam.Jobs.Models.BudgetWeek
+System.Nullable_System.Int16_
+
+
+Name
+Required
+Type
+Description
+HasValue
+false
+boolean
+Value
+false
+System.Int16
+TeamSoftware.WinTeam.Jobs.Models.BudgetWeek
+
+
+Name
+Required
+Type
+Description
+Sun
+false
+number (double)
+Sunday value.
+
+Mon
+false
+number (double)
+Monday value.
+
+Tue
+false
+number (double)
+Tuesday value.
+
+Wed
+false
+number (double)
+Wednesday value.
+
+Thu
+false
+number (double)
+Thursday value.
+
+Fri
+false
+number (double)
+Friday value.
+
+Sat
+false
+number (double)
+Saturday value.
+
+Hol
+false
+number (double)
+Holidays value.
+
+TeamSoftware.WinTeam.Jobs.Models.BudgetRates
+
+
+Name
+Required
+Type
+Description
+BillRate
+false
+number (double)
+Use the Bill Rate field to view or enter the billable rate if this Job is billed by the hour. The Hours Type must have an Hourly Bill Revenue # associated in order to add a Bill Rate.
+
+PayRate
+false
+number (double)
+Use the Pay Rate field to view or enter the rate for the system to use for this position in the Job Cost Report and On Screen Job Cost, which calculate the Daily Budgets for this Job.
+
+TeamSoftware.WinTeam.Jobs.Models.Requests.PostBudget
+
+
+Name
+Required
+Type
+Description
+EffectiveDate
+false
+string (date-time)
+Use the Effective Date to enter or view the beginning date for this budget history record. The system lists records in ascending order, with the most current record at the top of the list.
+
+Notes
+false
+string
+Use the Notes field to enter any notes pertaining to this budget record. The system will automatically record auditable information in this field.
+
+Details
+false
+TeamSoftware.WinTeam.Jobs.Models.BudgetDetails[]
+The Budget Details array contains the budgeted hours and rate for the employees who work at this Job. The system uses this information in the Job Cost report and the On Screen Job Cost Report.
+
+TeamSoftware.WinTeam.Jobs.Functions.Models.Responses.PostJobBudgetsOkResponse
+
+
+Name
+Required
+Type
+Description
+Data
+false
+TeamSoftware.WinTeam.Jobs.Models.Requests.PostBudget[]
+Success
+false
+boolean
+ServerResponse
+false
+string
+
+
+Jobs (v2)
+
+v2
+
+API definition
+Changelog
+API endpoints used to manage jobs in WinTeam.
+
+
+Retrieve Jobs
+Try it 
+This API endpoint will return all jobs that are setup in WinTeam. Optionally this list can be filtered by Location.
+
+Jobs
+Request
+http://apim.myteamsoftware.com/wtnextgen/jobs/v2/api/jobs[?locationId][&pageSize][&pageNumber][&searchFieldName][&searchText][&exactMatch][&orderBy][&ascending]
+Request parameters
+Name
+In
+Required
+Type
+Description
+locationId
+query
+false
+integer
+The location identifier you want to filter the list of jobs.
+
+pageSize
+query
+false
+integer
+The size of the page.
+
+pageNumber
+query
+false
+integer
+The page number you want to retrieve.
+
+searchFieldName
+query
+false
+string
+A datapoint you’d like to search records by. Possible values are: "jobNumber", "parentJobNumber", "jobId", "jobDescription", "companyNumber", "lighthouseApplication", "hoursRuleId, "jobJoinedDescription"
+
+searchText
+query
+false
+string
+The text you’ll search for in results from the "SearchFieldName" you’ve specified.
+
+exactMatch
+query
+false
+boolean
+Indicates whether or not the comparison on the search text value will be exact. (false by default)
+
+orderBy
+query
+false
+string
+A datapoint you’d like to sort records by. Possible values are: "jobNumber", "parentJobNumber", "jobId", "jobDescription", "companyNumber", "lighthouseApplication", "hoursRuleId", "jobJoinedDescription"
+
+ascending
+query
+false
+boolean
+Indicates whether or not the order should be ascending (true) or descending (false)
+
+Request headers
+Name
+Required
+Type
+Description
+tenantId
+true
+string
+We'll provide a description of what this value represents and how to obtain one.
+
+Request body
+Response: 200 OK
+OK
+
+
+application/json
+TeamSoftware.WinTeam.Jobs.Functions.Models.Responses.GetJobsOkResponse
+
+
+Name
+Required
+Type
+Description
+Data
+false
+TeamSoftware.WinteamAPI.Utilities.DAL.Models.PagedResults_TeamSoftware.WinTeam.Jobs.Functions.Models.Responses.GetJobsResponse_[]
+Success
+false
+boolean
+ServerResponse
+false
+string
+default
+default - json
+ Copy
+{
+    "data": [{
+        "pageNumber": 1,
+        "pageSize": 100,
+        "totalPages": 1,
+        "totalCount": 1,
+        "results": [{
+            "links": [{
+                "rel": "gl-budgets",
+                "href": "https://api.myteamsoftware.com/wtnextgen/jobs/v2/api/jobs/10002z/budgets",
+                "method": "GET"
+            }, {
+                "rel": "gl-budget-details",
+                "href": "https://api.myteamsoftware.com/wtnextgen/jobs/v2/api/jobs/10002z/gl-budgets",
+                "method": "GET"
+            }],
+            "jobJoinedDescription": "10002z Vandelay Industries",
+            "locationId": 1,
+            "companyNumber": 1,
+            "lighthouseApplication": null,
+            "hoursRuleId": 50,
+            "jobAttention": null,
+            "dateToStart": "2005-10-01T12:00:00Z",
+            "typeId": 6,
+            "phone1": null,
+            "phone1Description": null,
+            "phone2": null,
+            "phone2Description": null,
+            "phone3": null,
+            "phone3Description": null,
+            "supervisorId": 7,
+            "taxesInsuranceId": 1,
+            "salesTaxStateId": 4,
+            "jobPayrollTaxStateId": 22,
+            "hoursCategoryID": 9,
+            "notes": "This area is for note regarding this job",
+            "address": {
+                "jobAddress1": "909 So. 76th Street",
+                "jobAddress2": null,
+                "jobCity": "Omaha",
+                "jobState": "NE",
+                "jobZip": 68117
+            },
+            "taxAddress": {
+                "address1": "909 So. 76th Street",
+                "address2": null,
+                "city": "Omaha",
+                "state": "NE",
+                "zip": 68117,
+                "latitude": null,
+                "longitude": null,
+                "locationCode": null
+            },
+            "jobTiers": [{
+                "tierID": 1,
+                "tierValue": 10,
+                "tierValueDescription": "Midwest Region"
+            }, {
+                "tierID": 2,
+                "tierValue": 10,
+                "tierValueDescription": "Omaha NE"
+            }, {
+                "tierID": 3,
+                "tierValue": 1,
+                "tierValueDescription": "Building Maintenance"
+            }, {
+                "tierID": 4,
+                "tierValue": 2,
+                "tierValueDescription": "Area 2 Manager"
+            }, {
+                "tierID": 5,
+                "tierValue": 3,
+                "tierValueDescription": "Route 3"
+            }, {
+                "tierID": 6,
+                "tierValue": 2,
+                "tierValueDescription": "School"
+            }, {
+                "tierID": 7,
+                "tierValue": 0,
+                "tierValueDescription": "None"
+            }, {
+                "tierID": 8,
+                "tierValue": 0,
+                "tierValueDescription": "None"
+            }, {
+                "tierID": 9,
+                "tierValue": 0,
+                "tierValueDescription": "None"
+            }, {
+                "tierID": 10,
+                "tierValue": 0,
+                "tierValueDescription": "None"
+            }, {
+                "tierID": 11,
+                "tierValue": 0,
+                "tierValueDescription": "None"
+            }, {
+                "tierID": 12,
+                "tierValue": 0,
+                "tierValueDescription": "None"
+            }],
+            "customFields": [{
+                "fieldNumber": 2,
+                "value": 1
+            }],
+            "jobNumber": "10002z",
+            "parentJobNumber": null,
+            "jobId": "74de9508-bd76-4fb3-9d29-2aafe8719ee9",
+            "jobDescription": "Vandelay Industries"
+        }]
+    }],
+    "success": true,
+    "serverResponse": "OK."
+}
+Response: 204 No Content
+No Content
+
+
+Response: 400 Bad Request
+Bad Request
+
+
+application/json
+TeamSoftware.Azure.Handler.Http.Models.ErrorResponse
+
+
+Name
+Required
+Type
+Description
+Errors
+false
+TeamSoftware.Azure.Handler.Models.ValidationError[]
+Success
+false
+boolean
+ServerResponse
+false
+string
+default
+default - json
+ Copy
+{
+    "errors": [{
+        "attemptedValue": "MalformedTenant",
+        "fieldName": "TenantId",
+        "errorMessage": "TenantId must be a GUID."
+    }],
+    "success": false,
+    "serverResponse": "Operation failed! See the Errors for more information."
+}
+Response: 422 Unprocessable Entity
+Unprocessable Entity
+
+
+application/json
+TeamSoftware.Azure.Handler.Http.Models.ErrorResponse
+
+
+Name
+Required
+Type
+Description
+Errors
+false
+TeamSoftware.Azure.Handler.Models.ValidationError[]
+Success
+false
+boolean
+ServerResponse
+false
+string
+default
+default - json
+ Copy
+{
+    "errors": [{
+        "attemptedValue": "MalformedTenant",
+        "fieldName": "TenantId",
+        "errorMessage": "TenantId must be a GUID."
+    }],
+    "success": false,
+    "serverResponse": "Operation failed! See the Errors for more information."
+}
+Response: 500 Internal Server Error
+Internal Server Error
+
+
+application/json
+TeamSoftware.Azure.Handler.Http.Models.Response
+
+
+Name
+Required
+Type
+Description
+Success
+false
+boolean
+ServerResponse
+false
+string
+default
+default - json
+ Copy
+{
+    "success": false,
+    "serverResponse": "Oops, something went wrong."
+}
+Definitions
+Name
+Description
+System.Int16
+TeamSoftware.Azure.Handler.Http.Models.ErrorResponse
+TeamSoftware.Azure.Handler.Models.ValidationError
+TeamSoftware.Azure.Handler.Http.Models.Response
+System.Nullable_System.Int16_
+TeamSoftware.WinTeam.Jobs.Functions.Models.Responses.GetJobsOkResponse
+TeamSoftware.WinteamAPI.Utilities.DAL.Models.PagedResults_TeamSoftware.WinTeam.Jobs.Functions.Models.Responses.GetJobsResponse_
+TeamSoftware.WinTeam.Jobs.Functions.Models.Responses.GetJobsResponse
+TeamSoftware.WinTeam.Jobs.Functions.Models.Link
+TeamSoftware.WinTeam.Jobs.Models.JobAddress
+TeamSoftware.WinTeam.Jobs.Models.TaxAddress
+TeamSoftware.WinTeam.Jobs.Models.JobTier
+TeamSoftware.WinTeam.Jobs.Models.CustomField
+System.Int16
+
+
+TeamSoftware.Azure.Handler.Http.Models.ErrorResponse
+
+
+Name
+Required
+Type
+Description
+Errors
+false
+TeamSoftware.Azure.Handler.Models.ValidationError[]
+Success
+false
+boolean
+ServerResponse
+false
+string
+TeamSoftware.Azure.Handler.Models.ValidationError
+
+
+Name
+Required
+Type
+Description
+AttemptedValue
+false
+string
+FieldName
+false
+string
+ErrorMessage
+false
+string
+TeamSoftware.Azure.Handler.Http.Models.Response
+
+
+Name
+Required
+Type
+Description
+Success
+false
+boolean
+ServerResponse
+false
+string
+System.Nullable_System.Int16_
+
+
+Name
+Required
+Type
+Description
+HasValue
+false
+boolean
+Value
+false
+System.Int16
+TeamSoftware.WinTeam.Jobs.Functions.Models.Responses.GetJobsOkResponse
+
+
+Name
+Required
+Type
+Description
+Data
+false
+TeamSoftware.WinteamAPI.Utilities.DAL.Models.PagedResults_TeamSoftware.WinTeam.Jobs.Functions.Models.Responses.GetJobsResponse_[]
+Success
+false
+boolean
+ServerResponse
+false
+string
+TeamSoftware.WinteamAPI.Utilities.DAL.Models.PagedResults_TeamSoftware.WinTeam.Jobs.Functions.Models.Responses.GetJobsResponse_
+
+
+Name
+Required
+Type
+Description
+PageNumber
+false
+integer (int32)
+PageSize
+false
+integer (int32)
+TotalPages
+false
+integer (int32)
+TotalCount
+false
+integer (int32)
+Results
+false
+TeamSoftware.WinTeam.Jobs.Functions.Models.Responses.GetJobsResponse[]
+TeamSoftware.WinTeam.Jobs.Functions.Models.Responses.GetJobsResponse
+
+
+Name
+Required
+Type
+Description
+Links
+false
+TeamSoftware.WinTeam.Jobs.Functions.Models.Link[]
+JobJoinedDescription
+false
+string
+LocationId
+false
+System.Nullable_System.Int16_
+CompanyNumber
+false
+integer (int32)
+LighthouseApplication
+false
+string
+HoursRuleId
+false
+integer (int32)
+JobAttention
+false
+string
+DateToStart
+false
+string (date-time)
+TypeId
+false
+System.Nullable_System.Int16_
+Phone1
+false
+string
+Phone1Description
+false
+string
+Phone2
+false
+string
+Phone2Description
+false
+string
+Phone3
+false
+string
+Phone3Description
+false
+string
+SupervisorId
+false
+integer (int32)
+TaxesInsuranceId
+false
+System.Nullable_System.Int16_
+SalesTaxStateId
+false
+integer (int32)
+JobPayrollTaxStateId
+false
+System.Nullable_System.Int16_
+HoursCategoryID
+false
+integer (int32)
+Notes
+false
+string
+Address
+false
+TeamSoftware.WinTeam.Jobs.Models.JobAddress
+TaxAddress
+false
+TeamSoftware.WinTeam.Jobs.Models.TaxAddress
+JobTiers
+false
+TeamSoftware.WinTeam.Jobs.Models.JobTier[]
+CustomFields
+false
+TeamSoftware.WinTeam.Jobs.Models.CustomField[]
+JobNumber
+false
+string
+ParentJobNumber
+false
+string
+JobId
+false
+string (uuid)
+JobDescription
+false
+string
+TeamSoftware.WinTeam.Jobs.Functions.Models.Link
+
+
+Name
+Required
+Type
+Description
+Rel
+false
+string
+The target resource related
+
+Href
+false
+string
+The link that is related to the target resource
+
+Method
+false
+string
+The request method
+
+TeamSoftware.WinTeam.Jobs.Models.JobAddress
+
+
+Name
+Required
+Type
+Description
+JobAddress1
+false
+string
+JobAddress2
+false
+string
+JobCity
+false
+string
+JobState
+false
+string
+JobZip
+false
+string
+TeamSoftware.WinTeam.Jobs.Models.TaxAddress
+
+
+Name
+Required
+Type
+Description
+Address1
+false
+string
+Address2
+false
+string
+City
+false
+string
+State
+false
+string
+Zip
+false
+string
+Latitude
+false
+string
+Longitude
+false
+string
+LocationCode
+false
+string
+TeamSoftware.WinTeam.Jobs.Models.JobTier
+
+
+Name
+Required
+Type
+Description
+TierID
+false
+string (byte)
+TierValue
+false
+string
+TierValueDescription
+false
+string
+TeamSoftware.WinTeam.Jobs.Models.CustomField
+
+
+Name
+Required
+Type
+Description
+FieldNumber
+false
+string (byte)
+Value
+false
+string
+
+
+Jobs (v2)
+
+v2
+
+API definition
+Changelog
+API endpoints used to manage jobs in WinTeam.
+
+
+Retrieve Job Schedules
+Try it 
+This API endpoint will return schedule information for a Job based on a date range.
+
+Jobs
+Request
+http://apim.myteamsoftware.com/wtnextgen/jobs/v2/api/jobs/{jobKey}/schedules?dateFrom={dateFrom}&dateTo={dateTo}[&pageSize][&pageNumber][&searchFieldName][&searchText][&orderBy][&ascending]
+Request parameters
+Name
+In
+Required
+Type
+Description
+jobKey
+template
+true
+string
+Job number or Job ID for which the information is retrieved.
+
+dateFrom
+template
+true
+string
+The location identifier you want to filter the list of jobs.
+
+dateTo
+template
+true
+string
+Date range.
+
+pageSize
+query
+false
+integer
+Date range.
+
+pageNumber
+query
+false
+integer
+The page number you want to retrieve.
+
+searchFieldName
+query
+false
+string
+A datapoint you’d like to search records by. Possible values are: "id", "scheduleDetailsID", "jobNumber", "employeeNumber", "jobPostDetailID", "hours", "lunch".
+
+searchText
+query
+false
+string
+The text you’ll search for in results from the "SearchFieldName" you’ve specified.
+
+orderBy
+query
+false
+string
+A datapoint you’d like to sort records by. Possible values are: "id", "scheduleDetailsID", "jobNumber", "employeeNumber", "jobPostDetailID", "workDate", "inTime", "outTime", "hours", "lunch".
+
+ascending
+query
+false
+boolean
+Indicates whether or not the order should be ascending (true) or descending (false)
+
+Request headers
+Name
+Required
+Type
+Description
+tenantId
+true
+string
+We'll provide a description of what this value represents and how to obtain one.
+
+Request body
+Response: 200 OK
+OK
+
+
+application/json
+TeamSoftware.WinTeam.Jobs.Functions.Models.Responses.GetJobSchedulesOkReponse
+
+
+Name
+Required
+Type
+Description
+Data
+false
+TeamSoftware.WinteamAPI.Utilities.DAL.Models.PagedResults_TeamSoftware.WinTeam.Jobs.Models.JobSchedule_[]
+Success
+false
+boolean
+ServerResponse
+false
+string
+default
+default - json
+ Copy
+{
+    "data": [{
+        "pageNumber": 1,
+        "pageSize": 100,
+        "totalPages": 674,
+        "totalCount": 67325,
+        "results": [{
+            "id": 84868,
+            "scheduleDetailsID": 12966,
+            "jobNumber": 10004,
+            "employeeNumber": null,
+            "jobPostDetailID": 88,
+            "workDate": "2013-04-04T12:00:00Z",
+            "inTime": "2021-01-22T08:00:00Z",
+            "outTime": "2021-01-22T04:00:00Z",
+            "hours": 8,
+            "lunch": 0
+        }, {
+            "id": 84869,
+            "scheduleDetailsID": 12966,
+            "jobNumber": 10004,
+            "employeeNumber": null,
+            "jobPostDetailID": 88,
+            "workDate": "2013-04-05T12:00:00Z",
+            "inTime": "2021-01-22T08:00:00Z",
+            "outTime": "2021-01-22T04:00:00Z",
+            "hours": 8,
+            "lunch": 0
+        }]
+    }],
+    "success": true,
+    "serverResponse": "OK."
+}
+Response: 204 No Content
+No Content
+
+
+Response: 400 Bad Request
+Bad Request
+
+
+application/json
+TeamSoftware.Azure.Handler.Http.Models.ErrorResponse
+
+
+Name
+Required
+Type
+Description
+Errors
+false
+TeamSoftware.Azure.Handler.Models.ValidationError[]
+Success
+false
+boolean
+ServerResponse
+false
+string
+default
+default - json
+ Copy
+{
+    "errors": [{
+        "attemptedValue": "MalformedTenant",
+        "fieldName": "TenantId",
+        "errorMessage": "TenantId must be a GUID."
+    }],
+    "success": false,
+    "serverResponse": "Operation failed! See the Errors for more information."
+}
+Response: 422 Unprocessable Entity
+Unprocessable Entity
+
+
+application/json
+TeamSoftware.Azure.Handler.Http.Models.ErrorResponse
+
+
+Name
+Required
+Type
+Description
+Errors
+false
+TeamSoftware.Azure.Handler.Models.ValidationError[]
+Success
+false
+boolean
+ServerResponse
+false
+string
+default
+default - json
+ Copy
+{
+    "errors": [{
+        "attemptedValue": "MalformedTenant",
+        "fieldName": "TenantId",
+        "errorMessage": "TenantId must be a GUID."
+    }],
+    "success": false,
+    "serverResponse": "Operation failed! See the Errors for more information."
+}
+Response: 500 Internal Server Error
+Internal Server Error
+
+
+application/json
+TeamSoftware.Azure.Handler.Http.Models.Response
+
+
+Name
+Required
+Type
+Description
+Success
+false
+boolean
+ServerResponse
+false
+string
+default
+default - json
+ Copy
+{
+    "success": false,
+    "serverResponse": "Oops, something went wrong."
+}
+Definitions
+Name
+Description
+TeamSoftware.Azure.Handler.Http.Models.ErrorResponse
+TeamSoftware.Azure.Handler.Models.ValidationError
+TeamSoftware.Azure.Handler.Http.Models.Response
+TeamSoftware.WinTeam.Jobs.Functions.Models.Responses.GetJobSchedulesOkReponse
+TeamSoftware.WinteamAPI.Utilities.DAL.Models.PagedResults_TeamSoftware.WinTeam.Jobs.Models.JobSchedule_
+TeamSoftware.WinTeam.Jobs.Models.JobSchedule
+TeamSoftware.Azure.Handler.Http.Models.ErrorResponse
+
+
+Name
+Required
+Type
+Description
+Errors
+false
+TeamSoftware.Azure.Handler.Models.ValidationError[]
+Success
+false
+boolean
+ServerResponse
+false
+string
+TeamSoftware.Azure.Handler.Models.ValidationError
+
+
+Name
+Required
+Type
+Description
+AttemptedValue
+false
+string
+FieldName
+false
+string
+ErrorMessage
+false
+string
+TeamSoftware.Azure.Handler.Http.Models.Response
+
+
+Name
+Required
+Type
+Description
+Success
+false
+boolean
+ServerResponse
+false
+string
+TeamSoftware.WinTeam.Jobs.Functions.Models.Responses.GetJobSchedulesOkReponse
+
+
+Name
+Required
+Type
+Description
+Data
+false
+TeamSoftware.WinteamAPI.Utilities.DAL.Models.PagedResults_TeamSoftware.WinTeam.Jobs.Models.JobSchedule_[]
+Success
+false
+boolean
+ServerResponse
+false
+string
+TeamSoftware.WinteamAPI.Utilities.DAL.Models.PagedResults_TeamSoftware.WinTeam.Jobs.Models.JobSchedule_
+
+
+Name
+Required
+Type
+Description
+PageNumber
+false
+integer (int32)
+PageSize
+false
+integer (int32)
+TotalPages
+false
+integer (int32)
+TotalCount
+false
+integer (int32)
+Results
+false
+TeamSoftware.WinTeam.Jobs.Models.JobSchedule[]
+TeamSoftware.WinTeam.Jobs.Models.JobSchedule
+
+
+Name
+Required
+Type
+Description
+Id
+false
+integer (int32)
+Job schedule identifier
+
+ScheduleDetailsId
+false
+integer (int32)
+Schedule details identifier
+
+JobNumber
+false
+string
+Job number
+
+EmployeeNumber
+false
+string
+Employee number
+
+JobPostDetailId
+false
+integer (int32)
+Job post detail identifier
+
+WorkDate
+false
+string (date-time)
+Schedule work date
+
+InTime
+false
+string (date-time)
+Schedule in time
+
+OutTime
+false
+string (date-time)
+Schedule out time
+
+Hours
+false
+number (double)
+Schedule duration
+
+Lunch
+false
+number (double)
+Schedule lunch duration
+
+
+Accounts
+
+v1
+
+API definition
+Changelog
+API endpoints used to manage Accounts in WinTeam.
+
+
+Retrieve Account Payable Invoices
+Try it 
+This API endpoint will return the information of all payable invoices that are setup in WinTeam.
+
+Accounts
+Request
+http://apim.myteamsoftware.com/wtnextgen/accounts/v1/api/payables/invoices?dateFrom={dateFrom}&dateTo={dateTo}[&pageSize][&pageNumber][&searchFieldName][&searchText][&orderBy][&ascending]
+Request parameters
+Name
+In
+Required
+Type
+Description
+dateFrom
+template
+true
+string
+Date from when the user wants to filter the results
+
+dateTo
+template
+true
+string
+Date to when the user wants to filter the results
+
+pageSize
+query
+false
+integer
+The size of the page.
+
+pageNumber
+query
+false
+integer
+The page number you want to retrieve.
+
+searchFieldName
+query
+false
+string
+A datapoint you’d like to search records by. Possible values are: "InvoiceNumber", "PONumber", "VendorNumber", "CompanyNumber", "MemoLine1", "MemoLine2"
+
+searchText
+query
+false
+string
+The text you’ll search for in results from the "SearchFieldName" you’ve specified.
+
+orderBy
+query
+false
+string
+A datapoint you’d like to sort records by. Possible values are: "InvoiceNumber", "PONumber", "VendorNumber", "CompanyNumber", "MemoLine1", "MemoLine2"
+
+ascending
+query
+false
+boolean
+Indicates whether or not the order should be ascending (true) or descending (false)
+
+Request headers
+Name
+Required
+Type
+Description
+tenantId
+true
+string
+We'll provide a description of what this value represents and how to obtain one.
+
+Request body
+Response: 200 OK
+OK
+
+
+application/json
+TeamSoftware.WinTeam.Accounts.Functions.Models.Responses.GetAPInvoicesOkResponse
+
+
+Name
+Required
+Type
+Description
+Data
+false
+TeamSoftware.WinteamAPI.Utilities.DAL.Models.PagedResults_TeamSoftware.WinTeam.Accounts.Models.GetAPInvoicesResponse_[]
+Success
+false
+boolean
+ServerResponse
+false
+string
+default
+default - json
+ Copy
+{
+    "data": [{
+        "pageNumber": 1,
+        "pageSize": 100,
+        "totalPages": 1,
+        "totalCount": 1,
+        "results": [{
+            "invoiceNumber": "Monthly-080101",
+            "vendorNumber": 1000,
+            "companyNumber": 1,
+            "invoiceDate": "2020-07-02T12:00:00Z",
+            "postingDate": "2020-07-02T12:00:00Z",
+            "dueDate": "2020-12-30T12:00:00Z",
+            "invoiceAmount": 23,
+            "poNumber": null,
+            "notes": null,
+            "payUseTax": false,
+            "useTaxAmount": null,
+            "useTaxCode": null,
+            "paymentPlanId": 1,
+            "paymentMethodId": 1,
+            "creditCardVendorNumber": null,
+            "memoLine1": null,
+            "memoLine2": null,
+            "permanentHold": false,
+            "includeOn1099": true
+        }]
+    }],
+    "success": true,
+    "serverResponse": "OK."
+}
+Response: 204 No Content
+No Content
+
+
+Response: 400 Bad Request
+Bad Request
+
+
+application/json
+TeamSoftware.Azure.Handler.Http.Models.ErrorResponse
+
+
+Name
+Required
+Type
+Description
+Errors
+false
+TeamSoftware.Azure.Handler.Models.ValidationError[]
+Success
+false
+boolean
+ServerResponse
+false
+string
+default
+default - json
+ Copy
+{
+    "errors": [{
+        "attemptedValue": "Couldn't read value",
+        "fieldName": "amount",
+        "errorMessage": "Could not convert string to decimal."
+    }],
+    "success": false,
+    "serverResponse": "Operation failed! See the Errors for more information."
+}
+Response: 422 Unprocessable Entity
+Unprocessable Entity
+
+
+application/json
+TeamSoftware.Azure.Handler.Http.Models.ErrorResponse
+
+
+Name
+Required
+Type
+Description
+Errors
+false
+TeamSoftware.Azure.Handler.Models.ValidationError[]
+Success
+false
+boolean
+ServerResponse
+false
+string
+default
+default - json
+ Copy
+{
+    "errors": [{
+        "attemptedValue": "Couldn't read value",
+        "fieldName": "amount",
+        "errorMessage": "Could not convert string to decimal."
+    }],
+    "success": false,
+    "serverResponse": "Operation failed! See the Errors for more information."
+}
+Response: 500 Internal Server Error
+Internal Server Error
+
+
+application/json
+TeamSoftware.Azure.Handler.Http.Models.Response
+
+
+Name
+Required
+Type
+Description
+Success
+false
+boolean
+ServerResponse
+false
+string
+default
+default - json
+ Copy
+{
+    "success": false,
+    "serverResponse": "Oops, something went wrong."
+}
+Definitions
+Name
+Description
+System.Nullable_System.Int16_
+System.Int16
+TeamSoftware.Azure.Handler.Http.Models.Response
+TeamSoftware.Azure.Handler.Http.Models.ErrorResponse
+TeamSoftware.Azure.Handler.Models.ValidationError
+TeamSoftware.WinTeam.Accounts.Functions.Models.Responses.GetAPInvoicesOkResponse
+TeamSoftware.WinteamAPI.Utilities.DAL.Models.PagedResults_TeamSoftware.WinTeam.Accounts.Models.GetAPInvoicesResponse_
+TeamSoftware.WinTeam.Accounts.Models.GetAPInvoicesResponse
+System.Nullable_System.Int16_
+
+
+Name
+Required
+Type
+Description
+HasValue
+false
+boolean
+Value
+false
+System.Int16
+System.Int16
+
+
+TeamSoftware.Azure.Handler.Http.Models.Response
+
+
+Name
+Required
+Type
+Description
+Success
+false
+boolean
+ServerResponse
+false
+string
+TeamSoftware.Azure.Handler.Http.Models.ErrorResponse
+
+
+Name
+Required
+Type
+Description
+Errors
+false
+TeamSoftware.Azure.Handler.Models.ValidationError[]
+Success
+false
+boolean
+ServerResponse
+false
+string
+TeamSoftware.Azure.Handler.Models.ValidationError
+
+
+Name
+Required
+Type
+Description
+AttemptedValue
+false
+string
+FieldName
+false
+string
+ErrorMessage
+false
+string
+TeamSoftware.WinTeam.Accounts.Functions.Models.Responses.GetAPInvoicesOkResponse
+
+
+Name
+Required
+Type
+Description
+Data
+false
+TeamSoftware.WinteamAPI.Utilities.DAL.Models.PagedResults_TeamSoftware.WinTeam.Accounts.Models.GetAPInvoicesResponse_[]
+Success
+false
+boolean
+ServerResponse
+false
+string
+TeamSoftware.WinteamAPI.Utilities.DAL.Models.PagedResults_TeamSoftware.WinTeam.Accounts.Models.GetAPInvoicesResponse_
+
+
+Name
+Required
+Type
+Description
+PageNumber
+false
+integer (int32)
+PageSize
+false
+integer (int32)
+TotalPages
+false
+integer (int32)
+TotalCount
+false
+integer (int32)
+Results
+false
+TeamSoftware.WinTeam.Accounts.Models.GetAPInvoicesResponse[]
+TeamSoftware.WinTeam.Accounts.Models.GetAPInvoicesResponse
+
+
+Name
+Required
+Type
+Description
+InvoiceNumber
+false
+string
+Account payable invoice number
+
+VendorNumber
+false
+integer (int32)
+Account payable vendor number
+
+CompanyNumber
+false
+System.Nullable_System.Int16_
+InvoiceDate
+false
+string (date-time)
+Account payable invoice date
+
+PostingDate
+false
+string (date-time)
+Account payable posting date
+
+DueDate
+false
+string (date-time)
+Account payable due date
+
+InvoiceAmount
+false
+number (double)
+Account payable invoice amount
+
+PONumber
+false
+string
+Account payable purchase order number
+
+Notes
+false
+string
+Account payable notes
+
+PayUseTax
+false
+boolean
+Account payable pay use tax
+
+UseTaxAmount
+false
+number (double)
+Account payable use tax amount
+
+UseTaxCode
+false
+System.Nullable_System.Int16_
+PaymentPlanId
+false
+string
+Account payable payment plan (ID)
+
+PaymentMethodId
+false
+string
+Account payable payment method (ID)
+
+CreditCardVendorNumber
+false
+integer (int32)
+Account payable vendor number of the credit card
+
+MemoLine1
+false
+string
+Account payable memo line 1
+
+MemoLine2
+false
+string
+Account payable memo line 2
+
+PermanentHold
+false
+boolean
+Account payable permanent hold
+
+IncludeOn1099
+false
+boolean
+Account payable include on 1099
+
+
+Accounts
+
+v1
+
+API definition
+Changelog
+API endpoints used to manage Accounts in WinTeam.
+
+
+Retrieve Account Receivable Invoice
+Try it 
+This API endpoint returns all Account Receivable Invoices for a specific Customer Number.
+
+Accounts
+Request
+http://apim.myteamsoftware.com/wtnextgen/accounts/v1/api/receivables/invoices/?customerNumber={customerNumber}[&pageSize][&pageNumber][&searchFieldName][&searchText][&orderBy][&ascending]
+Request parameters
+Name
+In
+Required
+Type
+Description
+customerNumber
+template
+true
+string
+Customer number asociated to the invoices.
+
+pageSize
+query
+false
+integer
+The size of the page.
+
+pageNumber
+query
+false
+integer
+The page number you want to retrieve.
+
+searchFieldName
+query
+false
+string
+A datapoint you�d like to search records by. Possible values are: "invoiceNumber", "poNumber", "terms", "salesRep", "reason", "jobNumber"
+
+searchText
+query
+false
+string
+The text you�ll search for in results from the "SearchFieldName" you�ve specified.
+
+orderBy
+query
+false
+string
+A datapoint you�d like to sort records by. Possible values are: "invoiceNumber", "poNumber", "terms", "salesRep", "reason", "jobNumber"
+
+ascending
+query
+false
+boolean
+Indicates whether or not the order should be ascending (true) or descending (false)
+
+Request headers
+Name
+Required
+Type
+Description
+tenantId
+true
+string
+We'll provide a description of what this value represents and how to obtain one.
+
+Request body
+Response: 200 OK
+OK
+
+
+application/json
+TeamSoftware.WinTeam.Accounts.Functions.Models.Responses.ARInvoiceOkResponse
+
+
+Name
+Required
+Type
+Description
+Data
+false
+TeamSoftware.WinteamAPI.Utilities.DAL.Models.PagedResults_TeamSoftware.WinTeam.Accounts.Models.ARInvoice_[]
+Success
+false
+boolean
+ServerResponse
+false
+string
+default
+default - json
+ Copy
+{
+    "data": [{
+        "pageNumber": 1,
+        "pageSize": 1,
+        "totalPages": 128,
+        "totalCount": 128,
+        "results": [{
+            "invoiceNumber": 1,
+            "invoiceDate": "2007-04-01T12:00:00Z",
+            "postingDate": "2007-04-01T12:00:00Z",
+            "billingPeriodFrom": "2007-04-01T12:00:00Z",
+            "billingPeriodTo": "2007-04-30T12:00:00Z",
+            "notes": "Test Co. 1 UPDATED",
+            "terms": "Due Upon Receipt",
+            "termsId": 2,
+            "salesRep": "Jason Reed",
+            "salesRepId": 1,
+            "poNumber": "REQ:146719955",
+            "reason": "Missed Service",
+            "reasonId": 1,
+            "jobNumber": 10002,
+            "tax": 0,
+            "amountPaid": 2589,
+            "revenueTotal": 2589,
+            "lastDatePaid": "2007-04-10T12:00:00Z",
+            "collectionStatus": "",
+            "invoiceTotal": 2589,
+            "invoiceBeingCredited": 1234,
+            "customerNumber": 342
+        }]
+    }],
+    "success": true,
+    "serverResponse": "OK."
+}
+Response: 204 No Content
+No Content
+
+
+Response: 400 Bad Request
+Bad Request.
+
+
+application/json
+TeamSoftware.Azure.Handler.Http.Models.ErrorResponse
+
+
+Name
+Required
+Type
+Description
+Errors
+false
+TeamSoftware.Azure.Handler.Models.ValidationError[]
+Success
+false
+boolean
+ServerResponse
+false
+string
+default
+default - json
+ Copy
+{
+    "errors": [{
+        "attemptedValue": "Couldn't read value",
+        "fieldName": "amount",
+        "errorMessage": "Could not convert string to decimal."
+    }],
+    "success": false,
+    "serverResponse": "Operation failed! See the Errors for more information."
+}
+Response: 422 Unprocessable Entity
+Unprocessable Entity
+
+
+application/json
+TeamSoftware.Azure.Handler.Http.Models.ErrorResponse
+
+
+Name
+Required
+Type
+Description
+Errors
+false
+TeamSoftware.Azure.Handler.Models.ValidationError[]
+Success
+false
+boolean
+ServerResponse
+false
+string
+default
+default - json
+ Copy
+{
+    "errors": [{
+        "attemptedValue": "Couldn't read value",
+        "fieldName": "amount",
+        "errorMessage": "Could not convert string to decimal."
+    }],
+    "success": false,
+    "serverResponse": "Operation failed! See the Errors for more information."
+}
+Response: 500 Internal Server Error
+Internal Server Error
+
+
+application/json
+TeamSoftware.Azure.Handler.Http.Models.Response
+
+
+Name
+Required
+Type
+Description
+Success
+false
+boolean
+ServerResponse
+false
+string
+default
+default - json
+ Copy
+{
+    "success": false,
+    "serverResponse": "Oops, something went wrong."
+}
+Definitions
+Name
+Description
+TeamSoftware.Azure.Handler.Http.Models.Response
+TeamSoftware.Azure.Handler.Http.Models.ErrorResponse
+TeamSoftware.Azure.Handler.Models.ValidationError
+TeamSoftware.WinTeam.Accounts.Functions.Models.Responses.ARInvoiceOkResponse
+TeamSoftware.WinteamAPI.Utilities.DAL.Models.PagedResults_TeamSoftware.WinTeam.Accounts.Models.ARInvoice_
+TeamSoftware.WinTeam.Accounts.Models.ARInvoice
+TeamSoftware.Azure.Handler.Http.Models.Response
+
+
+Name
+Required
+Type
+Description
+Success
+false
+boolean
+ServerResponse
+false
+string
+TeamSoftware.Azure.Handler.Http.Models.ErrorResponse
+
+
+Name
+Required
+Type
+Description
+Errors
+false
+TeamSoftware.Azure.Handler.Models.ValidationError[]
+Success
+false
+boolean
+ServerResponse
+false
+string
+TeamSoftware.Azure.Handler.Models.ValidationError
+
+
+Name
+Required
+Type
+Description
+AttemptedValue
+false
+string
+FieldName
+false
+string
+ErrorMessage
+false
+string
+TeamSoftware.WinTeam.Accounts.Functions.Models.Responses.ARInvoiceOkResponse
+
+
+Name
+Required
+Type
+Description
+Data
+false
+TeamSoftware.WinteamAPI.Utilities.DAL.Models.PagedResults_TeamSoftware.WinTeam.Accounts.Models.ARInvoice_[]
+Success
+false
+boolean
+ServerResponse
+false
+string
+TeamSoftware.WinteamAPI.Utilities.DAL.Models.PagedResults_TeamSoftware.WinTeam.Accounts.Models.ARInvoice_
+
+
+Name
+Required
+Type
+Description
+PageNumber
+false
+integer (int32)
+PageSize
+false
+integer (int32)
+TotalPages
+false
+integer (int32)
+TotalCount
+false
+integer (int32)
+Results
+false
+TeamSoftware.WinTeam.Accounts.Models.ARInvoice[]
+TeamSoftware.WinTeam.Accounts.Models.ARInvoice
+
+
+Name
+Required
+Type
+Description
+InvoiceNumber
+false
+integer (int32)
+InvoiceDate
+false
+string (date-time)
+PostingDate
+false
+string (date-time)
+BillingPeriodFrom
+false
+string (date-time)
+BillingPeriodTo
+false
+string (date-time)
+Notes
+false
+string
+Terms
+false
+string
+TermsId
+false
+integer (int32)
+SalesRep
+false
+string
+SalesRepId
+false
+integer (int32)
+PONumber
+false
+string
+Reason
+false
+string
+ReasonId
+false
+integer (int32)
+JobNumber
+false
+string
+Tax
+false
+number (double)
+AmountPaid
+false
+number (double)
+RevenueTotal
+false
+number (double)
+LastDatePaid
+false
+string (date-time)
+CollectionStatus
+false
+string
+InvoiceTotal
+false
+number (double)
+InvoiceBeingCredited
+false
+integer (int32)
+CustomerNumber
+false
+string
+
+
+API endpoints used to manage Accounts in WinTeam.
+
+
+Retrieve Account Payables Payments
+Try it 
+This API endpoint will return payment information for a given time frame.
+
+Accounts
+Request
+http://apim.myteamsoftware.com/wtnextgen/accounts/v1/api/payables/payments?startDate={startDate}&endDate={endDate}[&pageSize][&pageNumber][&searchFieldName][&searchText][&orderBy][&ascending]
+Request parameters
+Name
+In
+Required
+Type
+Description
+startDate
+template
+true
+string
+Initial date for the search (PaymentDateAdded will be used in case CheckDate is not present).
+
+endDate
+template
+true
+string
+Final date for the search (PaymentDateAdded will be used in case CheckDate is not present).
+
+pageSize
+query
+false
+integer
+The size of the page.
+
+pageNumber
+query
+false
+integer
+The page number you want to retrieve.
+
+searchFieldName
+query
+false
+string
+A datapoint you’d like to search records by. Possible values are: "PaymentId", "PaymentMethodId", "CheckNumber", "CompanyNumber", "PayeeTypeId", "VendorNumber", "OtherVendorID", "ExternalSystemId"
+
+searchText
+query
+false
+string
+The text you’ll search for in results from the "SearchFieldName" you’ve specified.
+
+orderBy
+query
+false
+string
+A datapoint you’d like to sort records by. Possible values are: "PaymentId", "PaymentMethodId", "CheckNumber", "CompanyNumber", "PayeeTypeId", "VendorNumber", "OtherVendorID", "ExternalSystemId"
+
+ascending
+query
+false
+boolean
+Indicates whether or not the order should be ascending (true) or descending (false). By default it is set to true
+
+Request headers
+Name
+Required
+Type
+Description
+tenantId
+true
+string
+We'll provide a description of what this value represents and how to obtain one.
+
+Request body
+Response: 200 OK
+OK
+
+
+application/json
+TeamSoftware.WinTeam.Accounts.Functions.Models.Responses.GetAPPaymentsOkResponse
+
+
+Name
+Required
+Type
+Description
+Data
+false
+TeamSoftware.WinteamAPI.Utilities.DAL.Models.PagedResults_TeamSoftware.WinTeam.Accounts.Models.DescriptiveAPPayment_[]
+Success
+false
+boolean
+ServerResponse
+false
+string
+default
+default - json
+ Copy
+{
+    "data": [{
+        "pageNumber": 1,
+        "pageSize": 2,
+        "totalPages": 88,
+        "totalCount": 176,
+        "results": [{
+            "paymentId": 1,
+            "paymentMethodId": 5,
+            "paymentMethodDescription": "Debit",
+            "checkNumber": -2,
+            "checkDate": "2007-05-20T12:00:00Z",
+            "paymentDateAdded": null,
+            "amount": 25,
+            "companyNumber": 1,
+            "companyName": "479 Iron Workers",
+            "glCashAccount": 1054,
+            "payeeTypeId": 0,
+            "payeeTypeDescription": "Standard",
+            "vendorNumber": 1603,
+            "vendorName": "Carson and Carson Co.",
+            "otherVendorId": null,
+            "otherVendorName": null,
+            "applyToExpenses": true,
+            "isSystemGenerated": false,
+            "externalSystemId": null
+        }, {
+            "paymentId": 2,
+            "paymentMethodId": 4,
+            "paymentMethodDescription": "EFT",
+            "checkNumber": -1,
+            "checkDate": "2007-05-15T12:00:00Z",
+            "paymentDateAdded": null,
+            "amount": 325,
+            "companyNumber": 1,
+            "companyName": "479 Iron Workers",
+            "glCashAccount": 1054,
+            "payeeTypeId": 0,
+            "payeeTypeDescription": "Standard",
+            "vendorNumber": 1598,
+            "vendorName": "J.A. Hershey Corp.",
+            "otherVendorId": null,
+            "otherVendorName": null,
+            "applyToExpenses": true,
+            "isSystemGenerated": true,
+            "externalSystemId": "93983ce2-87d7-5b11-8ce9-602e1f4dc39"
+        }]
+    }],
+    "success": true,
+    "serverResponse": "OK."
+}
+Response: 204 No Content
+No Content
+
+
+Response: 400 Bad Request
+Bad Request.
+
+
+application/json
+TeamSoftware.Azure.Handler.Http.Models.ErrorResponse
+
+
+Name
+Required
+Type
+Description
+Errors
+false
+TeamSoftware.Azure.Handler.Models.ValidationError[]
+Success
+false
+boolean
+ServerResponse
+false
+string
+default
+default - json
+ Copy
+{
+    "errors": [{
+        "attemptedValue": "Couldn't read value",
+        "fieldName": "amount",
+        "errorMessage": "Could not convert string to decimal."
+    }],
+    "success": false,
+    "serverResponse": "Operation failed! See the Errors for more information."
+}
+Response: 422 Unprocessable Entity
+Unprocessable Entity
+
+
+application/json
+TeamSoftware.Azure.Handler.Http.Models.ErrorResponse
+
+
+Name
+Required
+Type
+Description
+Errors
+false
+TeamSoftware.Azure.Handler.Models.ValidationError[]
+Success
+false
+boolean
+ServerResponse
+false
+string
+default
+default - json
+ Copy
+{
+    "errors": [{
+        "attemptedValue": "Couldn't read value",
+        "fieldName": "amount",
+        "errorMessage": "Could not convert string to decimal."
+    }],
+    "success": false,
+    "serverResponse": "Operation failed! See the Errors for more information."
+}
+Response: 500 Internal Server Error
+Internal Server Error
+
+
+application/json
+TeamSoftware.Azure.Handler.Http.Models.Response
+
+
+Name
+Required
+Type
+Description
+Success
+false
+boolean
+ServerResponse
+false
+string
+default
+default - json
+ Copy
+{
+    "success": false,
+    "serverResponse": "Oops, something went wrong."
+}
+Definitions
+Name
+Description
+System.Nullable_System.Int16_
+System.Int16
+TeamSoftware.Azure.Handler.Http.Models.Response
+TeamSoftware.Azure.Handler.Http.Models.ErrorResponse
+TeamSoftware.Azure.Handler.Models.ValidationError
+TeamSoftware.WinTeam.Accounts.Functions.Models.Responses.GetAPPaymentsOkResponse
+TeamSoftware.WinteamAPI.Utilities.DAL.Models.PagedResults_TeamSoftware.WinTeam.Accounts.Models.DescriptiveAPPayment_
+TeamSoftware.WinTeam.Accounts.Models.DescriptiveAPPayment
+System.Nullable_System.Int16_
+
+
+Name
+Required
+Type
+Description
+HasValue
+false
+boolean
+Value
+false
+System.Int16
+System.Int16
+
+
+TeamSoftware.Azure.Handler.Http.Models.Response
+
+
+Name
+Required
+Type
+Description
+Success
+false
+boolean
+ServerResponse
+false
+string
+TeamSoftware.Azure.Handler.Http.Models.ErrorResponse
+
+
+Name
+Required
+Type
+Description
+Errors
+false
+TeamSoftware.Azure.Handler.Models.ValidationError[]
+Success
+false
+boolean
+ServerResponse
+false
+string
+TeamSoftware.Azure.Handler.Models.ValidationError
+
+
+Name
+Required
+Type
+Description
+AttemptedValue
+false
+string
+FieldName
+false
+string
+ErrorMessage
+false
+string
+TeamSoftware.WinTeam.Accounts.Functions.Models.Responses.GetAPPaymentsOkResponse
+
+
+Name
+Required
+Type
+Description
+Data
+false
+TeamSoftware.WinteamAPI.Utilities.DAL.Models.PagedResults_TeamSoftware.WinTeam.Accounts.Models.DescriptiveAPPayment_[]
+Success
+false
+boolean
+ServerResponse
+false
+string
+TeamSoftware.WinteamAPI.Utilities.DAL.Models.PagedResults_TeamSoftware.WinTeam.Accounts.Models.DescriptiveAPPayment_
+
+
+Name
+Required
+Type
+Description
+PageNumber
+false
+integer (int32)
+PageSize
+false
+integer (int32)
+TotalPages
+false
+integer (int32)
+TotalCount
+false
+integer (int32)
+Results
+false
+TeamSoftware.WinTeam.Accounts.Models.DescriptiveAPPayment[]
+TeamSoftware.WinTeam.Accounts.Models.DescriptiveAPPayment
+
+
+Name
+Required
+Type
+Description
+PaymentMethodDescription
+false
+string
+Payment Method Description
+
+CompanyName
+false
+string
+Company Name
+
+PayeeTypeDescription
+false
+string
+Payee Type Description
+
+VendorName
+false
+string
+Vendor Name
+
+OtherVendorName
+false
+string
+Other Vendor Name
+
+PaymentId
+false
+integer (int32)
+PaymentMethodId
+false
+integer (int32)
+CheckNumber
+false
+integer (int32)
+CheckDate
+false
+string (date-time)
+PaymentDateAdded
+false
+string (date-time)
+Amount
+false
+number (double)
+CompanyNumber
+false
+System.Nullable_System.Int16_
+GLCashAccount
+false
+integer (int32)
+PayeeTypeId
+false
+string
+VendorNumber
+false
+integer (int32)
+OtherVendorId
+false
+integer (int32)
+ApplyToExpenses
+false
+boolean
+IsSystemGenerated
+false
+boolean
+ExternalSystemId
+false
+string
+Posted
+false
+boolean
+ServerDateTime
+false
+string (date-time)
+
+Vendors
+
+v1
+
+API definition
+Changelog
+API endpoints used to manage vendors in WinTeam.
+
+
+Retrieve Vendors
+Try it 
+This API endpoint will return the creation of Vendors and their related contacts.
+
+Vendors
+Request
+http://apim.myteamsoftware.com/wtnextgen/vendors/v1/api/vendors/[?vendorNumber][&pageSize][&pageNumber][&searchFieldName][&searchText][&orderBy][&ascending]
+Request parameters
+Name
+In
+Required
+Type
+Description
+vendorNumber
+query
+false
+integer
+Format - int32. Vendor identifier.
+
+pageSize
+query
+false
+integer
+Format - int32. The size of the page.
+
+pageNumber
+query
+false
+integer
+Format - int32. The page number you want to retrieve.
+
+searchFieldName
+query
+false
+string
+A datapoint you’d like to search records by. Possible values are: "VendorNumber", "VendorTypeId", "VendorName", "VendorStatus", "Phone", "AccountNumber", "ParentVendorNumber", "Address1", "Address2", "City", "State", "Zip" .
+
+searchText
+query
+false
+string
+The text you’ll search for in results from the "SearchFieldName" you’ve specified.
+
+orderBy
+query
+false
+string
+A datapoint you’d like to sort records by. Possible values are: "VendorNumber", "VendorTypeId", "VendorName", "VendorStatus", "Phone", "AccountNumber", "ParentVendorNumber", "Address1", "Address2", "City", "State", "Zip" .
+
+ascending
+query
+false
+boolean
+Indicates whether or not the order should be ascending (true) or descending (false)
+
+Request headers
+Name
+Required
+Type
+Description
+tenantId
+true
+string
+We'll provide a description of what this value represents and how to obtain one.
+
+Request body
+Response: 200 OK
+OK.
+
+
+application/json
+TeamSoftware.WinTeam.Vendors.Functions.Models.Responses.GetVendorResponse
+
+
+Name
+Required
+Type
+Description
+Data
+false
+TeamSoftware.WinteamAPI.Utilities.DAL.Models.PagedResults_TeamSoftware.WinTeam.Vendors.Models.Vendor_[]
+Success
+false
+boolean
+ServerResponse
+false
+string
+default
+default - json
+ Copy
+{
+    "data": [{
+        "pageNumber": 1,
+        "pageSize": 100,
+        "totalPages": 1,
+        "totalCount": 1,
+        "results": [{
+            "vendorNumber": 2,
+            "vendorTypeId": 2,
+            "vendorName": "TEST",
+            "vendorStatus": true,
+            "address": {
+                "address1": "407th Av",
+                "address2": "407th Av",
+                "city": "Rocky Creek",
+                "state": "MN",
+                "zip": 0
+            },
+            "phone": 4021234567,
+            "fax": null,
+            "parentVendorNumber": 1,
+            "accountNumber": 1234,
+            "taxID": null,
+            "customFields": null,
+            "contactsInformation": [{
+                "displayName": "Name Lastname",
+                "firstName": "Name",
+                "lastName": "Lastname",
+                "email": "name@gmail.com",
+                "businessPhone": 3193771050,
+                "roleId": 0
+            }, {
+                "displayName": "Name Lastname2",
+                "firstName": "Mallory",
+                "lastName": "Lastname",
+                "email": "lastname@team.com",
+                "businessPhone": 4021111111,
+                "roleId": 0
+            }]
+        }]
+    }],
+    "success": true,
+    "serverResponse": "OK."
+}
+Response: 204 No Content
+No Content.
+
+
+Response: 400 Bad Request
+Bad Request.
+
+
+application/json
+TeamSoftware.Azure.Handler.Http.Models.ErrorResponse
+
+
+Name
+Required
+Type
+Description
+Errors
+false
+TeamSoftware.Azure.Handler.Models.ValidationError[]
+Success
+false
+boolean
+ServerResponse
+false
+string
+default
+default - json
+ Copy
+{
+    "errors": [{
+        "fieldName": "TenantId",
+        "errorMessage": "INVALID INPUT: isn't a valid Guid value!",
+        "attemptedValue": "randomValue"
+    }],
+    "success": false,
+    "serverResponse": "Error: One or more errors were detected during request validation. See the Errors collection for details."
+}
+Response: 422 Unprocessable Entity
+Unprocessable Entity
+
+
+application/json
+TeamSoftware.Azure.Handler.Http.Models.ErrorResponse
+
+
+Name
+Required
+Type
+Description
+Errors
+false
+TeamSoftware.Azure.Handler.Models.ValidationError[]
+Success
+false
+boolean
+ServerResponse
+false
+string
+default
+default - json
+ Copy
+{
+    "errors": [{
+        "fieldName": "TenantId",
+        "errorMessage": "INVALID INPUT: isn't a valid Guid value!",
+        "attemptedValue": "randomValue"
+    }],
+    "success": false,
+    "serverResponse": "Error: One or more errors were detected during request validation. See the Errors collection for details."
+}
+Response: 500 Internal Server Error
+Internal Server Error
+
+
+application/json
+TeamSoftware.Azure.Handler.Http.Models.Response
+
+
+Name
+Required
+Type
+Description
+Success
+false
+boolean
+ServerResponse
+false
+string
+default
+default - json
+ Copy
+{
+    "success": false,
+    "serverResponse": "Operation failed! Please contact the administrator for more details."
+}
+Definitions
+Name
+Description
+TeamSoftware.WinTeam.Vendors.Functions.Models.Responses.GetVendorResponse
+TeamSoftware.WinteamAPI.Utilities.DAL.Models.PagedResults_TeamSoftware.WinTeam.Vendors.Models.Vendor_
+TeamSoftware.WinTeam.Vendors.Models.Vendor
+TeamSoftware.WinTeam.Vendors.Models.CustomField
+System.Nullable_System.Int16_
+System.Int16
+TeamSoftware.WinTeam.Vendors.Models.Address
+TeamSoftware.WinTeam.Vendors.Models.Contact
+TeamSoftware.Azure.Handler.Http.Models.ErrorResponse
+TeamSoftware.Azure.Handler.Models.ValidationError
+TeamSoftware.Azure.Handler.Http.Models.Response
+TeamSoftware.WinTeam.Vendors.Functions.Models.Responses.GetVendorResponse
+
+
+Name
+Required
+Type
+Description
+Data
+false
+TeamSoftware.WinteamAPI.Utilities.DAL.Models.PagedResults_TeamSoftware.WinTeam.Vendors.Models.Vendor_[]
+Success
+false
+boolean
+ServerResponse
+false
+string
+TeamSoftware.WinteamAPI.Utilities.DAL.Models.PagedResults_TeamSoftware.WinTeam.Vendors.Models.Vendor_
+
+
+Name
+Required
+Type
+Description
+PageNumber
+false
+integer (int32)
+PageSize
+false
+integer (int32)
+TotalPages
+false
+integer (int32)
+TotalCount
+false
+integer (int32)
+Results
+false
+TeamSoftware.WinTeam.Vendors.Models.Vendor[]
+TeamSoftware.WinTeam.Vendors.Models.Vendor
+
+
+Name
+Required
+Type
+Description
+VendorNumber
+false
+integer (int32)
+Vendor's Number
+
+CustomFields
+false
+TeamSoftware.WinTeam.Vendors.Models.CustomField[]
+Vendor's Custom Fields
+
+VendorTypeId
+false
+System.Nullable_System.Int16_
+VendorName
+false
+string
+Vendor's Name
+
+VendorStatus
+false
+boolean
+Vendor's Status
+
+Address
+false
+TeamSoftware.WinTeam.Vendors.Models.Address
+Phone
+false
+string
+Vendor's Phone
+
+Fax
+false
+string
+Vendor's Fax
+
+ParentVendorNumber
+false
+integer (int32)
+Vendor's Parent Number
+
+AccountNumber
+false
+string
+Vendor's Account Number
+
+TaxID
+false
+string
+Vendor's Tax ID
+
+ContactsInformation
+false
+TeamSoftware.WinTeam.Vendors.Models.Contact[]
+TeamSoftware.WinTeam.Vendors.Models.CustomField
+
+
+Name
+Required
+Type
+Description
+FieldNumber
+false
+string (byte)
+Value
+false
+string
+System.Nullable_System.Int16_
+
+
+Name
+Required
+Type
+Description
+HasValue
+false
+boolean
+Value
+false
+System.Int16
+System.Int16
+
+
+TeamSoftware.WinTeam.Vendors.Models.Address
+
+
+Name
+Required
+Type
+Description
+Address1
+false
+string
+Address2
+false
+string
+City
+false
+string
+State
+false
+string
+Zip
+false
+string
+TeamSoftware.WinTeam.Vendors.Models.Contact
+
+
+Name
+Required
+Type
+Description
+ID
+false
+integer (int32)
+Contact ID
+
+DisplayName
+false
+string
+Name to be shown
+
+FirstName
+false
+string
+Contact first name
+
+LastName
+false
+string
+Contact last name
+
+TypeId
+false
+System.Nullable_System.Int16_
+Email
+false
+string
+Contact email
+
+BusinessPhone
+false
+string
+Contact Business Phone
+
+RoleId
+false
+System.Int16
+TeamSoftware.Azure.Handler.Http.Models.ErrorResponse
+
+
+Name
+Required
+Type
+Description
+Errors
+false
+TeamSoftware.Azure.Handler.Models.ValidationError[]
+Success
+false
+boolean
+ServerResponse
+false
+string
+TeamSoftware.Azure.Handler.Models.ValidationError
+
+
+Name
+Required
+Type
+Description
+AttemptedValue
+false
+string
+FieldName
+false
+string
+ErrorMessage
+false
+string
+TeamSoftware.Azure.Handler.Http.Models.Response
+
+
+Name
+Required
+Type
+Description
+Success
+false
+boolean
+ServerResponse
+false
+string
+
+

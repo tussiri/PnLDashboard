@@ -1,0 +1,26 @@
+{
+  "captured": "2026-09-03",
+  "record": {
+    "companyNumber": 1,
+    "creditCardVendorNumber": null,
+    "dueDate": "2026-10-30",
+    "includeOn1099": false,
+    "invoiceAmount": 2362.54,
+    "invoiceDate": "2026-08-31",
+    "invoiceNumber": "DLMartin08/2026",
+    "memoLine1": null,
+    "memoLine2": null,
+    "notes": null,
+    "payUseTax": false,
+    "paymentMethodId": 1,
+    "paymentPlanId": 1,
+    "permanentHold": false,
+    "poNumber": null,
+    "postingDate": "2026-08-31",
+    "useTaxAmount": null,
+    "useTaxCode": null,
+    "vendorNumber": 1005
+  },
+  "redaction": "employeeNumber/vendorName hashed; person names, addresses, phones, free text replaced by [redacted]; coordinates rounded to 0.1",
+  "resource": "ap_invoices"
+}

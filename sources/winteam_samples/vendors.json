@@ -1,0 +1,25 @@
+{
+  "captured": "2026-09-03",
+  "record": {
+    "accountNumber": null,
+    "address": {
+      "address1": "[redacted]",
+      "address2": null,
+      "city": "Philadelphia",
+      "state": "PA",
+      "zip": "[redacted]"
+    },
+    "contactsInformation": [],
+    "customFields": [],
+    "fax": null,
+    "parentVendorNumber": null,
+    "phone": null,
+    "taxID": null,
+    "vendorName": "VENDOR-a58f8e",
+    "vendorNumber": 1003,
+    "vendorStatus": true,
+    "vendorTypeId": 1
+  },
+  "redaction": "employeeNumber/vendorName hashed; person names, addresses, phones, free text replaced by [redacted]; coordinates rounded to 0.1",
+  "resource": "vendors"
+}

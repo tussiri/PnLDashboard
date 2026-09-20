@@ -1,0 +1,29 @@
+{
+  "captured": "2026-09-03",
+  "record": {
+    "amountPaid": 369149.31,
+    "billingPeriodFrom": "2025-07-01T00:00:00",
+    "billingPeriodTo": "2025-07-31T00:00:00",
+    "collectionStatus": "",
+    "customerNumber": "AMAZ01",
+    "invoiceBeingCredited": null,
+    "invoiceDate": "2025-07-01T00:00:00",
+    "invoiceNumber": 160254,
+    "invoiceTotal": 369149.31,
+    "jobNumber": "4",
+    "lastDatePaid": "2025-09-03T00:00:00",
+    "notes": null,
+    "poNumber": null,
+    "postingDate": "2025-07-01T00:00:00",
+    "reason": null,
+    "reasonId": 0,
+    "revenueTotal": 369149.31,
+    "salesRep": null,
+    "salesRepId": 0,
+    "tax": 0.0,
+    "terms": "Net 60 Days",
+    "termsId": 5
+  },
+  "redaction": "employeeNumber/vendorName hashed; person names, addresses, phones, free text replaced by [redacted]; coordinates rounded to 0.1",
+  "resource": "ar_invoices"
+}

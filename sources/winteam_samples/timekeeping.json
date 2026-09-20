@@ -1,0 +1,18 @@
+{
+  "captured": "2026-09-03",
+  "record": {
+    "categoryDetailId": 109,
+    "employeeNumber": "EMP-1e8657",
+    "hours": 40.0,
+    "inTime": null,
+    "jobNumber": "57",
+    "lunch": 0.0,
+    "outTime": null,
+    "rate": 25.0,
+    "timekeepingId": 265978,
+    "workDate": "2026-08-24",
+    "workTicketNumber": null
+  },
+  "redaction": "employeeNumber/vendorName hashed; person names, addresses, phones, free text replaced by [redacted]; coordinates rounded to 0.1",
+  "resource": "timekeeping"
+}

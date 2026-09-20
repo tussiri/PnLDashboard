@@ -1,0 +1,174 @@
+name: facilities-command-center
+
+x-api-environment: &api-environment
+  DB_HOST: postgres
+  DB_PORT: 5432
+  DB_NAME: ${APP_DB_NAME:-facilities}
+  DB_USER: ${APP_DB_USER:-facilities_app}
+  DB_PASSWORD: ${APP_DB_PASSWORD:-facilities_dev}
+  ANALYTICS_DB_USER: ${ANALYTICS_DB_USER:-facilities_analytics}
+  WINTEAM_ENABLED: ${WINTEAM_ENABLED:-false}
+  WINTEAM_BASE_URL: ${WINTEAM_BASE_URL:-}
+  WINTEAM_TENANT_ID: ${WINTEAM_TENANT_ID:-}
+  WINTEAM_SUBSCRIPTION_KEY: ${WINTEAM_SUBSCRIPTION_KEY:-}
+  WINTEAM_SUBSCRIPTION_KEY_HEADER: ${WINTEAM_SUBSCRIPTION_KEY_HEADER:-Ocp-Apim-Subscription-Key}
+  WINTEAM_HEADERS_JSON: '${WINTEAM_HEADERS_JSON:-{}}'
+  WINTEAM_RESOURCES: ${WINTEAM_RESOURCES:-jobs,vendors,timekeeping,job_schedules,gl_budgets,ap_invoices,ar_invoices,ap_payments}
+  WINTEAM_CUSTOMER_NUMBERS: ${WINTEAM_CUSTOMER_NUMBERS:-}
+  WINTEAM_LOCATION_IDS: ${WINTEAM_LOCATION_IDS:-}
+  WINTEAM_PAGE_SIZE: ${WINTEAM_PAGE_SIZE:-100}
+  WINTEAM_BACKFILL_MONTHS: ${WINTEAM_BACKFILL_MONTHS:-18}
+  WINTEAM_WINDOW_DAYS: ${WINTEAM_WINDOW_DAYS:-16}
+  WINTEAM_LOOKBACK_DAYS: ${WINTEAM_LOOKBACK_DAYS:-35}
+  WINTEAM_GL_FISCAL_YEARS: ${WINTEAM_GL_FISCAL_YEARS:-2}
+  WINTEAM_SCHEDULE_JOBS_LIMIT: ${WINTEAM_SCHEDULE_JOBS_LIMIT:-0}
+  WINTEAM_POLL_SECONDS: ${WINTEAM_POLL_SECONDS:-300}
+  WINTEAM_REQUEST_TIMEOUT_SECONDS: ${WINTEAM_REQUEST_TIMEOUT_SECONDS:-30}
+  WINTEAM_MAX_PAGES_PER_SYNC: ${WINTEAM_MAX_PAGES_PER_SYNC:-500}
+  WINTEAM_MAX_RETRIES: ${WINTEAM_MAX_RETRIES:-4}
+  WINTEAM_NORMALIZE: ${WINTEAM_NORMALIZE:-true}
+  WINTEAM_GL_JOBS_LIMIT: ${WINTEAM_GL_JOBS_LIMIT:-0}
+  WINTEAM_API_PREFIX: ${WINTEAM_API_PREFIX:-/wtnextgen}
+  WINTEAM_ALLOW_INSECURE_HTTP: ${WINTEAM_ALLOW_INSECURE_HTTP:-false}
+  # Second source: the restored Finance_Dashboard dump (read-only database in the same Postgres).
+  # Empty = source not configured. The default is the local restored dump.
+  FINANCE_REFERENCE_DATABASE_URL: ${FINANCE_REFERENCE_DATABASE_URL:-postgresql://facilities_app:facilities_dev@postgres:5432/finance_reference}
+  FINANCE_REFERENCE_DATA_DIR: ${FINANCE_REFERENCE_DATA_DIR:-}
+  INGESTION_ADMIN_TOKEN: ${INGESTION_ADMIN_TOKEN:-local-development-only}
+  # Sign-in. dev = three fixed development users (executive/analyst/admin, password dev-<username>);
+  # required = only the users in APP_USERS_JSON, and the API refuses to start without them and a secret.
+  # See docs/auth-rbac.md. Single-quote APP_USERS_JSON in .env (hashes contain "$").
+  APP_AUTH_MODE: ${APP_AUTH_MODE:-dev}
+  APP_SESSION_SECRET: ${APP_SESSION_SECRET:-}
+  APP_USERS_JSON: '${APP_USERS_JSON:-[]}'
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD:-postgres_local_only}
+      APP_DB_NAME: ${APP_DB_NAME:-facilities}
+      APP_DB_USER: ${APP_DB_USER:-facilities_app}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:-facilities_dev}
+      ANALYTICS_DB_USER: ${ANALYTICS_DB_USER:-facilities_analytics}
+      ANALYTICS_DB_PASSWORD: ${ANALYTICS_DB_PASSWORD:-analytics_dev}
+      METABASE_DB_NAME: ${METABASE_DB_NAME:-metabase}
+      METABASE_DB_USER: ${METABASE_DB_USER:-metabase_app}
+      METABASE_DB_PASSWORD: ${METABASE_DB_PASSWORD:-metabase_dev}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    networks: [backend, management]
+
+  migrate:
+    build:
+      context: .
+      dockerfile: services/api/Dockerfile
+    command: ["python", "-m", "app.migrate"]
+    environment: *api-environment
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+    networks: [backend]
+
+  api:
+    build:
+      context: .
+      dockerfile: services/api/Dockerfile
+    restart: unless-stopped
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]
+    environment: *api-environment
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    networks: [backend, egress]
+
+  worker:
+    build:
+      context: .
+      dockerfile: services/api/Dockerfile
+    restart: unless-stopped
+    command: ["python", "-m", "app.worker"]
+    environment: *api-environment
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    networks: [backend, egress]
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/web/Dockerfile
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api/v1}
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-5173}:8080"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:8080/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [frontend, backend]
+
+  metabase:
+    image: ${METABASE_IMAGE:-metabase/metabase:v0.63.13}
+    restart: unless-stopped
+    environment:
+      MB_DB_TYPE: postgres
+      MB_DB_DBNAME: ${METABASE_DB_NAME:-metabase}
+      MB_DB_PORT: 5432
+      MB_DB_USER: ${METABASE_DB_USER:-metabase_app}
+      MB_DB_PASS: ${METABASE_DB_PASSWORD:-metabase_dev}
+      MB_DB_HOST: postgres
+      MB_SITE_NAME: ${METABASE_SITE_NAME:-Crane IFS Analytics}
+      JAVA_TIMEZONE: ${TIMEZONE:-America/Chicago}
+    ports:
+      - "127.0.0.1:${METABASE_PORT:-3000}:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    volumes:
+      - metabase-plugins:/plugins
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:3000/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 45s
+    networks: [backend, management]
+
+volumes:
+  postgres-data:
+  metabase-plugins:
+
+networks:
+  frontend:
+  backend:
+    internal: true
+  egress:
+  management:

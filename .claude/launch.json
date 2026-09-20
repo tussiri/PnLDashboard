@@ -1,0 +1,37 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "dev",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
+      "port": 5173
+    },
+    {
+      "name": "dev-demo",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "NO_API_PROXY=1",
+        "pnpm",
+        "run",
+        "dev"
+      ],
+      "port": 5173
+    },
+    {
+      "name": "dev-demo-offline",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "NO_API_PROXY=1",
+        "VITE_API_BASE_URL=http://127.0.0.1:9/api/v1",
+        "pnpm",
+        "run",
+        "dev"
+      ],
+      "port": 5173
+    }
+  ]
+}
