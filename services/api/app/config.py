@@ -165,6 +165,8 @@ class Settings:
     allow_insecure_http: bool
     max_retries: int
     ap_detail_invoice_limit: int
+    companycam_api_token: str
+    companycam_match_rule: str
     ingestion_idle_in_transaction_timeout_seconds: int
     mart_rebuild_lock_timeout_seconds: int
 
@@ -221,6 +223,13 @@ class Settings:
             ap_detail_invoice_limit=_integer(
                 env, "WINTEAM_AP_DETAIL_INVOICE_LIMIT", 0, minimum=0, maximum=100000
             ),
+            # CompanyCam site photos. Server-side only - the browser never sees this token and
+            # never calls CompanyCam directly. Absent by default, so photos stay off until the
+            # production token is added to the server .env. Never give it a VITE_ prefix.
+            companycam_api_token=_text(env, "COMPANYCAM_API_TOKEN"),
+            # How a CompanyCam project is matched to a WinTeam job. Unset until the production data
+            # has been probed: job_number_in_name | address | project_map.
+            companycam_match_rule=_text(env, "COMPANYCAM_MATCH_RULE"),
             # The mart rebuild TRUNCATEs and refills mart.*; behind a stuck writer it should fail fast
             # with a diagnosable message rather than queue up. 0 = wait indefinitely (old behaviour).
             mart_rebuild_lock_timeout_seconds=_integer(

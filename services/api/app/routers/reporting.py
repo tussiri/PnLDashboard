@@ -31,6 +31,7 @@ import psycopg
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..common import (
+    key_account_names,
     SCOPE_ALL,
     MartFilters,
     MonthRange,
@@ -476,18 +477,34 @@ def breakdown(cursor: Any, column: str, rng: MonthRange, filters: MartFilters) -
     assert column in {"region", "service_type", "parent_account", "branch", "vertical", "company"}
     clause, params = filters.clause("jm")
     extra = ", array_remove(array_agg(DISTINCT jm.customer_number), NULL) AS customer_numbers" if column == "parent_account" else ""
+    # Accounts roll up to the configured key accounts plus one "Other". Left ungrouped, an account
+    # breakdown is a list of ~90 customers in which the nine that matter are lost, and a reader
+    # cannot see the shape of the book. Drill-down is unaffected: the underlying rows keep their own
+    # parent_account, so filtering by a named account still reaches it.
+    if column == "parent_account":
+        names = key_account_names()
+        name_sql = (
+            "CASE WHEN jm.parent_account = ANY(%s) THEN jm.parent_account ELSE %s END"
+            if names else f"coalesce(jm.{column}, 'Unassigned')"
+        )
+        head: tuple[Any, ...] = (list(names), OTHER_ACCOUNT_LABEL) if names else ()
+    else:
+        name_sql, head = f"coalesce(jm.{column}, 'Unassigned')", ()
     cursor.execute(
         f"""
-        SELECT coalesce(jm.{column}, 'Unassigned') AS name, sum(jm.revenue) AS revenue, sum(jm.gross_profit) AS gross_profit,
+        SELECT {name_sql} AS name, sum(jm.revenue) AS revenue, sum(jm.gross_profit) AS gross_profit,
                sum(jm.labor_cost) AS labor_cost, sum(jm.hours) AS hours, count(DISTINCT jm.job_key) AS jobs {extra}
         FROM mart.job_month jm
         WHERE jm.month BETWEEN %s AND %s {clause}
         GROUP BY 1
         ORDER BY revenue DESC, name
         """,
-        (rng.start, rng.end, *params),
+        (*head, rng.start, rng.end, *params),
     )
     return [jsonable(row) for row in cursor.fetchall()]
+
+
+OTHER_ACCOUNT_LABEL = "Other"
 
 
 # ── jobs ─────────────────────────────────────────────────────────────────────
@@ -496,6 +513,56 @@ def jobs(rng: MonthRange = Depends(resolve_request_range), filters: MartFilters 
     margin_target, _ = targets()
     rows = fetch_job_rows(rng, filters)
     return {**envelope(rng, filters), "jobs": [job_row(row, margin_target) for row in rows]}
+
+
+@router.get("/jobs/{job_number}/subcontractors")
+def job_subcontractors(job_number: str, months: int = Query(12, ge=1, le=36)) -> dict[str, Any]:
+    """Who is paid to work this site, and how much, from AP GL distributions.
+
+    Straight from core.fact_ap_distribution (WinTeam's own coding of a payable to a site), so these
+    are booked costs rather than an apportionment or a trailing-average projection. Before those
+    distributions were landed the only honest answer here was "AP is company-wide".
+    """
+    anchor = latest_mart_month() or month_start(date.today())
+    start = add_months(anchor, -(months - 1))
+    with connection() as conn, conn.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT coalesce(v.vendor_name, 'Vendor ' || d.vendor_number) AS vendor_name,
+                   d.vendor_number,
+                   count(DISTINCT d.invoice_number)                      AS invoices,
+                   sum(d.amount)                                         AS amount,
+                   max(coalesce(d.posting_date, d.invoice_date))         AS last_invoice_date,
+                   array_agg(DISTINCT d.gl_account_number ORDER BY d.gl_account_number) AS gl_accounts
+            FROM core.fact_ap_distribution d
+            LEFT JOIN core.dim_vendor v ON v.vendor_number = d.vendor_number
+            WHERE d.job_number = %(job)s
+              AND coalesce(d.posting_date, d.invoice_date) >= %(start)s
+            GROUP BY 1, 2
+            ORDER BY sum(d.amount) DESC NULLS LAST
+            """,
+            {"job": job_number, "start": start},
+        )
+        rows = cursor.fetchall()
+    total = round(sum(f0(row["amount"]) for row in rows), 2)
+    return {
+        "job_number": job_number,
+        "range": {"from": start.isoformat(), "to": anchor.isoformat(), "months": months},
+        "total_cost": total,
+        "vendors": [
+            {
+                "vendor_name": row["vendor_name"],
+                "vendor_number": row["vendor_number"],
+                "invoices": int(row["invoices"] or 0),
+                "amount": round(f0(row["amount"]), 2),
+                "share": round(f0(row["amount"]) / total, 4) if total else None,
+                "last_invoice_date": row["last_invoice_date"].isoformat() if row["last_invoice_date"] else None,
+                "gl_accounts": [a for a in (row["gl_accounts"] or []) if a],
+            }
+            for row in rows
+        ],
+        "basis": "AP GL distributions (core.fact_ap_distribution); booked cost, not apportioned",
+    }
 
 
 @router.get("/jobs/{job_number}")

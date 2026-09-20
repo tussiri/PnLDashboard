@@ -16,7 +16,7 @@ import psycopg
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
-from .. import marts
+from .. import companycam, marts
 from ..common import (PRIMARY_SOURCES, configured_key_accounts, month_status_rows, jsonable,
                       require_admin)
 from ..config import settings
@@ -272,6 +272,28 @@ def _mark_overdue(resource: dict[str, Any], limit: int) -> dict[str, Any]:
         bool(not not_entitled and (age is None or int(age) > limit)) if polled else None
     )
     return resource
+
+
+@router.get("/integrations/companycam")
+def companycam_status() -> dict[str, Any]:
+    """Whether site photos are available. Never returns the token."""
+    return companycam.status()
+
+
+@router.get("/integrations/companycam/probe", dependencies=[Depends(require_admin)])
+def companycam_probe(limit: int = Query(5, ge=1, le=25)) -> dict[str, Any]:
+    """Read-only look at real CompanyCam projects, to choose a match rule from evidence.
+
+    Admin-only and deliberately small: it reports which fields the projects carry and a handful of
+    redacted samples, not a customer's photo library. Run it once with the production token to see
+    whether projects hold the job number in their name, a usable address, or neither.
+    """
+    if not companycam.configured():
+        return companycam.status()
+    try:
+        return companycam.probe(limit=limit)
+    except companycam.CompanyCamError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 @router.get("/data/reconciliation")

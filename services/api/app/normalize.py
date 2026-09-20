@@ -1064,7 +1064,7 @@ def normalize_ap_invoice_details(conn: Any, seen_ids: Collection[str] | None = N
                 {txt('invoiceNumber')} AS invoice_number,
                 {integer('lineIndex')} AS line_index,
                 {txt('companyNumber')} AS company_number,
-                {txt('vendorNumber')} AS vendor_number,
+                {integer('vendorNumber')} AS vendor_number,
                 {txt('accountNumber')} AS gl_account_number,
                 {txt('jobNumber')} AS job_number,
                 {num('amount')} AS amount,
