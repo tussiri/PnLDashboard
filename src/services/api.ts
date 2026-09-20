@@ -1,4 +1,6 @@
 import type {
+  CompanyCamStatus,
+  SiteVendorsResponse,
   AccountsResponse, AlertsResponse, ApSummary, AppSetting, ArAgingResponse, ArInvoicesQuery, ArInvoicesResponse,
   BudgetVariance, ConnectionTestResult, DimensionsResponse, ExecutiveAccountsResponse, ExecutiveLaborPl, ExecutiveLaborPlQuery, FinanceReferenceLoadResult, FinanceReferenceStatus, ForecastBuildResult, ForecastHistoryResponse, ForecastsQuery,
   ForecastMetaResponse, ForecastsResponse, FreshnessResponse, FullSyncResult, IntegrationStatus, JobDetailResponse, JobForecastResponse,
@@ -137,6 +139,9 @@ export const api = {
   portfolioSummary: (query?: ReportingQuery, signal?: AbortSignal) => request<PortfolioSummary>('/portfolio/summary', { query: reporting(query), signal }),
   jobs: (query?: ReportingQuery, signal?: AbortSignal) => request<JobsResponse>('/jobs', { query: reporting(query), signal }),
   job: (jobNumber: string, months = 24, signal?: AbortSignal) => request<JobDetailResponse>(`/jobs/${encodeURIComponent(jobNumber)}`, { query: { months }, signal }),
+  siteVendors: (jobNumber: string, months = 12, signal?: AbortSignal) =>
+    request<SiteVendorsResponse>(`/jobs/${encodeURIComponent(jobNumber)}/subcontractors`, { query: { months }, signal }),
+  companycam: (signal?: AbortSignal) => request<CompanyCamStatus>('/integrations/companycam', { signal }),
   accounts: (query?: ReportingQuery, signal?: AbortSignal) => request<AccountsResponse>('/accounts', { query: reporting(query), signal }),
   arAging: (query?: ReportingQuery, signal?: AbortSignal) => request<ArAgingResponse>('/ar/aging', { query: reporting(query), signal }),
   arInvoices: (query?: ArInvoicesQuery, signal?: AbortSignal) => request<ArInvoicesResponse>('/ar/invoices', { query: { ...query }, signal }),

@@ -250,6 +250,34 @@ export interface FreshnessResponse {
   marts: MartsStatus & { last_rebuild_status?: string | null; portfolio_month_rows?: number } & Record<string, unknown>
 }
 
+/** One vendor paid to work a site, from AP GL distributions (booked cost, not apportioned). */
+export interface SiteVendor {
+  vendor_name: string
+  vendor_number: number | null
+  invoices: number
+  amount: number
+  /** Share of the site's total distributed AP cost; null when the total is zero. */
+  share: number | null
+  last_invoice_date: string | null
+  gl_accounts: string[]
+}
+
+export interface SiteVendorsResponse {
+  job_number: string
+  range: RangeBlock
+  total_cost: number
+  vendors: SiteVendor[]
+  basis: string
+}
+
+/** Whether site photos are wired. The token never leaves the server. */
+export interface CompanyCamStatus {
+  configured: boolean
+  base_url: string
+  match_rule: string | null
+  note?: string | null
+}
+
 export type SettingValue = string | number | boolean | null | Record<string, unknown> | unknown[]
 
 export interface AppSetting {

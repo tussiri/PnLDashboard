@@ -44,6 +44,8 @@ Optional filters on every reporting endpoint: `account` (parent account name), `
 | `POST /marts/rebuild` (admin) | `RebuildResult = {job_month_rows, portfolio_month_rows, forecast: ForecastBuildResult \| null, seconds}` |
 | `POST /forecasts/rebuild` (admin) | `ForecastBuildResult = {run_id, forecast_rows, accuracy_rows, track_rows, status_rows, sites_forecast}` |
 | `GET /integrations/winteam/runs?limit=25` | `{runs: [{id, resource_name, status, started_at, completed_at, records_fetched, records_inserted, error_message}]}` |
+| `GET /integrations/companycam` | `{configured, base_url, match_rule, note}` — whether site photos are wired. The token is server-side only and is never returned. |
+| `GET /integrations/companycam/probe?limit=5` (admin) | `{configured, projects_returned, fields_present, sample, next_step}` — read-only look at real CompanyCam projects so a project-to-job match rule can be chosen from evidence rather than guessed. |
 | `GET /data/reconciliation?months=6` | `{ar_chain: [{month, raw_invoices, core_invoices, raw_revenue, core_revenue, variance, exact}], ingestion_exact, suppressed_ar: [...], suppressed_ar_total, uncosted_revenue: [...], uncosted_revenue_total, healthy, note}`. Proves published figures trace to WinTeam payloads. `raw -> core` must reconcile to the cent - a variance is an ingestion defect. `suppressed_ar` is invoiced AR published as zero revenue (margin too low); `uncosted_revenue` is revenue published with no labor basis (margin too high). A month is reportable only when both are zero. |
 | `GET /data/freshness` | `{resources: [{resource_name, last_status, last_completed_at, records_fetched, records_inserted, last_error, watermark_value, seconds_since_last_completion, overdue, overdue_after_seconds, not_entitled}], ingestion: {healthy, overdue_resources, overdue_after_seconds, poll_seconds, reference_stale, reference_stale_after_seconds}, marts: {...}}`. `overdue` is the age of the last completion against `3 x WINTEAM_POLL_SECONDS` (floor 1h), not `last_status`: a hung worker records no failure and leaves every resource reporting `succeeded`. `null` for a resource the worker does not poll; resources the tenant is not entitled to (HTTP 403) are never overdue. `reference_stale` covers the hand-loaded finance_reference export (the primary job-cost P&L source; stale after 7 days, at which point the newest months carry labor without revenue). `healthy` is false when either is behind. |
 | `GET /settings` | `{settings: [{key, value, description, updated_at}]}` |
@@ -99,6 +101,14 @@ equivalent prior range (prior month / prior quarter-to-date / prior year-to-date
 Status rule (server-side, disclosed in `/settings`): Critical when gross margin < target − 7 pts,
 or labor over budget by > 13%, or OT > 15% of hours, or weighted AR days > 65; Watch at margin
 < target, labor over budget > 7%, OT > 10%, AR days > 45; else Healthy.
+
+### `GET /jobs/{job_number}/subcontractors?months=12`
+
+`{job_number, range, total_cost, vendors: [{vendor_name, vendor_number, invoices, amount, share, last_invoice_date, gl_accounts}], basis}`
+
+Who is paid to work a site, from `core.fact_ap_distribution` — WinTeam's own coding of a payable to
+a job, so these are booked costs with their GL accounts rather than an apportionment or a
+trailing-average projection. Ordered by amount. `share` is null when the site's total is zero.
 
 ### `GET /jobs/{job_number}?months=24`
 

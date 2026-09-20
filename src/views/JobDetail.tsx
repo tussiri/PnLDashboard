@@ -7,7 +7,7 @@ import { DataGrid, type Column } from '../components/DataGrid'
 import { KpiCard } from '../components/KpiCard'
 import { useDashboard, useQueryKey } from '../context/DashboardContext'
 import { useApiQuery } from '../hooks/useApiQuery'
-import type { ArInvoiceRow, ForecastMetric, ForecastRow, JobDetailResponse } from '../services/apiTypes'
+import type { ArInvoiceRow, CompanyCamStatus, ForecastMetric, ForecastRow, JobDetailResponse, SiteVendorsResponse } from '../services/apiTypes'
 import { monthLabel } from '../services/period'
 import { fmtDate, money, moneyFull, number, percent, signed, moneyTick } from '../utils'
 import { AccuracyBadge, metricLabel } from './forecastShared'
@@ -17,6 +17,10 @@ export function JobDetail({ jobNumber }: { jobNumber: string }) {
   const { api, ready, navigate } = useDashboard()
   const key = useQueryKey()
   const detail = useApiQuery<JobDetailResponse>(ready ? key(`jobs/${jobNumber}`) : null, (signal) => api.job(jobNumber, 24, signal), [api])
+  // Subcontractors and photos load beside the detail rather than inside it: the panel should paint
+  // as soon as the financials arrive, and a CompanyCam outage must not take the page with it.
+  const vendors = useApiQuery<SiteVendorsResponse>(ready ? key(`jobs/${jobNumber}/subcontractors`) : null, (signal) => api.siteVendors(jobNumber, 12, signal), [api])
+  const photos = useApiQuery<CompanyCamStatus>(ready ? key('integrations/companycam') : null, (signal) => api.companycam(signal), [api])
   const toggle = useSeriesToggle()
   const job = detail.data?.job
   const history = detail.data?.history ?? []
@@ -65,6 +69,31 @@ export function JobDetail({ jobNumber }: { jobNumber: string }) {
       <section><h3>Labor & timekeeping · T12M</h3><dl><div><dt>Scheduled hours</dt><dd className="num">{number(job.scheduled_hours)}</dd></div><div><dt>Actual hours</dt><dd className="num">{number(job.hours)}</dd></div><div><dt>Overtime</dt><dd className="num">{number(job.overtime_hours)} ({percent(job.hours ? (job.overtime_hours / job.hours) * 100 : null)})</dd></div><div><dt>Labor vs budget</dt><dd className={`num ${job.labor_variance === null ? '' : job.labor_variance > 0 ? 'text-bad' : 'text-good'}`}>{job.labor_variance === null ? 'No budget' : signed(job.labor_variance, (v) => money(v))}</dd></div><div><dt>Employees</dt><dd className="num">{number(job.employee_count)}</dd></div></dl></section>
       <section><h3>Billing</h3><dl><div><dt>Invoiced · T12M</dt><dd className="num">{money(job.invoiced_total)}</dd></div><div><dt>Collected · T12M</dt><dd className="num">{money(job.collected_total)}</dd></div><div><dt>Last invoice</dt><dd>{fmtDate(job.last_invoice_date)}</dd></div><div><dt>Customer number</dt><dd className="num">{job.customer_number ?? '—'}</dd></div><div><dt>Months reporting</dt><dd className="num">{job.months_reporting}</dd></div></dl></section>
       <section><h3>Site</h3><dl><div><dt>Manager</dt><dd>{job.manager_name || '—'}</dd></div><div><dt>Region / branch</dt><dd>{job.region} / {job.branch}</dd></div><div><dt>Service type</dt><dd>{job.service_type}</dd></div><div><dt>Vertical</dt><dd>{job.vertical}</dd></div><div><dt>Started</dt><dd>{fmtDate(job.date_to_start)}</dd></div>{job.company !== undefined && <div><dt>Company</dt><dd>{job.company ?? '—'}</dd></div>}{job.delivery_model !== undefined && <div><dt>Delivery model</dt><dd>{job.delivery_model === 'subcontracted' ? 'Subcontracted' : job.delivery_model === 'self_perform' ? 'Self-performed' : '—'}</dd></div>}<div><dt>Coordinates</dt><dd className="num">{job.latitude !== null && job.longitude !== null ? `${job.latitude.toFixed(3)}, ${job.longitude.toFixed(3)}` : 'Not geocoded'}</dd></div>{job.geo_precision === 'city_center' && <div><dt>Map placement</dt><dd><span className="tag-chip tag-chip--geo">Approximate city-center placement</span></dd></div>}</dl></section>
+      <section className="site-vendors"><h3>Subcontractors &amp; vendors<span className="section-note">Trailing 12 months · booked AP, coded to this site</span></h3>
+        {vendors.loading && !vendors.data && <div className="skeleton-rows" aria-busy="true"><i /><i /><i /></div>}
+        {vendors.error != null && !vendors.data && <p className="empty-hint">Vendor costs could not be loaded. <button type="button" className="text-button" onClick={vendors.refetch}>Retry</button></p>}
+        {vendors.data && (vendors.data.vendors.length === 0
+          ? <p className="empty-hint">No AP costs coded to this site in the last 12 months.</p>
+          : <><table className="vendor-table"><thead><tr><th>Vendor</th><th className="num">Cost</th><th className="num">Share</th><th className="num">Invoices</th><th>GL</th><th>Last invoice</th></tr></thead>
+              <tbody>{vendors.data.vendors.map((v) => <tr key={`${v.vendor_number}-${v.vendor_name}`}>
+                <td><strong>{v.vendor_name}</strong></td>
+                <td className="num">{moneyFull(v.amount)}</td>
+                <td className="num">{v.share === null ? '—' : percent(v.share * 100)}</td>
+                <td className="num">{number(v.invoices)}</td>
+                <td>{v.gl_accounts.map((a) => <span key={a} className="gl-chip">{a}</span>)}</td>
+                <td>{fmtDate(v.last_invoice_date)}</td>
+              </tr>)}</tbody>
+              <tfoot><tr><td><strong>Total</strong></td><td className="num"><strong>{moneyFull(vendors.data.total_cost)}</strong></td><td colSpan={4} /></tr></tfoot>
+            </table>
+            <p className="section-basis">{vendors.data.basis}</p></>)}
+      </section>
+      <section className="site-photos"><h3>Site photos<span className="section-note">CompanyCam</span></h3>
+        {photos.data && !photos.data.configured
+          ? <p className="empty-hint">Not connected. Set <span className="num">COMPANYCAM_API_TOKEN</span> in the server environment, then choose a project match rule from <span className="num">/integrations/companycam/probe</span>.</p>
+          : photos.data && !photos.data.match_rule
+            ? <p className="empty-hint">Connected, but no project match rule is set yet. Run the probe to see how CompanyCam projects identify a site, then set <span className="num">COMPANYCAM_MATCH_RULE</span>.</p>
+            : <div className="skeleton-rows" aria-busy="true"><i /></div>}
+      </section>
     </div>}
   </>
 }

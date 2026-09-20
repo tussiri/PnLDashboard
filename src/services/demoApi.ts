@@ -612,6 +612,28 @@ export function createDemoApi(options: DemoApiOptions = {}): DashboardApi {
 
     portfolioSummary: (query, signal) => settle(() => summary(query), signal),
     jobs: (query, signal) => settle(() => { const { range, metas } = scope(query); return { source, range, jobs: metas.map((meta) => jobRow(meta, range)) } }, signal),
+    siteVendors: (jobNumber, months = 12, signal) => settle(() => {
+      // Seeded vendors so the panel has a shape in demo mode; never a live figure.
+      const meta = demoJobMeta.find((m) => m.job_number === jobNumber)
+      const base = Math.abs((meta?.index ?? 3) + 7) * 4200
+      const rows = [
+        { vendor_name: 'Complete Facilities Maintenance', vendor_number: 1041, invoices: 6, amount: base * 3, gl_accounts: ['44000'] },
+        { vendor_name: 'Brady Plus', vendor_number: 1188, invoices: 21, amount: base, gl_accounts: ['40900'] },
+        { vendor_name: 'Sunbelt Rentals, Inc.', vendor_number: 1352, invoices: 4, amount: base / 2, gl_accounts: ['41001'] },
+      ]
+      const total = rows.reduce((t, r) => t + r.amount, 0)
+      return {
+        job_number: jobNumber,
+        range: { from: DEMO_LATEST_MONTH, to: DEMO_LATEST_MONTH, months },
+        total_cost: total,
+        vendors: rows.map((r) => ({ ...r, share: total ? r.amount / total : null, last_invoice_date: DEMO_LATEST_MONTH })),
+        basis: 'Seeded demo vendors',
+      }
+    }, signal),
+    companycam: (signal) => settle(() => ({
+      configured: false, base_url: 'https://api.companycam.com/v2', match_rule: null,
+      note: 'Demo mode: site photos are not wired.',
+    }), signal),
     job: (jobNumber, months = 24, signal) => settle(() => {
       const meta = demoJobMeta.find((m) => m.job_number === jobNumber)
       if (!meta) throw new ApiError(404, `Job ${jobNumber} not found`, `/jobs/${jobNumber}`)
