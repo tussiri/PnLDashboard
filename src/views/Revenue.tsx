@@ -40,7 +40,11 @@ export function Revenue() {
       <KpiCard label="Revenue per site" loading={summary.loading} value={money(sites ? revenue / sites : null)} delta={null} context={`${sites} active sites`} favorable="none" />
     </div>
     <div className="dashboard-grid">
-      <QueryCard title="Revenue vs budget" subtitle="Trailing 12 months ending the anchor month · USD" className="span-8" query={summary} isEmpty={(s) => !s.monthly.length}>{(s) => <PerformanceTrend data={s.monthly} showGrossProfit={false} />}</QueryCard>
+      {/* The card named a comparison it could not always draw: with no GL revenue budget in range
+          PerformanceTrend renders revenue alone under a title promising two series. The title now
+          follows the data, and the subtitle says the budget is absent rather than leaving a reader
+          hunting for a missing line. */}
+      <QueryCard title={summary.data?.monthly.some((m) => m.budget_revenue !== null) ? 'Revenue vs budget' : 'Revenue'} subtitle={`Trailing 12 months ending the anchor month · USD${summary.data && !summary.data.monthly.some((m) => m.budget_revenue !== null) ? ' · no revenue budget in range' : ''}`} className="span-8" query={summary} isEmpty={(s) => !s.monthly.length}>{(s) => <PerformanceTrend data={s.monthly} showGrossProfit={false} />}</QueryCard>
       <QueryCard title="Revenue by account" subtitle={`${rangeSubtitle(summary.data?.range)} · click to filter sites`} className="span-4" query={summary} isEmpty={(s) => !s.by_account.length}>{() => <GroupBars data={accounts} onSelect={filterToAccount} max={12} />}</QueryCard>
     </div>
     <div className="dashboard-grid">

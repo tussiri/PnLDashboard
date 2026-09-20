@@ -1,7 +1,10 @@
-import { ACCOUNT_ROW, PORTFOLIO_ROW, type DeliveryModel, type ForecastAccuracy, type ForecastMetric, type ForecastRow } from '../services/apiTypes'
+import { ACCOUNT_ROW, PORTFOLIO_ROW, SCOPE_ROW, type DeliveryModel, type ForecastAccuracy, type ForecastMetric, type ForecastRow } from '../services/apiTypes'
 import { percent } from '../utils'
 
-export const isAggregateRow = (jobNumber: string) => jobNumber === PORTFOLIO_ROW || jobNumber === ACCOUNT_ROW
+/** An engine aggregate lead row. Its job_number is a sentinel, never a site code, so it is not
+ *  rendered as one. */
+export const isAggregateRow = (jobNumber: string) =>
+  jobNumber === PORTFOLIO_ROW || jobNumber === ACCOUNT_ROW || jobNumber === SCOPE_ROW
 
 /**
  * The rows behind the headline cards. With an account selected only the `__ACCOUNT__` aggregate

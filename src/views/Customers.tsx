@@ -5,7 +5,7 @@ import { DataGrid, type Column } from '../components/DataGrid'
 import { KpiCard } from '../components/KpiCard'
 import { useDashboard } from '../context/DashboardContext'
 import type { AccountRow, AccountsResponse } from '../services/apiTypes'
-import { money, moneyFull, number, percent, sum } from '../utils'
+import { isMeaningfulMargin, marginPercent, money, moneyFull, number, percent, sum } from '../utils'
 import { DemoNotice, rangeSubtitle, ScopeLine, StatusBadge, useReportingParams, useReportQuery } from './shared'
 
 export function Customers() {
@@ -20,7 +20,7 @@ export function Customers() {
     { key: 'parent_account', header: 'Account', render: (r) => <><strong>{r.parent_account}</strong><span className="muted"> {r.customer_numbers.filter(Boolean).join(', ')}</span></> },
     { key: 'jobs', header: 'Sites', numeric: true },
     { key: 'revenue', header: 'Revenue', numeric: true, render: (r) => moneyFull(r.revenue) },
-    { key: 'gross_margin_pct', header: 'Margin', numeric: true, className: (r) => ((r.gross_margin_pct ?? 0) < 20 ? 'text-bad' : 'text-good'), render: (r) => percent(r.gross_margin_pct) },
+    { key: 'gross_margin_pct', header: 'Margin', numeric: true, className: (r) => (!isMeaningfulMargin(r.gross_margin_pct) ? 'text-muted' : (r.gross_margin_pct ?? 0) < 20 ? 'text-bad' : 'text-good'), render: (r) => marginPercent(r.gross_margin_pct) },
     { key: 'labor_pct', header: 'Labor %', numeric: true, value: (r) => (r.revenue ? (r.labor_cost / r.revenue) * 100 : null), render: (r) => percent(r.revenue ? (r.labor_cost / r.revenue) * 100 : null) },
     { key: 'ot_pct', header: 'OT %', numeric: true, value: (r) => (r.hours ? (r.overtime_hours / r.hours) * 100 : null), render: (r) => percent(r.hours ? (r.overtime_hours / r.hours) * 100 : null) },
     { key: 'ar_open', header: 'Open AR', numeric: true, render: (r) => moneyFull(r.ar_open) },

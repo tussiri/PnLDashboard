@@ -99,7 +99,7 @@ export function Forecast() {
   const horizons = [1, 2, 3]
   const horizonMonth = (h: number) => portfolioRows[h - 1]?.forecast_month ?? siteRows[0]?.steps.find((s) => s.horizon_step === h)?.forecast_month
   const siteColumns: Column<SiteForecastRow>[] = [
-    { key: 'job_name', header: 'Site', render: (r) => <><strong>{r.job_name}</strong><span className="muted"> {r.job_number}</span>{r.delivery_model === 'subcontracted' && <span className="tag-chip tag-chip--sub">Subcontracted</span>}</> },
+    { key: 'job_name', header: 'Site', render: (r) => <><strong>{r.job_name}</strong>{!isAggregateRow(r.job_number) && <span className="muted"> {r.job_number}</span>}{r.delivery_model === 'subcontracted' && <span className="tag-chip tag-chip--sub">Subcontracted</span>}</> },
     ...(!account ? [{ key: 'parent_account', header: 'Account', value: (r: SiteForecastRow) => r.parent_account ?? '', render: (r: SiteForecastRow) => r.parent_account ?? <span className="muted">—</span> } as Column<SiteForecastRow>] : []),
     ...(hasDelivery ? [{ key: 'delivery_model', header: 'Delivery', value: (r: SiteForecastRow) => r.delivery_model ?? '', render: (r: SiteForecastRow) => <span className={`tag-chip ${r.delivery_model === 'subcontracted' ? 'tag-chip--sub' : ''}`}>{deliveryLabel(r.delivery_model)}</span> } as Column<SiteForecastRow>] : []),
     { key: 'method', header: 'Method', render: (r) => <span className="method-chip">{r.method.replace(/_/g, ' ')}</span> },
@@ -132,7 +132,7 @@ export function Forecast() {
   return <>
     <DemoNotice>Seeded forecast run in the v2 engine contract shape; not produced by the engine.</DemoNotice>
     <section className="forecast-hero forecast-hero--governed">
-      <div>{run ? <><h2 className="num">{run.engine_version}</h2><p>Latest closed month {monthLabel(run.latest_closed_month, 'long')} · generated {fmtDateTime(run.generated_at)} · horizon {run.horizon_months} months · run {String(run.run_id)}</p></> : <><h2>No validated forecast run</h2><p>No run in the forecast marts; only observed history is shown.</p></>}</div>
+      <div>{run ? <><h2>{run.horizon_months}-month forecast · {metricLabel[metric]}</h2><p>Closed through {monthLabel(run.latest_closed_month, 'long')} · generated {fmtDateTime(run.generated_at)} · engine {run.engine_version} · run <span className="num" title={String(run.run_id)}>{String(run.run_id).slice(0, 8)}</span></p></> : <><h2>No validated forecast run</h2><p>No run in the forecast marts; only observed history is shown.</p></>}</div>
       <div className={`model-status ${run ? 'model-status--live' : 'model-status--demo'}`}>{run ? <><span><ShieldCheck size={14} />Validated run</span><strong>{forecasts.data ? `${siteRows.length} sites forecast` : '—'}</strong><small>{forecasts.data?.not_forecast.length ?? 0} not forecast · {metricLabel[metric]}</small></> : <><span><FlaskConical size={14} />Awaiting engine run</span><strong>History only</strong>{mode === 'live' && <button className="secondary-button" onClick={rebuild} disabled={rebuilding || !canRebuild} title={canRebuild ? 'POST /forecasts/rebuild' : 'Requires an administrator session or the admin token'}><RefreshCw size={13} className={rebuilding ? 'spin' : ''} />Rebuild forecasts</button>}</>}</div>
     </section>
     <div className="forecast-toolbar">

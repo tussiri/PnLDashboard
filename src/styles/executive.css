@@ -1,38 +1,31 @@
 /*
- * Executive labor P&L view - a faithful port of the executive team's "Labor P&L Dashboard" stylesheet.
- * Every rule is scoped under .exec-pl so the original's element selectors (table, th, select, header,
- * footer, h1) cannot leak into the Northstar shell. Variables, sizes and palettes match the original.
+ * Executive labor P&L view.
+ *
+ * The layout, density and card anatomy are the executives' own "Labor P&L Dashboard", kept
+ * deliberately. What is NOT kept is a second visual system: this view used to ship its own font
+ * stack, its own warm-grey surfaces and its own status palette, so the flagship page read as a
+ * different product from every other view. The block below now only ALIASES the shared tokens, so
+ * roughly two hundred downstream rules inherit the Crane IFS palette untouched.
+ *
+ * --text and --border are deliberately absent: they collide with the shell's own token names, so
+ * they are left to inherit from :root rather than aliased (a self-referential custom property is
+ * invalid and would silently drop the value).
  */
 .exec-pl{
-  --bg:#ffffff;--bg2:#f5f5f3;--bg3:#efefec;
-  --text:#1a1a18;--text2:#5a5a56;--text3:#8a8a85;
-  --border:rgba(0,0,0,0.1);--border2:rgba(0,0,0,0.2);
-  --ok:#2d7a3a;--ok-bg:#eaf3de;--warn:#85510b;--warn-bg:#faeeda;--bad:#a32d2d;--bad-bg:#fcebeb;
+  --bg:var(--surface);--bg2:var(--surface-2);--bg3:var(--page);
+  --text2:var(--muted);--text3:var(--meta-ink);
+  --border2:#cbd4df;
+  --ok:var(--green);--ok-bg:var(--green-soft);
+  --warn:var(--amber-ink);--warn-bg:var(--amber-soft);
+  --bad:var(--red);--bad-bg:var(--red-soft);
   --r:8px;--rl:12px;
   box-sizing:border-box;
   background:var(--bg3);color:var(--text);
-  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:14px;line-height:normal;
+  font-family:inherit;font-size:14px;line-height:normal;
   /* Full-bleed inside .page-content (24px 26px 34px; 18px 14px 28px under 720px). */
   margin:-24px -26px -34px;padding:20px;min-height:calc(100% + 58px);
 }
-/*
- * Dark palette (verbatim from the original). The Northstar shell has no dark theme yet, so it is
- * opt-in: add .exec-pl--dark, or .exec-pl--auto to follow prefers-color-scheme like the original.
- */
-.exec-pl.exec-pl--dark{
-  --bg:#1e1e1c;--bg2:#282826;--bg3:#303030;
-  --text:#e8e6de;--text2:#a8a69e;--text3:#6a6a65;
-  --border:rgba(255,255,255,0.1);--border2:rgba(255,255,255,0.2);
-  --ok:#7fc98a;--ok-bg:#1a2e1d;--warn:#f0c060;--warn-bg:#2e2510;--bad:#e88080;--bad-bg:#2e1515;
-}
-@media(prefers-color-scheme:dark){.exec-pl.exec-pl--auto{
-  --bg:#1e1e1c;--bg2:#282826;--bg3:#303030;
-  --text:#e8e6de;--text2:#a8a69e;--text3:#6a6a65;
-  --border:rgba(255,255,255,0.1);--border2:rgba(255,255,255,0.2);
-  --ok:#7fc98a;--ok-bg:#1a2e1d;--warn:#f0c060;--warn-bg:#2e2510;--bad:#e88080;--bad-bg:#2e1515;
-}}
 .exec-pl{color-scheme:light}
-.exec-pl.exec-pl--dark{color-scheme:dark}
 @media(max-width:720px){.exec-pl{margin:-18px -14px -28px;padding:20px 14px}}
 .exec-pl *,.exec-pl *::before,.exec-pl *::after{box-sizing:border-box}
 .exec-pl p,.exec-pl h1,.exec-pl h2,.exec-pl table{margin:0;padding:0}
@@ -75,7 +68,7 @@
 .exec-pl .lgd{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:8px}
 .exec-pl .lgd span{display:flex;align-items:center;gap:5px;font-size:12px;color:var(--text2)}
 .exec-pl .ld{width:10px;height:10px;border-radius:2px;flex-shrink:0}
-.exec-pl .ldo{width:10px;height:10px;border-radius:2px;border:2px solid #888;background:transparent;flex-shrink:0}
+.exec-pl .ldo{width:10px;height:10px;border-radius:2px;border:2px solid var(--text3);background:transparent;flex-shrink:0}
 .exec-pl .kpi-lg{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px}
 .exec-pl .kpi-lg .kpi .kv{font-size:22px}
 .exec-pl .kpi-lg.kpi6{grid-template-columns:repeat(6,1fr)}

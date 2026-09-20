@@ -5,8 +5,8 @@ import { DataGrid, type Column } from '../components/DataGrid'
 import { useDashboard } from '../context/DashboardContext'
 import type { JobRow } from '../services/apiTypes'
 import type { DeliveryFilter } from '../types'
-import { money, moneyFull, number, percent, signed } from '../utils'
-import { DemoNotice, rangeSubtitle, ScopeLine, StatusBadge, useJobsQuery } from './shared'
+import { isMeaningfulMargin, money, moneyFull, number, percent, signed } from '../utils'
+import { DemoNotice, MarginCell, rangeSubtitle, ScopeLine, StatusBadge, useJobsQuery } from './shared'
 import { deliveryLabel } from './forecastShared'
 
 
@@ -30,7 +30,7 @@ export function Jobs() {
     ...(hasDelivery ? [{ key: 'delivery_model', header: 'Delivery', value: (r: JobRow) => r.delivery_model ?? '', render: (r: JobRow) => deliveryLabel(r.delivery_model) } as Column<JobRow>] : []),
     { key: 'branch', header: 'Branch', render: (r) => <>{r.branch}<span className="muted"> · {r.city}, {r.state_province}</span></> },
     { key: 'revenue', header: 'Revenue', numeric: true, render: (r) => moneyFull(r.revenue) },
-    { key: 'gross_margin_pct', header: 'Margin', numeric: true, className: (r) => ((r.gross_margin_pct ?? 0) < 18 ? 'text-bad' : (r.gross_margin_pct ?? 0) < 25 ? 'text-warn' : 'text-good'), render: (r) => percent(r.gross_margin_pct) },
+    { key: 'gross_margin_pct', header: 'Margin', numeric: true, className: (r) => (!isMeaningfulMargin(r.gross_margin_pct) ? 'text-muted' : (r.gross_margin_pct ?? 0) < 18 ? 'text-bad' : (r.gross_margin_pct ?? 0) < 25 ? 'text-warn' : 'text-good'), render: (r) => <MarginCell job={r} /> },
     { key: 'labor_variance', header: 'Labor var.', numeric: true, className: (r) => (r.labor_variance === null ? undefined : r.labor_variance > 0 ? 'text-bad' : 'text-good'), render: (r) => (r.labor_variance === null ? <span className="muted">no budget</span> : signed(r.labor_variance, (v) => money(v))) },
     { key: 'ot_pct', header: 'OT %', numeric: true, value: (r) => (r.hours ? (r.overtime_hours / r.hours) * 100 : null), className: (r) => ((r.hours ? (r.overtime_hours / r.hours) * 100 : 0) > 15 ? 'text-bad' : (r.hours ? (r.overtime_hours / r.hours) * 100 : 0) > 10 ? 'text-warn' : undefined), render: (r) => percent(r.hours ? (r.overtime_hours / r.hours) * 100 : null) },
     { key: 'hours_variance', header: 'Hours var.', numeric: true, className: (r) => (r.hours_variance > 0 ? 'text-bad' : 'text-good'), render: (r) => `${signed(r.hours_variance, (v) => number(v))} h` },

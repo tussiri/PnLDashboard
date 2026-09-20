@@ -15,6 +15,47 @@ export const moneyFull = (value: number | null | undefined, digits = 0) =>
 export const moneyTick = (value: number) => (Math.abs(value) >= 1_000_000 ? money(value, 1) : money(value, 0))
 
 export const percent = (value: number | null | undefined, digits = 1) => (value === null || value === undefined || Number.isNaN(value) ? '—' : `${value.toFixed(digits)}%`)
+/**
+ * A ratio is reported only where it means something.
+ *
+ * A site billed $4.9K that carries $338K of labor produces a gross margin of -6,785%, and one with
+ * cost missing entirely produces exactly 100%. Both are arithmetic, neither is a margin, and
+ * printing them puts numbers on an executive page that a reader has to know to discount. Finance
+ * reporting says "n/m" for this, and so do we: the row stays, the figure is withheld, and the
+ * reason is available on the cell.
+ *
+ * MEANINGFUL_MARGIN_LIMIT is deliberately generous - a genuinely bad site can post -150% - so this
+ * catches broken denominators, not bad performance.
+ */
+export const MEANINGFUL_MARGIN_LIMIT = 200
+
+/**
+ * The upper bound matters as much as the lower one. A facilities site always carries labor or
+ * subcontract cost, so a margin at or above this is not an excellent site - it is a site whose cost
+ * never landed. "Best site margin 100.0%" was Crowley - Police Dept with nothing booked against it,
+ * and it crowned the KPI over every real performer.
+ */
+export const COSTLESS_MARGIN_FLOOR = 99.5
+
+export const isMeaningfulMargin = (value: number | null | undefined): boolean =>
+  value !== null && value !== undefined && !Number.isNaN(value)
+  && Math.abs(value) <= MEANINGFUL_MARGIN_LIMIT && value < COSTLESS_MARGIN_FLOOR
+
+export const NOT_MEANINGFUL = 'n/m'
+
+/** Percent for a ratio that can have a broken denominator; `n/m` instead of a nonsense figure. */
+export const marginPercent = (value: number | null | undefined, digits = 1) =>
+  value === null || value === undefined || Number.isNaN(value)
+    ? '\u2014'
+    : isMeaningfulMargin(value) ? `${value.toFixed(digits)}%` : NOT_MEANINGFUL
+
+/** Why a margin was withheld, for a title attribute beside the `n/m`. */
+export const notMeaningfulReason = (revenue: number | null | undefined, cost?: number | null) =>
+  !revenue ? 'No revenue booked for this period'
+    : !cost ? 'No cost booked against this revenue; the period is incomplete'
+    : cost > Math.abs(revenue) * 3 ? 'Cost far exceeds billed revenue; the period is incomplete'
+    : 'Outside a reportable range'
+
 export const number = (value: number | null | undefined, digits = 0) => (value === null || value === undefined || Number.isNaN(value) ? '—' : new Intl.NumberFormat('en-US', { maximumFractionDigits: digits, minimumFractionDigits: digits }).format(value))
 export const hours = (value: number | null | undefined) => (value === null || value === undefined ? '—' : `${number(value)} h`)
 export const signed = (value: number | null | undefined, format: (v: number) => string) => (value === null || value === undefined || Number.isNaN(value) ? '—' : `${value > 0 ? '+' : value < 0 ? '−' : ''}${format(Math.abs(value))}`)

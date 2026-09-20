@@ -21,6 +21,7 @@ from ..common import (PRIMARY_SOURCES, configured_key_accounts, month_status_row
                       require_admin)
 from ..config import settings
 from ..db import connection, database_ready
+from .. import reconcile
 from ..sources import finance_reference
 from ..winteam import RESOURCES, WinTeamError, winteam
 
@@ -231,13 +232,65 @@ def integration_runs(limit: int = Query(25, ge=1, le=200)) -> dict[str, Any]:
     return {"runs": runs}
 
 
+# A resource is overdue when the worker has not completed it for several poll intervals. The worker
+# can stop producing rows without failing (a hung sync leaves no failed run), so "last_status:
+# succeeded" is not evidence of freshness on its own - on 2026-09-10 a self-deadlocked worker went
+# 9 days reporting nothing but "succeeded". Resources the tenant is not entitled to (HTTP 403) never
+# complete by design and are never counted as overdue.
+OVERDUE_POLL_INTERVALS = 3
+OVERDUE_FLOOR_SECONDS = 3600
+
+# finance_reference is the PRIMARY source of the job-cost P&L (revenue, direct labor, subcontract
+# cost by site and month) and is loaded by hand from a restored dump - nothing polls it. Left
+# unreloaded it does not go blank, it goes SHORT: timekeeping keeps arriving from the live API
+# while revenue stops at the last exported month, so the newest months show labor against little or
+# no revenue and read as a collapse in margin. The export follows the monthly close, so a load older
+# than this is behind by at least one closed month and the P&L months it feeds cannot be trusted.
+REFERENCE_STALE_AFTER_SECONDS = 7 * 86400
+
+
+def _overdue_after_seconds() -> int:
+    return max(settings.poll_seconds * OVERDUE_POLL_INTERVALS, OVERDUE_FLOOR_SECONDS)
+
+
+def _mark_overdue(resource: dict[str, Any], limit: int) -> dict[str, Any]:
+    """Add `overdue` / `not_entitled` / `overdue_after_seconds` to one freshness row.
+
+    Only a resource the worker is actually configured to poll can be behind. The view lists every
+    resource name that has ever appeared in ops.integration_sync_run, which includes the
+    finance_reference loader's steps and resources retired from the catalogue; those carry
+    `overdue: None` rather than being judged against a schedule that was never theirs.
+    """
+    name = resource.get("resource_name")
+    polled = name in RESOURCES and name in settings.winteam_resources
+    not_entitled = (resource.get("last_status") == "failed"
+                    and "not_entitled" in (resource.get("last_error") or ""))
+    age = resource.get("seconds_since_last_completion")
+    resource["overdue_after_seconds"] = limit if polled else None
+    resource["not_entitled"] = not_entitled
+    resource["overdue"] = (
+        bool(not not_entitled and (age is None or int(age) > limit)) if polled else None
+    )
+    return resource
+
+
+@router.get("/data/reconciliation")
+def data_reconciliation(months: int = Query(6, ge=1, le=24)) -> dict[str, Any]:
+    """Prove the published figures trace to WinTeam payloads (app.reconcile).
+
+    `raw -> core` must agree to the cent. `suppressed_ar` is invoiced AR the mart publishes as zero
+    revenue - never correct, and the defect that hid $9.7M across July and August 2026.
+    """
+    return reconcile.ar_chain(months=months)
+
+
 @router.get("/data/freshness")
 def data_freshness() -> dict[str, Any]:
     with connection() as conn, conn.cursor() as cursor:
         cursor.execute(
             """
             SELECT resource_name, last_status, last_completed_at, records_fetched, records_inserted,
-                   watermark_value, seconds_since_last_completion
+                   last_error, watermark_value, seconds_since_last_completion
             FROM mart.v_winteam_ingestion_freshness
             """
         )
@@ -254,6 +307,7 @@ def data_freshness() -> dict[str, Any]:
                     "last_completed_at": None,
                     "records_fetched": None,
                     "records_inserted": None,
+                    "last_error": None,
                     "watermark_value": None,
                     "seconds_since_last_completion": None,
                 }
@@ -261,16 +315,33 @@ def data_freshness() -> dict[str, Any]:
     reference_names = {"load", "reset", "settings", "stage", "dim_job", "fact_job_cost_month", "fact_labor_budget_month",
                        "fact_timekeeping", "fact_ar_invoice", "fact_ap_invoice"}
     resources.extend(v for k, v in by_name.items() if k not in reference_names)  # historical resource names no longer in the catalogue
+    limit = _overdue_after_seconds()
+    resources = [_mark_overdue(r, limit) for r in resources]
+    overdue = [r["resource_name"] for r in resources if r["overdue"]]  # None (not polled) is not overdue
     reference = finance_reference.last_load()
+    reference_age = (
+        int((datetime.now(timezone.utc) - datetime.fromisoformat(reference["completed_at"])).total_seconds())
+        if reference and reference.get("completed_at") else None
+    )
+    reference_stale = bool(
+        settings.finance_reference_configured
+        and (reference_age is None or reference_age > REFERENCE_STALE_AFTER_SECONDS)
+    )
     return {
         "resources": resources,
+        "ingestion": {
+            "healthy": not overdue and not reference_stale,
+            "overdue_resources": overdue,
+            "overdue_after_seconds": limit,
+            "poll_seconds": settings.poll_seconds,
+            "reference_stale": reference_stale,
+            "reference_stale_after_seconds": REFERENCE_STALE_AFTER_SECONDS,
+        },
         "finance_reference": {
             "configured": settings.finance_reference_configured,
             "last_load": reference,
-            "seconds_since_last_completion": (
-                int((datetime.now(timezone.utc) - datetime.fromisoformat(reference["completed_at"])).total_seconds())
-                if reference and reference.get("completed_at") else None
-            ),
+            "seconds_since_last_completion": reference_age,
+            "stale": reference_stale,
         },
         "marts": _marts_block(),
     }

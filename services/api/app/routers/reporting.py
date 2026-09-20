@@ -200,8 +200,21 @@ def evaluate(row: dict[str, Any], margin_target: float) -> list[dict[str, Any]]:
     """Alerts for one job/account aggregate; the status is derived from the worst severity."""
     alerts: list[dict[str, Any]] = []
     revenue = f0(row.get("revenue"))
-    if revenue > 0:
-        margin = f0(row.get("gross_profit")) / revenue
+    margin = f0(row.get("gross_profit")) / revenue if revenue > 0 else None
+    # A margin outside +/-200 % is a broken denominator, not performance: a site billed $4.9K
+    # carrying $338K of labor posts -6,785 %. Firing "critical" on those made 371 of 526 sites
+    # Critical - 70 % of the portfolio - which trains a reader to ignore the badge entirely. The
+    # site still appears and still reports its other alerts; only the margin test is withheld, and
+    # `margin_not_meaningful` says so instead of leaving the omission silent.
+    # The upper bound matters too: a facilities site always carries labor or subcontract cost, so a
+    # margin at or above 99.5 % is cost that never landed, not an excellent site. (Server margins are
+    # fractions; the browser applies the same two bounds in utils.ts.)
+    margin_meaningful = margin is not None and abs(margin) <= 2.0 and margin < 0.995
+    if margin is not None and not margin_meaningful:
+        alerts.append(_alert("margin_not_meaningful", "info",
+                             f"Gross margin is not meaningful ({margin:.0%}); revenue or cost is incomplete for this period",
+                             margin, 2.0))
+    if margin_meaningful:
         if margin < margin_target - 0.07:
             alerts.append(_alert("margin", "critical", f"Gross margin {margin:.1%} is more than 7 pts below the {margin_target:.0%} target", margin, margin_target - 0.07))
         elif margin < margin_target:
@@ -234,9 +247,10 @@ def _alert(kind: str, severity: str, detail: str, value: float, threshold: float
 
 
 def status_from(alerts: list[dict[str, Any]]) -> str:
+    """Worst severity wins. `info` alerts are disclosures, not findings, and never set a status."""
     if any(a["severity"] == "critical" for a in alerts):
         return "Critical"
-    if alerts:
+    if any(a["severity"] == "watch" for a in alerts):
         return "Watch"
     return "Healthy"
 

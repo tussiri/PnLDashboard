@@ -220,10 +220,28 @@ lb AS (
   GROUP BY jb.job_key, l.month
 ),
 jc_months AS (
-  -- CLOSED months covered by a job-cost import: revenue and cost come ONLY from the job-cost P&L
-  -- there (a job without a job-cost row in such a month has 0 job-cost revenue, never its AR
-  -- amount). A month is closed once month_end + close_lag_days is in the past; an in-progress
-  -- month's job-cost import is partial (invoicing still running) and is labelled job_cost_partial.
+  -- CLOSED months covered by a job-cost import: a job WITH a job-cost row in such a month takes its
+  -- revenue and cost from the job-cost P&L, never from AR, so the finance-approved figure wins
+  -- wherever it exists. A job the export SKIPPED falls back to its own AR and timekeeping and says
+  -- so in revenue_basis / labor_basis; it is not reported as zero.
+  --
+  -- A job-cost row is only taken when it actually carries revenue. The export ships half-posted
+  -- months as rows with revenue 0 and real labor (data_quality_status = 'warning'), and taking those
+  -- literally suppressed $4.34M of invoiced July AR and $5.39M of August across 334 job-months -
+  -- job 500's August read $0 against $517,334.27 that WinTeam had already invoiced. A row with no
+  -- revenue is not a P&L; the job falls back to its own AR and says so. Where the month genuinely
+  -- had no billing, AR is 0 too and `greatest` still yields 0, so a real zero is preserved.
+  --
+  -- This gate used to be month-level only: one job-cost row anywhere in a month forced every job in
+  -- that month onto the job-cost basis, and a job absent from the export was published at 0 revenue
+  -- against a full month of labor. That assumes the export is complete for a closed month. The
+  -- 2026-09-03 export covers July partially and August barely, so July understated revenue by
+  -- $3.66M (two fifths of it) and August by $7.86M (five sixths) - the business appeared to
+  -- collapse. Per-row bases
+  -- already exist for exactly this; mixed bases within a month are disclosed, not prevented.
+  --
+  -- A month is closed once month_end + close_lag_days is in the past; an in-progress month's
+  -- job-cost import is partial (invoicing still running) and is labelled job_cost_partial.
   SELECT DISTINCT month FROM core.fact_job_cost_month
   WHERE (month + interval '1 month' - interval '1 day')::date
         + coalesce((SELECT (value #>> '{}')::int FROM ops.app_setting WHERE key = 'close_lag_days'), 5) < current_date
@@ -248,9 +266,11 @@ assembled AS (
     jb.region_name, jb.branch_name, jb.service_type, jb.vertical, jb.manager_name,
     jb.city, jb.state_province, jb.country_code, jb.latitude, jb.longitude, k.month, jb.is_active,
     jb.company, jb.delivery_model, jb.geo_precision, coalesce(jc.source, jb.source) AS source,
-    jm.month IS NOT NULL AS has_jc,
-    jc.job_key IS NULL AND jm.month IS NOT NULL AS missing_jc_row,
-    CASE WHEN jm.month IS NOT NULL THEN coalesce(jc.revenue, 0) ELSE greatest(coalesce(ar.revenue, 0), coalesce(jc.revenue, 0)) END AS revenue,
+    jm.month IS NOT NULL AND jc.job_key IS NOT NULL AND coalesce(jc.revenue, 0) <> 0 AS has_jc,
+    jm.month IS NOT NULL AND (jc.job_key IS NULL OR coalesce(jc.revenue, 0) = 0) AS missing_jc_row,
+    CASE WHEN jm.month IS NOT NULL AND jc.job_key IS NOT NULL AND coalesce(jc.revenue, 0) <> 0
+           THEN jc.revenue
+         ELSE greatest(coalesce(ar.revenue, 0), coalesce(jc.revenue, 0)) END AS revenue,
     coalesce(ar.invoiced_total, 0) AS invoiced_total,
     coalesce(ar.collected_total, 0) AS collected_total,
     coalesce(ar.invoice_count, 0) AS invoice_count,
@@ -261,10 +281,11 @@ assembled AS (
     CASE WHEN tk.job_key IS NOT NULL THEN tk.overtime_hours
          WHEN jc.job_key IS NOT NULL THEN coalesce(jc.overtime_hours, 0) ELSE 0 END AS overtime_hours,
     coalesce(tk.double_time_hours, 0) AS double_time_hours,
-    CASE WHEN jm.month IS NOT NULL THEN coalesce(jc.direct_labor, 0)
+    CASE WHEN jm.month IS NOT NULL AND jc.job_key IS NOT NULL THEN coalesce(jc.direct_labor, 0)
          WHEN tk.job_key IS NOT NULL THEN coalesce(tk.labor_cost, 0)
          ELSE coalesce(jc.direct_labor, 0) END AS labor_cost,
-    CASE WHEN jm.month IS NOT NULL THEN 0 ELSE round(coalesce(tk.labor_cost, 0) * %(burden)s::numeric, 2) END AS burden_cost,
+    CASE WHEN jm.month IS NOT NULL AND jc.job_key IS NOT NULL THEN 0
+         ELSE round(coalesce(tk.labor_cost, 0) * %(burden)s::numeric, 2) END AS burden_cost,
     CASE WHEN jc.job_key IS NOT NULL THEN coalesce(jc.payroll_taxes_insurance, 0) ELSE 0 END AS payroll_ti_cost,
     CASE WHEN jc.job_key IS NOT NULL THEN coalesce(jc.subcontractors, 0) ELSE 0 END AS subcontract_cost,
     CASE WHEN jc.job_key IS NOT NULL THEN coalesce(jc.materials, 0) + coalesce(jc.equipment_supplies, 0) ELSE 0 END AS supplies_cost,
@@ -284,10 +305,10 @@ assembled AS (
     coalesce(tk.work_days, 0) AS work_days,
     tk.last_work_date,
     jc.data_quality_status AS jc_quality,
-    CASE WHEN jm.month IS NOT NULL THEN 'job_cost'
+    CASE WHEN jm.month IS NOT NULL AND jc.job_key IS NOT NULL AND coalesce(jc.revenue, 0) <> 0 THEN 'job_cost'
          WHEN coalesce(jc.revenue, 0) > coalesce(ar.revenue, 0) THEN 'job_cost_partial'
          WHEN ar.job_key IS NOT NULL THEN 'ar_invoice' END AS revenue_basis,
-    CASE WHEN jm.month IS NOT NULL THEN 'job_cost'
+    CASE WHEN jm.month IS NOT NULL AND jc.job_key IS NOT NULL THEN 'job_cost'
          WHEN tk.job_key IS NOT NULL THEN coalesce(tk.labor_basis, 'hours_x_rate')
          WHEN jc.job_key IS NOT NULL THEN 'job_cost_partial' END AS labor_basis
   FROM keys k

@@ -6,6 +6,7 @@ import { useApiQuery, type QueryState } from '../hooks/useApiQuery'
 import type { JobRow, JobStatus, JobsResponse, RangeBlock, ReportingQuery, ScopeBlock, SourceBlock } from '../services/apiTypes'
 import type { DashboardApi } from '../services/dataSource'
 import { rangeLabel } from '../services/period'
+import { isMeaningfulMargin, marginPercent, notMeaningfulReason } from '../utils'
 import type { PageKey } from '../types'
 
 type Ranged = { range?: RangeBlock; source?: SourceBlock }
@@ -105,3 +106,16 @@ export const jobLabel = (row: Pick<JobRow, 'job_name' | 'job_number'>) => `${row
  * `portfolioFilterPages`; exported here so the shell can consume it without this file depending on App.
  */
 export const EXECUTIVE_VIEW_KEYS: ReadonlySet<PageKey> = new Set<PageKey>(['overview'])
+
+
+/**
+ * A site's gross margin, or `n/m` where the denominator is broken.
+ *
+ * The figure is withheld rather than the row, so the site stays findable and sortable; the title
+ * names why. See `isMeaningfulMargin` for the threshold and the reasoning behind it.
+ */
+export function MarginCell({ job }: { job: JobRow }) {
+  const value = job.gross_margin_pct ?? (job.revenue ? (job.gross_profit / job.revenue) * 100 : null)
+  if (isMeaningfulMargin(value)) return <>{marginPercent(value)}</>
+  return <abbr className="not-meaningful" title={notMeaningfulReason(job.revenue, job.labor_cost)}>{marginPercent(value)}</abbr>
+}

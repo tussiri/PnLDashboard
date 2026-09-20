@@ -218,12 +218,33 @@ export interface FreshnessResource {
   last_completed_at: string | null
   records_fetched: number | null
   records_inserted: number | null
+  last_error: string | null
   watermark_value: string | null
   seconds_since_last_completion: number | null
+  /** The last run is older than `overdue_after_seconds`. null when the resource is not on the
+   *  worker's schedule (a retired name, or a finance_reference loader step). */
+  overdue: boolean | null
+  overdue_after_seconds: number | null
+  /** The tenant is not entitled to this resource (HTTP 403); it never completes and is never overdue. */
+  not_entitled: boolean
+}
+
+export interface IngestionHealth {
+  /** False when a polled WinTeam resource is overdue OR the finance_reference export is stale. */
+  healthy: boolean
+  overdue_resources: string[]
+  overdue_after_seconds: number
+  poll_seconds: number
+  /** The hand-loaded job-cost export is behind; the newest P&L months carry labor without revenue. */
+  reference_stale?: boolean
+  reference_stale_after_seconds?: number
 }
 
 export interface FreshnessResponse {
   resources: FreshnessResource[]
+  /** Whether every polled resource has completed within its window. A hung worker leaves the run
+   *  rows saying "succeeded", so this is the only field that distinguishes live from stalled. */
+  ingestion?: IngestionHealth
   /** Per-source run summary when the API exposes both sources here (mirrors system/status.sources). */
   sources?: SourceStatus[]
   marts: MartsStatus & { last_rebuild_status?: string | null; portfolio_month_rows?: number } & Record<string, unknown>
@@ -792,6 +813,8 @@ export type ForecastMetric = 'revenue' | 'gross_profit' | 'labor_cost' | 'subcon
 /** Aggregate row identifiers: `__ALL__` = whole portfolio (only when no account is selected); `__ACCOUNT__` = the selected account. */
 export const PORTFOLIO_ROW = '__ALL__'
 export const ACCOUNT_ROW = '__ACCOUNT__'
+/** Lead row of a run narrowed by scope rather than by account (routers/forecast.py). */
+export const SCOPE_ROW = '__SCOPE__'
 
 export interface RunMeta {
   run_id: string | number

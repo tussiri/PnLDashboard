@@ -27,14 +27,29 @@ export const GRID = 'rgba(128,128,128,0.10)'
 const GRID_WEEK = 'rgba(128,128,128,0.08)'
 const GRID_MONTH = 'rgba(128,128,128,0.30)'
 const BAND = 'rgba(128,128,128,0.13)'
-const TARGET = '#8a8a85'
+const TARGET = '#69717d'
 
-/** Colours the overview uses for series that are not BU attributes. Validated (dataviz palette checks) against every BU colour. */
-export const TOTAL_COLOR = '#378ADD'
-export const COST_COLOR = '#6B4FBB'
-export const OT_COLOR = '#E8593C'
-export const VENDOR_COLOR = '#B7791F'
-export const MARGIN_COLOR = '#8a94a6'
+/**
+ * Categorical colours for series that are not BU attributes.
+ *
+ * Validated with the dataviz palette checker (lightness band, chroma floor, CVD separation,
+ * normal-vision floor, surface contrast) in this exact order, which is the order the checker treats
+ * as adjacent. The set it replaces failed three checks outright: #B7791F (vendor) and #E8593C (OT)
+ * sat 2.7 deltaE apart under deuteranopia and 11.5 under normal vision - the two cost lines an
+ * executive compares were effectively one colour for a red-green colourblind reader - and
+ * #8a94a6 (margin) fell below the chroma floor, reading as plain grey rather than a category.
+ *
+ * Under `--pairs all` this set still reports OT against VENDOR at 11.5 deltaE. That pair is not
+ * binding here: no chart on this page carries all five series, and OT and vendor never appear on
+ * the same chart (OT has its own trend card; vendor is drawn against TOTAL). Every chart with two
+ * or more series also ships a legend and direct labels, so identity never rests on hue alone.
+ * Re-run the checker before adding a series or combining two of these on one chart.
+ */
+export const TOTAL_COLOR = '#1d6fd0'
+export const VENDOR_COLOR = '#b45309'
+export const MARGIN_COLOR = '#0b8a7a'
+export const COST_COLOR = '#a21caf'
+export const OT_COLOR = '#be123c'
 
 export interface ExecSeries {
   id: string
@@ -83,7 +98,9 @@ function themeOf(chart: ChartJS) {
   const el = chart.canvas.closest('.exec-pl')
   const cs = el ? getComputedStyle(el) : null
   const get = (name: string, fallback: string) => cs?.getPropertyValue(name).trim() || fallback
-  return { surface: get('--bg', '#ffffff'), text3: get('--text3', '#8a8a85'), bad: get('--bad', '#a32d2d') }
+  // Fallbacks match the shared tokens these now alias, so a canvas drawn before styles resolve
+  // never paints in the retired warm-grey palette.
+  return { surface: get('--bg', '#ffffff'), text3: get('--text3', '#69717d'), bad: get('--bad', '#c34455') }
 }
 
 const patterns = new Map<string, CanvasPattern>()
