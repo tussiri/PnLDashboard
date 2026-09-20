@@ -14,9 +14,9 @@ job-cost export and publishes whichever the revenue basis selects. Two failures 
 * **suppressed AR** - invoiced AR published as zero revenue. Never correct. On 2026-09-20 the mart
   published $0 for 334 job-months carrying $9.7M of AR WinTeam had already invoiced, because the
   export shipped half-posted months as rows with revenue 0 and real labor.
-* **uncosted revenue** - the mirror. Revenue published with no labor basis at all, so the site
-  shows no cost and the portfolio margin reads better than the business performed. Fixing the
-  first exposed the second: August 2026 published $3.23M across 243 job-months with zero cost.
+* **uncosted revenue** - the mirror. Revenue published with no direct cost of any kind, so the
+  portfolio margin reads better than the business performed. Cost of any kind, not labor alone: a
+  subcontracted site has no hours by definition and is costed by its subcontractor.
 
 Neither is repaired by re-suppressing the other. A month is only reportable when both sides are
 covered, and this says which side is short.
@@ -91,7 +91,15 @@ def ar_chain(months: int = 6) -> dict[str, Any]:
                    count(*) AS job_months,
                    round(sum(revenue), 2) AS revenue_without_cost
             FROM mart.job_month
-            WHERE revenue > 0 AND labor_basis IS NULL AND coalesce(labor_cost, 0) = 0
+            WHERE revenue > 0
+              -- Cost of ANY kind, not labor alone: a subcontracted site has no hours by definition
+              -- and is properly costed by its subcontractor. Testing labor alone reported 243
+              -- August job-months as uncosted that carried $2.9M of AP-distributed subcontract.
+              AND coalesce(labor_cost, 0) = 0
+              AND coalesce(subcontract_cost, 0) = 0
+              AND coalesce(supplies_cost, 0) = 0
+              AND coalesce(other_direct_cost, 0) = 0
+              AND coalesce(payroll_ti_cost, 0) = 0
               AND month >= (date_trunc('month', current_date) - make_interval(months => %(months)s))::date
             GROUP BY 1 ORDER BY 1
             """,

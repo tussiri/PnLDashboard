@@ -83,3 +83,14 @@ def test_both_sides_must_be_covered_for_a_month_to_be_reportable():
 def test_uncosted_defaults_to_empty_for_callers_that_omit_it():
     r = build_report(CLEAN, [])
     assert r["uncosted_revenue"] == [] and r["uncosted_revenue_total"] == 0
+
+
+def test_uncosted_counts_any_direct_cost_not_labor_alone():
+    """A subcontracted site has no hours by definition; its cost is the subcontractor. Testing
+    labor alone reported 243 August job-months as uncosted that carried $2.9M of subcontract."""
+    import re
+    from pathlib import Path
+    sql = (Path(__file__).resolve().parents[1] / "app" / "reconcile.py").read_text()
+    block = sql[sql.index("revenue_without_cost"):sql.index("GROUP BY 1 ORDER BY 1", sql.index("revenue_without_cost"))]
+    for column in ("labor_cost", "subcontract_cost", "supplies_cost", "other_direct_cost", "payroll_ti_cost"):
+        assert column in block, column
