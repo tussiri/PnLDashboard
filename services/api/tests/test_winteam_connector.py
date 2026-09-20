@@ -651,3 +651,12 @@ def test_distribution_identity_separates_repeated_job_and_account() -> None:
             "accountNumber": 40902, "jobNumber": "900"}
     assert id_ap_distributions({**base, "lineIndex": 0}) != id_ap_distributions({**base, "lineIndex": 1})
     assert id_ap_distributions({**base, "lineIndex": 0}) == "3:1033:9010236526:0"
+
+
+def test_ap_detail_outage_threshold_is_defined_and_small() -> None:
+    """Scattered per-invoice failures are skipped; an unbroken run of them is an outage. The
+    threshold is what separates the two, and a 7,000-invoice backfill must not die on one bad
+    invoice (1384 answered HTTP 500 on all four attempts)."""
+    from app.winteam import AP_DETAIL_MAX_CONSECUTIVE_ERRORS
+
+    assert 5 <= AP_DETAIL_MAX_CONSECUTIVE_ERRORS <= 100

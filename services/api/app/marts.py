@@ -151,7 +151,7 @@ INSERT INTO mart.job_month (
   scheduled_hours, budget_revenue, budget_labor, budget_subcontract, budget_supplies,
   employee_count, work_days, last_work_date, data_quality_status, quality_notes, rebuilt_at,
   source, company, delivery_model, geo_precision, payroll_ti_cost, subcontract_cost, supplies_cost, other_direct_cost,
-  budget_direct_cost, budget_hours, revenue_basis, labor_basis, double_time_hours
+  budget_direct_cost, budget_hours, revenue_basis, labor_basis, subcontract_basis, double_time_hours
 )
 WITH jobs AS (
   SELECT j.job_key, j.job_number, j.job_name, pa.account_name AS parent_account,
@@ -204,6 +204,17 @@ bd AS (
   JOIN core.fact_gl_budget b ON b.gl_budget_key = m.gl_budget_key
   JOIN jobs jb ON jb.job_number = b.job_number
   GROUP BY jb.job_key, m.budget_month
+),
+apd AS (
+  -- Subcontract cost per job-month from AP GL distributions (migration 020). This is WinTeam's own
+  -- coding of a payable to a site, so it needs no apportionment and no trailing-average projection:
+  -- the accounts are whatever `gl_account_classes.subcontract` names (44000-44999 for this tenant).
+  SELECT jb.job_key, v.month, sum(v.amount) AS subcontract
+  FROM mart.v_ap_distribution_month v
+  JOIN jobs jb ON jb.job_key = v.job_key
+  WHERE v.gl_account_number ~ '^[0-9]+$'
+    AND (v.gl_account_number)::bigint BETWEEN %(subcontract_gl_low)s AND %(subcontract_gl_high)s
+  GROUP BY jb.job_key, v.month
 ),
 jc AS (
   SELECT jb.job_key, c.month, c.source,
@@ -259,6 +270,7 @@ keys AS (
   UNION SELECT job_key, month FROM bd
   UNION SELECT job_key, month FROM jc
   UNION SELECT job_key, month FROM lb
+  UNION SELECT job_key, month FROM apd
 ),
 assembled AS (
   SELECT
@@ -287,7 +299,14 @@ assembled AS (
     CASE WHEN jm.month IS NOT NULL AND jc.job_key IS NOT NULL THEN 0
          ELSE round(coalesce(tk.labor_cost, 0) * %(burden)s::numeric, 2) END AS burden_cost,
     CASE WHEN jc.job_key IS NOT NULL THEN coalesce(jc.payroll_taxes_insurance, 0) ELSE 0 END AS payroll_ti_cost,
-    CASE WHEN jc.job_key IS NOT NULL THEN coalesce(jc.subcontractors, 0) ELSE 0 END AS subcontract_cost,
+    -- The export's subcontract line wins only where the export row was the one actually used for
+    -- this job-month (same gate as revenue); otherwise the AP distributions carry it. Before those
+    -- distributions existed this fell to 0 and the weekly view projected a trailing average instead.
+    CASE WHEN jm.month IS NOT NULL AND jc.job_key IS NOT NULL AND coalesce(jc.revenue, 0) <> 0
+           THEN coalesce(jc.subcontractors, 0)
+         ELSE coalesce(apd.subcontract, 0) END AS subcontract_cost,
+    CASE WHEN jm.month IS NOT NULL AND jc.job_key IS NOT NULL AND coalesce(jc.revenue, 0) <> 0 THEN 'job_cost'
+         WHEN apd.job_key IS NOT NULL THEN 'ap_distribution' END AS subcontract_basis,
     CASE WHEN jc.job_key IS NOT NULL THEN coalesce(jc.materials, 0) + coalesce(jc.equipment_supplies, 0) ELSE 0 END AS supplies_cost,
     CASE WHEN jc.job_key IS NOT NULL THEN coalesce(jc.other_direct_costs, 0) ELSE 0 END AS other_direct_cost,
     jc.total_direct_costs AS jc_direct_cost,
@@ -318,6 +337,7 @@ assembled AS (
   LEFT JOIN sc ON sc.job_key = k.job_key AND sc.month = k.month
   LEFT JOIN bd ON bd.job_key = k.job_key AND bd.month = k.month
   LEFT JOIN jc ON jc.job_key = k.job_key AND jc.month = k.month
+  LEFT JOIN apd ON apd.job_key = k.job_key AND apd.month = k.month
   LEFT JOIN jc_months jm ON jm.month = k.month
   LEFT JOIN lb ON lb.job_key = k.job_key AND lb.month = k.month
   LEFT JOIN cust ON cust.job_key = k.job_key
@@ -349,7 +369,7 @@ SELECT
   CASE WHEN cardinality(notes) > 0 THEN 'warning' ELSE 'passed' END,
   to_jsonb(notes), now(),
   coalesce(source, 'winteam_api'), company, delivery_model, geo_precision, payroll_ti_cost, subcontract_cost, supplies_cost, other_direct_cost,
-  budget_direct_cost, budget_hours, revenue_basis, labor_basis, double_time_hours
+  budget_direct_cost, budget_hours, revenue_basis, labor_basis, subcontract_basis, double_time_hours
 FROM finished
 """
 
@@ -421,6 +441,25 @@ def _burden_rate(conn: Any) -> float:
         return 0.0
 
 
+def _subcontract_gl_range(conn: Any) -> tuple[int, int]:
+    """The GL account range `gl_account_classes.subcontract` names, as (low, high).
+
+    Tenant-specific and editable from the Administration page, never hardcoded (44000-44999 here).
+    Falls back to an empty range - which matches no account and therefore contributes no cost -
+    rather than guessing, so a malformed setting understates instead of inventing.
+    """
+    with conn.cursor() as cursor:
+        cursor.execute("SELECT value FROM ops.app_setting WHERE key = 'gl_account_classes'")
+        row = cursor.fetchone()
+    try:
+        ranges = ((row["value"] if row else {}) or {}).get("subcontract", {}).get("ranges") or []
+        pairs = [(int(lo), int(hi)) for lo, hi in ranges if lo is not None and hi is not None]
+        return (min(lo for lo, _ in pairs), max(hi for _, hi in pairs)) if pairs else (1, 0)
+    except (AttributeError, TypeError, ValueError):
+        logger.warning("gl_account_classes.subcontract is malformed; no AP distribution counts as subcontract")
+        return (1, 0)
+
+
 def _start_log(conn: Any) -> int:
     with conn.cursor() as cursor:
         cursor.execute("INSERT INTO mart.rebuild_log (status) VALUES ('running') RETURNING id")
@@ -453,10 +492,13 @@ def rebuild_tables() -> tuple[int, int, int]:
     """
     with connection(lock_timeout_ms=settings.mart_rebuild_lock_timeout_seconds * 1000) as conn:
         rate = _burden_rate(conn)
+        low, high = _subcontract_gl_range(conn)
         try:
             with conn.cursor() as cursor:
                 cursor.execute("TRUNCATE mart.job_month")
-                cursor.execute(JOB_MONTH_SQL, {"burden": rate})
+                cursor.execute(JOB_MONTH_SQL, {"burden": rate,
+                                               "subcontract_gl_low": low,
+                                               "subcontract_gl_high": high})
                 job_rows = cursor.rowcount
                 cursor.execute("TRUNCATE mart.portfolio_month")
                 cursor.execute(PORTFOLIO_MONTH_SQL)

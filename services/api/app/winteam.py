@@ -177,6 +177,9 @@ class Resource:
         return self.kind in {"date_window", "per_job_date_window"}
 
 
+# An unbroken run of per-invoice failures is an outage; scattered ones are odd invoice numbers.
+AP_DETAIL_MAX_CONSECUTIVE_ERRORS = 25
+
 RESOURCES: dict[str, Resource] = {
     "jobs": Resource(
         "jobs", "/jobs/v2/api/jobs", "list", "paged", id_jobs,
@@ -749,16 +752,35 @@ class WinTeamIngestion:
         if not invoices:
             result.message = "No AP invoices awaiting GL distributions"
             return
-        missing, no_lines = 0, 0
+        missing, no_lines, unserviceable, consecutive = 0, 0, 0, 0
         for index, invoice_number in enumerate(invoices, start=1):
             path = resource.path.format(invoiceNumber=quote(str(invoice_number), safe=""))
             try:
                 payload = client.get(path)
             except WinTeamError as exc:
-                if isinstance(exc, WinTeamError) and exc.status_code in {400, 404}:
+                # 400/404: the number is not addressable this way (spaces, slashes, non-standard
+                # keys). 500 after the client's retries: WinTeam cannot serve that one invoice -
+                # observed on invoice 1384, which answered 500 on all four attempts. Neither should
+                # end a backfill of thousands. A genuine outage looks different, and
+                # AP_DETAIL_MAX_CONSECUTIVE_ERRORS is what tells them apart: an unbroken run of
+                # failures is the API being down, not a run of odd invoice numbers.
+                if exc.status_code in {400, 404}:
                     missing += 1
-                    continue
-                raise
+                elif exc.status_code is not None and exc.status_code >= 500:
+                    unserviceable += 1
+                    logger.warning("WinTeam %s: invoice %s unserviceable (HTTP %s); skipping",
+                                   resource.name, invoice_number, exc.status_code)
+                else:
+                    raise
+                consecutive += 1
+                if consecutive >= AP_DETAIL_MAX_CONSECUTIVE_ERRORS:
+                    raise WinTeamError(
+                        f"{consecutive} consecutive AP invoice detail failures ending at {invoice_number}; "
+                        f"treating as an outage rather than skipping",
+                        status_code=exc.status_code,
+                    ) from exc
+                continue
+            consecutive = 0
             records = [line for entry in parse_data_array(payload) for line in flatten_ap_distribution(entry)]
             if not records:
                 no_lines += 1
@@ -768,7 +790,7 @@ class WinTeamIngestion:
                 logger.info("WinTeam %s: %s/%s invoices processed", resource.name, index, len(invoices))
         result.message = (
             f"{len(invoices)} invoice(s) probed; {missing} not retrievable by invoice number; "
-            f"{no_lines} with no GL distributions"
+            f"{unserviceable} unserviceable (HTTP 5xx); {no_lines} with no GL distributions"
         )
 
     def _pull_per_job_windows(

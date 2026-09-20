@@ -71,3 +71,43 @@ def test_has_jc_means_the_export_row_was_actually_used():
     $8,025,438 while revenue rose $15.2M. It must match the revenue gate exactly."""
     line = next(l for l in SQL.splitlines() if "AS has_jc" in l)
     assert "jc.job_key IS NOT NULL" in line and "coalesce(jc.revenue, 0) <> 0" in line
+
+
+# ── subcontract cost from AP GL distributions ────────────────────────────────
+def test_subcontract_prefers_the_export_row_only_when_it_was_used():
+    """Same gate as revenue: the export's subcontractors line counts only where that export row
+    carried revenue. Otherwise the AP GL distributions do, which is what removes the trailing
+    three-month projection the weekly view fell back to."""
+    c = clause("subcontract_cost")
+    assert "coalesce(jc.revenue, 0) <> 0" in c
+    assert "apd.subcontract" in c
+
+
+def test_subcontract_basis_names_the_source_used():
+    c = clause("subcontract_basis")
+    assert "'job_cost'" in c and "'ap_distribution'" in c
+
+
+def test_subcontract_gl_range_comes_from_settings_not_a_literal():
+    """The 44000-44999 range is tenant configuration (gl_account_classes), never hardcoded."""
+    # Assert the comparison itself, not the file: prose may cite the tenant's current range.
+    between = re.search(r"gl_account_number\)::bigint BETWEEN\s+(\S+)\s+AND\s+(\S+)", SQL)
+    assert between, "no BETWEEN on the GL account number"
+    assert between.group(1) == "%(subcontract_gl_low)s"
+    assert between.group(2) == "%(subcontract_gl_high)s"
+
+
+def test_a_malformed_subcontract_setting_yields_an_empty_range():
+    """An empty range matches no account, so cost is understated rather than invented."""
+    from app.marts import _subcontract_gl_range
+
+    class Cur:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def execute(self, *a): pass
+        def fetchone(self): return {"value": {"subcontract": {"ranges": "nonsense"}}}
+    class Conn:
+        def cursor(self): return Cur()
+
+    low, high = _subcontract_gl_range(Conn())
+    assert low > high
