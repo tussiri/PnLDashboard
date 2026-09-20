@@ -209,11 +209,18 @@ apd AS (
   -- Subcontract cost per job-month from AP GL distributions (migration 020). This is WinTeam's own
   -- coding of a payable to a site, so it needs no apportionment and no trailing-average projection:
   -- the accounts are whatever `gl_account_classes.subcontract` names (44000-44999 for this tenant).
-  SELECT jb.job_key, v.month, sum(v.amount) AS subcontract
+  SELECT jb.job_key, v.month,
+         sum(v.amount) FILTER (
+           WHERE (v.gl_account_number)::bigint BETWEEN %(subcontract_gl_low)s AND %(subcontract_gl_high)s
+         ) AS subcontract,
+         sum(v.amount) FILTER (
+           WHERE (v.gl_account_number)::bigint BETWEEN %(other_direct_gl_low)s AND %(other_direct_gl_high)s
+         ) AS other_direct
   FROM mart.v_ap_distribution_month v
   JOIN jobs jb ON jb.job_key = v.job_key
   WHERE v.gl_account_number ~ '^[0-9]+$'
-    AND (v.gl_account_number)::bigint BETWEEN %(subcontract_gl_low)s AND %(subcontract_gl_high)s
+    AND ((v.gl_account_number)::bigint BETWEEN %(subcontract_gl_low)s AND %(subcontract_gl_high)s
+      OR (v.gl_account_number)::bigint BETWEEN %(other_direct_gl_low)s AND %(other_direct_gl_high)s)
   GROUP BY jb.job_key, v.month
 ),
 jc AS (
@@ -308,7 +315,9 @@ assembled AS (
     CASE WHEN jm.month IS NOT NULL AND jc.job_key IS NOT NULL AND coalesce(jc.revenue, 0) <> 0 THEN 'job_cost'
          WHEN apd.job_key IS NOT NULL THEN 'ap_distribution' END AS subcontract_basis,
     CASE WHEN jc.job_key IS NOT NULL THEN coalesce(jc.materials, 0) + coalesce(jc.equipment_supplies, 0) ELSE 0 END AS supplies_cost,
-    CASE WHEN jc.job_key IS NOT NULL THEN coalesce(jc.other_direct_costs, 0) ELSE 0 END AS other_direct_cost,
+    CASE WHEN jm.month IS NOT NULL AND jc.job_key IS NOT NULL AND coalesce(jc.revenue, 0) <> 0
+           THEN coalesce(jc.other_direct_costs, 0)
+         ELSE coalesce(apd.other_direct, 0) END AS other_direct_cost,
     jc.total_direct_costs AS jc_direct_cost,
     jc.gross_profit AS jc_gross_profit,
     coalesce(sc.scheduled_hours, 0) AS scheduled_hours,
@@ -441,22 +450,26 @@ def _burden_rate(conn: Any) -> float:
         return 0.0
 
 
-def _subcontract_gl_range(conn: Any) -> tuple[int, int]:
-    """The GL account range `gl_account_classes.subcontract` names, as (low, high).
+def _gl_range(conn: Any, class_name: str) -> tuple[int, int]:
+    """The GL account range `gl_account_classes.<class_name>` names, as (low, high).
 
-    Tenant-specific and editable from the Administration page, never hardcoded (44000-44999 here).
-    Falls back to an empty range - which matches no account and therefore contributes no cost -
-    rather than guessing, so a malformed setting understates instead of inventing.
+    Tenant-specific and editable from the Administration page, never hardcoded. Falls back to an
+    empty range - which matches no account and therefore contributes no cost - rather than guessing,
+    so a malformed or absent class understates instead of inventing.
+
+    Only RANGES can classify an AP distribution: the API's distribution line carries accountNumber
+    but no glAccountDescription, so the keyword rules in the same setting have nothing to match on
+    and apply to the export path alone.
     """
     with conn.cursor() as cursor:
         cursor.execute("SELECT value FROM ops.app_setting WHERE key = 'gl_account_classes'")
         row = cursor.fetchone()
     try:
-        ranges = ((row["value"] if row else {}) or {}).get("subcontract", {}).get("ranges") or []
+        ranges = ((row["value"] if row else {}) or {}).get(class_name, {}).get("ranges") or []
         pairs = [(int(lo), int(hi)) for lo, hi in ranges if lo is not None and hi is not None]
         return (min(lo for lo, _ in pairs), max(hi for _, hi in pairs)) if pairs else (1, 0)
     except (AttributeError, TypeError, ValueError):
-        logger.warning("gl_account_classes.subcontract is malformed; no AP distribution counts as subcontract")
+        logger.warning("gl_account_classes.%s is malformed; no AP distribution counts as %s", class_name, class_name)
         return (1, 0)
 
 
@@ -492,13 +505,16 @@ def rebuild_tables() -> tuple[int, int, int]:
     """
     with connection(lock_timeout_ms=settings.mart_rebuild_lock_timeout_seconds * 1000) as conn:
         rate = _burden_rate(conn)
-        low, high = _subcontract_gl_range(conn)
+        sub_low, sub_high = _gl_range(conn, "subcontract")
+        oth_low, oth_high = _gl_range(conn, "other_direct")
         try:
             with conn.cursor() as cursor:
                 cursor.execute("TRUNCATE mart.job_month")
                 cursor.execute(JOB_MONTH_SQL, {"burden": rate,
-                                               "subcontract_gl_low": low,
-                                               "subcontract_gl_high": high})
+                                               "subcontract_gl_low": sub_low,
+                                               "subcontract_gl_high": sub_high,
+                                               "other_direct_gl_low": oth_low,
+                                               "other_direct_gl_high": oth_high})
                 job_rows = cursor.rowcount
                 cursor.execute("TRUNCATE mart.portfolio_month")
                 cursor.execute(PORTFOLIO_MONTH_SQL)

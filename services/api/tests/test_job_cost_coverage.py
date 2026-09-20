@@ -88,6 +88,14 @@ def test_subcontract_basis_names_the_source_used():
     assert "'job_cost'" in c and "'ap_distribution'" in c
 
 
+def test_other_direct_cost_also_falls_back_to_ap_distributions():
+    """$5.9M of job-attributed AP cost in the 40000-43999 band was landed but unconsumed, because
+    only subcontract had a configured range."""
+    c = clause("other_direct_cost")
+    assert "apd.other_direct" in c
+    assert "coalesce(jc.revenue, 0) <> 0" in c
+
+
 def test_subcontract_gl_range_comes_from_settings_not_a_literal():
     """The 44000-44999 range is tenant configuration (gl_account_classes), never hardcoded."""
     # Assert the comparison itself, not the file: prose may cite the tenant's current range.
@@ -97,9 +105,9 @@ def test_subcontract_gl_range_comes_from_settings_not_a_literal():
     assert between.group(2) == "%(subcontract_gl_high)s"
 
 
-def test_a_malformed_subcontract_setting_yields_an_empty_range():
+def test_an_absent_or_malformed_class_yields_an_empty_range():
     """An empty range matches no account, so cost is understated rather than invented."""
-    from app.marts import _subcontract_gl_range
+    from app.marts import _gl_range
 
     class Cur:
         def __enter__(self): return self
@@ -109,5 +117,6 @@ def test_a_malformed_subcontract_setting_yields_an_empty_range():
     class Conn:
         def cursor(self): return Cur()
 
-    low, high = _subcontract_gl_range(Conn())
-    assert low > high
+    assert _gl_range(Conn(), "subcontract")[0] > _gl_range(Conn(), "subcontract")[1]
+    # A class that is not configured at all behaves the same way.
+    assert _gl_range(Conn(), "no_such_class")[0] > _gl_range(Conn(), "no_such_class")[1]
