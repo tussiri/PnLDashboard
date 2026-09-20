@@ -70,6 +70,36 @@ Response fields are stored verbatim in `raw.winteam_record.payload` and promoted
 
 * jobs 643 (all with `taxAddress.latitude/longitude`), vendors 279, timekeeping ~8,100 punches per week, ap_invoices ~580 per month, ar_invoices per customer number (AMAZ01 255 invoices, COST01 27, AIRG01 3).
 * `job_schedules` and `ap_payments`: HTTP 403 (not entitled). `gl_budgets`: no budget found on the first five active jobs (400 as above, also without `fiscalYear`).
+
+## There is no job-cost / GL-actuals endpoint (verified 2026-09-20)
+
+The published `wtnextgen-Jobs-V2` OpenAPI document carries ten paths. Everything GL-shaped in it is
+a **budget**, readable and writable: `GET/POST /jobs/{jobKey}/gl-budgets`,
+`POST /jobs/gl-budgets/{gLBudgetId}`, `PATCH /gl-budgets/{gLBudgetId}`,
+`PATCH /gl-budgets/details/{id}`. A `glBudgetDetails` element is
+`{glAccountNumber, glAccountDescription, financialStatement, jobCostAnalysis, budgetTotal,
+period1..period12}` — the right shape for a job-level P&L, but the budget column of it.
+
+`jobCostAnalysis` and `financialStatement` are flags on the GL account saying which report that
+account belongs to; they classify the chart of accounts, they do not carry posted amounts. The
+Job Cost Analysis P&L is a WinTeam *report*, and this API exposes transactions and budgets, never
+report output or posted GL actuals. That is why revenue and direct labor can be rebuilt from the
+API (AR invoices; timekeeping hours x rate) while subcontract, materials and other direct costs
+cannot: AP invoices are header-only (vendor, amount, dates — no job, no GL account, no distribution
+lines), so no AP dollar can be attributed to a site from this API at all.
+
+Neither budget endpoint is populated for this tenant:
+
+* `gl-budgets`: 2,772 responses of HTTP 400 and 36 of HTTP 200 with empty detail arrays across
+  703 jobs x 2 fiscal years — `core.fact_gl_budget` holds 0 rows. The resource costs roughly six
+  minutes of every fifteen-minute poll and returns nothing; consider removing it from
+  `WINTEAM_RESOURCES` until the tenant populates budgets.
+* `jobs/{jobKey}/budgets` (bill rate, pay rate and day-of-week hours per position — not currently
+  synced): HTTP 404 on every job probed, including the highest-revenue active sites.
+
+Also in the OpenAPI document and not used here: `GET /jobs/{jobKey}/requirements/compliance-codes`
+(not financial), and the write paths `POST /jobs/`, `PATCH /jobs/{jobId}` and the GL-budget writes.
+The connector is read-only by design and issues GETs only.
 * `jobTiers[].tierValue` arrives as a string; `companyNumber` as a number.
 * Redacted samples per resource: `sources/winteam_samples/<resource>.json`.
 
