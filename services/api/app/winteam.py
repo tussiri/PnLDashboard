@@ -111,6 +111,52 @@ def id_gl_budgets(record: dict[str, Any]) -> str:
     return f"{job_number}:{fiscal_year}:{detail_id}"
 
 
+DAY_KEYS = ("sun", "mon", "tue", "wed", "thu", "fri", "sat", "hol")
+
+
+def id_job_budgets(record: dict[str, Any]) -> str:
+    """One raw record per budget line: the budget's id plus the line's position."""
+    _require(record, "jobNumber", "budgetId", "lineIndex")
+    return f"{_text(record, 'jobNumber')}:{_text(record, 'budgetId')}:{_text(record, 'lineIndex')}"
+
+
+def flatten_job_budget(entry: dict[str, Any]) -> list[dict[str, Any]]:
+    """Explode one job budget into its detail lines, flattening hours/rates onto each.
+
+    A line is budgeted hours PER DAY OF WEEK plus a pay rate, which is finer than a monthly figure
+    and apportions to a week exactly - no proration. `hol` is the holiday column, carried separately
+    because a week containing one is not a normal week.
+    """
+    details = entry.get("details") or []
+    if not isinstance(details, list):
+        return []
+    header = {
+        "budgetId": entry.get("id"),
+        "effectiveDate": entry.get("effectiveDate"),
+        "endDate": entry.get("endDate"),
+        "status": entry.get("status"),
+        "notes": entry.get("notes"),
+    }
+    out: list[dict[str, Any]] = []
+    for index, line in enumerate(details):
+        if not isinstance(line, dict):
+            continue
+        hours = line.get("hours") if isinstance(line.get("hours"), dict) else {}
+        rates = line.get("rates") if isinstance(line.get("rates"), dict) else {}
+        day_of_week = hours.get("dayOfWeek") if isinstance(hours.get("dayOfWeek"), dict) else {}
+        out.append({
+            **header,
+            "lineIndex": index,
+            "description": hours.get("description"),
+            "hoursType": hours.get("type"),
+            "salaried": hours.get("salaried"),
+            "billRate": rates.get("billRate"),
+            "payRate": rates.get("payRate"),
+            **{day: day_of_week.get(day) for day in DAY_KEYS},
+        })
+    return out
+
+
 def id_ap_distributions(record: dict[str, Any]) -> str:
     """One raw record per GL distribution line, keyed by its position on the invoice.
 
@@ -200,6 +246,11 @@ RESOURCES: dict[str, Resource] = {
     "gl_budgets": Resource(
         "gl_budgets", "/jobs/v2/api/jobs/{jobKey}/gl-budgets", "per_job", "data_array", id_gl_budgets,
         "GL budgets per active job and fiscal year; glBudgetDetails are flattened one row per record.",
+    ),
+    "job_budgets": Resource(
+        "job_budgets", "/jobs/v2/api/jobs/{jobKey}/budgets", "per_job", "data_array", id_job_budgets,
+        "Budgeted hours per day of week and the pay rate behind them, per active job; the only "
+        "source of budget hours and dollars for this tenant (gl-budgets returns nothing).",
     ),
     "ap_invoices": Resource(
         "ap_invoices", "/accounts/v1/api/payables/invoices", "date_window", "paged", id_ap_invoices,
@@ -714,7 +765,12 @@ class WinTeamIngestion:
         jobs = self._active_job_numbers(conn, limit)
         if options.jobs_limit is not None:
             result.scope["jobs_limit"] = limit
-        years = fiscal_years(today, self.config.winteam_gl_fiscal_years)
+        # gl_budgets is asked per fiscal year; job_budgets returns every budget revision in one call.
+        years: list[int | None] = (
+            list(fiscal_years(today, self.config.winteam_gl_fiscal_years))
+            if resource.name == "gl_budgets" else [None]
+        )
+        flatten = flatten_gl_budget if resource.name == "gl_budgets" else flatten_job_budget
         if not jobs:
             result.message = "No active jobs in core.dim_job yet; sync jobs first"
         no_budget = 0
@@ -722,21 +778,29 @@ class WinTeamIngestion:
             path = resource.path.format(jobKey=quote(job_number, safe=""))
             for year in years:
                 try:
-                    payload = client.get(path, {"fiscalYear": year})
+                    payload = client.get(path, {"fiscalYear": year} if year is not None else {})
                 except WinTeamError as exc:
-                    if is_no_gl_budget(exc):  # 404, or 400 "Invalid Job Number and Fiscal Year combination"
+                    # 404, the live tenant's 400 "Invalid Job Number and Fiscal Year combination",
+                    # and 204/empty all mean "this job has no budget" rather than a failure.
+                    if is_no_gl_budget(exc) or exc.status_code in {400, 404}:
                         no_budget += 1
                         continue
                     raise
-                records = [record for entry in parse_data_array(payload) for record in flatten_gl_budget(entry)]
+                records = [record for entry in parse_data_array(payload) for record in flatten(entry)]
                 for record in records:
                     record.setdefault("jobNumber", job_number)
-                    record.setdefault("fiscalYear", year)
+                    if year is not None:
+                        record.setdefault("fiscalYear", year)
                 self._land(conn, run_id, resource, records, result)
-            if index % 25 == 0:
+            if index % 50 == 0:
                 logger.info("WinTeam %s: %s/%s jobs processed", resource.name, index, len(jobs))
         if jobs:
-            result.message = f"{len(jobs)} job(s) x {len(years)} fiscal year(s) probed; {no_budget} job-year(s) without a budget"
+            # gl_budgets is probed per job-year, job_budgets per job; the count says which.
+            if years != [None]:
+                result.message = (f"{len(jobs)} job(s) x {len(years)} fiscal year(s) probed; "
+                                  f"{no_budget} job-year(s) without a budget")
+            else:
+                result.message = f"{len(jobs)} job(s) probed; {no_budget} without a budget"
 
     def _pull_per_invoice(
         self, resource: Resource, client: WinTeamClient, conn: Any, run_id: UUID, result: PullResult, options: PullOptions

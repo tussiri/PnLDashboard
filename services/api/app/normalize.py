@@ -1045,6 +1045,63 @@ def normalize_gl_budgets(conn: Any, seen_ids: Collection[str] | None = None) -> 
 
 
 # ── accounts payable invoices ────────────────────────────────────────────────
+def normalize_job_budgets(conn: Any, seen_ids: Collection[str] | None = None) -> int:
+    """Job budget lines -> core.fact_job_budget (budgeted hours per day of week, plus the rate).
+
+    The only source of budget hours and dollars for this tenant: gl-budgets returns nothing, and the
+    export-fed daily budget stopped in July 2026. Resolved to a job_key through the shared
+    wt_job_map so a collision number lands on the tenant's row, never the other namespace's.
+    """
+    params = {"resource": "job_budgets", "source": SOURCE, **_company_context(conn)}
+    with conn.cursor() as cursor:
+        stage_job_map(cursor)
+        cursor.execute(
+            f"""
+            WITH src AS ({SOURCE_SQL}),
+            parsed AS (
+              SELECT
+                {txt('jobNumber')} AS job_number,
+                {integer('budgetId')} AS budget_id,
+                {integer('lineIndex')} AS line_index,
+                {day('effectiveDate')} AS effective_date,
+                {day('endDate')} AS end_date,
+                {txt('status')} AS status,
+                {txt('description')} AS description,
+                {integer('hoursType')} AS hours_type,
+                {boolean('salaried')} AS salaried,
+                {num('billRate')} AS bill_rate,
+                {num('payRate')} AS pay_rate,
+                {num('sun')} AS hours_sun, {num('mon')} AS hours_mon, {num('tue')} AS hours_tue,
+                {num('wed')} AS hours_wed, {num('thu')} AS hours_thu, {num('fri')} AS hours_fri,
+                {num('sat')} AS hours_sat, {num('hol')} AS hours_hol
+              FROM src
+            )
+            INSERT INTO core.fact_job_budget AS b (
+              source, job_number, job_key, budget_id, line_index, effective_date, end_date, status,
+              description, hours_type, salaried, bill_rate, pay_rate,
+              hours_sun, hours_mon, hours_tue, hours_wed, hours_thu, hours_fri, hours_sat, hours_hol
+            )
+            SELECT %(source)s, x.job_number, {job_key_for('x.job_number')}, x.budget_id, x.line_index,
+                   x.effective_date, x.end_date, x.status, x.description, x.hours_type, x.salaried,
+                   x.bill_rate, x.pay_rate, x.hours_sun, x.hours_mon, x.hours_tue, x.hours_wed,
+                   x.hours_thu, x.hours_fri, x.hours_sat, x.hours_hol
+            FROM parsed x
+            WHERE x.job_number IS NOT NULL AND x.budget_id IS NOT NULL AND x.line_index IS NOT NULL
+            ON CONFLICT (source, job_number, budget_id, line_index) DO UPDATE SET
+              job_key = excluded.job_key, effective_date = excluded.effective_date,
+              end_date = excluded.end_date, status = excluded.status,
+              description = excluded.description, hours_type = excluded.hours_type,
+              salaried = excluded.salaried, bill_rate = excluded.bill_rate, pay_rate = excluded.pay_rate,
+              hours_sun = excluded.hours_sun, hours_mon = excluded.hours_mon, hours_tue = excluded.hours_tue,
+              hours_wed = excluded.hours_wed, hours_thu = excluded.hours_thu, hours_fri = excluded.hours_fri,
+              hours_sat = excluded.hours_sat, hours_hol = excluded.hours_hol,
+              warehouse_updated_at = now()
+            """,
+            params,
+        )
+        return int(cursor.rowcount or 0)
+
+
 def normalize_ap_invoice_details(conn: Any, seen_ids: Collection[str] | None = None) -> int:
     """GL distribution lines -> core.fact_ap_distribution.
 
@@ -1407,6 +1464,7 @@ NORMALIZERS = {
     "timekeeping": normalize_timekeeping,
     "job_schedules": normalize_job_schedules,
     "gl_budgets": normalize_gl_budgets,
+    "job_budgets": normalize_job_budgets,
     "ap_invoices": normalize_ap_invoices,
     "ap_invoice_details": normalize_ap_invoice_details,
     "ar_invoices": normalize_ar_invoices,

@@ -340,7 +340,8 @@ INSERT INTO mart.job_week (
   job_key, job_number, site_name, site_code, parent_account, company, delivery_model, week_start, month_shares,
   invoicing, invoicing_basis, hours, regular_hours, ot_hours, dt_hours, direct_dollars, ot_dollars,
   sub_dollars, sub_estimated, sub_basis, total_dollars, budget_hours, budget_dollars, budget_basis,
-  labor_cost_basis, days_with_labor, rebuilt_at, invoicing_estimated, carry_forward_source
+  labor_cost_basis, days_with_labor, rebuilt_at, invoicing_estimated, carry_forward_source,
+  invoicing_estimated_amount
 )
 WITH jobs AS (
   SELECT j.job_key, j.job_number, j.job_name, pa.account_name AS parent_account, j.company, j.delivery_model
@@ -457,6 +458,21 @@ slices AS (
   ) m
   WHERE k.week_start <= current_date
 ),
+jbw AS (
+  -- API job budgets are hours PER DAY OF WEEK, so a slice takes exactly the days it covers - no
+  -- proration and no month arithmetic. The revision in force is the one whose window contains the
+  -- slice; `hol` is left out, because treating every holiday as a normal day would overstate.
+  SELECT k.job_number, k.week_start, k.month,
+         sum(v.budget_hours)   AS hours,
+         sum(v.budget_dollars) AS dollars
+  FROM slices k
+  JOIN mart.v_job_budget_day v ON v.job_number = k.job_number
+   AND (v.effective_date IS NULL OR v.effective_date <= k.s_end)
+   AND (v.end_date IS NULL OR v.end_date >= k.s_start)
+  CROSS JOIN LATERAL generate_series(k.s_start, k.s_end, interval '1 day') AS d(day)
+  WHERE extract(dow FROM d.day)::int = v.dow
+  GROUP BY k.job_number, k.week_start, k.month
+),
 slice_values AS (
   SELECT s.job_number, s.week_start, s.month, s.days_in_month,
          (s.s_end - s.s_start + 1) AS days,
@@ -497,12 +513,15 @@ slice_values AS (
          (sm.job_number IS NULL AND c.month IS NULL AND trail.months > 0) AS sub_estimated,
          -- budget: daily rows covering the slice -> monthly labor budget x day share -> none
          CASE WHEN cov.job_number IS NOT NULL AND cov.lo <= s.s_start AND cov.hi >= s.s_end THEN 'daily_budget'
+              WHEN jbw.hours IS NOT NULL THEN 'job_budget'
               WHEN lb.budget_labor IS NOT NULL OR lb.budget_hours IS NOT NULL THEN 'hbc'
               ELSE 'none' END AS budget_basis,
          CASE WHEN cov.job_number IS NOT NULL AND cov.lo <= s.s_start AND cov.hi >= s.s_end THEN coalesce(dbw.dollars, 0)
+              WHEN jbw.hours IS NOT NULL THEN jbw.dollars
               WHEN lb.budget_labor IS NOT NULL THEN lb.budget_labor * (s.s_end - s.s_start + 1) / s.days_in_month
               END AS budget_dollars,
          CASE WHEN cov.job_number IS NOT NULL AND cov.lo <= s.s_start AND cov.hi >= s.s_end THEN coalesce(dbw.hours, 0)
+              WHEN jbw.hours IS NOT NULL THEN jbw.hours
               WHEN lb.budget_hours IS NOT NULL THEN lb.budget_hours * (s.s_end - s.s_start + 1) / s.days_in_month
               END AS budget_hours
   FROM slices s
@@ -539,13 +558,20 @@ slice_values AS (
     SELECT sum(d.dollars) AS dollars, sum(d.hours) AS hours
     FROM db d WHERE d.job_number = s.job_number AND d.budget_date BETWEEN s.s_start AND s.s_end
   ) dbw ON true
+  LEFT JOIN jbw ON jbw.job_number = s.job_number AND jbw.week_start = s.week_start AND jbw.month = s.month
   LEFT JOIN lb ON lb.job_number = s.job_number AND lb.month = s.month
 ),
 weeks AS (
   SELECT job_number, week_start,
          sum(invoicing) AS invoicing,
-         (array_agg(invoicing_basis ORDER BY (invoicing_basis <> 'none') DESC, days DESC, month))[1] AS invoicing_basis,
+         -- 'mixed' when the slices of one week genuinely disagree. Picking the slice with the most
+         -- days made a straddle week holding a day of real AR read as pure carry-forward.
+         CASE WHEN count(DISTINCT invoicing_basis) FILTER (WHERE invoicing_basis <> 'none') > 1
+              THEN 'mixed'
+              ELSE (array_agg(invoicing_basis ORDER BY (invoicing_basis <> 'none') DESC, days DESC, month))[1]
+         END AS invoicing_basis,
          bool_or(invoicing_estimated) AS invoicing_estimated,
+         sum(invoicing) FILTER (WHERE invoicing_estimated) AS invoicing_estimated_amount,
          (array_agg(carry_forward_source ORDER BY (carry_forward_source IS NOT NULL) DESC, days DESC, month))[1] AS carry_forward_source,
          sum(sub_dollars) AS sub_dollars,
          bool_or(sub_estimated) AS sub_estimated,
@@ -574,7 +600,8 @@ SELECT
   -- premium estimate is informational and NOT added: total = labor + vendor, as the executives' original.
   round(coalesce(tk.direct_dollars, 0), 2) + round(w.sub_dollars, 2),
   round(w.budget_hours, 2), round(w.budget_dollars, 2), w.budget_basis,
-  tk.labor_cost_basis, coalesce(tk.days_with_labor, 0), now(), coalesce(w.invoicing_estimated, false), w.carry_forward_source
+  tk.labor_cost_basis, coalesce(tk.days_with_labor, 0), now(), coalesce(w.invoicing_estimated, false), w.carry_forward_source,
+  round(coalesce(w.invoicing_estimated_amount, 0), 2)
 FROM weeks w
 JOIN jobs jb ON jb.job_number = w.job_number
 LEFT JOIN tk ON tk.job_number = w.job_number AND tk.week_start = w.week_start

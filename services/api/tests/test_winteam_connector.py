@@ -128,8 +128,11 @@ def test_catalogue_matches_documentation() -> None:
     assert RESOURCES["ap_invoice_details"].path == "/accounts/v1/api/payables/invoices/{invoiceNumber}"
     assert RESOURCES["ap_invoice_details"].kind == "per_invoice"
     assert RESOURCES["ap_invoice_details"].envelope == "data_array"
+    assert RESOURCES["job_budgets"].path == "/jobs/v2/api/jobs/{jobKey}/budgets"
+    assert RESOURCES["job_budgets"].kind == "per_job"
     assert list(RESOURCES) == ["jobs", "vendors", "timekeeping", "job_schedules", "gl_budgets",
-                               "ap_invoices", "ap_invoice_details", "ar_invoices", "ap_payments"]
+                               "job_budgets", "ap_invoices", "ap_invoice_details", "ar_invoices",
+                               "ap_payments"]
 
 
 # ── windows and watermarks ───────────────────────────────────────────────────
@@ -660,3 +663,47 @@ def test_ap_detail_outage_threshold_is_defined_and_small() -> None:
     from app.winteam import AP_DETAIL_MAX_CONSECUTIVE_ERRORS
 
     assert 5 <= AP_DETAIL_MAX_CONSECUTIVE_ERRORS <= 100
+
+
+# ── job budgets ──────────────────────────────────────────────────────────────
+def test_flatten_job_budget_spreads_hours_across_the_week() -> None:
+    """Budget is hours PER DAY OF WEEK plus a rate, which apportions to a week without proration."""
+    from app.winteam import flatten_job_budget, id_job_budgets
+
+    lines = flatten_job_budget({
+        "id": 119, "effectiveDate": "2026-01-01T00:00:00", "endDate": "2026-12-31T00:00:00",
+        "status": "Posted - Cannot Edit",
+        "details": [{
+            "hours": {"description": "Ops/Regular", "type": 15, "salaried": False,
+                      "dayOfWeek": {"sun": 545.83, "mon": 545.83, "tue": 545.83, "wed": 545.83,
+                                    "thu": 545.83, "fri": 545.83, "sat": 545.83, "hol": 545.83}},
+            "rates": {"billRate": None, "payRate": 17.5},
+        }],
+    })
+    assert len(lines) == 1
+    line = lines[0]
+    assert line["budgetId"] == 119 and line["lineIndex"] == 0
+    assert line["payRate"] == 17.5 and line["billRate"] is None
+    assert line["mon"] == 545.83 and line["hol"] == 545.83
+    assert line["description"] == "Ops/Regular" and line["salaried"] is False
+    line["jobNumber"] = "500"
+    assert id_job_budgets(line) == "500:119:0"
+
+
+def test_a_budget_with_no_detail_lines_yields_nothing() -> None:
+    from app.winteam import flatten_job_budget
+
+    assert flatten_job_budget({"id": 7, "details": []}) == []
+    assert flatten_job_budget({"id": 7}) == []
+    assert flatten_job_budget({"id": 7, "details": "nope"}) == []
+
+
+def test_a_missing_day_stays_missing_rather_than_becoming_zero() -> None:
+    """A budget that omits Saturday is not a budget of zero Saturday hours."""
+    from app.winteam import flatten_job_budget
+
+    line = flatten_job_budget({"id": 1, "details": [
+        {"hours": {"dayOfWeek": {"mon": 8}}, "rates": {"payRate": 20}},
+    ]})[0]
+    assert line["mon"] == 8
+    assert line["sat"] is None and line["hol"] is None

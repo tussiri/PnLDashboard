@@ -32,6 +32,7 @@ RESOURCE_NAMES: tuple[str, ...] = (
     "timekeeping",
     "job_schedules",
     "gl_budgets",
+    "job_budgets",
     "ap_invoices",
     "ap_invoice_details",
     "ar_invoices",
