@@ -16,7 +16,7 @@ from __future__ import annotations
 import json
 import os
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 from urllib.parse import urlparse
 
@@ -149,6 +149,12 @@ class Settings:
     winteam_subscription_key: str
     winteam_subscription_key_header: str
     winteam_extra_headers: dict[str, str]
+    # Second WinTeam database: Sarus. A separate tenant the primary credentials do not reach.
+    winteam_sarus_enabled: bool
+    winteam_sarus_base_url: str
+    winteam_sarus_tenant_id: str
+    winteam_sarus_subscription_key: str
+    winteam_sarus_extra_headers: dict[str, str]
     winteam_resources: tuple[str, ...]
     winteam_customer_numbers: tuple[str, ...]
     winteam_location_ids: tuple[int, ...]
@@ -193,6 +199,17 @@ class Settings:
             winteam_subscription_key=_text(env, "WINTEAM_SUBSCRIPTION_KEY"),
             winteam_subscription_key_header=_text(env, "WINTEAM_SUBSCRIPTION_KEY_HEADER", "Ocp-Apim-Subscription-Key"),
             winteam_extra_headers=_json_object(env, "WINTEAM_HEADERS_JSON"),
+            # Sarus is its own WinTeam database. Blank base URL = the same gateway as the primary
+            # tenant (routing, not a secret). The key and tenant id never fall back to the primary's:
+            # an implicit credential fallback is how one tenant's data ends up under another's.
+            winteam_sarus_enabled=_boolean(env, "WINTEAM_SARUS_ENABLED"),
+            winteam_sarus_base_url=_normalize_base_url(
+                _text(env, "WINTEAM_SARUS_BASE_URL") or _text(env, "WINTEAM_BASE_URL"),
+                _text(env, "WINTEAM_API_PREFIX", "/wtnextgen"),
+            ),
+            winteam_sarus_tenant_id=_text(env, "WINTEAM_SARUS_TENANT_ID"),
+            winteam_sarus_subscription_key=_text(env, "WINTEAM_SARUS_SUBSCRIPTION_KEY"),
+            winteam_sarus_extra_headers=_json_object(env, "WINTEAM_SARUS_HEADERS_JSON"),
             winteam_resources=parse_resources(_text(env, "WINTEAM_RESOURCES")),
             winteam_customer_numbers=parse_csv(_text(env, "WINTEAM_CUSTOMER_NUMBERS")),
             winteam_location_ids=_location_ids(_text(env, "WINTEAM_LOCATION_IDS")),
@@ -266,6 +283,25 @@ class Settings:
         parsed = urlparse(self.finance_reference_database_url)
         return parsed.hostname or None
 
+    @property
+    def winteam_sarus_configured(self) -> bool:
+        return bool(self.winteam_sarus_base_url and self.winteam_sarus_tenant_id)
+
+    def sarus_settings(self, *, enabled: bool | None = None) -> "Settings":
+        """These settings pointed at the Sarus database, so the same GET-only client serves it.
+
+        `enabled` overrides WINTEAM_SARUS_ENABLED - used by the credential probe, which must work
+        before ingestion is switched on.
+        """
+        return replace(
+            self,
+            winteam_enabled=self.winteam_sarus_enabled if enabled is None else enabled,
+            winteam_base_url=self.winteam_sarus_base_url,
+            winteam_tenant_id=self.winteam_sarus_tenant_id,
+            winteam_subscription_key=self.winteam_sarus_subscription_key,
+            winteam_extra_headers=dict(self.winteam_sarus_extra_headers),
+        )
+
     def winteam_headers(self) -> dict[str, str]:
         """Headers for every WinTeam call. Never log the returned dict."""
         headers: dict[str, str] = dict(self.winteam_extra_headers)
@@ -276,6 +312,10 @@ class Settings:
         return headers
 
     def validate(self) -> None:
+        if self.winteam_sarus_tenant_id and self.winteam_sarus_tenant_id == self.winteam_tenant_id:
+            raise ConfigurationError(
+                "WINTEAM_SARUS_TENANT_ID is the primary tenant's id; it must name the Sarus database"
+            )
         if self.finance_reference_database_url:
             parsed = urlparse(self.finance_reference_database_url)
             if parsed.scheme not in {"postgresql", "postgres"} or not parsed.hostname:

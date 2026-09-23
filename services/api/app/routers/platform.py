@@ -8,6 +8,7 @@ applies to the reference database (host only).
 from __future__ import annotations
 
 import json
+from urllib.parse import urlparse
 import logging
 from datetime import datetime, timezone
 from typing import Any
@@ -23,7 +24,7 @@ from ..config import settings
 from ..db import connection, database_ready
 from .. import reconcile
 from ..sources import finance_reference
-from ..winteam import RESOURCES, WinTeamError, winteam
+from ..winteam import RESOURCES, WinTeamError, WinTeamIngestion, parse_paged, winteam
 
 logger = logging.getLogger("platform")
 router = APIRouter()
@@ -272,6 +273,67 @@ def _mark_overdue(resource: dict[str, Any], limit: int) -> dict[str, Any]:
         bool(not not_entitled and (age is None or int(age) > limit)) if polled else None
     )
     return resource
+
+
+SARUS_INGESTION_BLOCKED = (
+    "Ingestion is off: Sarus record ids collide with the primary tenant's in core, live Sarus punches "
+    "would double-count against the Sarus export, and a Sarus backfill would widen the API window "
+    "over Crane history."
+)
+
+
+@router.get("/integrations/winteam/sarus")
+def winteam_sarus_status() -> dict[str, Any]:
+    """The second WinTeam database. Never returns the tenant id or key."""
+    return {
+        "configured": settings.winteam_sarus_configured,
+        "enabled": settings.winteam_sarus_enabled,
+        "base_url_host": urlparse(settings.winteam_sarus_base_url).hostname if settings.winteam_sarus_base_url else None,
+        "has_subscription_key": bool(settings.winteam_sarus_subscription_key),
+        "ingestion": False,
+        "ingestion_blocked_by": SARUS_INGESTION_BLOCKED,
+    }
+
+
+@router.post("/integrations/winteam/sarus/test", dependencies=[Depends(require_admin)])
+def winteam_sarus_test() -> dict[str, Any]:
+    """Read-only credential check against the Sarus database: one GET of the jobs list.
+
+    Works before WINTEAM_SARUS_ENABLED is set, so credentials can be checked first. Reports which
+    company numbers the tenant returns, so it is plain whether the id points at Sarus or back at
+    a Crane company. Lands nothing.
+    """
+    if not settings.winteam_sarus_configured:
+        return {**winteam_sarus_status(), "ok": False,
+                "error": "Set WINTEAM_SARUS_TENANT_ID (and WINTEAM_SARUS_SUBSCRIPTION_KEY) in the server .env"}
+    connector = WinTeamIngestion(settings.sarus_settings(enabled=True))
+    try:
+        with connector._client() as client:
+            page = parse_paged(client.get("/jobs/v2/api/jobs", {"pageSize": 100, "pageNumber": 1}))
+    except WinTeamError as exc:
+        return {**winteam_sarus_status(), "ok": False, "status_code": exc.status_code, "error": str(exc)[:300]}
+    companies = sorted({str(r.get("companyNumber")) for r in page.results if r.get("companyNumber") is not None})
+    primary = set(finance_company_numbers())
+    return {
+        **winteam_sarus_status(),
+        "ok": True,
+        "jobs_total": page.total_count,
+        "company_numbers": companies,
+        "overlaps_primary_companies": sorted(set(companies) & primary),
+        "sample_jobs": [
+            {"jobNumber": r.get("jobNumber"), "jobDescription": r.get("jobDescription"), "companyNumber": r.get("companyNumber")}
+            for r in page.results[:8]
+        ],
+    }
+
+
+def finance_company_numbers() -> list[str]:
+    """Company numbers the primary tenant serves, from the company_numbers setting."""
+    with connection() as conn, conn.cursor() as cursor:
+        cursor.execute("SELECT value FROM ops.app_setting WHERE key = 'company_numbers'")
+        row = cursor.fetchone()
+    value = (row or {}).get("value") or {}
+    return [str(k) for k in value] if isinstance(value, dict) else []
 
 
 @router.get("/integrations/companycam")

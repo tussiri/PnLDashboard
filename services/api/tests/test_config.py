@@ -114,3 +114,48 @@ def test_bad_numbers_and_booleans_have_clear_messages() -> None:
         Settings.load({"WINTEAM_POLL_SECONDS": "5"})
     with pytest.raises(ConfigurationError, match="WINTEAM_ENABLED"):
         Settings.load({"WINTEAM_ENABLED": "maybe"})
+
+
+# ── Sarus: the second WinTeam database ───────────────────────────────────────
+SARUS = {**ENABLED, "WINTEAM_SUBSCRIPTION_KEY": "crane-key",
+         "WINTEAM_SARUS_TENANT_ID": "99999999-8888-7777-6666-555555555555",
+         "WINTEAM_SARUS_SUBSCRIPTION_KEY": "sarus-key"}
+
+
+def test_sarus_is_off_and_unconfigured_by_default() -> None:
+    settings = Settings.load(ENABLED)
+    assert settings.winteam_sarus_enabled is False
+    assert settings.winteam_sarus_configured is False
+
+
+def test_sarus_settings_swap_only_the_tenant_identity() -> None:
+    """The same client, paging, retries and timeouts - pointed at the other database."""
+    settings = Settings.load(SARUS)
+    sarus = settings.sarus_settings(enabled=True)
+    assert sarus.winteam_tenant_id == "99999999-8888-7777-6666-555555555555"
+    assert sarus.winteam_subscription_key == "sarus-key"
+    assert sarus.winteam_headers()["tenantId"] == "99999999-8888-7777-6666-555555555555"
+    assert sarus.winteam_enabled is True
+    assert sarus.winteam_resources == settings.winteam_resources
+    assert sarus.request_timeout_seconds == settings.request_timeout_seconds
+    # The primary settings object is untouched.
+    assert settings.winteam_tenant_id == "11111111-2222-3333-4444-555555555555"
+
+
+def test_a_blank_sarus_base_url_uses_the_primary_gateway() -> None:
+    settings = Settings.load(SARUS)
+    assert settings.winteam_sarus_base_url == settings.winteam_base_url
+
+
+def test_the_sarus_key_never_falls_back_to_the_primary_key() -> None:
+    """An implicit credential fallback is how one tenant's data lands under another's."""
+    env = {k: v for k, v in SARUS.items() if k != "WINTEAM_SARUS_SUBSCRIPTION_KEY"}
+    settings = Settings.load(env)
+    assert settings.winteam_sarus_subscription_key == ""
+    assert "Ocp-Apim-Subscription-Key" not in settings.sarus_settings().winteam_headers()
+
+
+def test_pointing_sarus_at_the_primary_tenant_is_refused() -> None:
+    """Same tenant id twice would ingest every Crane record a second time."""
+    with pytest.raises(ConfigurationError, match="WINTEAM_SARUS_TENANT_ID"):
+        Settings.load({**SARUS, "WINTEAM_SARUS_TENANT_ID": ENABLED["WINTEAM_TENANT_ID"]})
