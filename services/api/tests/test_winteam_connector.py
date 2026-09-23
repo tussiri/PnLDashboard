@@ -361,6 +361,10 @@ class FakeCursor:
             self._rows = [{"customer_number": n} for n in self.conn.customers]
         elif "select job_number from core.dim_job" in text:
             self._rows = [{"job_number": n} for n in self.conn.jobs]
+        elif "select max(completed_at) as at" in text:
+            self._rows = [{"at": self.conn.last_success}]
+        elif "select a.invoice_number from core.fact_ap_invoice a" in text:
+            self._rows = [{"invoice_number": n} for n in self.conn.invoices]
         elif "select distinct on (resource_name)" in text:
             self._rows = list(self.conn.latest_runs)
         elif "select watermark_value" in text:
@@ -384,7 +388,9 @@ class FakeCursor:
 class FakeConn:
     """Stands in for an autocommit psycopg connection: only `transaction()` opens one."""
 
-    def __init__(self, customers=(), jobs=(), latest_runs=(), watermark=None) -> None:
+    def __init__(self, customers=(), jobs=(), latest_runs=(), watermark=None, last_success=None, invoices=()) -> None:
+        self.last_success = last_success
+        self.invoices = list(invoices)
         self.customers = list(customers)
         self.jobs = list(jobs)
         self.latest_runs = list(latest_runs)
@@ -707,3 +713,88 @@ def test_a_missing_day_stays_missing_rather_than_becoming_zero() -> None:
     ]})[0]
     assert line["mon"] == 8
     assert line["sat"] is None and line["hol"] is None
+
+
+# ── on-demand syncs ask WinTeam for as little as possible ───────────────────
+def test_server_errors_can_be_raised_without_retrying() -> None:
+    calls: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(1)
+        return httpx.Response(500, json={"success": False, "serverResponse": "Oops"})
+
+    client, sleeps = make_client(handler, max_retries=4)
+    with pytest.raises(WinTeamError) as info:
+        client.get("/accounts/v1/api/payables/invoices/6.12.26", retry_server_errors=False)
+    assert info.value.status_code == 500 and len(calls) == 1 and sleeps == []
+
+
+def test_rate_limits_are_still_honoured_without_server_retries() -> None:
+    responses = iter([httpx.Response(429, headers={"Retry-After": "2"}), httpx.Response(200, json={"data": []})])
+    client, sleeps = make_client(lambda request: next(responses), max_retries=2)
+    assert client.get("/x", retry_server_errors=False) == {"data": []}
+    assert sleeps == [2.0]
+
+
+def test_daily_resources_are_skipped_when_synced_recently(monkeypatch) -> None:
+    from datetime import datetime, timedelta, timezone
+
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request.url.path)
+        return httpx.Response(200, json=paged([{"vendorNumber": 7}]))
+
+    recent = datetime.now(timezone.utc) - timedelta(hours=2)
+    conn = FakeConn(last_success=recent)
+    ing = ingestion(monkeypatch, handler, conn, {"WINTEAM_RESOURCES": "vendors"})
+    skipped = ing.sync("vendors", normalize=False)
+    assert skipped["status"] == "skipped" and skipped["requests"] == 0 and calls == []
+    outcome = ing.sync_all(normalize=True)
+    assert outcome["runs"][0]["status"] == "skipped" and outcome["marts"] is None
+    forced = ing.sync("vendors", normalize=False, force=True)
+    assert forced["status"] == "succeeded" and len(calls) == 1
+    conn.last_success = datetime.now(timezone.utc) - timedelta(hours=30)
+    assert ing.sync("vendors", normalize=False)["status"] == "succeeded"
+
+
+def test_timekeeping_is_never_daily_skipped(monkeypatch) -> None:
+    from datetime import datetime, timezone
+
+    conn = FakeConn(last_success=datetime.now(timezone.utc))
+    ing = ingestion(monkeypatch, lambda request: httpx.Response(200, json=paged([])), conn, {"WINTEAM_RESOURCES": "timekeeping"})
+    assert ing.sync("timekeeping", normalize=False)["status"] == "succeeded"
+
+
+def test_lookback_is_short_unless_deep(monkeypatch) -> None:
+    conn = FakeConn(watermark="2026-09-20")
+    ing = ingestion(monkeypatch, lambda request: httpx.Response(204), conn, {"WINTEAM_WINDOW_DAYS": "366"})
+    today = date(2026, 9, 22)
+    assert ing._windows(RESOURCES["timekeeping"], today)[0][0] == date(2026, 9, 17)
+    assert ing._windows(RESOURCES["timekeeping"], today, deep=True)[0][0] == date(2026, 8, 16)
+
+
+def test_unretrievable_invoices_are_remembered_and_not_retried(monkeypatch) -> None:
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request.url.path)
+        if request.url.path.endswith("/6.12.26"):
+            return httpx.Response(500, json={"success": False, "serverResponse": "Oops"})
+        if request.url.path.endswith("/A%2F1") or request.url.path.endswith("/A/1"):
+            return httpx.Response(404)
+        return httpx.Response(200, json={"data": [{"invoiceNumber": "900", "vendorNumber": 1, "generalLedgerDistributions": [
+            {"lineIndex": 1, "accountNumber": "5000", "jobNumber": "100", "amount": 10}]}]})
+
+    conn = FakeConn(invoices=["6.12.26", "A/1", "900"])
+    ing = ingestion(monkeypatch, handler, conn, {"WINTEAM_RESOURCES": "ap_invoice_details", "WINTEAM_MAX_RETRIES": "4"})
+    monkeypatch.setattr(ing, "_client", lambda: make_client(handler, max_retries=4)[0])
+    run = ing.sync("ap_invoice_details", normalize=False)
+    assert run["status"] == "succeeded"
+    assert len(calls) == 3  # one request per invoice: the 500 is not retried
+    remembered = [p for sql, p in conn.statements if "INSERT INTO ops.winteam_unretrievable" in sql]
+    assert [(p[2], p[3]) for p in remembered] == [("6.12.26", 500), ("A/1", 404)]
+    forgotten = [p for sql, p in conn.statements if "DELETE FROM ops.winteam_unretrievable" in sql]
+    assert [p[2] for p in forgotten] == ["900"]
+    query = next((" ".join(sql.split()), p) for sql, p in conn.statements if "SELECT a.invoice_number" in sql)
+    assert "u.last_attempt_at > now() - %(recheck)s" in query[0] and query[1]["integration"] == "winteam"

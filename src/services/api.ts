@@ -3,7 +3,7 @@ import type {
   SiteVendorsResponse,
   AccountsResponse, AlertsResponse, ApSummary, AppSetting, ArAgingResponse, ArInvoicesQuery, ArInvoicesResponse,
   BudgetVariance, ConnectionTestResult, DimensionsResponse, ExecutiveAccountsResponse, ExecutiveLaborPl, ExecutiveLaborPlQuery, FinanceReferenceLoadResult, FinanceReferenceStatus, ForecastBuildResult, ForecastHistoryResponse, ForecastsQuery,
-  ForecastMetaResponse, ForecastsResponse, FreshnessResponse, FullSyncResult, IntegrationStatus, JobDetailResponse, JobForecastResponse,
+  ForecastMetaResponse, ForecastsResponse, FreshnessResponse, FullSyncResult, IntegrationStatus, SarusStatus, SyncOptions, JobDetailResponse, JobForecastResponse,
   JobsResponse, LaborPace, LaborPaceQuery, LaborSummary, PortfolioSummary, RebuildResult, ReportingQuery, RunMeta,
   SettingsResponse, SyncRunResult, SyncRunsResponse, SystemStatus, TimekeepingSummary, TrackRecordQuery, TrackRecordResponse, WatermarkResetResult } from './apiTypes'
 
@@ -115,6 +115,7 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
 }
 
 const reporting = (query?: ReportingQuery): QueryParams => ({ ...query })
+const syncQuery = (options?: SyncOptions): QueryParams => ({ ...(options?.force ? { force: true } : {}), ...(options?.deep ? { deep: true } : {}) })
 
 /** One function per contract route. Every call accepts an optional AbortSignal as the last argument. */
 export const api = {
@@ -124,7 +125,10 @@ export const api = {
   testConnection: (signal?: AbortSignal) => request<ConnectionTestResult>('/integrations/winteam/test', { method: 'POST', admin: true, signal, timeoutMs: 60_000 }),
   resetWatermark: (resource: string, signal?: AbortSignal) => request<WatermarkResetResult>(`/integrations/winteam/watermark/${encodeURIComponent(resource)}/reset`, { method: 'POST', admin: true, signal }),
   syncResource: (resource: string, signal?: AbortSignal) => request<SyncRunResult>(`/integrations/winteam/sync/${encodeURIComponent(resource)}`, { method: 'POST', admin: true, signal, timeoutMs: 600_000 }),
-  syncAll: (signal?: AbortSignal) => request<FullSyncResult>('/integrations/winteam/sync', { method: 'POST', admin: true, signal, timeoutMs: 600_000 }),
+  /** On demand only: nothing syncs WinTeam on a schedule. */
+  syncAll: (options?: SyncOptions, signal?: AbortSignal) => request<FullSyncResult>('/integrations/winteam/sync', { method: 'POST', admin: true, query: syncQuery(options), signal, timeoutMs: 900_000 }),
+  sarusStatus: (signal?: AbortSignal) => request<SarusStatus>('/integrations/winteam/sarus', { signal }),
+  syncSarus: (options?: SyncOptions, signal?: AbortSignal) => request<FullSyncResult>('/integrations/winteam/sarus/sync', { method: 'POST', admin: true, query: syncQuery(options), signal, timeoutMs: 900_000 }),
   rebuildMarts: (signal?: AbortSignal) => request<RebuildResult>('/marts/rebuild', { method: 'POST', admin: true, signal, timeoutMs: 600_000 }),
   rebuildForecasts: (signal?: AbortSignal) => request<ForecastBuildResult>('/forecasts/rebuild', { method: 'POST', admin: true, signal, timeoutMs: 600_000 }),
   financeReference: (signal?: AbortSignal) => request<FinanceReferenceStatus>('/integrations/finance-reference', { signal }),

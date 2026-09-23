@@ -38,8 +38,8 @@ docker compose up -d --build
 `.env`: dashboard `http://127.0.0.1:15173` (API docs at `/api/docs`), Metabase
 `http://127.0.0.1:13001`, PostgreSQL `127.0.0.1:15433`, simulator `http://127.0.0.1:18081`.
 
-The worker syncs every `WINTEAM_POLL_SECONDS`, normalizes, rebuilds the marts and reruns the
-forecast engine. The Administration page (admin token = `INGESTION_ADMIN_TOKEN`) can test the
+WinTeam is synced on demand only - nothing polls it, and the worker never calls it. A sync
+normalizes, rebuilds the marts and reruns the forecast engine. The Administration page (admin token = `INGESTION_ADMIN_TOKEN`) can test the
 connection, sync, reset a watermark for a full re-pull, rebuild marts or forecasts, and edit
 tenant settings (job tier map, overtime rule, GL account classes, fiscal year start, payroll
 burden, customer names).

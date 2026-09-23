@@ -1,10 +1,10 @@
-"""Overdue detection on /api/v1/data/freshness (app.routers.platform).
+"""Freshness on /api/v1/data/freshness (app.routers.platform).
 
-A hung worker records no failure: the run rows it already wrote still say "succeeded" and nothing
-new appears. Freshness therefore cannot be read off `last_status`; it has to come from the age of
-the last completion, which is what `_mark_overdue` decides.
+WinTeam is synced on demand only - the worker never calls it - so no resource is behind a
+schedule. `_mark_overdue` therefore never calls a resource overdue, whatever its age; the age is
+reported as is, and a tenant 403 is still flagged as not entitled.
 """
-from app.routers.platform import _mark_overdue, _overdue_after_seconds
+from app.routers.platform import _mark_overdue
 
 
 def row(**kw):
@@ -14,50 +14,34 @@ def row(**kw):
     return base
 
 
-def test_recent_success_is_not_overdue():
-    assert _mark_overdue(row(), 3600)["overdue"] is False
+def test_no_resource_is_overdue_without_a_schedule():
+    for marked in (
+        _mark_overdue(row()),
+        _mark_overdue(row(seconds_since_last_completion=1_325_339)),
+        _mark_overdue(row(last_status=None, seconds_since_last_completion=None)),
+        _mark_overdue(row(last_status="failed", last_error="connection refused")),
+    ):
+        assert marked["overdue"] is None
+        assert marked["overdue_after_seconds"] is None
 
 
-def test_success_older_than_the_limit_is_overdue():
-    """The 2026-09-10 stall: status "succeeded", last completion 15 days old."""
-    marked = _mark_overdue(row(seconds_since_last_completion=1_325_339), 3600)
-    assert marked["overdue"] is True
-    assert marked["overdue_after_seconds"] == 3600
+def test_age_is_reported_unchanged():
+    assert _mark_overdue(row(seconds_since_last_completion=1_325_339))["seconds_since_last_completion"] == 1_325_339
 
 
-def test_never_run_resource_is_overdue():
-    assert _mark_overdue(row(last_status=None, seconds_since_last_completion=None), 3600)["overdue"] is True
-
-
-def test_not_entitled_resource_is_never_overdue():
-    """job_schedules / ap_payments answer 403 for this tenant and never complete by design."""
-    marked = _mark_overdue(
-        row(resource_name="job_schedules", last_status="failed",
-            last_error="not_entitled: HTTP 403; WinTeam returned HTTP 403",
-            seconds_since_last_completion=1_325_327),
-        3600,
-    )
+def test_not_entitled_resource_is_flagged():
+    marked = _mark_overdue(row(last_status="failed", last_error="not_entitled: HTTP 403; WinTeam returned HTTP 403"))
     assert marked["not_entitled"] is True
-    assert marked["overdue"] is False
+    assert _mark_overdue(row(last_status="failed", last_error="connection refused"))["not_entitled"] is False
 
 
-def test_other_failures_still_count_as_overdue():
-    marked = _mark_overdue(row(last_status="failed", last_error="connection refused",
-                               seconds_since_last_completion=999_999), 3600)
-    assert marked["overdue"] is True
+def test_the_worker_never_calls_winteam():
+    """Syncs are on demand: the worker module imports no WinTeam client at all."""
+    import inspect
 
-
-def test_limit_never_falls_below_the_floor():
-    assert _overdue_after_seconds() >= 3600
-
-
-def test_resource_outside_the_winteam_catalogue_is_not_judged():
-    """Historical loader steps (fact_daily_budget, contract_billing) share the run table but are
-    not on the worker's schedule, so they are neither fresh nor overdue."""
-    marked = _mark_overdue(row(resource_name="fact_daily_budget", last_status=None,
-                               seconds_since_last_completion=None), 3600)
-    assert marked["overdue"] is None
-    assert marked["overdue_after_seconds"] is None
+    from app import worker
+    source = inspect.getsource(worker)
+    assert "sync_all" not in source and "from .winteam" not in source
 
 
 def test_reference_stale_threshold_is_one_week():

@@ -17,7 +17,8 @@ share the same core/mart tables, combined by explicit precedence rules (`docs/wi
   that file): jobs (643, exact coordinates), vendors, timekeeping (rolling window, ~8k punches a
   week), AP invoices and AR invoices with applied cash. Job schedules and AP payments answer 403
   (subscription not entitled) and are skipped; GL budgets answer 400/404 for jobs without a budget.
-  The worker syncs every `WINTEAM_POLL_SECONDS`, normalizes, rebuilds marts and forecasts. Inside the
+  Syncs run on demand only (Administration page or the admin routes; the worker never calls
+  WinTeam), then normalize and rebuild marts and forecasts. Inside the
   API's date window API rows are the truth for the companies the tenant serves (Crane IFS, Crane
   West, Crane Southwest); exports fill everything else (Sarus, and all history before the window).
 - **finance_reference**: the WinTeam report exports restored from the Finance_Dashboard PostgreSQL
@@ -217,7 +218,10 @@ Administration page (needs the admin token from `INGESTION_ADMIN_TOKEN`): test c
 all or one resource, rebuild marts, rebuild forecasts, edit `ops.app_setting` values, view sync
 runs. Equivalent routes: `POST /api/v1/integrations/winteam/{test,sync,sync/{resource}}`,
 `POST /api/v1/marts/rebuild`, `POST /api/v1/forecasts/rebuild` with header `X-Admin-Token`.
-The worker syncs every `WINTEAM_POLL_SECONDS` and rebuilds marts and forecasts after each sync.
+Nothing syncs on a schedule. A normal sync re-reads 3 days before the last one (`WINTEAM_LOOKBACK_DAYS`);
+`deep=true` re-reads 35 (`WINTEAM_DEEP_LOOKBACK_DAYS`); jobs, vendors, budgets and AR are re-read at
+most once per 20 hours unless `force=true`; AP invoices WinTeam cannot serve are not asked for again for
+7 days (`ops.winteam_unretrievable`). Sarus: `POST /api/v1/integrations/winteam/sarus/sync`.
 
 ## Known limitations
 

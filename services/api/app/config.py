@@ -162,11 +162,11 @@ class Settings:
     winteam_backfill_months: int
     winteam_window_days: int
     winteam_lookback_days: int
+    winteam_deep_lookback_days: int
     winteam_gl_fiscal_years: int
     winteam_schedule_jobs_limit: int
     winteam_gl_jobs_limit: int
     winteam_normalize: bool
-    poll_seconds: int
     request_timeout_seconds: int
     max_pages_per_sync: int
     allow_insecure_http: bool
@@ -216,7 +216,10 @@ class Settings:
             winteam_page_size=_integer(env, "WINTEAM_PAGE_SIZE", 100, maximum=10_000),
             winteam_backfill_months=_integer(env, "WINTEAM_BACKFILL_MONTHS", 18, maximum=120),
             winteam_window_days=_integer(env, "WINTEAM_WINDOW_DAYS", 16, maximum=366),
-            winteam_lookback_days=_integer(env, "WINTEAM_LOOKBACK_DAYS", 35, minimum=0, maximum=366),
+            # Syncs run on demand only. A normal sync re-reads this many days before the last one (late
+            # punches, approvals); a deep sync re-reads WINTEAM_DEEP_LOOKBACK_DAYS for edits made later.
+            winteam_lookback_days=_integer(env, "WINTEAM_LOOKBACK_DAYS", 3, minimum=0, maximum=366),
+            winteam_deep_lookback_days=_integer(env, "WINTEAM_DEEP_LOOKBACK_DAYS", 35, minimum=0, maximum=366),
             winteam_gl_fiscal_years=_integer(env, "WINTEAM_GL_FISCAL_YEARS", 2, maximum=10),
             winteam_schedule_jobs_limit=_integer(env, "WINTEAM_SCHEDULE_JOBS_LIMIT", 0, minimum=0),
             # Cap the per-job GL budget pull (0 = every active job); mirrors WINTEAM_SCHEDULE_JOBS_LIMIT.
@@ -224,7 +227,6 @@ class Settings:
             # false = land raw payloads only; the worker and the admin sync endpoints skip normalization
             # (used while the marts cannot yet arbitrate between the API and the finance_reference source).
             winteam_normalize=_boolean(env, "WINTEAM_NORMALIZE", True),
-            poll_seconds=_integer(env, "WINTEAM_POLL_SECONDS", 300, minimum=30),
             request_timeout_seconds=_integer(env, "WINTEAM_REQUEST_TIMEOUT_SECONDS", 30),
             max_pages_per_sync=_integer(env, "WINTEAM_MAX_PAGES_PER_SYNC", 500),
             allow_insecure_http=_boolean(env, "WINTEAM_ALLOW_INSECURE_HTTP"),
@@ -293,6 +295,8 @@ class Settings:
         `enabled` overrides WINTEAM_SARUS_ENABLED - used by the credential probe, which must work
         before ingestion is switched on.
         """
+        from .tenants import SARUS_RESOURCE_NAMES  # tenants -> sources.rules -> config
+
         return replace(
             self,
             winteam_enabled=self.winteam_sarus_enabled if enabled is None else enabled,
@@ -300,6 +304,10 @@ class Settings:
             winteam_tenant_id=self.winteam_sarus_tenant_id,
             winteam_subscription_key=self.winteam_sarus_subscription_key,
             winteam_extra_headers=dict(self.winteam_sarus_extra_headers),
+            # The primary tenant's resource list, location filter and customer list do not apply.
+            winteam_resources=SARUS_RESOURCE_NAMES,
+            winteam_location_ids=(),
+            winteam_customer_numbers=(),
         )
 
     def winteam_headers(self) -> dict[str, str]:

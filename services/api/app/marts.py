@@ -79,6 +79,9 @@ class MartRebuildBlocked(RuntimeError):
 
 
 API_SOURCE = "winteam_api"
+SARUS_SOURCE = "winteam_sarus"
+SARUS_COMPANY = "Sarus"
+API_SOURCES = (API_SOURCE, SARUS_SOURCE)
 EFFECTIVE_VIEWS = {
     "timekeeping": "mart.v_timekeeping_effective",
     "ar_invoice": "mart.v_ar_invoice_effective",
@@ -86,10 +89,10 @@ EFFECTIVE_VIEWS = {
 }
 
 
-# ── source precedence (pure mirror of the 011 views) ────────────────────────
-def api_window(rows: list[dict[str, Any]], date_field: str) -> tuple[Any, Any]:
-    """[min, max] of `date_field` over the API rows; (None, None) when the API has none."""
-    dates = [r[date_field] for r in rows if r.get("source") == API_SOURCE and r.get(date_field) is not None]
+# ── source precedence (pure mirror of the 011 / 026 views) ──────────────────
+def api_window(rows: list[dict[str, Any]], date_field: str, source: str = API_SOURCE) -> tuple[Any, Any]:
+    """[min, max] of `date_field` over the rows of one API source; (None, None) when it has none."""
+    dates = [r[date_field] for r in rows if r.get("source") == source and r.get(date_field) is not None]
     return (min(dates), max(dates)) if dates else (None, None)
 
 
@@ -99,17 +102,23 @@ def covered_by_api(company: str | None, api_companies: list[str] | tuple[str, ..
 
 
 def effective_rows(rows: list[dict[str, Any]], date_field: str, api_companies: list[str] | tuple[str, ...]) -> list[dict[str, Any]]:
-    """Day-grain precedence: API rows always; non-API rows only outside the API window or for companies the API does not serve."""
+    """Day-grain precedence per database: API rows always; an export row is dropped inside the primary
+    window when its company is one the primary serves, and inside the Sarus window when it is Sarus."""
     lo, hi = api_window(rows, date_field)
+    s_lo, s_hi = api_window(rows, date_field, SARUS_SOURCE)
     out: list[dict[str, Any]] = []
     for r in rows:
-        if r.get("source") == API_SOURCE:
+        if r.get("source") in API_SOURCES:
             out.append(r)
             continue
         d = r.get(date_field)
         inside = lo is not None and d is not None and lo <= d <= hi
-        if not (inside and covered_by_api(r.get("company"), api_companies)):
-            out.append(r)
+        inside_sarus = s_lo is not None and d is not None and s_lo <= d <= s_hi
+        if inside and covered_by_api(r.get("company"), api_companies):
+            continue
+        if inside_sarus and r.get("company") == SARUS_COMPANY:
+            continue
+        out.append(r)
     return out
 
 
@@ -138,9 +147,17 @@ def resolve_api_job(raw_job_number: str | None, dim_rows: list[dict[str, Any]], 
 
 
 def effective_ar_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Invoice-grain precedence: an API invoice supersedes the export invoice with the same (customer_number, invoice_number)."""
-    api_keys = {(r["customer_number"], r["invoice_number"]) for r in rows if r.get("source") == API_SOURCE}
-    return [r for r in rows if r.get("source") == API_SOURCE or (r["customer_number"], r["invoice_number"]) not in api_keys]
+    """Invoice-grain precedence: an API invoice supersedes the export invoice with the same
+    (customer_number, invoice_number) of its own database (company Sarus -> winteam_sarus)."""
+    api_keys = {(r["source"], r["customer_number"], r["invoice_number"]) for r in rows if r.get("source") in API_SOURCES}
+
+    def own_source(r: dict[str, Any]) -> str:
+        return SARUS_SOURCE if r.get("company") == SARUS_COMPANY else API_SOURCE
+
+    return [
+        r for r in rows
+        if r.get("source") in API_SOURCES or (own_source(r), r["customer_number"], r["invoice_number"]) not in api_keys
+    ]
 
 JOB_MONTH_SQL = """
 INSERT INTO mart.job_month (

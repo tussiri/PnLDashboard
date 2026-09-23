@@ -363,13 +363,14 @@ def test_jobs_sync_repoints_api_facts_through_the_map_and_reference_facts_by_bar
     conn = RecordingConn()
     normalize.normalize_jobs(conn, ["g-1"])
     repoints = [(flat(sql), p) for sql, p in conn.statements if flat(sql).startswith("UPDATE core.fact_") and "SET job_key" in sql]
-    assert len(repoints) == 8  # 4 fact tables x (reference, api)
+    assert len(repoints) == 18  # 6 fact tables x (reference, primary api, Sarus api)
     for text, params in repoints:
-        assert params["source"] == "winteam_api"
         if "FROM wt_job_map m" in text:
+            assert params["source"] in ("winteam_api", "winteam_sarus")
             assert "f.source = %(source)s AND m.raw_job_number = f.job_number" in text
         else:
-            assert "f.source <> %(source)s AND d.job_number = f.job_number AND d.valid_to IS NULL" in text
+            assert params["api_sources"] == ["winteam_api", "winteam_sarus"]
+            assert "f.source <> ALL(%(api_sources)s) AND d.job_number = f.job_number AND d.valid_to IS NULL" in text
 
 
 # ── 5. business-unit order ──────────────────────────────────────────────────

@@ -590,10 +590,12 @@ export function createDemoApi(options: DemoApiOptions = {}): DashboardApi {
     syncResource: () => notAvailable('Resource sync'),
     resetWatermark: () => notAvailable('Watermark reset'),
     syncAll: () => notAvailable('Full sync'),
+    syncSarus: () => notAvailable('Sarus sync'),
+    sarusStatus: (signal) => settle(() => ({ configured: false, enabled: false, base_url_host: null, has_subscription_key: false, ingestion: false, sync: 'on_demand' as const, resources: [], precedence: { sarus_timekeeping_from: null, sarus_timekeeping_to: null, sarus_ap_invoice_from: null, sarus_ap_invoice_to: null, sarus_ar_invoices_api: 0 } }), signal),
     rebuildMarts: () => notAvailable('Mart rebuild'),
     rebuildForecasts: () => notAvailable('Forecast rebuild'),
     syncRuns: (limit = 25, signal) => settle(() => ({ runs: demoResources.slice(0, limit).map((name, i) => ({ id: 100 + i, resource_name: name, status: i === 1 ? 'failed' : 'succeeded', started_at: `2026-09-01T05:${String(10 + i * 3).padStart(2, '0')}:00Z`, completed_at: `2026-09-01T05:${String(12 + i * 3).padStart(2, '0')}:00Z`, records_fetched: 120 + i * 37, records_inserted: 18 + i * 5, error_message: i === 1 ? 'Demo run: simulated 429 rate limit, retried on next poll' : null })) }), signal),
-    freshness: (signal) => settle(() => ({ resources: demoResources.map((name, i) => ({ resource_name: name, last_status: 'demo', last_completed_at: DEMO_AS_OF, records_fetched: 120 + i * 37, records_inserted: 18 + i * 5, last_error: null, watermark_value: '2026-09-01T05:00:00Z', seconds_since_last_completion: 1800 + i * 60, overdue: false, overdue_after_seconds: 3600, not_entitled: false })), ingestion: { healthy: true, overdue_resources: [], overdue_after_seconds: 3600, poll_seconds: 900, reference_stale: false, reference_stale_after_seconds: 604800 }, sources: sourceRows(), marts: { latest_month: DEMO_LATEST_MONTH, rebuilt_at: DEMO_AS_OF, job_month_rows: demoJobMonths.length, mode: 'demo' } }), signal),
+    freshness: (signal) => settle(() => ({ resources: demoResources.map((name, i) => ({ resource_name: name, last_status: 'demo', last_completed_at: DEMO_AS_OF, records_fetched: 120 + i * 37, records_inserted: 18 + i * 5, last_error: null, watermark_value: '2026-09-01T05:00:00Z', seconds_since_last_completion: 1800 + i * 60, overdue: null, overdue_after_seconds: null, not_entitled: false })), ingestion: { healthy: true, overdue_resources: [], overdue_after_seconds: null, poll_seconds: null, sync: 'on_demand' as const, reference_stale: false, reference_stale_after_seconds: 604800 }, sources: sourceRows(), marts: { latest_month: DEMO_LATEST_MONTH, rebuilt_at: DEMO_AS_OF, job_month_rows: demoJobMonths.length, mode: 'demo' } }), signal),
     settings: (signal) => settle(() => ({ settings: demoSettings.map((s): AppSetting => ({ ...s, updated_at: '2026-08-15T14:00:00Z' })) }), signal),
     updateSetting: () => notAvailable('Setting update'),
     dimensions: (signal) => settle(() => ({
@@ -883,7 +885,7 @@ export function createDemoApi(options: DemoApiOptions = {}): DashboardApi {
   }
 
   function integration() {
-    return { enabled: false, configured: false, base_url_host: null, resources: demoResources.map((name, i) => ({ name, enabled: true, kind: i < 2 ? 'dimension' : 'fact', last_status: 'demo', last_completed_at: DEMO_AS_OF, records_fetched: 120 + i * 37, watermark: '2026-09-01T05:00:00Z' })), poll_seconds: 300 }
+    return { enabled: false, configured: false, base_url_host: null, resources: demoResources.map((name, i) => ({ name, enabled: true, kind: i < 2 ? 'dimension' : 'fact', last_status: 'demo', last_completed_at: DEMO_AS_OF, records_fetched: 120 + i * 37, watermark: '2026-09-01T05:00:00Z' })), poll_seconds: null, sync: 'on_demand' as const }
   }
 
   return api

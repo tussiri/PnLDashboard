@@ -5,13 +5,19 @@ import { DataGrid, type Column } from '../components/DataGrid'
 import { useDashboard } from '../context/DashboardContext'
 import { useAuth } from '../auth/useAuth'
 import { hasAdminToken, setAdminToken } from '../services/api'
-import type { AppSetting, FinanceReferenceStatus, IntegrationStatus, SettingsResponse, SyncRun, SyncRunsResponse } from '../services/apiTypes'
+import type { AppSetting, FinanceReferenceStatus, FullSyncResult, IntegrationStatus, SarusStatus, SettingsResponse, SyncRun, SyncRunsResponse } from '../services/apiTypes'
 import { LiveApi } from '../services/dataSource'
 import { monthLabel } from '../services/period'
 import { queryClient } from '../services/queryClient'
 import type { ServiceType } from '../types'
 import { errorMessage, fmtDate, fmtDateTime, number, relativeTime, sum } from '../utils'
 import { DemoNotice, Note, useReportQuery } from './shared'
+
+const syncSummary = (r: FullSyncResult) => {
+  const skipped = r.runs.filter((run) => run.status === 'skipped').length
+  const failed = r.runs.filter((run) => run.status === 'failed').length
+  return [`${r.runs.length - skipped} synced`, skipped ? `${skipped} skipped` : '', failed ? `${failed} failed` : '', r.marts ? `${number(r.marts.job_month_rows)} job-month rows · ${r.marts.seconds.toFixed(1)}s` : 'marts unchanged'].filter(Boolean).join(' · ')
+}
 
 const isRunning = (run: SyncRun) => /running|started|pending|in_progress/i.test(run.status) || (!run.completed_at && !run.error_message)
 
@@ -28,7 +34,10 @@ export function Admin() {
   const [armed, setArmed] = useState(hasAdminToken())
   const [busy, setBusy] = useState<string | null>(null)
   const [resource, setResource] = useState('')
+  const [deep, setDeep] = useState(false)
+  const [force, setForce] = useState(false)
   const integration = useReportQuery<IntegrationStatus>('integrations/winteam', (api, signal) => api.integrationStatus(signal))
+  const sarus = useReportQuery<SarusStatus>('integrations/winteam/sarus', (api, signal) => api.sarusStatus(signal))
   const finance = useReportQuery<FinanceReferenceStatus>('integrations/finance-reference', (api, signal) => (apiReachable ? adminApi : api).financeReference(signal))
   const runs = useReportQuery<SyncRunsResponse>('integrations/winteam/runs', (api, signal) => api.syncRuns(25, signal))
   const settings = useReportQuery<SettingsResponse>('settings', (api, signal) => api.settings(signal))
@@ -59,14 +68,17 @@ export function Admin() {
   return <>
     <DemoNotice>{decision.reason === 'marts_empty' ? 'API reachable, marts empty: views show demo data; admin actions call the real API.' : 'API unreachable: admin actions are disabled.'}</DemoNotice>
     <div className="dashboard-grid">
-      <QueryCard title="WinTeam integration" subtitle="Server-side connector status · credentials never reach the browser" className="span-7" query={integration} skeleton="text" isEmpty={() => false}>{(s) => <div className="integration-status"><div className="integration-status__flags"><span className={`source-state source-state--${s.enabled ? 'ready' : 'mocked'}`}>{s.enabled ? 'Enabled' : 'Disabled'}</span><span className={`source-state source-state--${s.configured ? 'ready' : 'mocked'}`}>{s.configured ? 'Configured' : 'Not configured'}</span><span className="muted">Host: <b className="num">{s.base_url_host ?? '—'}</b></span><span className="muted">Poll: <b className="num">{s.poll_seconds}s</b></span></div><table className="mini-table"><thead><tr><th>Resource</th><th>Kind</th><th>Enabled</th><th>Entitled</th><th>Last status</th><th>Completed</th><th className="align-right">Records</th><th>Watermark</th></tr></thead><tbody>{s.resources.map((r) => <tr key={r.name}><td><strong>{r.name}</strong></td><td>{r.kind}</td><td>{r.enabled ? 'yes' : 'no'}</td><td>{r.entitled === false ? 'no (403)' : r.entitled ? 'yes' : '—'}</td><td>{r.last_status ?? '—'}</td><td>{fmtDateTime(r.last_completed_at)}</td><td className="align-right num">{number(r.records_fetched)}</td><td className="num">{r.watermark ?? '—'}</td></tr>)}{!s.resources.length && <tr><td colSpan={8} className="muted">No resources configured (WINTEAM_RESOURCES is empty).</td></tr>}</tbody></table></div>}</QueryCard>
+      <QueryCard title="WinTeam integration" subtitle="Server-side connector status · credentials never reach the browser" className="span-7" query={integration} skeleton="text" isEmpty={() => false}>{(s) => <div className="integration-status"><div className="integration-status__flags"><span className={`source-state source-state--${s.enabled ? 'ready' : 'mocked'}`}>{s.enabled ? 'Enabled' : 'Disabled'}</span><span className={`source-state source-state--${s.configured ? 'ready' : 'mocked'}`}>{s.configured ? 'Configured' : 'Not configured'}</span><span className="muted">Host: <b className="num">{s.base_url_host ?? '—'}</b></span><span className="muted">Sync: <b>on demand</b></span><span className={`source-state source-state--${sarus.data?.ingestion ? 'ready' : 'mocked'}`}>Sarus {sarus.data?.ingestion ? 'enabled' : 'disabled'}</span></div><table className="mini-table"><thead><tr><th>Resource</th><th>Kind</th><th>Enabled</th><th>Entitled</th><th>Last status</th><th>Completed</th><th className="align-right">Records</th><th>Watermark</th></tr></thead><tbody>{s.resources.map((r) => <tr key={r.name}><td><strong>{r.name}</strong></td><td>{r.kind}</td><td>{r.enabled ? 'yes' : 'no'}</td><td>{r.entitled === false ? 'no (403)' : r.entitled ? 'yes' : '—'}</td><td>{r.last_status ?? '—'}</td><td>{fmtDateTime(r.last_completed_at)}</td><td className="align-right num">{number(r.records_fetched)}</td><td className="num">{r.watermark ?? '—'}</td></tr>)}{!s.resources.length && <tr><td colSpan={8} className="muted">No resources configured (WINTEAM_RESOURCES is empty).</td></tr>}</tbody></table></div>}</QueryCard>
       <section className="chart-card span-5 admin-panel" aria-label="Admin operations">
         <header className="chart-card__header"><div className="chart-card__heading"><h2>Protected operations</h2><p>X-Admin-Token · in-memory only</p></div>{armed && <span className="admin-armed"><CheckCircle2 size={13} />Token set</span>}</header>
         <div className="chart-card__body admin-ops">
           <form className="token-form" onSubmit={(e) => { e.preventDefault(); arm() }}><label><KeyRound size={14} aria-hidden="true" /><input type="password" value={token} onChange={(e) => setToken(e.target.value)} placeholder={armed ? 'Replace token…' : 'Ingestion admin token'} autoComplete="off" aria-label="Admin token" /></label><button type="submit" className="secondary-button" disabled={!apiReachable}>{armed && !token ? 'Clear' : 'Use token'}</button></form>
           <div className="admin-buttons">
             <button className="secondary-button" disabled={!canAct || !!busy} onClick={() => act('Connection test', async () => { const r = await adminApi.testConnection(); return `${r.ok ? 'OK' : 'Failed'} · ${r.resource} · ${r.records_in_probe} records in probe${r.total_count !== null ? ` of ${r.total_count}` : ''}` })}>{busy === 'Connection test' && <RefreshCw size={13} className="spin" />}Test connection</button>
-            <button className="primary-button" disabled={!canAct || !!busy} onClick={() => act('Full sync', async () => { const r = await adminApi.syncAll(); return `${r.runs.length} resources · ${r.marts.job_month_rows} job-month rows · ${r.marts.seconds.toFixed(1)}s` })}>{busy === 'Full sync' && <RefreshCw size={13} className="spin" />}Sync all</button>
+            <button className="primary-button" disabled={!canAct || !!busy} onClick={() => act('Full sync', async () => syncSummary(await adminApi.syncAll({ deep, force })))}>{busy === 'Full sync' && <RefreshCw size={13} className="spin" />}Sync all</button>
+            <button className="secondary-button" disabled={!canAct || !!busy || !sarus.data?.ingestion} onClick={() => act('Sarus sync', async () => syncSummary(await adminApi.syncSarus({ deep, force })))}>{busy === 'Sarus sync' && <RefreshCw size={13} className="spin" />}Sync Sarus</button>
+            <label className="admin-check"><input type="checkbox" checked={deep} onChange={(e) => setDeep(e.target.checked)} disabled={!canAct} />Re-read 35 days</label>
+            <label className="admin-check"><input type="checkbox" checked={force} onChange={(e) => setForce(e.target.checked)} disabled={!canAct} />Refresh daily resources</label>
             <div className="admin-resource"><select value={resource} onChange={(e) => setResource(e.target.value)} aria-label="Resource to sync" disabled={!canAct}><option value="">Resource…</option>{(integration.data?.resources ?? []).map((r) => <option key={r.name} value={r.name}>{r.name}</option>)}</select><button className="secondary-button" disabled={!canAct || !resource || !!busy} onClick={() => act(`Sync ${resource}`, async () => { const r = await adminApi.syncResource(resource); return `${r.status} · fetched ${r.fetched} · inserted ${r.inserted} · normalized ${r.normalized}` })}>Sync resource</button><button className="text-button" title="Forget the incremental watermark so the next sync backfills the full history (raw records are kept; replays are idempotent)" disabled={!canAct || !resource || !!busy} onClick={() => { if (window.confirm(`Reset the ${resource} watermark? The next sync re-pulls its full backfill window.`)) act(`Reset ${resource} watermark`, async () => { const r = await adminApi.resetWatermark(resource); return r.watermark_removed ? 'Watermark removed · next sync backfills' : 'No watermark existed · next sync backfills' }) }}>Reset watermark</button></div>
             <button className="secondary-button" disabled={!canAct || !!busy} onClick={() => act('Mart rebuild', async () => { const r = await adminApi.rebuildMarts(); return `${r.job_month_rows} job-month rows · ${r.portfolio_month_rows} portfolio rows · ${r.seconds.toFixed(1)}s` })}>{busy === 'Mart rebuild' && <RefreshCw size={13} className="spin" />}Rebuild marts</button>
             <button className="secondary-button" disabled={!canAct || !!busy} onClick={() => act('Forecast rebuild', async () => { const r = await adminApi.rebuildForecasts(); return `${r.sites_forecast} sites forecast · ${r.forecast_rows} rows · run ${r.run_id}` })}>{busy === 'Forecast rebuild' && <RefreshCw size={13} className="spin" />}Rebuild forecasts</button>

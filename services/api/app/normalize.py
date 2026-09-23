@@ -114,6 +114,7 @@ from typing import Any
 from .config import CANADIAN_PROVINCES, RESOURCE_NAMES
 from .db import connection
 from .sources import rules
+from .tenants import PRIMARY, SARUS, SARUS_RESOURCE_NAMES, Tenant
 
 logger = logging.getLogger("normalize")
 
@@ -160,9 +161,9 @@ def json_array(field: str, src: str = "p") -> str:
     return f"(CASE WHEN jsonb_typeof({src}->'{field}') = 'array' THEN {src}->'{field}' ELSE '[]'::jsonb END)"
 
 
-def api_id(expr: str = "source_record_id") -> str:
-    """winteam_id of an API-sourced core row: 'api:' + the raw source_record_id."""
-    return f"('{API_PREFIX}' || {expr})"
+def api_id(expr: str = "source_record_id", tenant: Tenant = PRIMARY) -> str:
+    """winteam_id of an API-sourced core row: the tenant's prefix ('api:', 'api:sarus:') + the raw source_record_id."""
+    return f"('{tenant.id_prefix}' || {expr})"
 
 
 def namespace_sql(expr: str) -> str:
@@ -176,6 +177,7 @@ def company_label_sql(field: str = "companyNumber", src: str = "p") -> str:
 
 
 JOB_MAP_VIEW = "mart.v_api_job_map"
+JOB_MAP_VIEWS = {PRIMARY.key: JOB_MAP_VIEW, SARUS.key: "mart.v_sarus_job_map"}
 
 
 def job_key_for(expr: str) -> str:
@@ -187,12 +189,12 @@ def job_company_for(expr: str) -> str:
     return f"(SELECT m.company FROM wt_job_map m WHERE m.raw_job_number = {expr})"
 
 
-def stage_job_map(cursor: Any) -> None:
-    """Snapshot mart.v_api_job_map into the TEMP table wt_job_map for this transaction's job lookups."""
+def stage_job_map(cursor: Any, tenant: Tenant = PRIMARY) -> None:
+    """Snapshot the tenant's job map (mart.v_api_job_map | mart.v_sarus_job_map) into the TEMP table wt_job_map."""
     cursor.execute("DROP TABLE IF EXISTS wt_job_map")
     cursor.execute(
         f"CREATE TEMP TABLE wt_job_map ON COMMIT DROP AS "
-        f"SELECT raw_job_number, job_number, job_key, company FROM {JOB_MAP_VIEW} WHERE raw_job_number IS NOT NULL"
+        f"SELECT raw_job_number, job_number, job_key, company FROM {JOB_MAP_VIEWS[tenant.key]} WHERE raw_job_number IS NOT NULL"
     )
     cursor.execute("CREATE INDEX ON wt_job_map (raw_job_number)")
 
@@ -213,6 +215,11 @@ def tier_description(tier_param: str) -> str:
 
 
 SOURCE_SQL = "SELECT source_record_id, payload AS p FROM raw.v_winteam_current WHERE resource_name = %(resource)s"
+
+
+def _tenant_params(tenant: Tenant, resource: str) -> dict[str, Any]:
+    """The raw resource name and core source a normalizer reads and writes for `tenant`."""
+    return {"resource": tenant.raw_resource(resource), "source": tenant.source, "tenant_company": tenant.company}
 
 
 def _begin(conn: Any) -> None:
@@ -255,7 +262,16 @@ def tenant_namespace(company_numbers: Mapping[str, str]) -> str:
     return rules.NAMESPACE_CRANE
 
 
-def _company_context(conn: Any) -> dict[str, Any]:
+def _company_context(conn: Any, tenant: Tenant = PRIMARY) -> dict[str, Any]:
+    if tenant.vendor_namespace is not None:
+        # A secondary database: ops.app_setting.company_numbers describes the primary tenant only,
+        # so none of its labels apply; every row takes the tenant's company and vendor namespace.
+        return {
+            "company_numbers": json.dumps({}),
+            "tenant_namespace": tenant.vendor_namespace,
+            "sarus_offset": rules.SARUS_VENDOR_OFFSET,
+            "vendor_offset": rules.SARUS_VENDOR_OFFSET if tenant.vendor_namespace == rules.NAMESPACE_SARUS else 0,
+        }
     numbers = company_numbers_map(_setting(conn, "company_numbers", {}))
     ns = tenant_namespace(numbers)
     return {
@@ -530,30 +546,47 @@ def _normalize_jobs_inner(conn: Any, seen_ids: Collection[str] | None = None) ->
             """
         )
 
-        # 9. Re-point facts loaded before their job existed. Reference rows match the bare number (the
-        #    current row is shared); API rows resolve through mart.v_api_job_map so a collision number
-        #    lands on the namespaced tenant row, never on the other namespace's row.
-        stage_job_map(cursor)
-        for table in ("core.fact_timekeeping", "core.fact_schedule", "core.fact_ar_invoice", "core.fact_gl_budget"):
-            cursor.execute(
-                f"""
-                UPDATE {table} f SET job_key = d.job_key
-                FROM core.dim_job d
-                WHERE f.source <> %(source)s AND d.job_number = f.job_number AND d.valid_to IS NULL
-                  AND f.job_key IS DISTINCT FROM d.job_key
-                """,
-                params,
-            )
+        # 9. Re-point facts loaded before their job existed.
+        repoint_facts(cursor)
+    return affected
+
+
+
+REPOINT_TABLES = (
+    "core.fact_timekeeping", "core.fact_schedule", "core.fact_ar_invoice", "core.fact_gl_budget",
+    "core.fact_job_budget", "core.fact_ap_distribution",
+)
+
+
+def repoint_facts(cursor: Any) -> None:
+    """Point every fact at its current job row.
+
+    Export rows match the bare number (the current row is shared). Each API tenant's rows resolve
+    through that tenant's own job map, so a collision number lands on the tenant's row and never on
+    the other database's (Crane job 300 -> 'Crane:300', Sarus job 300 -> the bare Sarus row).
+    """
+    api_sources = [PRIMARY.source, SARUS.source]
+    for table in REPOINT_TABLES:
+        cursor.execute(
+            f"""
+            UPDATE {table} f SET job_key = d.job_key
+            FROM core.dim_job d
+            WHERE f.source <> ALL(%(api_sources)s) AND d.job_number = f.job_number AND d.valid_to IS NULL
+              AND f.job_key IS DISTINCT FROM d.job_key
+            """,
+            {"api_sources": api_sources},
+        )
+    for tenant in (PRIMARY, SARUS):
+        stage_job_map(cursor, tenant)
+        for table in REPOINT_TABLES:
             cursor.execute(
                 f"""
                 UPDATE {table} f SET job_key = m.job_key
                 FROM wt_job_map m
                 WHERE f.source = %(source)s AND m.raw_job_number = f.job_number AND f.job_key IS DISTINCT FROM m.job_key
                 """,
-                params,
+                {"source": tenant.source},
             )
-    return affected
-
 
 
 def normalize_jobs(conn: Any, seen_ids: Collection[str] | None = None) -> int:
@@ -574,8 +607,8 @@ def normalize_jobs(conn: Any, seen_ids: Collection[str] | None = None) -> int:
     return result
 
 # ── vendors ──────────────────────────────────────────────────────────────────
-def normalize_vendors(conn: Any, seen_ids: Collection[str] | None = None) -> int:
-    params = {"resource": "vendors", "source": SOURCE, **_company_context(conn)}
+def normalize_vendors(conn: Any, seen_ids: Collection[str] | None = None, tenant: Tenant = PRIMARY) -> int:
+    params = {**_tenant_params(tenant, "vendors"), **_company_context(conn, tenant)}
     with conn.cursor() as cursor:
         cursor.execute(
             f"""
@@ -585,7 +618,7 @@ def normalize_vendors(conn: Any, seen_ids: Collection[str] | None = None) -> int
               account_number, phone, address, contacts, source, warehouse_updated_at
             )
             SELECT
-              {api_id()},
+              {api_id(tenant=tenant)},
               {integer('vendorNumber')} + %(vendor_offset)s,
               coalesce({txt('vendorName')}, 'Vendor ' || source_record_id),
               coalesce({boolean('vendorStatus')}, true),
@@ -627,16 +660,16 @@ def normalize_vendors(conn: Any, seen_ids: Collection[str] | None = None) -> int
 
 
 # ── timekeeping ──────────────────────────────────────────────────────────────
-def normalize_timekeeping(conn: Any, seen_ids: Collection[str] | None = None) -> int:
-    params = {"resource": "timekeeping", "source": SOURCE}
+def normalize_timekeeping(conn: Any, seen_ids: Collection[str] | None = None, tenant: Tenant = PRIMARY) -> int:
+    params = _tenant_params(tenant, "timekeeping")
     with conn.cursor() as cursor:
-        stage_job_map(cursor)
+        stage_job_map(cursor, tenant)
         cursor.execute(
             f"""
             WITH src AS ({SOURCE_SQL}),
             parsed AS (
               SELECT
-                {api_id()} AS winteam_id,
+                {api_id(tenant=tenant)} AS winteam_id,
                 {txt('jobNumber')} AS job_number,
                 {txt('employeeNumber')} AS employee_source_id,
                 {day('workDate')} AS work_date,
@@ -660,7 +693,7 @@ def normalize_timekeeping(conn: Any, seen_ids: Collection[str] | None = None) ->
               CASE WHEN x.rate > 0 THEN round(coalesce(x.hours, 0) * x.rate, 2) END,
               x.category_detail_id, x.rate, x.in_time, x.out_time, x.lunch, x.work_ticket_number,
               x.work_date - extract(dow FROM x.work_date)::int, 'none',
-              %(source)s, {job_company_for('x.job_number')},
+              %(source)s, coalesce(%(tenant_company)s::text, {job_company_for('x.job_number')}),
               CASE WHEN x.rate > 0 THEN 'hours_x_rate' ELSE 'none' END, now()
             FROM parsed x
             WHERE x.work_date IS NOT NULL
@@ -689,10 +722,10 @@ def normalize_timekeeping(conn: Any, seen_ids: Collection[str] | None = None) ->
             params,
         )
         affected = cursor.rowcount
-    derive_overtime(conn)
-    priced = price_unpriced_punches(conn)
+    derive_overtime(conn, tenant.source)
+    priced = price_unpriced_punches(conn, tenant.source)
     if priced:
-        logger.info("normalize timekeeping: %s unpriced API punch(es) priced at the trailing job rate: %s", sum(priced.values()), priced)
+        logger.info("normalize timekeeping (%s): %s unpriced API punch(es) priced at the trailing job rate: %s", tenant.key, sum(priced.values()), priced)
     return affected
 
 
@@ -733,7 +766,10 @@ unpriced AS (
          coalesce(jr.rate, cr.rate, pr.rate) AS rate,
          CASE WHEN jr.rate IS NOT NULL THEN 'job' WHEN cr.rate IS NOT NULL THEN 'company' WHEN pr.rate IS NOT NULL THEN 'portfolio' END AS basis
   FROM core.fact_timekeeping t
-  LEFT JOIN job_rate jr ON jr.job_number = t.job_number
+  -- The rate belongs to the job the punch resolved to: a raw number shared by both WinTeam
+  -- databases (401, 6325, 99999) is a different job in each, keyed 'Crane:<n>' on one side.
+  LEFT JOIN core.dim_job dj ON dj.job_key = t.job_key
+  LEFT JOIN job_rate jr ON jr.job_number = coalesce(dj.job_number, t.job_number)
   LEFT JOIN company_rate cr ON cr.company = t.company
   CROSS JOIN portfolio_rate pr
   WHERE t.source = %(source)s AND t.labor_cost_basis IS DISTINCT FROM %(basis)s
@@ -756,14 +792,14 @@ def _close_lag_days(conn: Any) -> int:
         return 5
 
 
-def price_unpriced_punches(conn: Any) -> dict[str, int]:
+def price_unpriced_punches(conn: Any, source: str = SOURCE) -> dict[str, int]:
     """Price EVERY API punch at the job's trailing payroll rate (job-cost direct labor / hours over the last closed
     months; company, then portfolio fallback), keeping the API's own rate in `source_rate`.
 
     The API `rate` is the base pay rate (~8% below the all-in payroll rate the job-cost P&L and the
     executives' figures use), so pricing live punches at it understated labor inside the API window.
     Idempotent: punches already on the trailing basis are skipped."""
-    params = {"source": SOURCE, "lag_days": _close_lag_days(conn), "months": TRAILING_RATE_MONTHS, "basis": TRAILING_JOB_RATE_BASIS}
+    params = {"source": source, "lag_days": _close_lag_days(conn), "months": TRAILING_RATE_MONTHS, "basis": TRAILING_JOB_RATE_BASIS}
     with conn.cursor() as cursor:
         cursor.execute(PRICE_UNPRICED_SQL, params)
         rows = cursor.fetchall() or []
@@ -818,7 +854,7 @@ def price_punch(punch: Mapping[str, Any], rates: Mapping[str, Any]) -> tuple[flo
     return None, (float(rate) if rate is not None else None), "none"
 
 
-def derive_overtime(conn: Any) -> None:
+def derive_overtime(conn: Any, source: str = SOURCE) -> None:
     """Split hours into regular/overtime for the API-sourced rows of the fact table (see module docstring).
 
     Reference rows carry the split the export reported (hours_type) and are never re-derived.
@@ -849,7 +885,7 @@ def derive_overtime(conn: Any) -> None:
                        OR t.regular_hours IS DISTINCT FROM greatest(coalesce(t.hours, 0), 0) - c.ot
                        OR t.overtime_basis IS DISTINCT FROM 'category')
                 """,
-                {"categories": category_ids, "source": SOURCE},
+                {"categories": category_ids, "source": source},
             )
             return
         cursor.execute(
@@ -878,7 +914,7 @@ def derive_overtime(conn: Any) -> None:
                    OR t.regular_hours IS DISTINCT FROM s.h - s.ot
                    OR t.overtime_basis IS DISTINCT FROM 'weekly_threshold')
             """,
-            {"threshold": threshold_hours, "source": SOURCE},
+            {"threshold": threshold_hours, "source": source},
         )
         cursor.execute(
             """
@@ -886,7 +922,7 @@ def derive_overtime(conn: Any) -> None:
             WHERE employee_source_id IS NULL AND source = %(source)s
               AND (overtime_hours IS DISTINCT FROM 0 OR regular_hours IS DISTINCT FROM greatest(coalesce(hours, 0), 0) OR overtime_basis IS DISTINCT FROM 'none')
             """,
-            {"source": SOURCE},
+            {"source": source},
         )
 
 
@@ -1045,16 +1081,16 @@ def normalize_gl_budgets(conn: Any, seen_ids: Collection[str] | None = None) -> 
 
 
 # ── accounts payable invoices ────────────────────────────────────────────────
-def normalize_job_budgets(conn: Any, seen_ids: Collection[str] | None = None) -> int:
+def normalize_job_budgets(conn: Any, seen_ids: Collection[str] | None = None, tenant: Tenant = PRIMARY) -> int:
     """Job budget lines -> core.fact_job_budget (budgeted hours per day of week, plus the rate).
 
     The only source of budget hours and dollars for this tenant: gl-budgets returns nothing, and the
     export-fed daily budget stopped in July 2026. Resolved to a job_key through the shared
     wt_job_map so a collision number lands on the tenant's row, never the other namespace's.
     """
-    params = {"resource": "job_budgets", "source": SOURCE, **_company_context(conn)}
+    params = {**_tenant_params(tenant, "job_budgets"), **_company_context(conn, tenant)}
     with conn.cursor() as cursor:
-        stage_job_map(cursor)
+        stage_job_map(cursor, tenant)
         cursor.execute(
             f"""
             WITH src AS ({SOURCE_SQL}),
@@ -1102,7 +1138,7 @@ def normalize_job_budgets(conn: Any, seen_ids: Collection[str] | None = None) ->
         return int(cursor.rowcount or 0)
 
 
-def normalize_ap_invoice_details(conn: Any, seen_ids: Collection[str] | None = None) -> int:
+def normalize_ap_invoice_details(conn: Any, seen_ids: Collection[str] | None = None, tenant: Tenant = PRIMARY) -> int:
     """GL distribution lines -> core.fact_ap_distribution.
 
     This is the only path by which a payable reaches a site. job_number is resolved to a job_key
@@ -1110,9 +1146,9 @@ def normalize_ap_invoice_details(conn: Any, seen_ids: Collection[str] | None = N
     row rather than the other namespace's; a line coding a job we have never seen keeps its
     job_number and a null job_key rather than being dropped, because the cost is real either way.
     """
-    params = {"resource": "ap_invoice_details", "source": SOURCE, **_company_context(conn)}
+    params = {**_tenant_params(tenant, "ap_invoice_details"), **_company_context(conn, tenant)}
     with conn.cursor() as cursor:
-        stage_job_map(cursor)
+        stage_job_map(cursor, tenant)
         cursor.execute(
             f"""
             WITH src AS ({SOURCE_SQL}),
@@ -1121,7 +1157,7 @@ def normalize_ap_invoice_details(conn: Any, seen_ids: Collection[str] | None = N
                 {txt('invoiceNumber')} AS invoice_number,
                 {integer('lineIndex')} AS line_index,
                 {txt('companyNumber')} AS company_number,
-                {integer('vendorNumber')} AS vendor_number,
+                {integer('vendorNumber')} + %(vendor_offset)s AS vendor_number,
                 {txt('accountNumber')} AS gl_account_number,
                 {txt('jobNumber')} AS job_number,
                 {num('amount')} AS amount,
@@ -1160,9 +1196,9 @@ def normalize_ap_invoice_details(conn: Any, seen_ids: Collection[str] | None = N
         return int(cursor.rowcount or 0)
 
 
-def normalize_ap_invoices(conn: Any, seen_ids: Collection[str] | None = None) -> int:
-    params = {"resource": "ap_invoices", "source": SOURCE, **_company_context(conn)}
-    label = company_label_sql()
+def normalize_ap_invoices(conn: Any, seen_ids: Collection[str] | None = None, tenant: Tenant = PRIMARY) -> int:
+    params = {**_tenant_params(tenant, "ap_invoices"), **_company_context(conn, tenant)}
+    label = f"coalesce(%(tenant_company)s::text, {company_label_sql()})"
     row_namespace = namespace_sql(f"coalesce({label}, %(tenant_namespace)s)")
     with conn.cursor() as cursor:
         cursor.execute(
@@ -1170,7 +1206,7 @@ def normalize_ap_invoices(conn: Any, seen_ids: Collection[str] | None = None) ->
             WITH src AS ({SOURCE_SQL}),
             parsed AS (
               SELECT
-                {api_id()} AS winteam_id,
+                {api_id(tenant=tenant)} AS winteam_id,
                 {integer('vendorNumber')} + CASE WHEN {row_namespace} = '{rules.NAMESPACE_SARUS}' THEN %(sarus_offset)s ELSE 0 END AS vendor_number,
                 {integer('companyNumber')} AS company_number,
                 {label} AS company,
@@ -1240,16 +1276,16 @@ def normalize_ap_invoices(conn: Any, seen_ids: Collection[str] | None = None) ->
 
 
 # ── accounts receivable invoices ─────────────────────────────────────────────
-def normalize_ar_invoices(conn: Any, seen_ids: Collection[str] | None = None) -> int:
+def normalize_ar_invoices(conn: Any, seen_ids: Collection[str] | None = None, tenant: Tenant = PRIMARY) -> int:
     names = _setting(conn, "customer_names", {})
     treatment = _setting(conn, "ar_treatment_rules", [])
     params = {
-        "resource": "ar_invoices", "source": SOURCE,
+        **_tenant_params(tenant, "ar_invoices"),
         "names": json.dumps(names if isinstance(names, dict) else {}),
         "treatment_rules": json.dumps([r for r in treatment if isinstance(r, dict)] if isinstance(treatment, list) else []),
     }
     with conn.cursor() as cursor:
-        stage_job_map(cursor)
+        stage_job_map(cursor, tenant)
         # Customers discovered by the receivables sync; existing rows keep their name and company.
         cursor.execute(
             f"""
@@ -1276,7 +1312,7 @@ def normalize_ar_invoices(conn: Any, seen_ids: Collection[str] | None = None) ->
             WITH src AS ({SOURCE_SQL}),
             parsed AS (
               SELECT
-                {api_id()} AS winteam_id,
+                {api_id(tenant=tenant)} AS winteam_id,
                 {txt('customerNumber')} AS customer_number,
                 {txt('invoiceNumber')} AS invoice_number,
                 {txt('jobNumber')} AS job_number,
@@ -1321,7 +1357,7 @@ def normalize_ar_invoices(conn: Any, seen_ids: Collection[str] | None = None) ->
               date_trunc('month', coalesce(x.billing_period_from, x.invoice_date))::date,
               x.terms, x.terms_id, x.sales_rep, x.sales_rep_id, x.po_number, x.reason, x.reason_id, x.notes, x.tax,
               x.amount_paid, x.revenue_total, x.invoice_total, x.last_date_paid, x.collection_status,
-              x.invoice_being_credited, %(source)s, coalesce(x.job_company, x.customer_company), x.customer_name,
+              x.invoice_being_credited, %(source)s, coalesce(%(tenant_company)s::text, x.job_company, x.customer_company), x.customer_name,
               NOT EXISTS (
                 SELECT 1 FROM jsonb_array_elements(%(treatment_rules)s::jsonb) r
                 WHERE NOT coalesce((r->>'include_collectible_ar')::boolean, false)
@@ -1472,17 +1508,30 @@ NORMALIZERS = {
 }
 assert tuple(NORMALIZERS) == RESOURCE_NAMES
 
+# What each tenant promotes into core. The Sarus database lands its jobs raw only: the export owns
+# the Sarus job dimension, and its facts resolve through mart.v_sarus_job_map.
+TENANT_NORMALIZED = {
+    PRIMARY.key: RESOURCE_NAMES,
+    SARUS.key: tuple(name for name in SARUS_RESOURCE_NAMES if name != "jobs"),
+}
 
-def normalize_resource(name: str, seen_ids: Collection[str] | None = None) -> int:
+
+def normalizes(name: str, tenant: Tenant = PRIMARY) -> bool:
+    return name in TENANT_NORMALIZED[tenant.key]
+
+
+def normalize_resource(name: str, seen_ids: Collection[str] | None = None, tenant: Tenant = PRIMARY) -> int:
     """Promote one resource inside a single transaction; returns rows upserted into its core table."""
     normalizer = NORMALIZERS.get(name)
     if normalizer is None:
         raise KeyError(name)
+    if not normalizes(name, tenant):
+        raise ValueError(f"{name} is not promoted for the {tenant.key} tenant")
     with connection() as conn:
         _begin(conn)
-        affected = normalizer(conn, seen_ids)
+        affected = normalizer(conn, seen_ids) if tenant is PRIMARY else normalizer(conn, seen_ids, tenant=tenant)
         conn.commit()
-    logger.info("Normalized %s: %s rows", name, affected)
+    logger.info("Normalized %s%s: %s rows", tenant.resource_prefix, name, affected)
     return affected
 
 

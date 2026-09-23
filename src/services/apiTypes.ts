@@ -88,9 +88,33 @@ export interface IntegrationStatus {
   configured: boolean
   base_url_host: string | null
   resources: IntegrationResource[]
-  poll_seconds: number
+  /** Always null: WinTeam is synced on demand only, never on a schedule. */
+  poll_seconds: number | null
+  sync?: 'on_demand'
   normalize_enabled?: boolean
 }
+
+/** GET /integrations/winteam/sarus - the second WinTeam database. Never carries the tenant id or key. */
+export interface SarusStatus {
+  configured: boolean
+  enabled: boolean
+  base_url_host: string | null
+  has_subscription_key: boolean
+  ingestion: boolean
+  sync?: 'on_demand'
+  resources: IntegrationResource[]
+  precedence: {
+    sarus_timekeeping_from: string | null
+    sarus_timekeeping_to: string | null
+    sarus_ap_invoice_from: string | null
+    sarus_ap_invoice_to: string | null
+    sarus_ar_invoices_api: number
+  }
+}
+
+/** Options of an on-demand sync. force: also re-read the daily resources synced within 20 hours;
+ *  deep: re-read 35 days of timekeeping and AP instead of 3. */
+export interface SyncOptions { force?: boolean; deep?: boolean }
 
 export interface MartsStatus {
   latest_month: IsoMonth | null
@@ -168,12 +192,15 @@ export interface ConnectionTestResult {
 export interface WatermarkResetResult { resource: string; watermark_removed: boolean; next_sync: string }
 
 export interface SyncRunResult {
-  run_id: string | number
+  /** null for a skipped resource (no run was started). */
+  run_id: string | number | null
   resource: string
+  /** 'succeeded' | 'failed' | 'skipped' (a daily resource synced within the last 20 hours). */
   status: string
   fetched: number
   inserted: number
-  normalized: number
+  normalized: number | null
+  message?: string
 }
 
 export interface ForecastBuildResult {
@@ -194,7 +221,10 @@ export interface RebuildResult {
 
 export interface FullSyncResult {
   runs: SyncRunResult[]
-  marts: RebuildResult
+  /** null when nothing was normalized (every resource skipped, or normalize=false). */
+  marts: RebuildResult | null
+  normalized?: boolean
+  not_entitled?: string[]
 }
 
 export interface SyncRun {
@@ -230,11 +260,12 @@ export interface FreshnessResource {
 }
 
 export interface IngestionHealth {
-  /** False when a polled WinTeam resource is overdue OR the finance_reference export is stale. */
+  /** False when the finance_reference export is stale. WinTeam is synced on demand, so nothing is overdue. */
   healthy: boolean
   overdue_resources: string[]
-  overdue_after_seconds: number
-  poll_seconds: number
+  overdue_after_seconds: number | null
+  poll_seconds: number | null
+  sync?: 'on_demand'
   /** The hand-loaded job-cost export is behind; the newest P&L months carry labor without revenue. */
   reference_stale?: boolean
   reference_stale_after_seconds?: number

@@ -24,7 +24,7 @@ from ..config import settings
 from ..db import connection, database_ready
 from .. import reconcile
 from ..sources import finance_reference
-from ..winteam import RESOURCES, WinTeamError, WinTeamIngestion, parse_paged, winteam
+from ..winteam import RESOURCES, WinTeamError, parse_paged, sarus_ingestion, winteam
 
 logger = logging.getLogger("platform")
 router = APIRouter()
@@ -162,11 +162,13 @@ def integration_test() -> dict[str, Any]:
 def integration_sync(
     resource: str,
     normalize: bool | None = Query(None, description="false = land raw payloads only; default WINTEAM_NORMALIZE"),
+    deep: bool = Query(False, description="true = re-read WINTEAM_DEEP_LOOKBACK_DAYS (35) instead of WINTEAM_LOOKBACK_DAYS (3)"),
 ) -> dict[str, Any]:
     if resource not in RESOURCES:
         raise HTTPException(status_code=404, detail=f"Unknown resource {resource}; valid names: {', '.join(RESOURCES)}")
     try:
-        result = winteam.sync(resource, normalize=normalize)
+        # Naming one resource is an explicit request for it: the daily skip does not apply.
+        result = winteam.sync(resource, normalize=normalize, force=True, deep=deep)
     except WinTeamError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     if result.get("status") != "succeeded":
@@ -198,10 +200,12 @@ def integration_reset_watermark(resource: str) -> dict[str, Any]:
 def integration_sync_all(
     normalize: bool | None = Query(None, description="false = raw landing only, no normalization or mart rebuild; default WINTEAM_NORMALIZE"),
     resources: str | None = Query(None, description="Comma separated subset of the enabled resources"),
+    force: bool = Query(False, description="true = also re-read jobs, vendors, budgets and AR synced within the last 20 hours"),
+    deep: bool = Query(False, description="true = re-read WINTEAM_DEEP_LOOKBACK_DAYS (35) of timekeeping and AP instead of WINTEAM_LOOKBACK_DAYS (3)"),
 ) -> dict[str, Any]:
     selected = [name.strip() for name in resources.split(",") if name.strip()] if resources else None
     try:
-        return jsonable(winteam.sync_all(normalize=normalize, resources=selected))
+        return jsonable(winteam.sync_all(normalize=normalize, resources=selected, force=force, deep=deep))
     except WinTeamError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
@@ -233,14 +237,8 @@ def integration_runs(limit: int = Query(25, ge=1, le=200)) -> dict[str, Any]:
     return {"runs": runs}
 
 
-# A resource is overdue when the worker has not completed it for several poll intervals. The worker
-# can stop producing rows without failing (a hung sync leaves no failed run), so "last_status:
-# succeeded" is not evidence of freshness on its own - on 2026-09-10 a self-deadlocked worker went
-# 9 days reporting nothing but "succeeded". Resources the tenant is not entitled to (HTTP 403) never
-# complete by design and are never counted as overdue.
-OVERDUE_POLL_INTERVALS = 3
-OVERDUE_FLOOR_SECONDS = 3600
-
+# WinTeam is synced on demand only (worker.py never calls it), so no resource is behind a schedule:
+# freshness reports each resource's age since its last completed sync and never calls it overdue.
 # finance_reference is the PRIMARY source of the job-cost P&L (revenue, direct labor, subcontract
 # cost by site and month) and is loaded by hand from a restored dump - nothing polls it. Left
 # unreloaded it does not go blank, it goes SHORT: timekeeping keeps arriving from the live API
@@ -250,49 +248,62 @@ OVERDUE_FLOOR_SECONDS = 3600
 REFERENCE_STALE_AFTER_SECONDS = 7 * 86400
 
 
-def _overdue_after_seconds() -> int:
-    return max(settings.poll_seconds * OVERDUE_POLL_INTERVALS, OVERDUE_FLOOR_SECONDS)
-
-
-def _mark_overdue(resource: dict[str, Any], limit: int) -> dict[str, Any]:
-    """Add `overdue` / `not_entitled` / `overdue_after_seconds` to one freshness row.
-
-    Only a resource the worker is actually configured to poll can be behind. The view lists every
-    resource name that has ever appeared in ops.integration_sync_run, which includes the
-    finance_reference loader's steps and resources retired from the catalogue; those carry
-    `overdue: None` rather than being judged against a schedule that was never theirs.
-    """
-    name = resource.get("resource_name")
-    polled = name in RESOURCES and name in settings.winteam_resources
-    not_entitled = (resource.get("last_status") == "failed"
-                    and "not_entitled" in (resource.get("last_error") or ""))
-    age = resource.get("seconds_since_last_completion")
-    resource["overdue_after_seconds"] = limit if polled else None
-    resource["not_entitled"] = not_entitled
-    resource["overdue"] = (
-        bool(not not_entitled and (age is None or int(age) > limit)) if polled else None
-    )
+def _mark_overdue(resource: dict[str, Any]) -> dict[str, Any]:
+    """Add `overdue` (always None: nothing is scheduled), `overdue_after_seconds` (None) and
+    `not_entitled` (the tenant answered HTTP 403) to one freshness row."""
+    resource["overdue_after_seconds"] = None
+    resource["not_entitled"] = (resource.get("last_status") == "failed"
+                                and "not_entitled" in (resource.get("last_error") or ""))
+    resource["overdue"] = None
     return resource
 
 
-SARUS_INGESTION_BLOCKED = (
-    "Ingestion is off: Sarus record ids collide with the primary tenant's in core, live Sarus punches "
-    "would double-count against the Sarus export, and a Sarus backfill would widen the API window "
-    "over Crane history."
-)
-
-
-@router.get("/integrations/winteam/sarus")
-def winteam_sarus_status() -> dict[str, Any]:
-    """The second WinTeam database. Never returns the tenant id or key."""
+def _sarus_identity() -> dict[str, Any]:
     return {
         "configured": settings.winteam_sarus_configured,
         "enabled": settings.winteam_sarus_enabled,
         "base_url_host": urlparse(settings.winteam_sarus_base_url).hostname if settings.winteam_sarus_base_url else None,
         "has_subscription_key": bool(settings.winteam_sarus_subscription_key),
-        "ingestion": False,
-        "ingestion_blocked_by": SARUS_INGESTION_BLOCKED,
+        "ingestion": settings.winteam_sarus_enabled and settings.winteam_sarus_configured,
+        "sync": "on_demand",
     }
+
+
+@router.get("/integrations/winteam/sarus")
+def winteam_sarus_status() -> dict[str, Any]:
+    """The second WinTeam database: identity, per-resource runs and the precedence windows. Never
+    returns the tenant id or key."""
+    status = sarus_ingestion().status()
+    with connection() as conn, conn.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT sarus_timekeeping_from, sarus_timekeeping_to, sarus_ap_invoice_from, sarus_ap_invoice_to,
+                   sarus_ar_invoices_api
+            FROM mart.v_source_precedence
+            """
+        )
+        window = cursor.fetchone() or {}
+    return jsonable({
+        **_sarus_identity(),
+        "resources": [r for r in status["resources"] if r["enabled"]],
+        "precedence": dict(window),
+    })
+
+
+@router.post("/integrations/winteam/sarus/sync", dependencies=[Depends(require_admin)])
+def winteam_sarus_sync(
+    normalize: bool | None = Query(None, description="false = raw landing only, no normalization or mart rebuild; default WINTEAM_NORMALIZE"),
+    resources: str | None = Query(None, description="Comma separated subset of the Sarus resources"),
+    force: bool = Query(False, description="true = also re-read jobs, vendors, budgets and AR synced within the last 20 hours"),
+    deep: bool = Query(False, description="true = re-read WINTEAM_DEEP_LOOKBACK_DAYS (35) of timekeeping and AP instead of WINTEAM_LOOKBACK_DAYS (3)"),
+) -> dict[str, Any]:
+    """Sync the Sarus database now (GET-only, as the primary). Requires WINTEAM_SARUS_ENABLED; nothing
+    syncs it on a schedule."""
+    selected = [name.strip() for name in resources.split(",") if name.strip()] if resources else None
+    try:
+        return jsonable(sarus_ingestion().sync_all(normalize=normalize, resources=selected, force=force, deep=deep))
+    except WinTeamError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.post("/integrations/winteam/sarus/test", dependencies=[Depends(require_admin)])
@@ -304,14 +315,14 @@ def winteam_sarus_test() -> dict[str, Any]:
     a Crane company. Lands nothing.
     """
     if not settings.winteam_sarus_configured:
-        return {**winteam_sarus_status(), "ok": False,
+        return {**_sarus_identity(), "ok": False,
                 "error": "Set WINTEAM_SARUS_TENANT_ID (and WINTEAM_SARUS_SUBSCRIPTION_KEY) in the server .env"}
-    connector = WinTeamIngestion(settings.sarus_settings(enabled=True))
+    connector = sarus_ingestion(enabled=True)
     try:
         with connector._client() as client:
             page = parse_paged(client.get("/jobs/v2/api/jobs", {"pageSize": 100, "pageNumber": 1}))
     except WinTeamError as exc:
-        return {**winteam_sarus_status(), "ok": False, "status_code": exc.status_code, "error": str(exc)[:300]}
+        return {**_sarus_identity(), "ok": False, "status_code": exc.status_code, "error": str(exc)[:300]}
     companies = sorted({str(r.get("companyNumber")) for r in page.results if r.get("companyNumber") is not None})
     # Company numbers are numbered per WinTeam database - Sarus and Crane both have a company 1 - so
     # they cannot tell the two apart. Job identity can: a Sarus tenant returns the jobs the export
@@ -319,7 +330,7 @@ def winteam_sarus_test() -> dict[str, Any]:
     known = known_jobs_by_company()
     api_jobs = {(str(r.get("jobNumber")), str(r.get("jobDescription") or "").strip()) for r in page.results}
     return {
-        **winteam_sarus_status(),
+        **_sarus_identity(),
         "ok": True,
         "jobs_total": page.total_count,
         "company_numbers": companies,
@@ -411,9 +422,7 @@ def data_freshness() -> dict[str, Any]:
     reference_names = {"load", "reset", "settings", "stage", "dim_job", "fact_job_cost_month", "fact_labor_budget_month",
                        "fact_timekeeping", "fact_ar_invoice", "fact_ap_invoice"}
     resources.extend(v for k, v in by_name.items() if k not in reference_names)  # historical resource names no longer in the catalogue
-    limit = _overdue_after_seconds()
-    resources = [_mark_overdue(r, limit) for r in resources]
-    overdue = [r["resource_name"] for r in resources if r["overdue"]]  # None (not polled) is not overdue
+    resources = [_mark_overdue(r) for r in resources]
     reference = finance_reference.last_load()
     reference_age = (
         int((datetime.now(timezone.utc) - datetime.fromisoformat(reference["completed_at"])).total_seconds())
@@ -426,10 +435,11 @@ def data_freshness() -> dict[str, Any]:
     return {
         "resources": resources,
         "ingestion": {
-            "healthy": not overdue and not reference_stale,
-            "overdue_resources": overdue,
-            "overdue_after_seconds": limit,
-            "poll_seconds": settings.poll_seconds,
+            "healthy": not reference_stale,
+            "overdue_resources": [],
+            "overdue_after_seconds": None,
+            "poll_seconds": None,
+            "sync": "on_demand",
             "reference_stale": reference_stale,
             "reference_stale_after_seconds": REFERENCE_STALE_AFTER_SECONDS,
         },

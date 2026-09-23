@@ -19,7 +19,8 @@ def test_defaults_when_disabled() -> None:
     assert settings.winteam_page_size == 100
     assert settings.winteam_backfill_months == 18
     assert settings.winteam_window_days == 16
-    assert settings.winteam_lookback_days == 35
+    assert settings.winteam_lookback_days == 3
+    assert settings.winteam_deep_lookback_days == 35
     assert settings.winteam_gl_fiscal_years == 2
     assert settings.winteam_schedule_jobs_limit == 0
     assert settings.max_retries == 4
@@ -110,8 +111,8 @@ def test_csv_lists() -> None:
 def test_bad_numbers_and_booleans_have_clear_messages() -> None:
     with pytest.raises(ConfigurationError, match="WINTEAM_PAGE_SIZE"):
         Settings.load({"WINTEAM_PAGE_SIZE": "lots"})
-    with pytest.raises(ConfigurationError, match="at least 30"):
-        Settings.load({"WINTEAM_POLL_SECONDS": "5"})
+    with pytest.raises(ConfigurationError, match="at least 1"):
+        Settings.load({"WINTEAM_WINDOW_DAYS": "0"})
     with pytest.raises(ConfigurationError, match="WINTEAM_ENABLED"):
         Settings.load({"WINTEAM_ENABLED": "maybe"})
 
@@ -130,13 +131,17 @@ def test_sarus_is_off_and_unconfigured_by_default() -> None:
 
 def test_sarus_settings_swap_only_the_tenant_identity() -> None:
     """The same client, paging, retries and timeouts - pointed at the other database."""
+    from app.tenants import SARUS_RESOURCE_NAMES
+
     settings = Settings.load(SARUS)
     sarus = settings.sarus_settings(enabled=True)
     assert sarus.winteam_tenant_id == "99999999-8888-7777-6666-555555555555"
     assert sarus.winteam_subscription_key == "sarus-key"
     assert sarus.winteam_headers()["tenantId"] == "99999999-8888-7777-6666-555555555555"
     assert sarus.winteam_enabled is True
-    assert sarus.winteam_resources == settings.winteam_resources
+    # What is read from Sarus is its own list; the primary's location and customer scoping do not apply.
+    assert sarus.winteam_resources == SARUS_RESOURCE_NAMES
+    assert sarus.winteam_location_ids == () and sarus.winteam_customer_numbers == ()
     assert sarus.request_timeout_seconds == settings.request_timeout_seconds
     # The primary settings object is untouched.
     assert settings.winteam_tenant_id == "11111111-2222-3333-4444-555555555555"
