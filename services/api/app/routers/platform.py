@@ -313,13 +313,18 @@ def winteam_sarus_test() -> dict[str, Any]:
     except WinTeamError as exc:
         return {**winteam_sarus_status(), "ok": False, "status_code": exc.status_code, "error": str(exc)[:300]}
     companies = sorted({str(r.get("companyNumber")) for r in page.results if r.get("companyNumber") is not None})
-    primary = set(finance_company_numbers())
+    # Company numbers are numbered per WinTeam database - Sarus and Crane both have a company 1 - so
+    # they cannot tell the two apart. Job identity can: a Sarus tenant returns the jobs the export
+    # already knows as Sarus (300 "Amazon - BDL3/7"), and a Crane tenant returns Crane jobs.
+    known = known_jobs_by_company()
+    api_jobs = {(str(r.get("jobNumber")), str(r.get("jobDescription") or "").strip()) for r in page.results}
     return {
         **winteam_sarus_status(),
         "ok": True,
         "jobs_total": page.total_count,
         "company_numbers": companies,
-        "overlaps_primary_companies": sorted(set(companies) & primary),
+        "matches_known_sarus_jobs": len(api_jobs & known.get("Sarus", set())),
+        "matches_known_crane_jobs": len(api_jobs & known.get("Crane", set())),
         "sample_jobs": [
             {"jobNumber": r.get("jobNumber"), "jobDescription": r.get("jobDescription"), "companyNumber": r.get("companyNumber")}
             for r in page.results[:8]
@@ -327,13 +332,20 @@ def winteam_sarus_test() -> dict[str, Any]:
     }
 
 
-def finance_company_numbers() -> list[str]:
-    """Company numbers the primary tenant serves, from the company_numbers setting."""
+def known_jobs_by_company() -> dict[str, set[tuple[str, str]]]:
+    """(job number, job name) already in the warehouse, grouped Sarus vs Crane."""
     with connection() as conn, conn.cursor() as cursor:
-        cursor.execute("SELECT value FROM ops.app_setting WHERE key = 'company_numbers'")
-        row = cursor.fetchone()
-    value = (row or {}).get("value") or {}
-    return [str(k) for k in value] if isinstance(value, dict) else []
+        cursor.execute(
+            """
+            SELECT CASE WHEN company = 'Sarus' THEN 'Sarus' ELSE 'Crane' END AS ns,
+                   regexp_replace(job_number, '^[A-Za-z]+:', '') AS job_number, btrim(job_name) AS job_name
+            FROM core.dim_job WHERE valid_to IS NULL AND job_name IS NOT NULL
+            """
+        )
+        out: dict[str, set[tuple[str, str]]] = {}
+        for row in cursor.fetchall():
+            out.setdefault(row["ns"], set()).add((str(row["job_number"]), str(row["job_name"])))
+    return out
 
 
 @router.get("/integrations/companycam")
