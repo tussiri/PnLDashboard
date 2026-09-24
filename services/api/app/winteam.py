@@ -231,6 +231,11 @@ class Resource:
 
 # An unbroken run of per-invoice failures is an outage; scattered ones are odd invoice numbers.
 AP_DETAIL_MAX_CONSECUTIVE_ERRORS = 25
+# 400/404 is WinTeam answering "this number is not addressable" (slashes, spaces, reused numbers), not
+# an outage. Expense reimbursements such as "JUssiri 08/2026" come in runs, newest first, and 25 of
+# them in a row used to trip the outage breaker, roll back, and block every later invoice (2026-09-23).
+# Only a much longer unbroken run of not-found answers is treated as a misconfiguration.
+AP_DETAIL_MAX_CONSECUTIVE_NOT_FOUND = 500
 
 RESOURCES: dict[str, Resource] = {
     "jobs": Resource(
@@ -856,7 +861,7 @@ class WinTeamIngestion:
         if not invoices:
             result.message = "No AP invoices awaiting GL distributions"
             return
-        missing, no_lines, unserviceable, consecutive = 0, 0, 0, 0
+        missing, no_lines, unserviceable, consecutive, consecutive_missing = 0, 0, 0, 0, 0
         for index, invoice_number in enumerate(invoices, start=1):
             path = resource.path.format(invoiceNumber=quote(str(invoice_number), safe=""))
             try:
@@ -866,8 +871,8 @@ class WinTeamIngestion:
                 # keys). 500 after the client's retries: WinTeam cannot serve that one invoice -
                 # observed on invoice 1384, which answered 500 on all four attempts. Neither should
                 # end a backfill of thousands. A genuine outage looks different, and
-                # AP_DETAIL_MAX_CONSECUTIVE_ERRORS is what tells them apart: an unbroken run of
-                # failures is the API being down, not a run of odd invoice numbers.
+                # AP_DETAIL_MAX_CONSECUTIVE_ERRORS is what tells them apart: an unbroken run of 5xx
+                # answers is the API being down. A run of 400/404 is a run of odd invoice numbers.
                 if exc.status_code in {400, 404}:
                     missing += 1
                 elif exc.status_code is not None and exc.status_code >= 500:
@@ -878,6 +883,17 @@ class WinTeamIngestion:
                     raise
                 # Not asked again for UNRETRIEVABLE_RECHECK: the same number fails the same way.
                 self._remember_unretrievable(conn, resource, str(invoice_number), exc.status_code)
+                if exc.status_code in {400, 404}:
+                    # The API answered, so it is up: this is not a step toward an outage.
+                    consecutive = 0
+                    consecutive_missing += 1
+                    if consecutive_missing >= AP_DETAIL_MAX_CONSECUTIVE_NOT_FOUND:
+                        raise WinTeamError(
+                            f"{consecutive_missing} consecutive AP invoices not found ending at {invoice_number}; "
+                            f"check the AP invoice detail path",
+                            status_code=exc.status_code,
+                        ) from exc
+                    continue
                 consecutive += 1
                 if consecutive >= AP_DETAIL_MAX_CONSECUTIVE_ERRORS:
                     raise WinTeamError(
@@ -886,7 +902,7 @@ class WinTeamIngestion:
                         status_code=exc.status_code,
                     ) from exc
                 continue
-            consecutive = 0
+            consecutive = consecutive_missing = 0
             self._forget_unretrievable(conn, resource, str(invoice_number))
             records = [line for entry in parse_data_array(payload) for line in flatten_ap_distribution(entry)]
             if not records:

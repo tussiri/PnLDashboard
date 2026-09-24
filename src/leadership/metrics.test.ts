@@ -144,6 +144,23 @@ describe('cost basis, segment targets and allocation', () => {
     expect(hs.rollup.over).toBeLessThan(exp.segments['High School'].over)
   })
 
+  it('does not list a subcontracted site with vendor cost as billed without labor', () => {
+    const s = accountSummary([{ ...rows[1], labor: 0, hours: 0, ot_hours: 0, sub_week: 900 }, { ...rows[2], labor: 0, hours: 0, ot_hours: 0 }], opts)
+    const note = s.notes.find((n) => n.kind === 'billed_no_labor')
+    expect(note && note.kind === 'billed_no_labor' && note.jobs.map((j) => j.job_number)).toEqual([rows[2].job_number])
+  })
+
+  it('counts estimated labor only where there is labor', () => {
+    const s = accountSummary([{ ...rows[1], labor_basis: 'trailing_rate_estimate' }, { ...rows[2], labor: 0, labor_basis: 'trailing_rate_estimate' }], opts)
+    expect(s.notes.find((n) => n.kind === 'labor_estimated')).toEqual({ kind: 'labor_estimated', jobs: 1, labor: rows[1].labor })
+  })
+
+  it('notes projected vendor cost for cost-% accounts only', () => {
+    const r = [{ ...rows[1], sub_week: 500, sub_week_basis: 'prior_month_prorated' }, { ...rows[2], sub_week: 200, sub_week_basis: 'job_cost_month_prorated' }]
+    expect(accountSummary(r, { ...opts, costBasis: 'labor_plus_vendor' }).notes.find((n) => n.kind === 'vendor_projected')).toEqual({ kind: 'vendor_projected', jobs: 1, amount: 500 })
+    expect(accountSummary(r, opts).notes.find((n) => n.kind === 'vendor_projected')).toBeUndefined()
+  })
+
   it('notes revenue allocated from a parent job', () => {
     const s = accountSummary([{ ...rows[1], revenue_allocated: 400 }, { ...rows[2], revenue_allocated: 0 }], opts)
     expect(s.notes.find((n) => n.kind === 'revenue_allocated')).toEqual({ kind: 'revenue_allocated', jobs: 1, amount: 400 })

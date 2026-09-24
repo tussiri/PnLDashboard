@@ -12,7 +12,7 @@ from app.accounts import load_seed_file, resolve_segment, seed_path, validate_se
 def test_shipped_seed_is_valid_and_lists_the_featured_accounts():
     seed = load_seed_file()
     assert [a["name"] for a in seed["accounts"]] == [
-        "Amazon", "FedEx", "Plano ISD", "White Settlement ISD", "Henderson ISD", "Aldi", "Whole Foods", "Apple / Retail"]
+        "Amazon", "FedEx", "Plano ISD", "White Settlement ISD", "Henderson ISD", "Crowley ISD", "Aldi", "Whole Foods", "Apple / Retail"]
     plano = next(a for a in seed["accounts"] if a["slug"] == "plano-isd")
     roles = {j["job_number"]: j["role"] for j in plano["jobs"]}
     assert roles["800"] == "catch_all" and roles["896"] == "non_billed"

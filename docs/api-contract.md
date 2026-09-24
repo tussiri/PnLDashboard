@@ -409,7 +409,8 @@ vendor cost (a site without timekeeping takes the revenue month's subcontract co
 days, basis `prior_month_prorated`). Accounts with `cost_basis = 'labor_plus_vendor'` are measured by
 cost % = (labor + sub_week) / invoice (status and $ over target follow it; hours over target stay
 labor-based); others by labor %, with vendor cost shown beside it. With `revenue_allocation =
-'budget_hours'`, a parent job billed for its family while no child carries revenue in the revenue
-month has that revenue spread over the children by their budget hours (migration 031):
-`revenue_month_amount` and `prior_revenue` include it and `revenue_allocated` shows the amount moved.
-`PUT /leadership/accounts/{slug}` also accepts `revenue_allocation` and `cost_basis`.
+'budget_hours'`, when the account's catch-all jobs carry revenue-month revenue and none of its sites
+do (White Settlement ISD on job 112, Crowley ISD on job 910), that revenue is spread over the sites
+present in the week by revenue-month budget hours, else revenue-month actual hours (migration 033,
+computed at read time): `revenue_month_amount` and `prior_revenue` include it and
+`revenue_allocated` shows the amount moved onto (+) or off (-) the row. `PUT /leadership/accounts/{slug}` also accepts `revenue_allocation` and `cost_basis`.

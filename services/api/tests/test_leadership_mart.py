@@ -8,7 +8,7 @@ from pathlib import Path
 from app.leadership import REBUILD_SQL
 
 MIGRATIONS = Path(__file__).resolve().parents[3] / "database" / "migrations"
-DDL_FILES = ("030_leadership_week.sql", "031_revenue_allocation_cost_basis.sql")
+DDL_FILES = ("030_leadership_week.sql", "031_revenue_allocation_cost_basis.sql", "033_allocation_by_account.sql")
 
 
 def _top_level_items(text: str) -> list[str]:

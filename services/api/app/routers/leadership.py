@@ -2,8 +2,8 @@
 
 Reads serve mart.leadership_week joined at read time with the account mapping (ops.account_job), so
 a configuration change applies without a rebuild. For accounts with revenue_allocation 'budget_hours'
-the revenue-month revenue includes the parent-to-children split (revenue_allocated = the amount
-moved onto, or off, the row). The browser computes every derived metric
+the revenue on the account's billing catch-all jobs is spread over its sites (`allocate_parent_billing`;
+revenue_allocated = the amount moved onto, or off, the row). The browser computes every derived metric
 (src/leadership/metrics.ts) from the rows, as the reference dashboard did, so the target input
 recalculates instantly. Writes (account configuration, job mapping, file imports) are admin-only.
 """
@@ -34,18 +34,59 @@ SELECT w.week_start, w.week_end, w.company, w.job_number, w.site_name, w.parent_
        coalesce(aj.needs_review, false) AS needs_review,
        w.hours, w.ot_hours, w.labor, w.labor_basis, w.ot_dollars, w.budget_hours, w.budget_dollars,
        w.employees, w.days_with_labor, w.revenue_month,
-       w.revenue_month_amount + CASE WHEN a.revenue_allocation = 'budget_hours' THEN w.revenue_alloc_in - w.revenue_alloc_out ELSE 0 END AS revenue_month_amount,
-       CASE WHEN a.revenue_allocation = 'budget_hours' THEN w.revenue_alloc_in - w.revenue_alloc_out ELSE 0 END AS revenue_allocated,
-       w.revenue_month_basis, w.invoice_week, w.prior_revenue + CASE WHEN a.revenue_allocation = 'budget_hours' THEN w.revenue_alloc_in - w.revenue_alloc_out ELSE 0 END AS prior_revenue, w.prior_labor, w.prior_labor_basis,
+       w.revenue_month_amount, 0 AS revenue_allocated,
+       w.revenue_month_basis, w.invoice_week, w.prior_revenue, w.prior_labor, w.prior_labor_basis,
        w.prior_sub, w.prior_sub_basis, w.delivery_model, w.sub_week, w.sub_week_basis,
        w.consumables_cost, w.consumables_basis,
-       j.latitude, j.longitude, j.city, j.state_province
+       j.latitude, j.longitude, j.city, j.state_province,
+       a.revenue_allocation AS _allocation, w.revenue_month_budget_hours AS _rm_budget_hours, w.revenue_month_hours AS _rm_hours
 FROM mart.leadership_week w
 LEFT JOIN ops.account_job aj ON aj.company = w.company AND aj.job_number = w.job_number
 LEFT JOIN ops.account a ON a.slug = aj.account_slug
 LEFT JOIN core.dim_job j ON j.job_key = w.job_key
 WHERE w.week_start BETWEEN %(first)s AND %(last)s
 """
+
+
+def allocate_parent_billing(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Spread parent-billed revenue over an account's sites (accounts with revenue_allocation
+    'budget_hours'). Per account and week: when the account's catch-all jobs carry revenue-month
+    revenue and none of its sites do, that revenue moves to the sites present that week in proportion
+    to their revenue-month budget hours, else their revenue-month actual hours, else this week's hours.
+    Totals are preserved (the last site takes the rounding). Internal `_` fields are removed."""
+    groups: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for r in rows:
+        if r.get("_allocation") == "budget_hours" and r.get("account_slug"):
+            groups.setdefault((r["account_slug"], r["week_start"]), []).append(r)
+    for group in groups.values():
+        sources = [r for r in group if r["role"] == "catch_all" and (r["revenue_month_amount"] or 0) > 0]
+        sites = [r for r in group if r["role"] == "site"]
+        if not sources or not sites or any((r["revenue_month_amount"] or 0) > 0 for r in sites):
+            continue
+        weights = next((w for w in ([r["_rm_budget_hours"] or 0 for r in sites], [r["_rm_hours"] or 0 for r in sites], [r["hours"] or 0 for r in sites]) if sum(w) > 0), None)
+        if weights is None:
+            continue
+        pool = sum(r["revenue_month_amount"] for r in sources)
+        prior_pool = sum(r["prior_revenue"] or 0 for r in sources)
+        total = sum(weights)
+        given = prior_given = 0.0
+        for i, (r, w) in enumerate(zip(sites, weights)):
+            last = i == len(sites) - 1
+            share = round(pool - given, 2) if last else round(pool * w / total, 2)
+            prior_share = round(prior_pool - prior_given, 2) if last else round(prior_pool * w / total, 2)
+            given += share
+            prior_given += prior_share
+            r["revenue_month_amount"] = share
+            r["prior_revenue"] = (r["prior_revenue"] or 0) + prior_share
+            r["revenue_allocated"] = share
+        for r in sources:
+            r["revenue_allocated"] = -r["revenue_month_amount"]
+            r["prior_revenue"] = 0
+            r["revenue_month_amount"] = 0
+    for r in rows:
+        for key in ("_allocation", "_rm_budget_hours", "_rm_hours"):
+            r.pop(key, None)
+    return rows
 
 
 def monday(value: date) -> date:
@@ -163,7 +204,7 @@ def leadership_rows(
             sql += " AND aj.account_slug = %(account)s"
             params["account"] = account
         cursor.execute(sql + " ORDER BY w.week_start, aj.account_slug NULLS LAST, w.job_number", params)
-        rows = [jsonable(dict(r)) for r in cursor.fetchall()]
+        rows = allocate_parent_billing([jsonable(dict(r)) for r in cursor.fetchall()])
     week_list = [(first + timedelta(weeks=i)).isoformat() for i in range(weeks)]
     return {"source": source_block(), "week": anchor.isoformat(), "weeks": week_list, "account": account, "rows": rows}
 
@@ -190,9 +231,15 @@ def leadership_site(company: str, job_number: str, weeks: int = Query(13, ge=1, 
             raise HTTPException(status_code=404, detail=f"Unknown job {job_number} ({company})")
         anchor = parse_week(week) or monday(date.today())
         first = anchor - timedelta(weeks=weeks - 1)
-        cursor.execute(ROW_SQL + " AND w.job_key = %(job_key)s ORDER BY w.week_start",
-                       {"first": first, "last": anchor, "job_key": site["job_key"]})
-        rows = [jsonable(dict(r)) for r in cursor.fetchall()]
+        # A parent-billed account's split needs the whole account's rows; others need only the job's.
+        if site["account_slug"]:
+            cursor.execute(ROW_SQL + " AND aj.account_slug = %(account)s ORDER BY w.week_start",
+                           {"first": first, "last": anchor, "account": site["account_slug"]})
+        else:
+            cursor.execute(ROW_SQL + " AND w.job_key = %(job_key)s ORDER BY w.week_start",
+                           {"first": first, "last": anchor, "job_key": site["job_key"]})
+        rows = [r for r in allocate_parent_billing([jsonable(dict(r)) for r in cursor.fetchall()])
+                if r["company"] == company and r["job_number"] == job_number]
         invoices = subcontractor_invoices(cursor, site["job_key"], invoice_months)
     photos: dict[str, Any] = {"configured": companycam.configured(), "project_id": site["companycam_project_id"], "items": None, "error": None}
     if photos["configured"] and site["companycam_project_id"]:

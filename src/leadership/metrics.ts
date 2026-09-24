@@ -37,6 +37,8 @@ export interface WeekRow {
   labor_basis?: LaborBasis
   /** Vendor (subcontractor) cost for the week; counted only under cost basis labor_plus_vendor. */
   sub_week?: number
+  /** How the week's vendor cost was derived; 'prior_month_prorated' / 'trailing_3mo_projection' are projections. */
+  sub_week_basis?: string | null
   /** Revenue moved onto (+) or off (-) this row by a parent-job allocation. */
   revenue_allocated?: number
 }
@@ -115,6 +117,8 @@ export interface Rollup {
   priorCost: number
   priorLaborPct: number | null
 }
+
+const PROJECTED_VENDOR_BASES = new Set(['prior_month_prorated', 'trailing_3mo_projection'])
 
 const DEFAULTS = { revenueMethod: 'monthly_div' as RevenueMethod, divisor: 4.33, watchBand: 0.1, budgetReliabilityRatio: 0.8 }
 
@@ -207,6 +211,7 @@ export type AccountNote =
   | { kind: 'billed_no_labor'; jobs: { job_number: string; site_name: string }[] }
   | { kind: 'budget_unreliable'; ratio: number }
   | { kind: 'labor_estimated'; jobs: number; labor: number }
+  | { kind: 'vendor_projected'; jobs: number; amount: number }
   | { kind: 'revenue_allocated'; jobs: number; amount: number }
 
 export interface SegmentSummary { segment: string; target: number; rollup: Rollup; status: LaborStatus }
@@ -266,12 +271,17 @@ export function accountSummary<R extends WeekRow>(rows: R[], opts: MetricOptions
   const notes: AccountNote[] = []
   for (const c of catchRows) notes.push({ kind: 'catch_all', job_number: c.job_number, labor: c.labor, hours: c.hours, otHours: c.ot_hours, accountLaborPct: account.measurePct, sitesLaborPct: billed.measurePct })
   for (const n of nbRows) notes.push({ kind: 'non_billed', job_number: n.job_number, labor: n.labor, hours: n.hours, otHours: n.ot_hours, allInLaborPct: all.measurePct })
-  const noLabor = sites.filter((r) => r.invoice > 0 && r.labor === 0)
+  // A subcontracted site has vendor cost instead of labor; only a billed site with neither is noted.
+  const noLabor = sites.filter((r) => r.invoice > 0 && r.labor === 0 && !(r.sub_week ?? 0))
   if (noLabor.length) notes.push({ kind: 'billed_no_labor', jobs: noLabor.map((r) => ({ job_number: r.job_number, site_name: r.site_name })) })
   const budgetRatio = all.hours > 0 ? all.budgetHours / all.hours : null
   if (budgetRatio != null && budgetRatio < (opts.budgetReliabilityRatio ?? DEFAULTS.budgetReliabilityRatio)) notes.push({ kind: 'budget_unreliable', ratio: budgetRatio })
-  const estimated = sites.filter((r) => r.labor_basis && r.labor_basis !== 'pay_report')
+  const estimated = sites.filter((r) => r.labor > 0 && r.labor_basis && r.labor_basis !== 'pay_report')
   if (estimated.length) notes.push({ kind: 'labor_estimated', jobs: estimated.length, labor: estimated.reduce((a, r) => a + r.labor, 0) })
+  if (opts.costBasis === 'labor_plus_vendor') {
+    const projected = sites.filter((r) => (r.sub_week ?? 0) > 0 && PROJECTED_VENDOR_BASES.has(r.sub_week_basis ?? ''))
+    if (projected.length) notes.push({ kind: 'vendor_projected', jobs: projected.length, amount: projected.reduce((a, r) => a + (r.sub_week ?? 0), 0) })
+  }
   const allocated = sites.filter((r) => (r.revenue_allocated ?? 0) > 0)
   if (allocated.length) notes.push({ kind: 'revenue_allocated', jobs: allocated.length, amount: allocated.reduce((a, r) => a + (r.revenue_allocated ?? 0), 0) })
 

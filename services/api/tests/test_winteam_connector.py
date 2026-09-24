@@ -671,6 +671,54 @@ def test_ap_detail_outage_threshold_is_defined_and_small() -> None:
     assert 5 <= AP_DETAIL_MAX_CONSECUTIVE_ERRORS <= 100
 
 
+def _per_invoice_harness(monkeypatch, answers):
+    """Run _pull_per_invoice over `answers` (invoice number -> payload, or an HTTP status to raise)."""
+    from urllib.parse import quote
+    from uuid import uuid4
+
+    from app.winteam import RESOURCES, PullResult, WinTeamError
+
+    ing = WinTeamIngestion(Settings.load(ENABLED_ENV))
+    landed, remembered = [], []
+    monkeypatch.setattr(ing, "_ap_invoices_missing_details", lambda conn, limit=0: list(answers))
+    monkeypatch.setattr(ing, "_remember_unretrievable", lambda conn, resource, key, status: remembered.append(key))
+    monkeypatch.setattr(ing, "_forget_unretrievable", lambda conn, resource, key: None)
+    monkeypatch.setattr(ing, "_land", lambda conn, run_id, resource, records, result: landed.extend(records))
+
+    class Client:
+        def get(self, path, params=None, retry_server_errors=True):
+            answer = next(v for k, v in answers.items() if path.endswith(quote(k, safe="")))
+            if isinstance(answer, int):
+                raise WinTeamError(f"HTTP {answer}", status_code=answer)
+            return answer
+
+    result = PullResult()
+    ing._pull_per_invoice(RESOURCES["ap_invoice_details"], Client(), object(), uuid4(), result, None)
+    return landed, remembered, result
+
+
+def test_a_run_of_not_found_invoices_is_not_an_outage(monkeypatch) -> None:
+    """30 slash-numbered expense reimbursements answering 404, newest first, must not stop the
+    vendor invoice behind them (the 2026-09-23 stall)."""
+    answers = {f"JUssiri {i:02d}/2026": 404 for i in range(30)}
+    answers["1426"] = {"data": [{"invoiceNumber": "1426", "vendorNumber": 1162, "companyNumber": 3,
+                                 "generalLedgerDistributions": [{"accountNumber": 44000, "jobNumber": "853", "amount": 12759.13}]}]}
+    landed, remembered, result = _per_invoice_harness(monkeypatch, answers)
+    assert [l["jobNumber"] for l in landed] == ["853"]
+    assert len(remembered) == 30
+    assert "30 not retrievable" in result.message
+
+
+def test_a_run_of_server_errors_is_still_an_outage(monkeypatch) -> None:
+    import pytest
+
+    from app.winteam import AP_DETAIL_MAX_CONSECUTIVE_ERRORS, WinTeamError
+
+    answers = {str(1000 + i): 500 for i in range(AP_DETAIL_MAX_CONSECUTIVE_ERRORS + 1)}
+    with pytest.raises(WinTeamError, match="treating as an outage"):
+        _per_invoice_harness(monkeypatch, answers)
+
+
 # ── job budgets ──────────────────────────────────────────────────────────────
 def test_flatten_job_budget_spreads_hours_across_the_week() -> None:
     """Budget is hours PER DAY OF WEEK plus a rate, which apportions to a week without proration."""

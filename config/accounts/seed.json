@@ -889,9 +889,277 @@
    "cost_basis": "labor"
   },
   {
+   "featured": true,
+   "target_labor_pct": 0.645,
+   "revenue_method": "monthly_div",
+   "revenue_divisor": 4.33,
+   "watch_band": 0.1,
+   "budget_reliability_ratio": 0.8,
+   "source_parent_accounts": [],
+   "segment_source": "explicit",
+   "fallback_segment": "Support & Special Programs",
+   "segments": [
+    {
+     "name": "High School",
+     "target_labor_pct": null
+    },
+    {
+     "name": "Middle School",
+     "target_labor_pct": null
+    },
+    {
+     "name": "Elementary",
+     "target_labor_pct": null
+    },
+    {
+     "name": "Early Childhood",
+     "target_labor_pct": null
+    },
+    {
+     "name": "Support & Special Programs",
+     "target_labor_pct": null
+    }
+   ],
+   "revenue_allocation": "budget_hours",
+   "cost_basis": "labor",
+   "slug": "crowley-isd",
+   "name": "Crowley ISD",
+   "sort": 6,
+   "jobs": [
+    {
+     "company": "Crane Southwest",
+     "job_number": "910",
+     "segment": null,
+     "role": "catch_all"
+    },
+    {
+     "company": "Crane Southwest",
+     "job_number": "911",
+     "segment": "Elementary",
+     "role": "site"
+    },
+    {
+     "company": "Crane Southwest",
+     "job_number": "912",
+     "segment": "Elementary",
+     "role": "site"
+    },
+    {
+     "company": "Crane Southwest",
+     "job_number": "913",
+     "segment": "Support & Special Programs",
+     "role": "site"
+    },
+    {
+     "company": "Crane Southwest",
+     "job_number": "914",
+     "segment": "Support & Special Programs",
+     "role": "site"
+    },
+    {
+     "company": "Crane Southwest",
+     "job_number": "915",
+     "segment": "Support & Special Programs",
+     "role": "site"
+    },
+    {
+     "company": "Crane Southwest",
+     "job_number": "916",
+     "segment": "Support & Special Programs",
+     "role": "site"
+    },
+    {
+     "company": "Crane Southwest",
+     "job_number": "917",
+     "segment": "High School",
+     "role": "site"
+    },
+    {
+     "company": "Crane Southwest",
+     "job_number": "918",
+     "segment": "High School",
+     "role": "site"
+    },
+    {
+     "company": "Crane Southwest",
+     "job_number": "919",
+     "segment": "Support & Special Programs",
+     "role": "site"
+    },
+    {
+     "company": "Crane Southwest",
+     "job_number": "920",
+     "segment": "Support & Special Programs",
+     "role": "site"
+    },
+    {
+     "company": "Crane Southwest",
+     "job_number": "921",
+     "segment": "Support & Special Programs",
+     "role": "site"
+    },
+    {
+     "company": "Crane Southwest",
+     "job_number": "922",
+     "segment": "Middle School",
+     "role": "site"
+    },
+    {
+     "company": "Crane Southwest",
+     "job_number": "923",
+     "segment": "Early Childhood",
+     "role": "site"
+    },
+    {
+     "company": "Crane Southwest",
+     "job_number": "924",
+     "segment": "Elementary",
+     "role": "site"
+    },
+    {
+     "company": "Crane Southwest",
+     "job_number": "925",
+     "segment": "Elementary",
+     "role": "site"
+    },
+    {
+     "company": "Crane Southwest",
+     "job_number": "926",
+     "segment": "Elementary",
+     "role": "site"
+    },
+    {
+     "company": "Crane Southwest",
+     "job_number": "927",
+     "segment": "Middle School",
+     "role": "site"
+    },
+    {
+     "company": "Crane Southwest",
+     "job_number": "928",
+     "segment": "Elementary",
+     "role": "site"
+    },
+    {
+     "company": "Crane Southwest",
+     "job_number": "929",
+     "segment": "Elementary",
+     "role": "site"
+    },
+    {
+     "company": "Crane Southwest",
+     "job_number": "930",
+     "segment": "Elementary",
+     "role": "site"
+    },
+    {
+     "company": "Crane Southwest",
+     "job_number": "931",
+     "segment": "Elementary",
+     "role": "site"
+    },
+    {
+     "company": "Crane Southwest",
+     "job_number": "932",
+     "segment": "Elementary",
+     "role": "site"
+    },
+    {
+     "company": "Crane Southwest",
+     "job_number": "933",
+     "segment": "High School",
+     "role": "site"
+    },
+    {
+     "company": "Crane Southwest",
+     "job_number": "934",
+     "segment": "High School",
+     "role": "site"
+    },
+    {
+     "company": "Crane Southwest",
+     "job_number": "935",
+     "segment": "Elementary",
+     "role": "site"
+    },
+    {
+     "company": "Crane Southwest",
+     "job_number": "936",
+     "segment": "Elementary",
+     "role": "site"
+    },
+    {
+     "company": "Crane Southwest",
+     "job_number": "937",
+     "segment": "Middle School",
+     "role": "site"
+    },
+    {
+     "company": "Crane Southwest",
+     "job_number": "938",
+     "segment": "Elementary",
+     "role": "site"
+    },
+    {
+     "company": "Crane Southwest",
+     "job_number": "939",
+     "segment": "Elementary",
+     "role": "site"
+    },
+    {
+     "company": "Crane Southwest",
+     "job_number": "940",
+     "segment": "Elementary",
+     "role": "site"
+    },
+    {
+     "company": "Crane Southwest",
+     "job_number": "941",
+     "segment": "Middle School",
+     "role": "site"
+    },
+    {
+     "company": "Crane Southwest",
+     "job_number": "942",
+     "segment": "Elementary",
+     "role": "site"
+    },
+    {
+     "company": "Crane Southwest",
+     "job_number": "943",
+     "segment": "Support & Special Programs",
+     "role": "site"
+    },
+    {
+     "company": "Crane Southwest",
+     "job_number": "944",
+     "segment": "Support & Special Programs",
+     "role": "site"
+    },
+    {
+     "company": "Crane Southwest",
+     "job_number": "945",
+     "segment": "Support & Special Programs",
+     "role": "site"
+    },
+    {
+     "company": "Crane Southwest",
+     "job_number": "946",
+     "segment": "Support & Special Programs",
+     "role": "site"
+    },
+    {
+     "company": "Crane Southwest",
+     "job_number": "948",
+     "segment": null,
+     "role": "non_billed"
+    }
+   ]
+  },
+  {
    "slug": "aldi",
    "name": "Aldi",
-   "sort": 6,
+   "sort": 7,
    "featured": true,
    "target_labor_pct": 0.645,
    "revenue_method": "monthly_div",
@@ -928,7 +1196,7 @@
   {
    "slug": "whole-foods",
    "name": "Whole Foods",
-   "sort": 7,
+   "sort": 8,
    "featured": true,
    "target_labor_pct": 0.645,
    "revenue_method": "monthly_div",
@@ -965,7 +1233,7 @@
   {
    "slug": "apple-retail",
    "name": "Apple / Retail",
-   "sort": 8,
+   "sort": 9,
    "featured": true,
    "target_labor_pct": 0.645,
    "revenue_method": "monthly_div",
