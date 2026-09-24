@@ -32,6 +32,18 @@
         "dev"
       ],
       "port": 5173
+    },
+    {
+      "name": "dev-worktree",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": [
+        "exec",
+        "vite",
+        "--port",
+        "15195",
+        "--strictPort"
+      ],
+      "port": 15195
     }
   ]
 }

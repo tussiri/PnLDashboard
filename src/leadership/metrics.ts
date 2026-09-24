@@ -56,7 +56,8 @@ export interface MetricOptions {
   segmentTargets?: Record<string, number>
 }
 
-export interface SiteMetrics extends WeekRow {
+/** Derived values added to a row. */
+export interface Derived {
   invoice: number
   laborPct: number | null
   /** Vendor cost counted in the measure (0 under cost basis labor). */
@@ -87,6 +88,9 @@ export interface SiteMetrics extends WeekRow {
   target: number
   status: LaborStatus
 }
+
+/** A row with its derived metrics; keeps every field of the row type it was computed from. */
+export type SiteMetrics<R extends WeekRow = WeekRow> = R & Derived
 
 export interface Rollup {
   count: number
@@ -136,7 +140,7 @@ export function baseRateOf(labor: number, hours: number, otHours: number): numbe
 /** The target for a row: its segment's override, else the account target. */
 export const targetFor = (row: Pick<WeekRow, 'segment'>, opts: MetricOptions) => (row.segment != null ? opts.segmentTargets?.[row.segment] : undefined) ?? opts.target
 
-export function siteMetrics(row: WeekRow, opts: MetricOptions): SiteMetrics {
+export function siteMetrics<R extends WeekRow>(row: R, opts: MetricOptions): SiteMetrics<R> {
   const target = targetFor(row, opts)
   const invoice = invoiceOf(row, opts)
   const vendor = opts.costBasis === 'labor_plus_vendor' ? row.sub_week ?? 0 : 0
@@ -207,8 +211,8 @@ export type AccountNote =
 
 export interface SegmentSummary { segment: string; target: number; rollup: Rollup; status: LaborStatus }
 
-export interface AccountSummary {
-  sites: SiteMetrics[]
+export interface AccountSummary<R extends WeekRow = WeekRow> {
+  sites: SiteMetrics<R>[]
   /** Every row, non-billed included. */
   all: Rollup
   /** Sites plus catch-all: the account header. */
@@ -221,7 +225,7 @@ export interface AccountSummary {
   /** Header hours over target: sites over target plus the catch-all in full. */
   headerOverHours: number
   segments: SegmentSummary[]
-  overTarget: { rows: SiteMetrics[]; billedCount: number; rollup: Rollup; fromOtPremium: number; fromExtraHours: number }
+  overTarget: { rows: SiteMetrics<R>[]; billedCount: number; rollup: Rollup; fromOtPremium: number; fromExtraHours: number }
   overtime: { hours: number; dollars: number; premiumDollars: number; pctOfHours: number; pctOfLabor: number; rowsWithOt: number; rowsWithLabor: number; unbilledOtHours: number }
   notes: AccountNote[]
 }
@@ -230,7 +234,7 @@ export interface AccountSummary {
  * Everything the account views show for one week. `segmentOrder` lists the account's segments in
  * display order; segments present in the rows but not listed follow alphabetically.
  */
-export function accountSummary(rows: WeekRow[], opts: MetricOptions, segmentOrder: string[] = []): AccountSummary {
+export function accountSummary<R extends WeekRow>(rows: R[], opts: MetricOptions, segmentOrder: string[] = []): AccountSummary<R> {
   const target = opts.target
   const sites = rows.map((r) => siteMetrics(r, opts))
   const billedRows = sites.filter((r) => r.role === 'site')

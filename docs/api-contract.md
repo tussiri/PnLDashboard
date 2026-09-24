@@ -1,4 +1,4 @@
-# Northstar Facilities API contract (v1)
+# Crane IFS API contract (v1)
 
 All routes are served under `/api/v1` by the FastAPI service and proxied same-origin by nginx.
 All responses are JSON with snake_case keys and numbers as numbers. Empty data returns `200` with
@@ -356,6 +356,11 @@ above, all additive:
 
 ## Leadership labor P&L (added 2026-09-23)
 
+WinTeam sync cadence changed the same day: the worker runs one incremental sync a night
+(`app/nightly.py`, setting `nightly_sync`); the integration status fields `sync: 'on_demand'` and
+`poll_seconds: null` still describe the on-demand routes, and the nightly run is recorded in
+`ops.integration_sync_run` as integration `nightly` (reported by `GET /leadership/config` `status.syncs`).
+
 The leadership views (Home, Account, Analytics) read `mart.leadership_week` (migration 030, rules
 in `services/api/app/leadership.py`) joined at read time with the account configuration
 (`ops.account`, `ops.account_segment`, `ops.account_job`, migration 028), so configuration edits
@@ -370,6 +375,7 @@ are Monday-based; the views label them by the week-ending Sunday. Any date in a 
 | `GET /leadership/config` | `{source, accounts: [LeadershipAccount], weeks: [{week_start, week_end, days_with_labor, pay_report_share, revenue_month, in_progress}], default_week, status: {rebuilt_at, leadership_rebuilt_at, syncs: [{integration_name, status, completed_at, started_at}], imports: {pay_report?, job_cost?: {file_name, period_from, period_to, rows_loaded, loaded_at}}, pay_report_through: [{company, through}]}}`. `default_week` = the latest complete week. |
 | `GET /leadership/rows?week=&weeks=1&account=featured` | `{source, week, weeks: [ISO], account, rows: [LeadershipRow]}` for `weeks` (1–26) weeks ending at `week`. `account` = a slug, `featured`, `other` (unmapped or non-featured) or `all`. 404 for an unknown slug. |
 | `GET /leadership/sites/{company}/{job_number}?weeks=13&week=` | `{source, site: {company, job_number, site_name, address_line_1, city, state_province, postal_code, latitude, longitude, parent_job_number, delivery_model, parent_account, account_slug, segment, role, companycam_project_id}, weeks: [LeadershipRow], invoices: {since, vendor_type_ids, total, lines: [{invoice_number, invoice_date, gl_account_number, amount, vendor_number, vendor_name, vendor_type_id}]}, photos: {configured, project_id, items: [{id, captured_at, thumbnail, web, creator_name}] \| null, error}}`. Invoices are AP GL distribution lines coded to the job from subcontractor vendors (setting `subcontractor_vendor_type_ids`, default `[6]`) over the last 6 months. Photos are fetched server-side from CompanyCam when a token and the job's `companycam_project_id` exist. 404 for an unknown job. |
+| `GET /leadership/vendors?account=&months=6` | `{account, since, vendor_type_ids, total, by_vendor: [{vendor_number, vendor_name, amount, invoices}], by_site: [{company, job_number, site_name, amount, invoices}], by_month: [{month, amount, invoices}], lines: [invoice line + {company, job_number, site_name}]}`: subcontractor AP distribution lines coded to the account's sites since the first of the month `months - 1` back. 404 for an unknown slug. |
 | `PUT /leadership/accounts/{slug}` (admin) body: any of `name, featured, sort, target_labor_pct, watch_band, revenue_method, revenue_divisor, budget_reliability_ratio, source_parent_accounts, segment_source, fallback_segment` | the updated `LeadershipAccount` |
 | `PUT /leadership/accounts/{slug}/segments` (admin) body `[{name, target_labor_pct}]` | the account plus `jobs_moved_to_fallback`; the fallback segment must stay in the list |
 | `GET /leadership/account-jobs?account=&needs_review=&unmapped=` (admin) | `{jobs: [{company, job_number, account_slug, segment, role, companycam_project_id, assigned_by, needs_review, job_name, parent_account, is_active}]}`; `unmapped=true` lists current jobs in Other |
