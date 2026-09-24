@@ -17,6 +17,8 @@ and every row says which one it used (`revenue_basis`, `labor_basis`):
   the effective timekeeping rows when the month has punches, else actual_hours / overtime_hours from the
   job-cost row. A job invoiced or worked in such a month without a job-cost row keeps its AR
   invoiced_total and hours but carries 0 revenue / cost and the quality note `no_job_cost_row`.
+  A parent job whose child jobs carry job-cost revenue in the month keeps its own job-cost row even
+  at 0 revenue: its AR is the contract invoice that job cost already spread over the children.
 * Otherwise (the WinTeam API source, or in-progress months of the reference source such as the
   month being worked): revenue / invoiced_total / collected_total / invoice_count come from
   the effective AR invoices grouped by job and service_month (billingPeriodFrom month, else invoiceDate
@@ -67,7 +69,7 @@ from typing import Any
 
 import psycopg
 
-from . import weekly
+from . import accounts, weekly
 from .config import settings
 from .db import connection
 
@@ -174,7 +176,8 @@ WITH jobs AS (
   SELECT j.job_key, j.job_number, j.job_name, pa.account_name AS parent_account,
          j.region_name, j.branch_name, j.service_type, j.vertical, j.manager_name,
          j.city, j.state_province, j.country_code, j.latitude, j.longitude, j.is_active,
-         j.source, j.company, j.delivery_model, j.geo_precision, j.customer_number AS dim_customer_number
+         j.source, j.company, j.delivery_model, j.geo_precision, j.customer_number AS dim_customer_number,
+         j.parent_job_number
   FROM core.dim_job j
   LEFT JOIN core.dim_parent_account pa ON pa.parent_account_key = j.parent_account_key
   WHERE j.valid_to IS NULL AND j.job_number IS NOT NULL
@@ -248,6 +251,18 @@ jc AS (
   FROM core.fact_job_cost_month c
   JOIN jobs jb ON jb.job_number = c.job_number
 ),
+parent_jc AS (
+  -- A parent job invoiced for the whole contract while the job-cost P&L spreads that revenue over
+  -- its child sites (Plano ISD: the district invoice is billed on job 800, job cost carries it on
+  -- 801-896 and 0 on 800). Falling back to AR for the parent counted the contract twice, so a parent
+  -- whose children carry job-cost revenue in the month keeps its own job-cost row, zero included.
+  SELECT p.job_key, c_jc.month
+  FROM jobs p
+  JOIN jobs c ON c.parent_job_number = p.job_number AND c.job_key <> p.job_key
+             AND c.company IS NOT DISTINCT FROM p.company
+  JOIN jc c_jc ON c_jc.job_key = c.job_key AND coalesce(c_jc.revenue, 0) <> 0
+  GROUP BY p.job_key, c_jc.month
+),
 lb AS (
   SELECT jb.job_key, l.month, sum(l.budget_labor) AS budget_labor, sum(l.budget_hours) AS budget_hours
   FROM core.fact_labor_budget_month l
@@ -302,9 +317,9 @@ assembled AS (
     jb.region_name, jb.branch_name, jb.service_type, jb.vertical, jb.manager_name,
     jb.city, jb.state_province, jb.country_code, jb.latitude, jb.longitude, k.month, jb.is_active,
     jb.company, jb.delivery_model, jb.geo_precision, coalesce(jc.source, jb.source) AS source,
-    jm.month IS NOT NULL AND jc.job_key IS NOT NULL AND coalesce(jc.revenue, 0) <> 0 AS has_jc,
-    jm.month IS NOT NULL AND (jc.job_key IS NULL OR coalesce(jc.revenue, 0) = 0) AS missing_jc_row,
-    CASE WHEN jm.month IS NOT NULL AND jc.job_key IS NOT NULL AND coalesce(jc.revenue, 0) <> 0
+    jm.month IS NOT NULL AND jc.job_key IS NOT NULL AND (coalesce(jc.revenue, 0) <> 0 OR pj.job_key IS NOT NULL) AS has_jc,
+    jm.month IS NOT NULL AND (jc.job_key IS NULL OR coalesce(jc.revenue, 0) = 0) AND pj.job_key IS NULL AS missing_jc_row,
+    CASE WHEN jm.month IS NOT NULL AND jc.job_key IS NOT NULL AND (coalesce(jc.revenue, 0) <> 0 OR pj.job_key IS NOT NULL)
            THEN jc.revenue
          ELSE greatest(coalesce(ar.revenue, 0), coalesce(jc.revenue, 0)) END AS revenue,
     coalesce(ar.invoiced_total, 0) AS invoiced_total,
@@ -326,13 +341,13 @@ assembled AS (
     -- The export's subcontract line wins only where the export row was the one actually used for
     -- this job-month (same gate as revenue); otherwise the AP distributions carry it. Before those
     -- distributions existed this fell to 0 and the weekly view projected a trailing average instead.
-    CASE WHEN jm.month IS NOT NULL AND jc.job_key IS NOT NULL AND coalesce(jc.revenue, 0) <> 0
+    CASE WHEN jm.month IS NOT NULL AND jc.job_key IS NOT NULL AND (coalesce(jc.revenue, 0) <> 0 OR pj.job_key IS NOT NULL)
            THEN coalesce(jc.subcontractors, 0)
          ELSE coalesce(apd.subcontract, 0) END AS subcontract_cost,
-    CASE WHEN jm.month IS NOT NULL AND jc.job_key IS NOT NULL AND coalesce(jc.revenue, 0) <> 0 THEN 'job_cost'
+    CASE WHEN jm.month IS NOT NULL AND jc.job_key IS NOT NULL AND (coalesce(jc.revenue, 0) <> 0 OR pj.job_key IS NOT NULL) THEN 'job_cost'
          WHEN apd.job_key IS NOT NULL THEN 'ap_distribution' END AS subcontract_basis,
     CASE WHEN jc.job_key IS NOT NULL THEN coalesce(jc.materials, 0) + coalesce(jc.equipment_supplies, 0) ELSE 0 END AS supplies_cost,
-    CASE WHEN jm.month IS NOT NULL AND jc.job_key IS NOT NULL AND coalesce(jc.revenue, 0) <> 0
+    CASE WHEN jm.month IS NOT NULL AND jc.job_key IS NOT NULL AND (coalesce(jc.revenue, 0) <> 0 OR pj.job_key IS NOT NULL)
            THEN coalesce(jc.other_direct_costs, 0)
          ELSE coalesce(apd.other_direct, 0) END AS other_direct_cost,
     jc.total_direct_costs AS jc_direct_cost,
@@ -350,7 +365,7 @@ assembled AS (
     coalesce(tk.work_days, 0) AS work_days,
     tk.last_work_date,
     jc.data_quality_status AS jc_quality,
-    CASE WHEN jm.month IS NOT NULL AND jc.job_key IS NOT NULL AND coalesce(jc.revenue, 0) <> 0 THEN 'job_cost'
+    CASE WHEN jm.month IS NOT NULL AND jc.job_key IS NOT NULL AND (coalesce(jc.revenue, 0) <> 0 OR pj.job_key IS NOT NULL) THEN 'job_cost'
          WHEN coalesce(jc.revenue, 0) > coalesce(ar.revenue, 0) THEN 'job_cost_partial'
          WHEN ar.job_key IS NOT NULL THEN 'ar_invoice' END AS revenue_basis,
     CASE WHEN jm.month IS NOT NULL AND jc.job_key IS NOT NULL THEN 'job_cost'
@@ -365,6 +380,7 @@ assembled AS (
   LEFT JOIN jc ON jc.job_key = k.job_key AND jc.month = k.month
   LEFT JOIN apd ON apd.job_key = k.job_key AND apd.month = k.month
   LEFT JOIN jc_months jm ON jm.month = k.month
+  LEFT JOIN parent_jc pj ON pj.job_key = k.job_key AND pj.month = k.month
   LEFT JOIN lb ON lb.job_key = k.job_key AND lb.month = k.month
   LEFT JOIN cust ON cust.job_key = k.job_key
   WHERE k.month <= date_trunc('month', current_date)::date
@@ -537,6 +553,7 @@ def rebuild_tables() -> tuple[int, int, int]:
                 cursor.execute(PORTFOLIO_MONTH_SQL)
                 portfolio_rows = cursor.rowcount
                 job_week_rows = weekly.rebuild(cursor)
+                accounts.sync_accounts(cursor)
         except psycopg.errors.LockNotAvailable as exc:
             raise MartRebuildBlocked(
                 f"Mart rebuild could not take its locks within {settings.mart_rebuild_lock_timeout_seconds}s; "
