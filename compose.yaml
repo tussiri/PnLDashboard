@@ -42,6 +42,7 @@ x-api-environment: &api-environment
   WINTEAM_SARUS_HEADERS_JSON: '${WINTEAM_SARUS_HEADERS_JSON:-{}}'
   COMPANYCAM_API_TOKEN: ${COMPANYCAM_API_TOKEN:-}
   COMPANYCAM_MATCH_RULE: ${COMPANYCAM_MATCH_RULE:-}
+  IMPORT_INBOX_DIR: ${IMPORT_INBOX_DIR:-/imports/inbox}
   # Second source: the restored Finance_Dashboard dump (read-only database in the same Postgres).
   # Empty = source not configured. The default is the local restored dump.
   FINANCE_REFERENCE_DATABASE_URL: ${FINANCE_REFERENCE_DATABASE_URL:-postgresql://facilities_app:facilities_dev@postgres:5432/finance_reference}
@@ -103,6 +104,8 @@ services:
     restart: unless-stopped
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]
     environment: *api-environment
+    volumes:
+      - ${IMPORTS_HOST_DIR:-./imports}:/imports
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -121,6 +124,8 @@ services:
     restart: unless-stopped
     command: ["python", "-m", "app.worker"]
     environment: *api-environment
+    volumes:
+      - ${IMPORTS_HOST_DIR:-./imports}:/imports
     depends_on:
       migrate:
         condition: service_completed_successfully

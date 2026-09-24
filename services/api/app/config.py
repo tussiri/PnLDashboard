@@ -173,6 +173,8 @@ class Settings:
     max_retries: int
     ap_detail_invoice_limit: int
     companycam_api_token: str
+    # Folder the nightly sync loads WinTeam export files from (docs/export-feeds.md).
+    import_inbox_dir: str
     companycam_match_rule: str
     ingestion_idle_in_transaction_timeout_seconds: int
     mart_rebuild_lock_timeout_seconds: int
@@ -247,6 +249,7 @@ class Settings:
             # never calls CompanyCam directly. Absent by default, so photos stay off until the
             # production token is added to the server .env. Never give it a VITE_ prefix.
             companycam_api_token=_text(env, "COMPANYCAM_API_TOKEN"),
+            import_inbox_dir=_text(env, "IMPORT_INBOX_DIR", "/imports/inbox"),
             # How a CompanyCam project is matched to a WinTeam job. Unset until the production data
             # has been probed: job_number_in_name | address | project_map.
             companycam_match_rule=_text(env, "COMPANYCAM_MATCH_RULE"),

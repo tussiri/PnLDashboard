@@ -1,13 +1,14 @@
-"""Background worker. It never calls WinTeam.
+"""Background worker: the nightly sync, and a mart rebuild when the marts are empty.
 
-WinTeam is synced on demand only - by an administrator from the Admin view or through
-POST /api/v1/integrations/winteam/sync (and /integrations/winteam/sarus/sync). Nothing polls it:
-the warehouse keeps every payload it has fetched (raw.winteam_record) and every normalized row, so
-the dashboards read our own PostgreSQL and marts, and WinTeam is asked only when someone chooses to
-refresh.
+WinTeam is called on a schedule once a day only, by app.nightly (approved 2026-09-23): an
+incremental sync off hours (ops.app_setting `nightly_sync`, default 02:30 America/Chicago) that
+also loads the export files in the import inbox and rebuilds the marts once. Administrators can
+still sync on demand from the Admin view or POST /api/v1/integrations/winteam/sync. Nothing polls
+WinTeam more often than that.
 
-What the worker still does: on startup it rebuilds the marts if core facts exist but mart.job_month
-is empty (for example after a fresh mart migration), then idles until SIGTERM/SIGINT.
+On startup the worker also rebuilds the marts if core facts exist but mart.job_month is empty (for
+example after a fresh mart migration), then checks the nightly schedule once a minute until
+SIGTERM/SIGINT.
 """
 from __future__ import annotations
 
@@ -15,12 +16,13 @@ import logging
 import signal
 import time
 
-from . import marts
+from . import marts, nightly
 from .config import settings
 
 logging.basicConfig(level=settings.log_level, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 logger = logging.getLogger("worker")
 running = True
+CHECK_EVERY_SECONDS = 60
 
 
 def stop(*_: object) -> None:
@@ -37,12 +39,23 @@ def rebuild_on_startup() -> None:
         logger.exception("Startup mart rebuild failed")
 
 
+def tick() -> None:
+    try:
+        nightly.check_and_run()
+    except Exception:  # noqa: BLE001 - a failed check must not stop the worker
+        logger.exception("Nightly schedule check failed")
+
+
 def run() -> None:
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
-    logger.info("Worker started; WinTeam syncs run on demand only (no scheduled polling)")
+    logger.info("Worker started; WinTeam syncs nightly (ops.app_setting nightly_sync) and on demand")
     rebuild_on_startup()
+    last_check = 0.0
     while running:
+        if time.monotonic() - last_check >= CHECK_EVERY_SECONDS:
+            last_check = time.monotonic()
+            tick()
         time.sleep(5)
     logger.info("Worker stopped")
 

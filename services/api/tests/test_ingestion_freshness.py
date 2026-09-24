@@ -35,13 +35,17 @@ def test_not_entitled_resource_is_flagged():
     assert _mark_overdue(row(last_status="failed", last_error="connection refused"))["not_entitled"] is False
 
 
-def test_the_worker_never_calls_winteam():
-    """Syncs are on demand: the worker module imports no WinTeam client at all."""
+def test_the_worker_reaches_winteam_only_through_the_nightly_sync():
+    """Approved 2026-09-23: one incremental sync a day. The worker imports no WinTeam client; the
+    nightly job calls sync_all without force or deep, so the 3-day lookback and daily skips hold."""
     import inspect
 
-    from app import worker
+    from app import nightly, worker
     source = inspect.getsource(worker)
     assert "sync_all" not in source and "from .winteam" not in source
+    nightly_source = inspect.getsource(nightly)
+    assert "force=True" not in nightly_source and "deep=True" not in nightly_source
+    assert nightly_source.count("sync_all(") == 2
 
 
 def test_reference_stale_threshold_is_one_week():
