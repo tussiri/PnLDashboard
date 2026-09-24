@@ -21,7 +21,9 @@ export function freshnessLine(config: ReturnType<typeof useLeadership>['config']
   const rebuilt = config.status.rebuilt_at ? `Data as of ${new Date(config.status.rebuilt_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}` : 'Data not built'
   const through = config.status.pay_report_through
   const pay = through.length ? `pay report through ${through.map((p) => p.through).sort().at(-1)}` : 'no pay report loaded'
-  return `${rebuilt}; ${pay}`
+  const relay = config.status.syncs.find((s) => s.integration_name === 'relay')
+  const relayText = relay?.completed_at ? `; Relay synced ${new Date(relay.completed_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}` : ''
+  return `${rebuilt}; ${pay}${relayText}`
 }
 
 export function Shell({ children }: { children: ReactNode }) {

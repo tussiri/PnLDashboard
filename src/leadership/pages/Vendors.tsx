@@ -37,6 +37,7 @@ export function Vendors({ account }: { account: LeadershipAccount }) {
     { key: 'site', header: 'Location', left: true, value: (r) => `${r.job_number} ${r.site_name}`, className: 'nm' },
     { key: 'vendor', header: 'Vendor', left: true, value: (r) => r.vendor_name, className: 'nm' },
     { key: 'invno', header: 'Invoice', left: true, value: (r) => r.invoice_number },
+    { key: 'src', header: 'Source', left: true, value: (r) => (r.source === 'relay' ? 'Relay' : 'WinTeam'), render: (r) => <span className="neutral">{r.source === 'relay' ? 'Relay' : 'WinTeam'}</span> },
     { key: 'gl', header: 'GL', value: (r) => r.gl_account_number },
     { key: 'amt', header: 'Amount', value: (r) => r.amount, render: (r) => money(r.amount) },
   ]

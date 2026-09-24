@@ -119,7 +119,7 @@ export interface Rollup {
   priorLaborPct: number | null
 }
 
-const PROJECTED_VENDOR_BASES = new Set(['prior_month_prorated', 'trailing_3mo_projection'])
+const PROJECTED_VENDOR_BASES = new Set(['prior_month_prorated', 'trailing_3mo_projection', 'relay_contract'])
 
 const DEFAULTS = { revenueMethod: 'monthly_div' as RevenueMethod, divisor: 4.33, watchBand: 0.1, budgetReliabilityRatio: 0.8 }
 

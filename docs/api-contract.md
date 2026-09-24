@@ -415,3 +415,28 @@ present in the week by revenue-month budget hours, else revenue-month actual hou
 computed at read time): `revenue_month_amount` and `prior_revenue` include it and
 `revenue_allocated` shows the amount moved onto (+) or off (-) the row, `allocation_weight` the weight used
 (`budget_hours` | `actual_hours` | `week_hours`, null when nothing moved). `PUT /leadership/accounts/{slug}` also accepts `revenue_allocation` and `cost_basis`.
+
+## Relay (FedEx) feeds, added 2026-09-24
+
+The dashboard pulls Relay's (integration_mapper) read-only export (`GET /export/dashboard/{ap,ar,sites,work-orders}`,
+bearer token; Relay `docs/DASHBOARD_EXPORT.md`) into `core.relay_*` snapshots (migration 034, `app/relay.py`), nightly
+and on demand. Settings `RELAY_BASE_URL`, `RELAY_EXPORT_TOKEN` (server-side only).
+
+| Route | Response |
+|---|---|
+| `GET /integrations/relay` | `{configured, base_url_host, feeds: [{feed: 'ap'\|'ar'\|'sites'\|'work_orders', rows, status?, completed_at?, error_message?}]}`. Never returns the token. |
+| `POST /integrations/relay/sync?rebuild=true` (admin) | `{runs: [{feed, status, fetched, loaded, error?}], failed: [feed], marts: RebuildResult \| null}`. GET-only against Relay. 409 when not configured. A feed that returns no rows never empties a snapshot that has rows (that feed fails instead). |
+
+Effects on `mart.leadership_week` for the WinTeam jobs Relay covers (never Sarus):
+- `sub_week` = the week's service month (the month holding the week's Thursday) of Relay payables, excluding
+  self-perform legs, spread by days: actual when at least 90% of the site contract is invoiced or there is no
+  contract (`sub_week_basis` `relay_ap`), else the contract amount (`relay_contract`); Crane's own sites carry
+  none (`relay_self_perform`).
+- `prior_sub` = the greater of job cost, WinTeam AP distributions and Relay payables (`prior_sub_basis` `relay_ap`).
+- `revenue_month_amount` / `prior_revenue` come from Relay AR when job cost does not cover the month
+  (`revenue_month_basis` `relay_ar`).
+- `delivery_model` falls back to Relay's self-perform flag.
+
+`GET /leadership/sites/{company}/{job}` and `GET /leadership/vendors` invoice lines gain `source`
+(`winteam` | `relay`), and for Relay lines `service_month`, `status`, `in_winteam`, `payment_status`; a Relay payable
+already among the WinTeam lines (same vendor and invoice number) is not repeated.

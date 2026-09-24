@@ -21,6 +21,11 @@ share the same core/mart tables, combined by explicit precedence rules (`docs/wi
   demand (Administration page or the admin routes), then normalize and rebuild marts and forecasts. Inside the
   API's date window API rows are the truth for the companies the tenant serves (Crane IFS, Crane
   West, Crane Southwest); exports fill everything else (Sarus, and all history before the window).
+- **relay** (integration_mapper, FedEx only): the read-only export of Relay, pulled nightly into `core.relay_*`
+  (`app/relay.py`, migration 034). It carries FedEx subcontractor payables by WinTeam job and service month,
+  FedEx AR with supersession applied, self-perform stations and contract amounts; the weekly mart prefers it
+  for FedEx vendor cost and billing. Configure `RELAY_BASE_URL` and `RELAY_EXPORT_TOKEN` (one of Relay's
+  `DASHBOARD_EXPORT_TOKENS`). The export itself is on Relay branch `feature/dashboard-export`.
 - **finance_reference**: the WinTeam report exports restored from the Finance_Dashboard PostgreSQL
   dump (`finance_reference` database, read-only). It is the only source of the Job Cost Analysis
   P&L (revenue, direct labor, subcontract cost by site and month), daily labor budgets, and the AR/AP

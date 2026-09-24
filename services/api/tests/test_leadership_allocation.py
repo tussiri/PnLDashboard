@@ -33,3 +33,31 @@ def test_leaves_accounts_whose_sites_bill_themselves_alone():
 def test_applies_only_to_opted_in_accounts():
     rows = allocate_parent_billing([row("910", "catch_all", 500.0, allocation="none"), row("911", "site", bh=10, allocation="none")])
     assert [r["revenue_month_amount"] for r in rows] == [500.0, 0]
+
+
+def test_relay_lines_merge_without_duplicates():
+    from app.routers.leadership import merge_relay_lines
+
+    winteam = [{"vendor_number": 1140, "invoice_number": "163040", "invoice_date": "2026-08-31", "amount": 6959.19}]
+    relay_lines = [
+        {"vendor_number": "1140", "invoice_number": "163040", "invoice_date": "2026-08-02", "amount": 6959.19},
+        {"vendor_number": "1140", "invoice_number": "165001", "invoice_date": "2026-09-20", "amount": 7010.00},
+    ]
+    merged = merge_relay_lines(winteam, relay_lines)
+    assert [(l["invoice_number"], l["source"]) for l in merged] == [("165001", "relay"), ("163040", "winteam")]
+
+
+def test_relay_payable_filed_under_another_number_is_not_repeated():
+    from app.routers.leadership import merge_relay_lines
+
+    winteam = [{"vendor_number": 1140, "invoice_number": "INV-7701", "invoice_date": "2026-08-31", "amount": 7010.00, "job_number": "479"}]
+    relay_lines = [
+        # Relay says it is in WinTeam; WinTeam holds it as INV-7701: same job, vendor, amount, 20 days apart.
+        {"vendor_number": "1140", "invoice_number": "FXG4790001", "invoice_date": "2026-08-11", "amount": 7010.00, "in_winteam": True, "job_number": "479"},
+        # Next month's identical fixed amount, not yet in WinTeam: kept.
+        {"vendor_number": "1140", "invoice_number": "7788", "invoice_date": "2026-09-20", "amount": 7010.00, "in_winteam": False, "job_number": "479"},
+        # Same number with different punctuation: already posted.
+        {"vendor_number": "1140", "invoice_number": "inv 7701", "invoice_date": "2026-08-02", "amount": 7010.00, "in_winteam": False, "job_number": "479"},
+    ]
+    merged = merge_relay_lines(winteam, relay_lines)
+    assert [(l["invoice_number"], l["source"]) for l in merged] == [("7788", "relay"), ("INV-7701", "winteam")]

@@ -43,6 +43,9 @@ x-api-environment: &api-environment
   COMPANYCAM_API_TOKEN: ${COMPANYCAM_API_TOKEN:-}
   COMPANYCAM_MATCH_RULE: ${COMPANYCAM_MATCH_RULE:-}
   IMPORT_INBOX_DIR: ${IMPORT_INBOX_DIR:-/imports/inbox}
+  RELAY_BASE_URL: ${RELAY_BASE_URL:-}
+  RELAY_EXPORT_TOKEN: ${RELAY_EXPORT_TOKEN:-}
+  RELAY_TIMEOUT_SECONDS: ${RELAY_TIMEOUT_SECONDS:-60}
   # Second source: the restored Finance_Dashboard dump (read-only database in the same Postgres).
   # Empty = source not configured. The default is the local restored dump.
   FINANCE_REFERENCE_DATABASE_URL: ${FINANCE_REFERENCE_DATABASE_URL:-postgresql://facilities_app:facilities_dev@postgres:5432/finance_reference}

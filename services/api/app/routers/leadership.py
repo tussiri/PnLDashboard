@@ -10,6 +10,7 @@ recalculates instantly. Writes (account configuration, job mapping, file imports
 from __future__ import annotations
 
 import logging
+import re
 from datetime import date, timedelta
 from typing import Any
 
@@ -270,6 +271,57 @@ def months_back(months: int) -> date:
     return first
 
 
+RELAY_LINES_SQL = """
+SELECT p.vendor_invoice_number AS invoice_number, coalesce(p.recorded_at::date, p.service_month) AS invoice_date,
+       NULL::text AS gl_account_number, p.amount, p.vendor_number, p.vendor_name, NULL::int AS vendor_type_id,
+       j.company, j.job_number, j.job_name AS site_name, p.service_month, p.status, p.in_winteam, p.payment_status
+FROM core.relay_ap_payable p
+JOIN core.dim_job j ON j.job_number = p.winteam_job_number AND j.valid_to IS NULL AND j.company IS DISTINCT FROM 'Sarus'
+{join}
+WHERE NOT p.self_perform AND coalesce(p.service_month, p.recorded_at::date) >= %(since)s AND {where}
+ORDER BY coalesce(p.recorded_at::date, p.service_month) DESC, p.vendor_invoice_number
+"""
+
+
+SAME_PAYABLE_DAYS = 45
+
+
+def _norm_invoice(value: Any) -> str:
+    return re.sub(r"[^A-Z0-9]", "", str(value or "").upper())
+
+
+def merge_relay_lines(winteam: list[dict[str, Any]], relay_lines: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """WinTeam's posted AP lines plus Relay's payables (FedEx), each marked with its source. A Relay
+    payable is left out when it is already among the WinTeam lines: the same vendor and invoice
+    number (punctuation ignored), or, when Relay says it is in WinTeam, the same job, vendor and
+    amount within SAME_PAYABLE_DAYS (WinTeam can file it under another number; a fixed monthly
+    amount recurs, hence the date window rather than amount alone)."""
+    def vendor(l: dict[str, Any]) -> str:
+        return str(l.get("vendor_number") or "")
+
+    def day(l: dict[str, Any]) -> date | None:
+        try:
+            return date.fromisoformat(str(l.get("invoice_date"))[:10])
+        except ValueError:
+            return None
+
+    posted = {(vendor(l), _norm_invoice(l.get("invoice_number"))) for l in winteam}
+
+    def already_posted(r: dict[str, Any]) -> bool:
+        if (vendor(r), _norm_invoice(r.get("invoice_number"))) in posted:
+            return True
+        if not r.get("in_winteam") or day(r) is None:
+            return False
+        return any(vendor(w) == vendor(r) and w.get("job_number", r.get("job_number")) == r.get("job_number")
+                   and abs((w.get("amount") or 0) - (r.get("amount") or 0)) < 0.01
+                   and day(w) is not None and abs((day(w) - day(r)).days) <= SAME_PAYABLE_DAYS
+                   for w in winteam)
+
+    out = [{**l, "source": "winteam"} for l in winteam]
+    out += [{**l, "source": "relay"} for l in relay_lines if not already_posted(l)]
+    return sorted(out, key=lambda l: (str(l.get("invoice_date") or ""), str(l.get("invoice_number") or "")), reverse=True)
+
+
 def subcontractor_invoices(cursor: Any, job_key: int, months: int) -> dict[str, Any]:
     """AP GL distribution lines coded to the job from subcontractor vendors, newest first."""
     type_ids = subcontractor_type_ids(cursor)
@@ -285,14 +337,17 @@ def subcontractor_invoices(cursor: Any, job_key: int, months: int) -> dict[str, 
         """,
         (job_key, since, type_ids),
     )
-    lines = [jsonable(dict(r)) for r in cursor.fetchall()]
+    winteam = [jsonable(dict(r)) for r in cursor.fetchall()]
+    cursor.execute(RELAY_LINES_SQL.format(join="", where="j.job_key = %(job_key)s"), {"since": since, "job_key": job_key})
+    lines = merge_relay_lines(winteam, [jsonable(dict(r)) for r in cursor.fetchall()])
     return {"since": since.isoformat(), "vendor_type_ids": type_ids, "total": round(sum(l["amount"] or 0 for l in lines), 2), "lines": lines}
 
 
 @router.get("/vendors")
 def leadership_vendors(account: str = Query(..., description="An account slug"), months: int = Query(6, ge=1, le=24)) -> dict[str, Any]:
-    """Subcontractor invoice lines coded to the account's sites (AP GL distributions from subcontractor
-    vendors), with totals by vendor, by site and by month."""
+    """Subcontractor invoice lines coded to the account's sites: WinTeam AP GL distributions from
+    subcontractor vendors plus, for FedEx, Relay's payables not yet among them (`source`), with totals
+    by vendor, by site and by month."""
     with connection() as conn, conn.cursor() as cursor:
         cursor.execute("SELECT 1 FROM ops.account WHERE slug = %s", (account,))
         if cursor.fetchone() is None:
@@ -312,7 +367,10 @@ def leadership_vendors(account: str = Query(..., description="An account slug"),
             """,
             (account, since, type_ids),
         )
-        lines = [jsonable(dict(r)) for r in cursor.fetchall()]
+        winteam = [jsonable(dict(r)) for r in cursor.fetchall()]
+        cursor.execute(RELAY_LINES_SQL.format(join="JOIN ops.account_job aj ON aj.company = j.company AND aj.job_number = j.job_number",
+                                              where="aj.account_slug = %(account)s"), {"since": since, "account": account})
+        lines = merge_relay_lines(winteam, [jsonable(dict(r)) for r in cursor.fetchall()])
 
     def group(key: Any, name: Any) -> list[dict[str, Any]]:
         out: dict[Any, dict[str, Any]] = {}

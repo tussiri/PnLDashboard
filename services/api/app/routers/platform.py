@@ -17,7 +17,7 @@ import psycopg
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
-from .. import companycam, marts
+from .. import companycam, marts, relay
 from ..common import (PRIMARY_SOURCES, configured_key_accounts, month_status_rows, jsonable,
                       require_admin)
 from ..config import settings
@@ -357,6 +357,22 @@ def known_jobs_by_company() -> dict[str, set[tuple[str, str]]]:
         for row in cursor.fetchall():
             out.setdefault(row["ns"], set()).add((str(row["job_number"]), str(row["job_name"])))
     return out
+
+
+@router.get("/integrations/relay")
+def relay_status() -> dict[str, Any]:
+    """Relay (integration_mapper) FedEx feeds: wired or not, last run per feed, snapshot sizes."""
+    return jsonable(relay.status())
+
+
+@router.post("/integrations/relay/sync", dependencies=[Depends(require_admin)])
+def relay_sync(rebuild: bool = Query(True, description="Rebuild the marts after the pull")) -> dict[str, Any]:
+    """Pull every Relay feed (GET only against Relay), replace the snapshots, then rebuild the marts."""
+    if not relay.configured():
+        raise HTTPException(status_code=409, detail="Relay is not configured (RELAY_BASE_URL and RELAY_EXPORT_TOKEN)")
+    result = relay.sync()
+    loaded = any(r["status"] == "succeeded" for r in result["runs"])
+    return jsonable({**result, "marts": marts.rebuild_all(initiated_by="relay-sync") if rebuild and loaded else None})
 
 
 @router.get("/integrations/companycam")

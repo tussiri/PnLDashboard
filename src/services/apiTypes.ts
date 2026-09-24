@@ -1334,6 +1334,12 @@ export interface LeadershipInvoiceLine {
   vendor_number: number
   vendor_name: string
   vendor_type_id: number | null
+  /** winteam: a posted AP GL distribution; relay: a FedEx payable from Relay not yet among them. */
+  source?: 'winteam' | 'relay'
+  service_month?: string | null
+  status?: string | null
+  in_winteam?: boolean
+  payment_status?: string | null
 }
 
 export interface LeadershipPhoto {

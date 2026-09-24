@@ -24,6 +24,12 @@ stored: routers/leadership.py joins ops.account_job at read time.
 * revenue_month_budget_hours / revenue_month_hours: the job's budget and actual hours in the
   revenue month, the weights routers/leadership.py uses to spread a parent-billed account's
   revenue over its sites at read time (account setting revenue_allocation, migration 033).
+* Relay (FedEx, migration 034) takes precedence for the jobs it covers: the week's vendor cost is
+  Relay's payables for the week's service month (the month holding the week's Thursday), or the
+  site contract when that month is under 90% invoiced (basis relay_ap / relay_contract; Crane's own
+  sites carry none, relay_self_perform); prior_sub also considers Relay's payables; revenue comes
+  from Relay's AR (supersession applied) when the job-cost export does not cover the month
+  (revenue_month_basis relay_ar); delivery_model falls back to Relay's self-perform flag.
 * invoice_week = mart.job_week.invoicing (billing apportioned to the week), used only by accounts
   whose revenue_method is weekly_billing.
 """
@@ -125,7 +131,11 @@ assembled AS (
          rm.revenue AS rm_revenue, rm.revenue_basis AS rm_basis, rm.labor_cost AS rm_labor, rm.subcontract_cost AS rm_sub,
          mc.company IS NOT NULL AS month_covered, prm.labor AS prm_labor, aps.amount AS ap_sub,
          jw.job_key IS NOT NULL AS has_jw, jw.delivery_model, coalesce(jw.sub_dollars, 0) AS sub_week, jw.sub_basis AS sub_week_basis,
-         rm.budget_hours AS rm_budget_hours, rm.hours AS rm_hours
+         rm.budget_hours AS rm_budget_hours, rm.hours AS rm_hours,
+         date_trunc('month', k.week_start + 3)::date AS week_month,
+         rc.job_number IS NOT NULL OR coalesce(rw.ap_amount, 0) > 0 AS relay_covered,
+         coalesce(rc.self_perform, false) AS relay_self_perform, rc.ap_monthly AS relay_ap_monthly,
+         rw.ap_amount AS relay_week_ap, rp.ap_amount AS relay_rm_ap, rp.ar_revenue AS relay_rm_ar
   FROM keys k
   JOIN jobs jb ON jb.job_key = k.job_key
   LEFT JOIN mart.job_week jw ON jw.job_key = k.job_key AND jw.week_start = k.week_start
@@ -137,6 +147,32 @@ assembled AS (
   LEFT JOIN month_cover mc ON mc.month = wm.revenue_month AND mc.company = jb.company
   LEFT JOIN pr_month prm ON prm.job_key = k.job_key AND prm.month = wm.revenue_month
   LEFT JOIN ap_sub aps ON aps.job_key = k.job_key AND aps.month = wm.revenue_month
+  -- Relay (FedEx): keyed by WinTeam job number; Sarus reuses Crane job numbers, so never Sarus.
+  LEFT JOIN mart.v_relay_job_contract rc ON rc.job_number = jb.job_number AND jb.company IS DISTINCT FROM 'Sarus'
+  LEFT JOIN mart.v_relay_job_month rw ON rw.job_number = jb.job_number AND jb.company IS DISTINCT FROM 'Sarus'
+         AND rw.month = date_trunc('month', k.week_start + 3)::date
+  LEFT JOIN mart.v_relay_job_month rp ON rp.job_number = jb.job_number AND jb.company IS DISTINCT FROM 'Sarus'
+         AND rp.month = wm.revenue_month
+),
+relay AS (
+  -- Vendor cost for the week's service month from Relay: actual payables when the month is at
+  -- least 90 percent invoiced against the contract (or there is no contract), else the contract amount
+  -- (vendors bill in arrears, so the current month is usually partial); Crane's own sites carry none.
+  SELECT a.*,
+         CASE WHEN NOT a.relay_covered THEN NULL
+              WHEN a.relay_self_perform THEN 0
+              WHEN coalesce(a.relay_week_ap, 0) > 0
+                   AND (coalesce(a.relay_ap_monthly, 0) = 0 OR a.relay_week_ap >= 0.9 * a.relay_ap_monthly) THEN a.relay_week_ap
+              WHEN coalesce(a.relay_ap_monthly, 0) > 0 THEN greatest(coalesce(a.relay_week_ap, 0), a.relay_ap_monthly)
+         END AS relay_monthly,
+         CASE WHEN NOT a.relay_covered THEN NULL
+              WHEN a.relay_self_perform THEN 'relay_self_perform'
+              WHEN coalesce(a.relay_week_ap, 0) > 0
+                   AND (coalesce(a.relay_ap_monthly, 0) = 0 OR a.relay_week_ap >= 0.9 * a.relay_ap_monthly) THEN 'relay_ap'
+              WHEN coalesce(a.relay_ap_monthly, 0) > 0 THEN 'relay_contract'
+         END AS relay_basis,
+         coalesce(a.rm_basis, '') <> 'job_cost' AND a.relay_rm_ar IS NOT NULL AS relay_revenue
+  FROM assembled a
 )
 SELECT
   a.week_start, a.week_start + 6, a.job_key, a.company, a.job_number, a.site_name, a.parent_account,
@@ -149,23 +185,30 @@ SELECT
          THEN round(a.jw_ot * 1.5 * coalesce(a.jw_labor, 0) / (a.jw_hours + 0.5 * a.jw_ot), 2)
        ELSE 0 END,
   a.budget_hours, a.budget_dollars, a.employees, a.days_with_labor,
-  a.revenue_month, coalesce(a.rm_revenue, 0), a.rm_basis, a.invoice_week,
-  coalesce(a.rm_revenue, 0),
+  a.revenue_month,
+  CASE WHEN a.relay_revenue THEN a.relay_rm_ar ELSE coalesce(a.rm_revenue, 0) END,
+  CASE WHEN a.relay_revenue THEN 'relay_ar' ELSE a.rm_basis END,
+  a.invoice_week,
+  CASE WHEN a.relay_revenue THEN a.relay_rm_ar ELSE coalesce(a.rm_revenue, 0) END,
   CASE WHEN a.month_covered THEN coalesce(a.prm_labor, 0) ELSE coalesce(a.rm_labor, 0) END,
   CASE WHEN a.month_covered THEN 'pay_report' WHEN a.rm_labor IS NOT NULL THEN 'job_cost' END,
-  greatest(coalesce(a.rm_sub, 0), coalesce(a.ap_sub, 0)),
-  CASE WHEN coalesce(a.ap_sub, 0) > coalesce(a.rm_sub, 0) THEN 'ap_distribution' WHEN a.rm_sub IS NOT NULL THEN 'job_cost' END,
-  a.delivery_model,
-  CASE WHEN a.has_jw THEN a.sub_week
+  greatest(coalesce(a.rm_sub, 0), coalesce(a.ap_sub, 0), coalesce(a.relay_rm_ap, 0)),
+  CASE WHEN coalesce(a.relay_rm_ap, 0) > greatest(coalesce(a.rm_sub, 0), coalesce(a.ap_sub, 0)) THEN 'relay_ap'
+       WHEN coalesce(a.ap_sub, 0) > coalesce(a.rm_sub, 0) THEN 'ap_distribution' WHEN a.rm_sub IS NOT NULL THEN 'job_cost' END,
+  coalesce(a.delivery_model, CASE WHEN a.relay_self_perform THEN 'self_perform' WHEN a.relay_covered THEN 'subcontracted' END),
+  CASE WHEN a.relay_monthly IS NOT NULL
+         THEN round(a.relay_monthly * 7 / extract(day FROM (a.week_month + interval '1 month' - interval '1 day')), 2)
+       WHEN a.has_jw THEN a.sub_week
        WHEN a.revenue_month IS NOT NULL
          THEN round(greatest(coalesce(a.rm_sub, 0), coalesce(a.ap_sub, 0)) * 7
                     / extract(day FROM (a.revenue_month + interval '1 month' - interval '1 day')), 2)
        ELSE 0 END,
-  CASE WHEN a.has_jw THEN a.sub_week_basis
+  CASE WHEN a.relay_monthly IS NOT NULL THEN a.relay_basis
+       WHEN a.has_jw THEN a.sub_week_basis
        WHEN greatest(coalesce(a.rm_sub, 0), coalesce(a.ap_sub, 0)) > 0 THEN 'prior_month_prorated' END,
   coalesce(a.rm_budget_hours, 0), coalesce(a.rm_hours, 0),
   now()
-FROM assembled a
+FROM relay a
 """
 
 

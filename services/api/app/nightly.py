@@ -6,7 +6,8 @@ Steps, each isolated so one failure does not stop the others:
      and AR skipped when synced within 20 hours, unretrievable records remembered, 403 resources
      skipped) without its own mart rebuild
   3. Sarus, when WINTEAM_SARUS_ENABLED
-  4. one mart rebuild (marts, weekly leadership mart, account assignment, forecasts)
+  4. Relay's FedEx feeds, when RELAY_BASE_URL and RELAY_EXPORT_TOKEN are set (app/relay.py)
+  5. one mart rebuild (marts, weekly leadership mart, account assignment, forecasts)
 
 Schedule: ops.app_setting `nightly_sync` = {"enabled", "hour", "minute", "timezone", "window_hours",
 "import_inbox", "winteam", "sarus"}. A run starts only inside the window after the run time, so a
@@ -30,7 +31,7 @@ from .db import connection
 logger = logging.getLogger("nightly")
 
 DEFAULT_SCHEDULE: dict[str, Any] = {"enabled": True, "hour": 2, "minute": 30, "timezone": "America/Chicago", "window_hours": 3,
-                                    "import_inbox": True, "winteam": True, "sarus": True}
+                                    "import_inbox": True, "winteam": True, "sarus": True, "relay": True}
 INTEGRATION = "nightly"
 
 
@@ -74,7 +75,7 @@ def _start(run_id: str, started: datetime) -> None:
 
 def run_nightly(schedule: dict[str, Any] | None = None) -> dict[str, Any]:
     """Run every enabled step once; returns a summary. Never raises."""
-    from . import imports, marts
+    from . import imports, marts, relay
     from .winteam import sarus_ingestion, winteam
 
     if schedule is None:
@@ -108,6 +109,13 @@ def run_nightly(schedule: dict[str, Any] | None = None) -> dict[str, Any]:
         step("winteam", lambda: winteam.sync_all(rebuild=False))
     if schedule.get("sarus") and settings.winteam_sarus_enabled and settings.winteam_sarus_configured:
         step("sarus", lambda: sarus_ingestion().sync_all(rebuild=False))
+    if schedule.get("relay") and relay.configured():
+        def pull_relay() -> dict[str, Any]:
+            result = relay.sync()
+            if result["failed"]:
+                raise relay.RelayError(f"Relay feeds failed: {', '.join(result['failed'])}")
+            return {}
+        step("relay", pull_relay)
     step("marts", lambda: marts.rebuild_all(initiated_by="nightly"))
 
     # ops.integration_sync_run allows running | succeeded | failed: any failed step marks the run

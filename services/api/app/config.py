@@ -175,6 +175,10 @@ class Settings:
     companycam_api_token: str
     # Folder the nightly sync loads WinTeam export files from (docs/export-feeds.md).
     import_inbox_dir: str
+    # Relay (integration_mapper) read-only export for FedEx (app/relay.py). Server-side only.
+    relay_base_url: str
+    relay_export_token: str
+    relay_timeout_seconds: int
     companycam_match_rule: str
     ingestion_idle_in_transaction_timeout_seconds: int
     mart_rebuild_lock_timeout_seconds: int
@@ -250,6 +254,9 @@ class Settings:
             # production token is added to the server .env. Never give it a VITE_ prefix.
             companycam_api_token=_text(env, "COMPANYCAM_API_TOKEN"),
             import_inbox_dir=_text(env, "IMPORT_INBOX_DIR", "/imports/inbox"),
+            relay_base_url=_text(env, "RELAY_BASE_URL").rstrip("/"),
+            relay_export_token=_text(env, "RELAY_EXPORT_TOKEN"),
+            relay_timeout_seconds=_integer(env, "RELAY_TIMEOUT_SECONDS", 60, maximum=600),
             # How a CompanyCam project is matched to a WinTeam job. Unset until the production data
             # has been probed: job_number_in_name | address | project_map.
             companycam_match_rule=_text(env, "COMPANYCAM_MATCH_RULE"),

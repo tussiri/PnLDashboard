@@ -57,7 +57,7 @@ export function dataFlags(config: LeadershipConfig | undefined, weekStart: strin
   return {
     estimated: rows.some((r) => r.labor_basis !== 'pay_report' && r.labor > 0),
     revenueLag: revenueMonth && expected && revenueMonth < expected ? { revenueMonth, expectedMonth: expected } : null,
-    failedSyncs: (config?.status.syncs ?? []).filter((s) => s.status === 'failed' && (s.integration_name.startsWith('winteam') || s.integration_name === 'nightly')).map((s) => ({ integration: s.integration_name, at: s.completed_at ?? s.started_at })),
+    failedSyncs: (config?.status.syncs ?? []).filter((s) => s.status === 'failed' && (s.integration_name.startsWith('winteam') || s.integration_name === 'nightly' || s.integration_name === 'relay')).map((s) => ({ integration: s.integration_name, at: s.completed_at ?? s.started_at })),
     weekInProgress: Boolean(week?.in_progress),
   }
 }

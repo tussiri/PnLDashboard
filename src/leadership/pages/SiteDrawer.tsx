@@ -62,8 +62,8 @@ export function SiteDrawer({ company, job }: { company: string; job: string }) {
         <div className="card">
           <div className="ct"><span>Subcontractor invoices since {monthLabel(q.data.invoices.since)}</span><span>{money(q.data.invoices.total)}</span></div>
           {q.data.invoices.lines.length ? <div className="tw"><table><caption className="sr-only">Subcontractor invoices</caption>
-            <thead><tr><th className="nosort l">Date</th><th className="nosort l">Vendor</th><th className="nosort l">Invoice</th><th className="nosort">GL</th><th className="nosort">Amount</th></tr></thead>
-            <tbody>{q.data.invoices.lines.map((l, i) => <tr key={`${l.invoice_number}-${i}`}><td className="l">{l.invoice_date}</td><td className="l nm">{l.vendor_name}</td><td className="l">{l.invoice_number}</td><td>{l.gl_account_number}</td><td>{money(l.amount)}</td></tr>)}</tbody>
+            <thead><tr><th className="nosort l">Date</th><th className="nosort l">Vendor</th><th className="nosort l">Invoice</th><th className="nosort l">Source</th><th className="nosort">GL</th><th className="nosort">Amount</th></tr></thead>
+            <tbody>{q.data.invoices.lines.map((l, i) => <tr key={`${l.invoice_number}-${i}`}><td className="l">{l.invoice_date}</td><td className="l nm">{l.vendor_name}</td><td className="l">{l.invoice_number}</td><td className="l neutral">{l.source === 'relay' ? `Relay${l.service_month ? `, ${l.service_month.slice(0, 7)}` : ''}` : 'WinTeam'}</td><td>{l.gl_account_number ?? '–'}</td><td>{money(l.amount)}</td></tr>)}</tbody>
           </table></div> : <Empty>No subcontractor invoices coded to this site.</Empty>}
         </div>
         <div className="card">

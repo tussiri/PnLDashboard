@@ -30,7 +30,7 @@ def _top_level_items(text: str) -> list[str]:
 
 def test_insert_and_select_lists_align_with_the_table():
     columns = [c.strip() for c in re.search(r"INSERT INTO mart\.leadership_week \((.*?)\)\s*WITH", REBUILD_SQL, re.S)[1].split(",")]
-    final_select = REBUILD_SQL[REBUILD_SQL.rindex("\nSELECT") + len("\nSELECT"):REBUILD_SQL.rindex("FROM assembled a")]
+    final_select = REBUILD_SQL[REBUILD_SQL.rindex("\nSELECT") + len("\nSELECT"):REBUILD_SQL.rindex("FROM relay a")]
     assert len(_top_level_items(final_select)) == len(columns)
     ddl = "\n".join((MIGRATIONS / f).read_text() for f in DDL_FILES)
     for column in columns:
@@ -39,3 +39,8 @@ def test_insert_and_select_lists_align_with_the_table():
 
 def test_takes_the_subcontract_gl_range_as_parameters():
     assert set(re.findall(r"%\((\w+)\)s", REBUILD_SQL)) == {"subcontract_gl_low", "subcontract_gl_high"}
+
+
+def test_has_no_bare_percent_signs():
+    """psycopg reads every % as a placeholder; a '90%' in a SQL comment broke the rebuild once."""
+    assert not re.search(r"%(?!\(\w+\)s)", REBUILD_SQL)
