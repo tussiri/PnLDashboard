@@ -163,7 +163,7 @@ describe('cost basis, segment targets and allocation', () => {
 
   it('notes revenue allocated from a parent job', () => {
     const s = accountSummary([{ ...rows[1], revenue_allocated: 400 }, { ...rows[2], revenue_allocated: 0 }], opts)
-    expect(s.notes.find((n) => n.kind === 'revenue_allocated')).toEqual({ kind: 'revenue_allocated', jobs: 1, amount: 400 })
+    expect(s.notes.find((n) => n.kind === 'revenue_allocated')).toEqual({ kind: 'revenue_allocated', jobs: 1, amount: 400, weight: null })
   })
 })
 

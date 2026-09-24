@@ -41,6 +41,7 @@ export interface WeekRow {
   sub_week_basis?: string | null
   /** Revenue moved onto (+) or off (-) this row by a parent-job allocation. */
   revenue_allocated?: number
+  allocation_weight?: string | null
 }
 
 export interface MetricOptions {
@@ -212,7 +213,7 @@ export type AccountNote =
   | { kind: 'budget_unreliable'; ratio: number }
   | { kind: 'labor_estimated'; jobs: number; labor: number }
   | { kind: 'vendor_projected'; jobs: number; amount: number }
-  | { kind: 'revenue_allocated'; jobs: number; amount: number }
+  | { kind: 'revenue_allocated'; jobs: number; amount: number; weight: string | null }
 
 export interface SegmentSummary { segment: string; target: number; rollup: Rollup; status: LaborStatus }
 
@@ -283,7 +284,7 @@ export function accountSummary<R extends WeekRow>(rows: R[], opts: MetricOptions
     if (projected.length) notes.push({ kind: 'vendor_projected', jobs: projected.length, amount: projected.reduce((a, r) => a + (r.sub_week ?? 0), 0) })
   }
   const allocated = sites.filter((r) => (r.revenue_allocated ?? 0) > 0)
-  if (allocated.length) notes.push({ kind: 'revenue_allocated', jobs: allocated.length, amount: allocated.reduce((a, r) => a + (r.revenue_allocated ?? 0), 0) })
+  if (allocated.length) notes.push({ kind: 'revenue_allocated', jobs: allocated.length, amount: allocated.reduce((a, r) => a + (r.revenue_allocated ?? 0), 0), weight: allocated[0].allocation_weight ?? null })
 
   return {
     sites,

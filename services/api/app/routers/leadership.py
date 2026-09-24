@@ -34,7 +34,7 @@ SELECT w.week_start, w.week_end, w.company, w.job_number, w.site_name, w.parent_
        coalesce(aj.needs_review, false) AS needs_review,
        w.hours, w.ot_hours, w.labor, w.labor_basis, w.ot_dollars, w.budget_hours, w.budget_dollars,
        w.employees, w.days_with_labor, w.revenue_month,
-       w.revenue_month_amount, 0 AS revenue_allocated,
+       w.revenue_month_amount, 0 AS revenue_allocated, NULL AS allocation_weight,
        w.revenue_month_basis, w.invoice_week, w.prior_revenue, w.prior_labor, w.prior_labor_basis,
        w.prior_sub, w.prior_sub_basis, w.delivery_model, w.sub_week, w.sub_week_basis,
        w.consumables_cost, w.consumables_basis,
@@ -63,7 +63,9 @@ def allocate_parent_billing(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         sites = [r for r in group if r["role"] == "site"]
         if not sources or not sites or any((r["revenue_month_amount"] or 0) > 0 for r in sites):
             continue
-        weights = next((w for w in ([r["_rm_budget_hours"] or 0 for r in sites], [r["_rm_hours"] or 0 for r in sites], [r["hours"] or 0 for r in sites]) if sum(w) > 0), None)
+        candidates = (("budget_hours", [r["_rm_budget_hours"] or 0 for r in sites]), ("actual_hours", [r["_rm_hours"] or 0 for r in sites]),
+                      ("week_hours", [r["hours"] or 0 for r in sites]))
+        basis, weights = next(((b, w) for b, w in candidates if sum(w) > 0), (None, None))
         if weights is None:
             continue
         pool = sum(r["revenue_month_amount"] for r in sources)
@@ -79,8 +81,10 @@ def allocate_parent_billing(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
             r["revenue_month_amount"] = share
             r["prior_revenue"] = (r["prior_revenue"] or 0) + prior_share
             r["revenue_allocated"] = share
+            r["allocation_weight"] = basis
         for r in sources:
             r["revenue_allocated"] = -r["revenue_month_amount"]
+            r["allocation_weight"] = basis
             r["prior_revenue"] = 0
             r["revenue_month_amount"] = 0
     for r in rows:

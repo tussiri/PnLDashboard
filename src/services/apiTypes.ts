@@ -1289,6 +1289,8 @@ export interface LeadershipRow {
   revenue_month_amount: number
   /** Revenue moved onto (+) or off (-) this row by the account's parent-job allocation. */
   revenue_allocated: number
+  /** Weight used to spread parent-billed revenue: revenue-month budget hours, else actual hours, else this week's hours. */
+  allocation_weight?: 'budget_hours' | 'actual_hours' | 'week_hours' | null
   revenue_month_basis: string | null
   invoice_week: number | null
   prior_revenue: number

@@ -22,6 +22,7 @@ def test_spreads_by_budget_hours_and_preserves_the_total():
 def test_falls_back_to_actual_hours_without_budget():
     rows = allocate_parent_billing([row("910", "catch_all", 373252.0), row("911", "site", hours_rm=100), row("918", "site", hours_rm=300)])
     assert [r["revenue_month_amount"] for r in rows] == [0, 93313.0, 279939.0]
+    assert {r["allocation_weight"] for r in rows} == {"actual_hours"}
 
 
 def test_leaves_accounts_whose_sites_bill_themselves_alone():

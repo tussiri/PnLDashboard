@@ -413,4 +413,5 @@ labor-based); others by labor %, with vendor cost shown beside it. With `revenue
 do (White Settlement ISD on job 112, Crowley ISD on job 910), that revenue is spread over the sites
 present in the week by revenue-month budget hours, else revenue-month actual hours (migration 033,
 computed at read time): `revenue_month_amount` and `prior_revenue` include it and
-`revenue_allocated` shows the amount moved onto (+) or off (-) the row. `PUT /leadership/accounts/{slug}` also accepts `revenue_allocation` and `cost_basis`.
+`revenue_allocated` shows the amount moved onto (+) or off (-) the row, `allocation_weight` the weight used
+(`budget_hours` | `actual_hours` | `week_hours`, null when nothing moved). `PUT /leadership/accounts/{slug}` also accepts `revenue_allocation` and `cost_basis`.
