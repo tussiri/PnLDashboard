@@ -121,3 +121,26 @@ under the tenant's real OT rules — authoritative labor cost rather than our de
 **They have not been called.** They are POSTs, and the documented response carries `isModified: true`,
 so whether they compute-and-return or compute-and-persist is unverified. This connector is read-only
 and issues GETs only; confirm the semantics with TEAM before any use.
+
+## Entitlement probe, Employees / Schedules / Jobs / Timekeeping / Vendors (2026-09-23)
+
+OpenAPI documents for five services are kept in `config/winteam-openapi/`. Every GET in them that
+could feed the labor P&L was probed once against the production tenant, read-only, through
+`WinTeamClient` (29 requests). Personal-data GETs (profile, taxes, direct deposits, emergency
+contacts) were not called.
+
+| Endpoint | Would provide | Result |
+|---|---|---|
+| `employees/v1/api/employees/{n}/payments/` | employee base pay rate, OT method (prices rate-0 punches) | **HTTP 403** |
+| `employees/v1/api/employees/`, `/employees/{n}/` | employee roster, status, location | **HTTP 403** |
+| `employees/v1/api/pay-info/overtime-methods/`, `/types/`, `/classifications/`, `/custom-fields/definitions/` | lookups | **HTTP 403** |
+| `employees/v1/api/supervisors` | supervisor names for `dim_job.supervisor_id` | **HTTP 403** |
+| `schedules/v1/api/shiftDetails` | hour type names per category (regular vs OT) | **HTTP 403** |
+| `schedules/v1/api/post-setups`, `/jobs/{n}/bill-codes` | posts, bill codes | **HTTP 403** |
+| `jobs/v2/api/jobs/{jobKey}/schedules` | scheduled hours | **HTTP 403** (unchanged) |
+| `jobs/v2/api/jobs/{jobKey}/budgets` (GET, documented in Jobs v2) | budget hours by day of week, pay rate | **works** |
+
+The Employees and Schedules services are not in the tenant's subscription. Labor dollars, the
+OT category mapping and supervisor names therefore still cannot come from the API; the Pay Report
+Timekeeping export remains the only source of gross pay. `POST /timekeeping/overtime` was not
+called (see above).

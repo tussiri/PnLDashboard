@@ -1,0 +1,1151 @@
+{
+    "openapi": "3.0.1",
+    "info": {
+        "title": "Vendors",
+        "description": "API endpoints used to manage vendors in WinTeam.",
+        "version": "v1"
+    },
+    "servers": [
+        {
+            "url": "http://apim.myteamsoftware.com/wtnextgen/vendors/v1"
+        },
+        {
+            "url": "https://apim.myteamsoftware.com/wtnextgen/vendors/v1"
+        }
+    ],
+    "paths": {
+        "/api/vendors/": {
+            "get": {
+                "tags": [
+                    "Vendors"
+                ],
+                "summary": "Retrieve Vendors",
+                "description": "This API endpoint will return the creation of Vendors and their related contacts.",
+                "operationId": "getApiVendors",
+                "parameters": [
+                    {
+                        "name": "vendorNumber",
+                        "in": "query",
+                        "description": "Format - int32. Vendor identifier.",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "name": "pageSize",
+                        "in": "query",
+                        "description": "Format - int32. The size of the page.",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "name": "pageNumber",
+                        "in": "query",
+                        "description": "Format - int32. The page number you want to retrieve.",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "name": "searchFieldName",
+                        "in": "query",
+                        "description": "A datapoint you’d like to search records by. Possible values are: \"VendorNumber\", \"VendorTypeId\", \"VendorName\", \"VendorStatus\", \"Phone\", \"AccountNumber\", \"ParentVendorNumber\", \"Address1\", \"Address2\", \"City\", \"State\", \"Zip\" .",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "searchText",
+                        "in": "query",
+                        "description": "The text you’ll search for in results from the \"SearchFieldName\" you’ve specified.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "orderBy",
+                        "in": "query",
+                        "description": "A datapoint you’d like to sort records by. Possible values are:  \"VendorNumber\", \"VendorTypeId\", \"VendorName\", \"VendorStatus\", \"Phone\", \"AccountNumber\", \"ParentVendorNumber\", \"Address1\", \"Address2\", \"City\", \"State\", \"Zip\" .",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "ascending",
+                        "in": "query",
+                        "description": "Indicates whether or not the order should be ascending (true) or descending (false)",
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "name": "tenantId",
+                        "in": "header",
+                        "description": "We'll provide a description of what this value represents and how to obtain one.",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TeamSoftware.WinTeam.Vendors.Functions.Models.Responses.GetVendorResponse"
+                                },
+                                "example": {
+                                    "data": [
+                                        {
+                                            "pageNumber": 1,
+                                            "pageSize": 100,
+                                            "totalPages": 1,
+                                            "totalCount": 1,
+                                            "results": [
+                                                {
+                                                    "vendorNumber": 2,
+                                                    "vendorTypeId": 2,
+                                                    "vendorName": "TEST",
+                                                    "vendorStatus": true,
+                                                    "address": {
+                                                        "address1": "407th Av",
+                                                        "address2": "407th Av",
+                                                        "city": "Rocky Creek",
+                                                        "state": "MN",
+                                                        "zip": 0
+                                                    },
+                                                    "phone": 4021234567,
+                                                    "fax": null,
+                                                    "parentVendorNumber": 1,
+                                                    "accountNumber": 1234,
+                                                    "taxID": null,
+                                                    "customFields": null,
+                                                    "contactsInformation": [
+                                                        {
+                                                            "displayName": "Name Lastname",
+                                                            "firstName": "Name",
+                                                            "lastName": "Lastname",
+                                                            "email": "name@gmail.com",
+                                                            "businessPhone": 3193771050,
+                                                            "roleId": 0
+                                                        },
+                                                        {
+                                                            "displayName": "Name Lastname2",
+                                                            "firstName": "Mallory",
+                                                            "lastName": "Lastname",
+                                                            "email": "lastname@team.com",
+                                                            "businessPhone": 4021111111,
+                                                            "roleId": 0
+                                                        }
+                                                    ]
+                                                }
+                                            ]
+                                        }
+                                    ],
+                                    "success": true,
+                                    "serverResponse": "OK."
+                                }
+                            }
+                        }
+                    },
+                    "204": {
+                        "description": "No Content."
+                    },
+                    "400": {
+                        "description": "Bad Request.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TeamSoftware.Azure.Handler.Http.Models.ErrorResponse"
+                                },
+                                "example": {
+                                    "errors": [
+                                        {
+                                            "fieldName": "TenantId",
+                                            "errorMessage": "INVALID INPUT: isn't a valid Guid value!",
+                                            "attemptedValue": "randomValue"
+                                        }
+                                    ],
+                                    "success": false,
+                                    "serverResponse": "Error: One or more errors were detected during request validation. See the Errors collection for details."
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TeamSoftware.Azure.Handler.Http.Models.ErrorResponse"
+                                },
+                                "example": {
+                                    "errors": [
+                                        {
+                                            "fieldName": "TenantId",
+                                            "errorMessage": "INVALID INPUT: isn't a valid Guid value!",
+                                            "attemptedValue": "randomValue"
+                                        }
+                                    ],
+                                    "success": false,
+                                    "serverResponse": "Error: One or more errors were detected during request validation. See the Errors collection for details."
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TeamSoftware.Azure.Handler.Http.Models.Response"
+                                },
+                                "example": {
+                                    "success": false,
+                                    "serverResponse": "Operation failed! Please contact the administrator for more details."
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "tags": [
+                    "Vendors"
+                ],
+                "summary": "Create Vendor",
+                "description": "This API endpoint will allow the creation of Vendors and their related contacts.",
+                "operationId": "postApiVendors",
+                "parameters": [
+                    {
+                        "name": "tenantId",
+                        "in": "header",
+                        "description": "We'll provide a description of what this value represents and how to obtain one.",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "description": "Vendor",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/TeamSoftware.WinTeam.Vendors.Models.Vendor"
+                            },
+                            "example": {
+                                "VendorNumber": 12345,
+                                "VendorName": "Someone",
+                                "VendorTypeId": 2,
+                                "VendorStatus": true,
+                                "Address": {
+                                    "Address1": "Address1 Omaha",
+                                    "Address2": "Address2 Omaha",
+                                    "City": "Omaha",
+                                    "State": "OH",
+                                    "Zip": "12345-154"
+                                },
+                                "Phone": "1234567890",
+                                "Fax": "1234567778",
+                                "ParentVendorNumber": 1156,
+                                "AccountNumber": "105",
+                                "TaxID": "65",
+                                "ContactsInformation": [
+                                    {
+                                        "DisplayName": "Jim Frost",
+                                        "FirstName": "Jim",
+                                        "LastName": "Park",
+                                        "Email": "email@testmail.com",
+                                        "BusinessPhone": 9876543210,
+                                        "RoleId": 1,
+                                        "TypeId": 2
+                                    },
+                                    {
+                                        "DisplayName": "Jason U",
+                                        "FirstName": "Jason",
+                                        "LastName": "Uhi",
+                                        "Email": "email@testmail.com",
+                                        "BusinessPhone": 2876543210,
+                                        "RoleId": 1,
+                                        "TypeId": 1
+                                    }
+                                ]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Created.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TeamSoftware.WinTeam.Vendors.Functions.Models.Responses.PostVendorResponse"
+                                },
+                                "example": {
+                                    "VendorNumber": 1,
+                                    "VendorTypeId": 0,
+                                    "VendorName": "Juan",
+                                    "VendorStatus": true,
+                                    "Address": {
+                                        "Address1": "41th Streeth",
+                                        "Address2": "Long Island #78",
+                                        "City": "MX",
+                                        "State": "Omaha",
+                                        "Zip": "5a102"
+                                    },
+                                    "Phone": 5917969855,
+                                    "Fax": 5917969855,
+                                    "ParentVendorNumber": 324,
+                                    "AccountNumber": "654F",
+                                    "TaxId": 10,
+                                    "ContactsInformation": [
+                                        {
+                                            "DisplayName": "Josh",
+                                            "FirstName": "John",
+                                            "LastName": "Wick",
+                                            "Email": "john@wick.com",
+                                            "BusinessPhone": 5974651325,
+                                            "RoleId": 1
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "204": {
+                        "description": "No Content."
+                    },
+                    "400": {
+                        "description": "Bad Request.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TeamSoftware.Azure.Handler.Http.Models.ErrorResponse"
+                                },
+                                "example": {
+                                    "errors": [
+                                        {
+                                            "fieldName": "TenantId",
+                                            "errorMessage": "INVALID INPUT: isn't a valid Guid value!",
+                                            "attemptedValue": "randomValue"
+                                        }
+                                    ],
+                                    "success": false,
+                                    "serverResponse": "Error: One or more errors were detected during request validation. See the Errors collection for details."
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TeamSoftware.Azure.Handler.Http.Models.ErrorResponse"
+                                },
+                                "example": {
+                                    "errors": [
+                                        {
+                                            "fieldName": "TenantId",
+                                            "errorMessage": "INVALID INPUT: isn't a valid Guid value!",
+                                            "attemptedValue": "randomValue"
+                                        }
+                                    ],
+                                    "success": false,
+                                    "serverResponse": "Error: One or more errors were detected during request validation. See the Errors collection for details."
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TeamSoftware.Azure.Handler.Http.Models.Response"
+                                },
+                                "example": {
+                                    "success": false,
+                                    "serverResponse": "Operation failed! Please contact the administrator for more details."
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/vendors/{vendorNumber}": {
+            "patch": {
+                "tags": [
+                    "Vendors"
+                ],
+                "summary": "Update Vendor",
+                "description": "This API endpoint will allow the modification of Vendors and their related contacts.",
+                "operationId": "patchApiVendorsByVendorNumber",
+                "parameters": [
+                    {
+                        "name": "vendorNumber",
+                        "in": "path",
+                        "description": "Vendor identifier.",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "tenantId",
+                        "in": "header",
+                        "description": "We'll provide a description of what this value represents and how to obtain one.",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "description": "Use the type definition for 'VendorBase' by structuring the HTTP Request body with a JSON Patch format, reference: http://jsonpatch.com/",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/TeamSoftware.WinTeam.Vendors.Models.VendorBase"
+                            },
+                            "example": [
+                                {
+                                    "op": "replace",
+                                    "path": "/vendorTypeId",
+                                    "value": 2
+                                },
+                                {
+                                    "op": "replace",
+                                    "path": "/vendorName",
+                                    "value": "Tidal Care Inc."
+                                },
+                                {
+                                    "op": "replace",
+                                    "path": "/vendorStatus",
+                                    "value": true
+                                },
+                                {
+                                    "op": "replace",
+                                    "path": "/address/address1",
+                                    "value": "P.O. Box 91154"
+                                },
+                                {
+                                    "op": "replace",
+                                    "path": "/address/address2",
+                                    "value": "7900 84th Street"
+                                },
+                                {
+                                    "op": "replace",
+                                    "path": "/address/city",
+                                    "value": "Omaha"
+                                },
+                                {
+                                    "op": "replace",
+                                    "path": "/address/state",
+                                    "value": "NE"
+                                },
+                                {
+                                    "op": "replace",
+                                    "path": "/address/zip",
+                                    "value": 68128
+                                },
+                                {
+                                    "op": "replace",
+                                    "path": "/phone",
+                                    "value": 4021234567
+                                },
+                                {
+                                    "op": "replace",
+                                    "path": "/fax",
+                                    "value": 4021234565
+                                },
+                                {
+                                    "op": "replace",
+                                    "path": "/parentVendorNumber",
+                                    "value": 1156
+                                },
+                                {
+                                    "op": "replace",
+                                    "path": "/accountNumber",
+                                    "value": 4555
+                                },
+                                {
+                                    "op": "replace",
+                                    "path": "/taxID",
+                                    "value": "23040-1942"
+                                },
+                                {
+                                    "op": "replace",
+                                    "path": "/contactsInformation/0/id",
+                                    "value": 183
+                                },
+                                {
+                                    "op": "replace",
+                                    "path": "/contactsInformation/0/displayName",
+                                    "value": "Jim Ripley"
+                                },
+                                {
+                                    "op": "replace",
+                                    "path": "/contactsInformation/0/firstName",
+                                    "value": "Jim"
+                                },
+                                {
+                                    "op": "replace",
+                                    "path": "/contactsInformation/0/lastName",
+                                    "value": "Park"
+                                },
+                                {
+                                    "op": "replace",
+                                    "path": "/contactsInformation/0/typeId",
+                                    "value": 2
+                                },
+                                {
+                                    "op": "replace",
+                                    "path": "/contactsInformation/0/email",
+                                    "value": "email@testmail.com"
+                                },
+                                {
+                                    "op": "replace",
+                                    "path": "/contactsInformation/0/businessPhone",
+                                    "value": 9876543210
+                                }
+                            ]
+                        }
+                    }
+                },
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TeamSoftware.Azure.Handler.Http.Models.ErrorResponse"
+                                },
+                                "example": {
+                                    "errors": [
+                                        {
+                                            "fieldName": "TenantId",
+                                            "errorMessage": "INVALID INPUT: isn't a valid Guid value!",
+                                            "attemptedValue": "randomValue"
+                                        }
+                                    ],
+                                    "success": false,
+                                    "serverResponse": "Error: One or more errors were detected during request validation. See the Errors collection for details."
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TeamSoftware.Azure.Handler.Http.Models.Response"
+                                },
+                                "example": {
+                                    "success": false,
+                                    "serverResponse": "Operation failed! Please contact the administrator for more details."
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TeamSoftware.Azure.Handler.Http.Models.ErrorResponse"
+                                },
+                                "example": {
+                                    "errors": [
+                                        {
+                                            "fieldName": "TenantId",
+                                            "errorMessage": "INVALID INPUT: isn't a valid Guid value!",
+                                            "attemptedValue": "randomValue"
+                                        }
+                                    ],
+                                    "success": false,
+                                    "serverResponse": "Error: One or more errors were detected during request validation. See the Errors collection for details."
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TeamSoftware.Azure.Handler.Http.Models.Response"
+                                },
+                                "example": {
+                                    "success": false,
+                                    "serverResponse": "Operation failed! Please contact the administrator for more details."
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "components": {
+        "schemas": {
+            "TeamSoftware.WinTeam.Vendors.Functions.Models.Responses.GetVendorResponse": {
+                "type": "object",
+                "properties": {
+                    "Data": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/TeamSoftware.WinteamAPI.Utilities.DAL.Models.PagedResults_TeamSoftware.WinTeam.Vendors.Models.Vendor_"
+                        }
+                    },
+                    "Success": {
+                        "type": "boolean"
+                    },
+                    "ServerResponse": {
+                        "type": "string"
+                    }
+                },
+                "example": {
+                    "data": [
+                        {
+                            "pageNumber": 1,
+                            "pageSize": 100,
+                            "totalPages": 1,
+                            "totalCount": 1,
+                            "results": [
+                                {
+                                    "vendorNumber": 2,
+                                    "vendorTypeId": 2,
+                                    "vendorName": "TEST",
+                                    "vendorStatus": true,
+                                    "address": {
+                                        "address1": "407th Av",
+                                        "address2": "407th Av",
+                                        "city": "Rocky Creek",
+                                        "state": "MN",
+                                        "zip": 0
+                                    },
+                                    "phone": 4021234567,
+                                    "fax": null,
+                                    "parentVendorNumber": 1,
+                                    "accountNumber": 1234,
+                                    "taxID": null,
+                                    "customFields": null,
+                                    "contactsInformation": [
+                                        {
+                                            "displayName": "Name Lastname",
+                                            "firstName": "Name",
+                                            "lastName": "Lastname",
+                                            "email": "name@gmail.com",
+                                            "businessPhone": 3193771050,
+                                            "roleId": 0
+                                        },
+                                        {
+                                            "displayName": "Name Lastname2",
+                                            "firstName": "Mallory",
+                                            "lastName": "Lastname",
+                                            "email": "lastname@team.com",
+                                            "businessPhone": 4021111111,
+                                            "roleId": 0
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                    ],
+                    "success": true,
+                    "serverResponse": "OK."
+                }
+            },
+            "TeamSoftware.WinteamAPI.Utilities.DAL.Models.PagedResults_TeamSoftware.WinTeam.Vendors.Models.Vendor_": {
+                "type": "object",
+                "properties": {
+                    "PageNumber": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "PageSize": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "TotalPages": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "TotalCount": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "Results": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/TeamSoftware.WinTeam.Vendors.Models.Vendor"
+                        }
+                    }
+                }
+            },
+            "TeamSoftware.WinTeam.Vendors.Models.Vendor": {
+                "type": "object",
+                "properties": {
+                    "VendorNumber": {
+                        "type": "integer",
+                        "description": "Vendor's Number",
+                        "format": "int32",
+                        "nullable": true
+                    },
+                    "CustomFields": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/TeamSoftware.WinTeam.Vendors.Models.CustomField"
+                        },
+                        "description": "Vendor's Custom Fields"
+                    },
+                    "VendorTypeId": {
+                        "$ref": "#/components/schemas/System.Nullable_System.Int16_"
+                    },
+                    "VendorName": {
+                        "type": "string",
+                        "description": "Vendor's Name"
+                    },
+                    "VendorStatus": {
+                        "type": "boolean",
+                        "description": "Vendor's Status"
+                    },
+                    "Address": {
+                        "$ref": "#/components/schemas/TeamSoftware.WinTeam.Vendors.Models.Address"
+                    },
+                    "Phone": {
+                        "type": "string",
+                        "description": "Vendor's Phone"
+                    },
+                    "Fax": {
+                        "type": "string",
+                        "description": "Vendor's Fax"
+                    },
+                    "ParentVendorNumber": {
+                        "type": "integer",
+                        "description": "Vendor's Parent Number",
+                        "format": "int32",
+                        "nullable": true
+                    },
+                    "AccountNumber": {
+                        "type": "string",
+                        "description": "Vendor's Account Number"
+                    },
+                    "TaxID": {
+                        "type": "string",
+                        "description": "Vendor's Tax ID"
+                    },
+                    "ContactsInformation": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/TeamSoftware.WinTeam.Vendors.Models.Contact"
+                        }
+                    }
+                },
+                "example": {
+                    "VendorNumber": 12345,
+                    "VendorName": "Someone",
+                    "VendorTypeId": 2,
+                    "VendorStatus": true,
+                    "Address": {
+                        "Address1": "Address1 Omaha",
+                        "Address2": "Address2 Omaha",
+                        "City": "Omaha",
+                        "State": "OH",
+                        "Zip": "12345-154"
+                    },
+                    "Phone": "1234567890",
+                    "Fax": "1234567778",
+                    "ParentVendorNumber": 1156,
+                    "AccountNumber": "105",
+                    "TaxID": "65",
+                    "ContactsInformation": [
+                        {
+                            "DisplayName": "Jim Frost",
+                            "FirstName": "Jim",
+                            "LastName": "Park",
+                            "Email": "email@testmail.com",
+                            "BusinessPhone": 9876543210,
+                            "RoleId": 1,
+                            "TypeId": 2
+                        },
+                        {
+                            "DisplayName": "Jason U",
+                            "FirstName": "Jason",
+                            "LastName": "Uhi",
+                            "Email": "email@testmail.com",
+                            "BusinessPhone": 2876543210,
+                            "RoleId": 1,
+                            "TypeId": 1
+                        }
+                    ]
+                }
+            },
+            "TeamSoftware.WinTeam.Vendors.Models.CustomField": {
+                "type": "object",
+                "properties": {
+                    "FieldNumber": {
+                        "type": "string",
+                        "format": "byte",
+                        "nullable": true
+                    },
+                    "Value": {
+                        "type": "string"
+                    }
+                }
+            },
+            "System.Nullable_System.Int16_": {
+                "type": "object",
+                "properties": {
+                    "HasValue": {
+                        "type": "boolean"
+                    },
+                    "Value": {
+                        "$ref": "#/components/schemas/System.Int16"
+                    }
+                }
+            },
+            "System.Int16": {
+                "type": "object"
+            },
+            "TeamSoftware.WinTeam.Vendors.Models.Address": {
+                "type": "object",
+                "properties": {
+                    "Address1": {
+                        "type": "string"
+                    },
+                    "Address2": {
+                        "type": "string"
+                    },
+                    "City": {
+                        "type": "string"
+                    },
+                    "State": {
+                        "type": "string"
+                    },
+                    "Zip": {
+                        "type": "string"
+                    }
+                }
+            },
+            "TeamSoftware.WinTeam.Vendors.Models.Contact": {
+                "type": "object",
+                "properties": {
+                    "ID": {
+                        "type": "integer",
+                        "description": "Contact ID",
+                        "format": "int32"
+                    },
+                    "DisplayName": {
+                        "type": "string",
+                        "description": "Name to be shown"
+                    },
+                    "FirstName": {
+                        "type": "string",
+                        "description": "Contact first name"
+                    },
+                    "LastName": {
+                        "type": "string",
+                        "description": "Contact last name"
+                    },
+                    "TypeId": {
+                        "$ref": "#/components/schemas/System.Nullable_System.Int16_"
+                    },
+                    "Email": {
+                        "type": "string",
+                        "description": "Contact email"
+                    },
+                    "BusinessPhone": {
+                        "type": "string",
+                        "description": "Contact Business Phone"
+                    },
+                    "RoleId": {
+                        "$ref": "#/components/schemas/System.Int16"
+                    }
+                }
+            },
+            "TeamSoftware.Azure.Handler.Http.Models.ErrorResponse": {
+                "type": "object",
+                "properties": {
+                    "Errors": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/TeamSoftware.Azure.Handler.Models.ValidationError"
+                        }
+                    },
+                    "Success": {
+                        "type": "boolean"
+                    },
+                    "ServerResponse": {
+                        "type": "string"
+                    }
+                },
+                "example": {
+                    "errors": [
+                        {
+                            "fieldName": "TenantId",
+                            "errorMessage": "INVALID INPUT: isn't a valid Guid value!",
+                            "attemptedValue": "randomValue"
+                        }
+                    ],
+                    "success": false,
+                    "serverResponse": "Error: One or more errors were detected during request validation. See the Errors collection for details."
+                }
+            },
+            "TeamSoftware.Azure.Handler.Models.ValidationError": {
+                "type": "object",
+                "properties": {
+                    "AttemptedValue": {
+                        "type": "string"
+                    },
+                    "FieldName": {
+                        "type": "string"
+                    },
+                    "ErrorMessage": {
+                        "type": "string"
+                    }
+                }
+            },
+            "TeamSoftware.Azure.Handler.Http.Models.Response": {
+                "type": "object",
+                "properties": {
+                    "Success": {
+                        "type": "boolean"
+                    },
+                    "ServerResponse": {
+                        "type": "string"
+                    }
+                },
+                "example": {
+                    "success": false,
+                    "serverResponse": "Operation failed! Please contact the administrator for more details."
+                }
+            },
+            "TeamSoftware.WinTeam.Vendors.Models.VendorBase": {
+                "type": "object",
+                "properties": {
+                    "VendorTypeId": {
+                        "$ref": "#/components/schemas/System.Nullable_System.Int16_"
+                    },
+                    "VendorName": {
+                        "type": "string",
+                        "description": "Vendor's Name"
+                    },
+                    "VendorStatus": {
+                        "type": "boolean",
+                        "description": "Vendor's Status"
+                    },
+                    "Address": {
+                        "$ref": "#/components/schemas/TeamSoftware.WinTeam.Vendors.Models.Address"
+                    },
+                    "Phone": {
+                        "type": "string",
+                        "description": "Vendor's Phone"
+                    },
+                    "Fax": {
+                        "type": "string",
+                        "description": "Vendor's Fax"
+                    },
+                    "ParentVendorNumber": {
+                        "type": "integer",
+                        "description": "Vendor's Parent Number",
+                        "format": "int32",
+                        "nullable": true
+                    },
+                    "AccountNumber": {
+                        "type": "string",
+                        "description": "Vendor's Account Number"
+                    },
+                    "TaxID": {
+                        "type": "string",
+                        "description": "Vendor's Tax ID"
+                    },
+                    "ContactsInformation": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/TeamSoftware.WinTeam.Vendors.Models.Contact"
+                        }
+                    }
+                },
+                "example": [
+                    {
+                        "op": "replace",
+                        "path": "/vendorTypeId",
+                        "value": 2
+                    },
+                    {
+                        "op": "replace",
+                        "path": "/vendorName",
+                        "value": "Tidal Care Inc."
+                    },
+                    {
+                        "op": "replace",
+                        "path": "/vendorStatus",
+                        "value": true
+                    },
+                    {
+                        "op": "replace",
+                        "path": "/address/address1",
+                        "value": "P.O. Box 91154"
+                    },
+                    {
+                        "op": "replace",
+                        "path": "/address/address2",
+                        "value": "7900 84th Street"
+                    },
+                    {
+                        "op": "replace",
+                        "path": "/address/city",
+                        "value": "Omaha"
+                    },
+                    {
+                        "op": "replace",
+                        "path": "/address/state",
+                        "value": "NE"
+                    },
+                    {
+                        "op": "replace",
+                        "path": "/address/zip",
+                        "value": 68128
+                    },
+                    {
+                        "op": "replace",
+                        "path": "/phone",
+                        "value": 4021234567
+                    },
+                    {
+                        "op": "replace",
+                        "path": "/fax",
+                        "value": 4021234565
+                    },
+                    {
+                        "op": "replace",
+                        "path": "/parentVendorNumber",
+                        "value": 1156
+                    },
+                    {
+                        "op": "replace",
+                        "path": "/accountNumber",
+                        "value": 4555
+                    },
+                    {
+                        "op": "replace",
+                        "path": "/taxID",
+                        "value": "23040-1942"
+                    },
+                    {
+                        "op": "replace",
+                        "path": "/contactsInformation/0/id",
+                        "value": 183
+                    },
+                    {
+                        "op": "replace",
+                        "path": "/contactsInformation/0/displayName",
+                        "value": "Jim Ripley"
+                    },
+                    {
+                        "op": "replace",
+                        "path": "/contactsInformation/0/firstName",
+                        "value": "Jim"
+                    },
+                    {
+                        "op": "replace",
+                        "path": "/contactsInformation/0/lastName",
+                        "value": "Park"
+                    },
+                    {
+                        "op": "replace",
+                        "path": "/contactsInformation/0/typeId",
+                        "value": 2
+                    },
+                    {
+                        "op": "replace",
+                        "path": "/contactsInformation/0/email",
+                        "value": "email@testmail.com"
+                    },
+                    {
+                        "op": "replace",
+                        "path": "/contactsInformation/0/businessPhone",
+                        "value": 9876543210
+                    }
+                ]
+            },
+            "TeamSoftware.WinTeam.Vendors.Functions.Models.Responses.PostVendorResponse": {
+                "type": "object",
+                "properties": {
+                    "Data": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/TeamSoftware.WinTeam.Vendors.Models.Vendor"
+                        }
+                    },
+                    "Success": {
+                        "type": "boolean"
+                    },
+                    "ServerResponse": {
+                        "type": "string"
+                    }
+                },
+                "example": {
+                    "VendorNumber": 1,
+                    "VendorTypeId": 0,
+                    "VendorName": "Juan",
+                    "VendorStatus": true,
+                    "Address": {
+                        "Address1": "41th Streeth",
+                        "Address2": "Long Island #78",
+                        "City": "MX",
+                        "State": "Omaha",
+                        "Zip": "5a102"
+                    },
+                    "Phone": 5917969855,
+                    "Fax": 5917969855,
+                    "ParentVendorNumber": 324,
+                    "AccountNumber": "654F",
+                    "TaxId": 10,
+                    "ContactsInformation": [
+                        {
+                            "DisplayName": "Josh",
+                            "FirstName": "John",
+                            "LastName": "Wick",
+                            "Email": "john@wick.com",
+                            "BusinessPhone": 5974651325,
+                            "RoleId": 1
+                        }
+                    ]
+                }
+            }
+        },
+        "securitySchemes": {
+            "apiKeyHeader": {
+                "type": "apiKey",
+                "name": "Ocp-Apim-Subscription-Key",
+                "in": "header"
+            },
+            "apiKeyQuery": {
+                "type": "apiKey",
+                "name": "subscription-key",
+                "in": "query"
+            }
+        }
+    },
+    "security": [
+        {
+            "apiKeyHeader": []
+        },
+        {
+            "apiKeyQuery": []
+        }
+    ]
+}

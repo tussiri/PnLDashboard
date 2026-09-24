@@ -1,0 +1,1758 @@
+{
+    "openapi": "3.0.1",
+    "info": {
+        "title": "Timekeeping (v2)",
+        "description": "API endpoints used to manage Timekeeping in WinTeam.",
+        "version": "v2"
+    },
+    "servers": [
+        {
+            "url": "http://apim.myteamsoftware.com/wtnextgen/timekeeping/v2"
+        },
+        {
+            "url": "https://apim.myteamsoftware.com/wtnextgen/timekeeping/v2"
+        }
+    ],
+    "paths": {
+        "/api/timekeeping": {
+            "get": {
+                "tags": [
+                    "Timekeeping"
+                ],
+                "summary": "Retrieve Timekeeping",
+                "description": "This function gets the timekeeping records based on the DateFrom and DateTo date.",
+                "operationId": "getApiTimekeeping",
+                "parameters": [
+                    {
+                        "name": "dateFrom",
+                        "in": "query",
+                        "description": "Format - date-time (as date-time in RFC3339). Date from when the user wants to filter the results.",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "dateTo",
+                        "in": "query",
+                        "description": "Format - date-time (as date-time in RFC3339). Date to when the user wants to filter the results.",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "pageSize",
+                        "in": "query",
+                        "description": "The size of the page.",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "name": "pageNumber",
+                        "in": "query",
+                        "description": "The page number you want to retrieve.",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "name": "orderBy",
+                        "in": "query",
+                        "description": "A datapoint you�d like to sort records by. Possible values are: \"timekeepingId\", \"employeeNumber\", \"jobNumber\", \"workDate\", \"hours\", \"categoryDetailId\", \"rate\", \"workTicketNumber\".",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "ascending",
+                        "in": "query",
+                        "description": "Indicates whether or not the order should be ascending (true) or descending (false).",
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "name": "tenantId",
+                        "in": "header",
+                        "description": "We'll provide a description of what this value represents and how to obtain one.",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TeamSoftware.WinTeam.Timekeeping.Functions.Models.Responses.GetTimekeepingOkResponse"
+                                },
+                                "example": {
+                                    "data": [
+                                        {
+                                            "pageNumber": 1,
+                                            "pageSize": 100,
+                                            "totalPages": 1,
+                                            "totalCount": 1,
+                                            "results": [
+                                                {
+                                                    "timekeepingId": 12345,
+                                                    "employeeNumber": 65,
+                                                    "jobNumber": "10002B",
+                                                    "workDate": "2022-10-01T12:00:00.0000000+00:00",
+                                                    "hours": 8,
+                                                    "categoryDetailId": 2,
+                                                    "inTime": "2026-04-09T08:00:00.0000000+00:00",
+                                                    "outTime": "2026-04-09T05:00:00.0000000+00:00",
+                                                    "lunch": 1,
+                                                    "rate": 12.5,
+                                                    "workTicketNumber": 45643
+                                                }
+                                            ]
+                                        }
+                                    ],
+                                    "success": true,
+                                    "serverResponse": "OK."
+                                }
+                            }
+                        }
+                    },
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TeamSoftware.Azure.Handler.Http.Models.ErrorResponse"
+                                },
+                                "example": {
+                                    "errors": [
+                                        {
+                                            "attemptedValue": null,
+                                            "fieldName": "TenantId",
+                                            "errorMessage": "TenantId must be a GUID."
+                                        }
+                                    ],
+                                    "success": false,
+                                    "serverResponse": "Operation failed! See the Errors for more information."
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TeamSoftware.Azure.Handler.Http.Models.ErrorResponse"
+                                },
+                                "example": {
+                                    "errors": [
+                                        {
+                                            "attemptedValue": null,
+                                            "fieldName": "TenantId",
+                                            "errorMessage": "TenantId must be a GUID."
+                                        }
+                                    ],
+                                    "success": false,
+                                    "serverResponse": "Operation failed! See the Errors for more information."
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TeamSoftware.Azure.Handler.Http.Models.Response"
+                                },
+                                "example": {
+                                    "success": false,
+                                    "serverResponse": "Oops, something went wrong."
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "tags": [
+                    "Timekeeping"
+                ],
+                "summary": "Create Timekeeping",
+                "description": "This API endpoint will create a timekeeping.",
+                "operationId": "postApiTimekeeping",
+                "parameters": [
+                    {
+                        "name": "tenantId",
+                        "in": "header",
+                        "description": "We'll provide a description of what this value represents and how to obtain one.",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "description": "Sample",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/TeamSoftware.WinTeam.Timekeeping.Functions.Models.Requests.PostTimekeepingRequest"
+                            },
+                            "example": {
+                                "employeeNumber": 1002,
+                                "jobNumber": "11252A",
+                                "workDate": "2022-10-10T12:00:00.0000000+00:00",
+                                "hours": 8,
+                                "categoryDetailId": 1,
+                                "inTime": "2026-04-09T04:00:00.0000000+00:00",
+                                "outTime": "2026-04-09T12:00:00.0000000+00:00",
+                                "lunch": null,
+                                "rate": null,
+                                "workTicketNumber": null
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Created.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {},
+                                    "example": [
+                                        {
+                                            "id": 222866,
+                                            "employeeNumber": 1002,
+                                            "jobNumber": 11252,
+                                            "workDate": "2022-10-10T12:00:00.0000000+00:00",
+                                            "hours": 8,
+                                            "categoryDetailId": 1,
+                                            "inTime": "2026-04-09T04:00:00.0000000+00:00",
+                                            "outTime": "2026-04-09T12:00:00.0000000+00:00",
+                                            "lunch": null,
+                                            "rate": null,
+                                            "workTicketNumber": null
+                                        }
+                                    ]
+                                },
+                                "example": [
+                                    {
+                                        "id": 222866,
+                                        "employeeNumber": 1002,
+                                        "jobNumber": 11252,
+                                        "workDate": "2022-10-10T12:00:00.0000000+00:00",
+                                        "hours": 8,
+                                        "categoryDetailId": 1,
+                                        "inTime": "2026-04-09T04:00:00.0000000+00:00",
+                                        "outTime": "2026-04-09T12:00:00.0000000+00:00",
+                                        "lunch": null,
+                                        "rate": null,
+                                        "workTicketNumber": null
+                                    }
+                                ]
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TeamSoftware.Azure.Handler.Http.Models.ErrorResponse"
+                                },
+                                "example": {
+                                    "errors": [
+                                        {
+                                            "attemptedValue": null,
+                                            "fieldName": "TenantId",
+                                            "errorMessage": "TenantId must be a GUID."
+                                        }
+                                    ],
+                                    "success": false,
+                                    "serverResponse": "Operation failed! See the Errors for more information."
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TeamSoftware.Azure.Handler.Http.Models.ErrorResponse"
+                                },
+                                "example": {
+                                    "errors": [
+                                        {
+                                            "attemptedValue": null,
+                                            "fieldName": "TenantId",
+                                            "errorMessage": "TenantId must be a GUID."
+                                        }
+                                    ],
+                                    "success": false,
+                                    "serverResponse": "Operation failed! See the Errors for more information."
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TeamSoftware.Azure.Handler.Http.Models.Response"
+                                },
+                                "example": {
+                                    "success": false,
+                                    "serverResponse": "Oops, something went wrong."
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/timekeeping/overtime": {
+            "post": {
+                "tags": [
+                    "Timekeeping"
+                ],
+                "summary": "Calculate Timekeeping Overtime",
+                "description": "This API endpoint will calculate a Timekeeping Overtime.",
+                "operationId": "postApiTimekeepingOvertime",
+                "parameters": [
+                    {
+                        "name": "tenantId",
+                        "in": "header",
+                        "description": "We'll provide a description of what this value represents and how to obtain one.",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "description": "Sample",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/TeamSoftware.WinTeam.Timekeeping.Models.Requests.OvertimeRequest"
+                            },
+                            "example": {
+                                "startDate": "2020-08-22T01:53:00.0000000+00:00",
+                                "endDate": "2020-10-22T01:53:00.0000000+00:00",
+                                "jobNumberFilter": [
+                                    "10048A"
+                                ],
+                                "employeeNumberFilter": [
+                                    1550
+                                ]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Created.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {},
+                                    "example": [
+                                        {
+                                            "id": 215515,
+                                            "employeeNumber": 1664,
+                                            "hours": 0,
+                                            "weightedAvergingHours": 0,
+                                            "jobNumber": "4005abc",
+                                            "categoryDetailID": 116,
+                                            "workDate": "2020-09-08T12:00:00.0000000+00:00",
+                                            "forceOTToThisJob": false,
+                                            "specialPayRate": false,
+                                            "distributionPriority": 0,
+                                            "shiftCode": null,
+                                            "jobPostID": null,
+                                            "hoursLocked": true,
+                                            "jobRate": null,
+                                            "employeePayInformation": {
+                                                "employeeNumber": 1664,
+                                                "otMethodID": 1,
+                                                "titleID": 0,
+                                                "basePayRate": 8,
+                                                "startDate": "2013-01-17T12:00:00.0000000+00:00",
+                                                "endDate": "3000-12-31T12:00:00.0000000+00:00",
+                                                "acceptAlternatePayRates": true,
+                                                "type": 1
+                                            },
+                                            "hourCategoryDetail": {
+                                                "categoryDetailID": 116,
+                                                "altPayRateMin": null,
+                                                "altPayRateMax": null,
+                                                "altPayRateAddOnTaxable": null,
+                                                "previousAltPayRateMin": 9,
+                                                "previousAltPayRateMax": 12,
+                                                "previousAltPayRateAddOnTaxable": null,
+                                                "altPayRateEffectiveDate": null,
+                                                "overtimeRule": 1,
+                                                "percentBasePay": 1,
+                                                "specialAddonRate": null,
+                                                "statutoryHoliday": false,
+                                                "useDailyOTCalculationForWeeklyOT": false,
+                                                "maxDailyHoursToIncludeInWeeklyOT": null,
+                                                "ignoreExtraPayForOT": false,
+                                                "excludePremiumDollars": false
+                                            },
+                                            "payRate": 8,
+                                            "basePayRate": 8,
+                                            "addOnRate": 0,
+                                            "regularDollars": 0,
+                                            "weightedAverage": null,
+                                            "overtimeHours": 0,
+                                            "overtimeDollars": 0,
+                                            "doubletimeHours": 0,
+                                            "doubletimeDollars": 0,
+                                            "dailyOvertimeHours": 0,
+                                            "dailyDoubleTimeHours": 0,
+                                            "usedRatesByJob": false,
+                                            "isModified": true,
+                                            "doubletimePayRate": 16,
+                                            "overtimePayRate": 12,
+                                            "inTime": null,
+                                            "outTime": null,
+                                            "payRateSource": 1,
+                                            "recordTypeID": null,
+                                            "sequenceNumber": null,
+                                            "hoursTypeID": null,
+                                            "paidByCheckID": null,
+                                            "lunch": null
+                                        }
+                                    ]
+                                },
+                                "example": [
+                                    {
+                                        "id": 215515,
+                                        "employeeNumber": 1664,
+                                        "hours": 0,
+                                        "weightedAvergingHours": 0,
+                                        "jobNumber": "4005abc",
+                                        "categoryDetailID": 116,
+                                        "workDate": "2020-09-08T12:00:00.0000000+00:00",
+                                        "forceOTToThisJob": false,
+                                        "specialPayRate": false,
+                                        "distributionPriority": 0,
+                                        "shiftCode": null,
+                                        "jobPostID": null,
+                                        "hoursLocked": true,
+                                        "jobRate": null,
+                                        "employeePayInformation": {
+                                            "employeeNumber": 1664,
+                                            "otMethodID": 1,
+                                            "titleID": 0,
+                                            "basePayRate": 8,
+                                            "startDate": "2013-01-17T12:00:00.0000000+00:00",
+                                            "endDate": "3000-12-31T12:00:00.0000000+00:00",
+                                            "acceptAlternatePayRates": true,
+                                            "type": 1
+                                        },
+                                        "hourCategoryDetail": {
+                                            "categoryDetailID": 116,
+                                            "altPayRateMin": null,
+                                            "altPayRateMax": null,
+                                            "altPayRateAddOnTaxable": null,
+                                            "previousAltPayRateMin": 9,
+                                            "previousAltPayRateMax": 12,
+                                            "previousAltPayRateAddOnTaxable": null,
+                                            "altPayRateEffectiveDate": null,
+                                            "overtimeRule": 1,
+                                            "percentBasePay": 1,
+                                            "specialAddonRate": null,
+                                            "statutoryHoliday": false,
+                                            "useDailyOTCalculationForWeeklyOT": false,
+                                            "maxDailyHoursToIncludeInWeeklyOT": null,
+                                            "ignoreExtraPayForOT": false,
+                                            "excludePremiumDollars": false
+                                        },
+                                        "payRate": 8,
+                                        "basePayRate": 8,
+                                        "addOnRate": 0,
+                                        "regularDollars": 0,
+                                        "weightedAverage": null,
+                                        "overtimeHours": 0,
+                                        "overtimeDollars": 0,
+                                        "doubletimeHours": 0,
+                                        "doubletimeDollars": 0,
+                                        "dailyOvertimeHours": 0,
+                                        "dailyDoubleTimeHours": 0,
+                                        "usedRatesByJob": false,
+                                        "isModified": true,
+                                        "doubletimePayRate": 16,
+                                        "overtimePayRate": 12,
+                                        "inTime": null,
+                                        "outTime": null,
+                                        "payRateSource": 1,
+                                        "recordTypeID": null,
+                                        "sequenceNumber": null,
+                                        "hoursTypeID": null,
+                                        "paidByCheckID": null,
+                                        "lunch": null
+                                    }
+                                ]
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TeamSoftware.Azure.Handler.Http.Models.ErrorResponse"
+                                },
+                                "example": {
+                                    "errors": [
+                                        {
+                                            "attemptedValue": null,
+                                            "fieldName": "TenantId",
+                                            "errorMessage": "TenantId must be a GUID."
+                                        }
+                                    ],
+                                    "success": false,
+                                    "serverResponse": "Operation failed! See the Errors for more information."
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TeamSoftware.Azure.Handler.Http.Models.Response"
+                                },
+                                "example": {
+                                    "success": false,
+                                    "serverResponse": "Oops, something went wrong."
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TeamSoftware.Azure.Handler.Http.Models.ErrorResponse"
+                                },
+                                "example": {
+                                    "errors": [
+                                        {
+                                            "attemptedValue": null,
+                                            "fieldName": "TenantId",
+                                            "errorMessage": "TenantId must be a GUID."
+                                        }
+                                    ],
+                                    "success": false,
+                                    "serverResponse": "Operation failed! See the Errors for more information."
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TeamSoftware.Azure.Handler.Http.Models.Response"
+                                },
+                                "example": {
+                                    "success": false,
+                                    "serverResponse": "Oops, something went wrong."
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/timekeeping/queue-overtime": {
+            "post": {
+                "tags": [
+                    "Timekeeping"
+                ],
+                "summary": "Create Timekeeping Overtime Queue Calculation",
+                "description": "This API endpoint will return an uri that will point to a gzip compressed json file that is generated when processing is completed.",
+                "operationId": "postApiTimekeepingQueueovertime",
+                "parameters": [
+                    {
+                        "name": "tenantId",
+                        "in": "header",
+                        "description": "We'll provide a description of what this value represents and how to obtain one.",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "description": "Sample",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/TeamSoftware.WinTeam.Timekeeping.Models.Requests.OvertimeRequest"
+                            },
+                            "example": {
+                                "startDate": "2020-08-22T01:53:00.0000000+00:00",
+                                "endDate": "2020-10-22T01:53:00.0000000+00:00",
+                                "jobNumberFilter": [
+                                    "10048A"
+                                ],
+                                "employeeNumberFilter": [
+                                    1550
+                                ]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Created.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TeamSoftware.WinTeam.Timekeeping.Models.Response.BlobStorageResponse"
+                                },
+                                "example": {
+                                    "uri": "uriExample.site"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TeamSoftware.Azure.Handler.Http.Models.ErrorResponse"
+                                },
+                                "example": {
+                                    "errors": [
+                                        {
+                                            "attemptedValue": null,
+                                            "fieldName": "TenantId",
+                                            "errorMessage": "TenantId must be a GUID."
+                                        }
+                                    ],
+                                    "success": false,
+                                    "serverResponse": "Operation failed! See the Errors for more information."
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TeamSoftware.Azure.Handler.Http.Models.Response"
+                                },
+                                "example": {
+                                    "success": false,
+                                    "serverResponse": "Oops, something went wrong."
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TeamSoftware.Azure.Handler.Http.Models.ErrorResponse"
+                                },
+                                "example": {
+                                    "errors": [
+                                        {
+                                            "attemptedValue": null,
+                                            "fieldName": "TenantId",
+                                            "errorMessage": "TenantId must be a GUID."
+                                        }
+                                    ],
+                                    "success": false,
+                                    "serverResponse": "Operation failed! See the Errors for more information."
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TeamSoftware.Azure.Handler.Http.Models.Response"
+                                },
+                                "example": {
+                                    "success": false,
+                                    "serverResponse": "Oops, something went wrong."
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/timekeeping/batches/{employeeNumber}": {
+            "post": {
+                "tags": [
+                    "Timekeepings"
+                ],
+                "summary": "Create Timekeeping Batch",
+                "description": "This API endpoint will create a list of timekeeping records for a specific employee. If any record is invalid, no records will be created.",
+                "operationId": "postApiTimekeepingBatchesByEmployeeNumber",
+                "parameters": [
+                    {
+                        "name": "employeeNumber",
+                        "in": "path",
+                        "description": "Employee Id.",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "name": "tenantId",
+                        "in": "header",
+                        "description": "We'll provide a description of what this value represents and how to obtain one.",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "description": "Sample",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/TeamSoftware.WinTeam.Timekeeping.Functions.Requests.PostTimekeepingBatchRequest"
+                            },
+                            "example": {
+                                "timekeepingEntries": [
+                                    {
+                                        "jobNumber": "11252A",
+                                        "workDate": "2022-10-10T12:00:00.0000000+00:00",
+                                        "hours": 8,
+                                        "categoryDetailId": 1,
+                                        "inTime": "2026-04-09T04:00:00.0000000+00:00",
+                                        "outTime": "2026-04-09T12:00:00.0000000+00:00",
+                                        "lunch": null,
+                                        "rate": null,
+                                        "workTicketNumber": null
+                                    },
+                                    {
+                                        "jobNumber": 10002,
+                                        "workDate": "2022-10-10T12:00:00.0000000+00:00",
+                                        "hours": 8,
+                                        "categoryDetailId": 1,
+                                        "inTime": "2026-04-09T05:00:00.0000000+00:00",
+                                        "outTime": "2026-04-09T01:00:00.0000000+00:00",
+                                        "lunch": 1,
+                                        "rate": 10,
+                                        "workTicketNumber": null
+                                    }
+                                ]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TeamSoftware.WinTeam.Timekeeping.Functions.Models.Responses.PostTimekeepingBatchResponse"
+                                },
+                                "example": {
+                                    "data": [
+                                        {
+                                            "request": {
+                                                "Id": null,
+                                                "EmployeeNumber": 1991,
+                                                "jobNumber": 10002,
+                                                "workDate": "2022-10-10T12:00:00.0000000+00:00",
+                                                "hours": 8,
+                                                "categoryDetailId": 1,
+                                                "inTime": "2026-04-09T05:00:00.0000000+00:00",
+                                                "outTime": "2026-04-09T01:00:00.0000000+00:00",
+                                                "lunch": 1,
+                                                "rate": 10,
+                                                "workTicketNumber": null
+                                            },
+                                            "status": {
+                                                "success": false,
+                                                "serverResponse": null
+                                            },
+                                            "errors": null
+                                        },
+                                        {
+                                            "request": {
+                                                "id": null,
+                                                "employeeNumber": 1991,
+                                                "jobNumber": "11252A",
+                                                "workDate": "2022-10-10T12:00:00.0000000+00:00",
+                                                "hours": 8,
+                                                "categoryDetailId": 1,
+                                                "inTime": null,
+                                                "outTime": "2026-04-09T12:00:00.0000000+00:00",
+                                                "lunch": null,
+                                                "rate": null,
+                                                "workTicketNumber": null
+                                            },
+                                            "status": {
+                                                "success": false,
+                                                "serverResponse": "Operation failed! See the Errors for more information."
+                                            },
+                                            "errors": [
+                                                {
+                                                    "fieldName": "inTime",
+                                                    "errorMessage": "'in Time' should not be empty.",
+                                                    "attemptedValue": 2500
+                                                }
+                                            ]
+                                        }
+                                    ],
+                                    "summary": {
+                                        "failureCount": 2,
+                                        "successCount": 0,
+                                        "total": 2
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "anyOf": [
+                                        {
+                                            "$ref": "#/components/schemas/TeamSoftware.WinTeam.Timekeeping.Functions.Models.Responses.PostTimekeepingBatchResponse"
+                                        },
+                                        {
+                                            "$ref": "#/components/schemas/TeamSoftware.Azure.Handler.Http.Models.ErrorResponse"
+                                        }
+                                    ]
+                                },
+                                "example": {
+                                    "data": [
+                                        {
+                                            "request": {
+                                                "Id": null,
+                                                "EmployeeNumber": 1991,
+                                                "jobNumber": 10002,
+                                                "workDate": "2022-10-10T12:00:00.0000000+00:00",
+                                                "hours": 8,
+                                                "categoryDetailId": 1,
+                                                "inTime": "2026-04-09T05:00:00.0000000+00:00",
+                                                "outTime": "2026-04-09T01:00:00.0000000+00:00",
+                                                "lunch": 1,
+                                                "rate": 10,
+                                                "workTicketNumber": null
+                                            },
+                                            "status": {
+                                                "success": false,
+                                                "serverResponse": null
+                                            },
+                                            "errors": null
+                                        },
+                                        {
+                                            "request": {
+                                                "id": null,
+                                                "employeeNumber": 1991,
+                                                "jobNumber": "11252A",
+                                                "workDate": "2022-10-10T12:00:00.0000000+00:00",
+                                                "hours": 8,
+                                                "categoryDetailId": 1,
+                                                "inTime": null,
+                                                "outTime": "2026-04-09T12:00:00.0000000+00:00",
+                                                "lunch": null,
+                                                "rate": null,
+                                                "workTicketNumber": null
+                                            },
+                                            "status": {
+                                                "success": false,
+                                                "serverResponse": "Operation failed! See the Errors for more information."
+                                            },
+                                            "errors": [
+                                                {
+                                                    "fieldName": "inTime",
+                                                    "errorMessage": "'in Time' should not be empty.",
+                                                    "attemptedValue": 2500
+                                                }
+                                            ]
+                                        }
+                                    ],
+                                    "summary": {
+                                        "failureCount": 2,
+                                        "successCount": 0,
+                                        "total": 2
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TeamSoftware.Azure.Handler.Http.Models.Response"
+                                },
+                                "example": {
+                                    "success": false,
+                                    "serverResponse": "Oops, something went wrong."
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TeamSoftware.Azure.Handler.Http.Models.ErrorResponse"
+                                },
+                                "example": {
+                                    "errors": [
+                                        {
+                                            "attemptedValue": null,
+                                            "fieldName": "TenantId",
+                                            "errorMessage": "TenantId must be a GUID."
+                                        }
+                                    ],
+                                    "success": false,
+                                    "serverResponse": "Operation failed! See the Errors for more information."
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TeamSoftware.Azure.Handler.Http.Models.Response"
+                                },
+                                "example": {
+                                    "success": false,
+                                    "serverResponse": "Oops, something went wrong."
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/timekeeping/{id}": {
+            "patch": {
+                "tags": [
+                    "Timekeeping"
+                ],
+                "summary": "Partially updates a timekeeping hours record.",
+                "description": "Updates only the fields provided. Omitted fields remain unchanged.\r\n            Returns 400 if the record has been paid (PaidByCheckID is set) or if tenantId is missing.",
+                "operationId": "patchApiTimekeepingById",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "TK Hours record ID",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "name": "tenantId",
+                        "in": "header",
+                        "description": "Tenant identifier",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "userId",
+                        "in": "header",
+                        "description": "User making the change",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "description": "JSON Patch document (http://jsonpatch.com/). Use \"replace\" operations for fields to update.",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/TeamSoftware.WinTeam.Timekeeping.Models.Requests.PatchTimekeepingRequest"
+                            },
+                            "example": [
+                                {
+                                    "op": "replace",
+                                    "path": "/hours",
+                                    "value": 8
+                                },
+                                {
+                                    "op": "replace",
+                                    "path": "/rate",
+                                    "value": 15.5
+                                }
+                            ]
+                        }
+                    }
+                },
+                "responses": {
+                    "204": {
+                        "description": "Record updated successfully. No content returned."
+                    },
+                    "400": {
+                        "description": "Bad Request — missing tenantId header or record has been paid.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TeamSoftware.Azure.Handler.Http.Models.ErrorResponse"
+                                },
+                                "example": {
+                                    "errors": [
+                                        {
+                                            "attemptedValue": null,
+                                            "fieldName": "TenantId",
+                                            "errorMessage": "TenantId must be a GUID."
+                                        }
+                                    ],
+                                    "success": false,
+                                    "serverResponse": "Operation failed! See the Errors for more information."
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TeamSoftware.Azure.Handler.Http.Models.Response"
+                                },
+                                "example": {
+                                    "success": false,
+                                    "serverResponse": "Oops, something went wrong."
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TeamSoftware.Azure.Handler.Http.Models.ErrorResponse"
+                                },
+                                "example": {
+                                    "errors": [
+                                        {
+                                            "attemptedValue": null,
+                                            "fieldName": "TenantId",
+                                            "errorMessage": "TenantId must be a GUID."
+                                        }
+                                    ],
+                                    "success": false,
+                                    "serverResponse": "Operation failed! See the Errors for more information."
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TeamSoftware.Azure.Handler.Http.Models.Response"
+                                },
+                                "example": {
+                                    "success": false,
+                                    "serverResponse": "Oops, something went wrong."
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "components": {
+        "schemas": {
+            "TeamSoftware.WinTeam.Timekeeping.Functions.Models.Responses.GetTimekeepingOkResponse": {
+                "type": "object",
+                "properties": {
+                    "Data": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/TeamSoftware.WinteamAPI.Utilities.DAL.Models.PagedResults_TeamSoftware.WinTeam.Timekeeping.Models.GetTimekeepingResponse_"
+                        }
+                    },
+                    "Success": {
+                        "type": "boolean"
+                    },
+                    "ServerResponse": {
+                        "type": "string"
+                    }
+                },
+                "example": {
+                    "data": [
+                        {
+                            "pageNumber": 1,
+                            "pageSize": 100,
+                            "totalPages": 1,
+                            "totalCount": 1,
+                            "results": [
+                                {
+                                    "timekeepingId": 12345,
+                                    "employeeNumber": 65,
+                                    "jobNumber": "10002B",
+                                    "workDate": "2022-10-01T12:00:00.0000000+00:00",
+                                    "hours": 8,
+                                    "categoryDetailId": 2,
+                                    "inTime": "2026-04-09T08:00:00.0000000+00:00",
+                                    "outTime": "2026-04-09T05:00:00.0000000+00:00",
+                                    "lunch": 1,
+                                    "rate": 12.5,
+                                    "workTicketNumber": 45643
+                                }
+                            ]
+                        }
+                    ],
+                    "success": true,
+                    "serverResponse": "OK."
+                }
+            },
+            "TeamSoftware.WinteamAPI.Utilities.DAL.Models.PagedResults_TeamSoftware.WinTeam.Timekeeping.Models.GetTimekeepingResponse_": {
+                "type": "object",
+                "properties": {
+                    "PageNumber": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "PageSize": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "TotalPages": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "TotalCount": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "Results": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/TeamSoftware.WinTeam.Timekeeping.Models.GetTimekeepingResponse"
+                        }
+                    }
+                }
+            },
+            "TeamSoftware.WinTeam.Timekeeping.Models.GetTimekeepingResponse": {
+                "type": "object",
+                "properties": {
+                    "TimekeepingId": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "EmployeeNumber": {
+                        "type": "string"
+                    },
+                    "JobNumber": {
+                        "type": "string"
+                    },
+                    "WorkDate": {
+                        "type": "string"
+                    },
+                    "Hours": {
+                        "type": "number",
+                        "format": "double"
+                    },
+                    "CategoryDetailId": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "InTime": {
+                        "type": "string"
+                    },
+                    "OutTime": {
+                        "type": "string"
+                    },
+                    "Lunch": {
+                        "type": "number",
+                        "format": "double"
+                    },
+                    "Rate": {
+                        "type": "number",
+                        "format": "double"
+                    },
+                    "WorkTicketNumber": {
+                        "type": "string"
+                    }
+                }
+            },
+            "TeamSoftware.Azure.Handler.Http.Models.ErrorResponse": {
+                "type": "object",
+                "properties": {
+                    "Errors": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/TeamSoftware.Azure.Handler.Models.ValidationError"
+                        }
+                    },
+                    "Success": {
+                        "type": "boolean"
+                    },
+                    "ServerResponse": {
+                        "type": "string"
+                    }
+                },
+                "example": {
+                    "errors": [
+                        {
+                            "attemptedValue": null,
+                            "fieldName": "TenantId",
+                            "errorMessage": "TenantId must be a GUID."
+                        }
+                    ],
+                    "success": false,
+                    "serverResponse": "Operation failed! See the Errors for more information."
+                }
+            },
+            "TeamSoftware.Azure.Handler.Models.ValidationError": {
+                "type": "object",
+                "properties": {
+                    "AttemptedValue": {
+                        "type": "string"
+                    },
+                    "FieldName": {
+                        "type": "string"
+                    },
+                    "ErrorMessage": {
+                        "type": "string"
+                    }
+                }
+            },
+            "TeamSoftware.Azure.Handler.Http.Models.Response": {
+                "type": "object",
+                "properties": {
+                    "Success": {
+                        "type": "boolean"
+                    },
+                    "ServerResponse": {
+                        "type": "string"
+                    }
+                },
+                "example": {
+                    "success": false,
+                    "serverResponse": "Oops, something went wrong."
+                }
+            },
+            "TeamSoftware.WinTeam.Timekeeping.Models.Requests.PatchTimekeepingRequest": {
+                "type": "object",
+                "properties": {
+                    "Id": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "EmployeeNumber": {
+                        "type": "integer",
+                        "format": "int32",
+                        "nullable": true
+                    },
+                    "JobNumber": {
+                        "type": "string"
+                    },
+                    "WorkDate": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                    },
+                    "CategoryDetailId": {
+                        "type": "integer",
+                        "format": "int32",
+                        "nullable": true
+                    },
+                    "RecordTypeID": {
+                        "type": "string",
+                        "format": "byte",
+                        "nullable": true
+                    },
+                    "SequenceNumber": {
+                        "type": "string",
+                        "format": "byte",
+                        "nullable": true
+                    },
+                    "PaidByCheckID": {
+                        "type": "integer",
+                        "format": "int32",
+                        "nullable": true
+                    },
+                    "Hours": {
+                        "type": "number",
+                        "format": "double",
+                        "nullable": true
+                    },
+                    "InTime": {
+                        "$ref": "#/components/schemas/System.Nullable_System.TimeSpan_"
+                    },
+                    "OutTime": {
+                        "$ref": "#/components/schemas/System.Nullable_System.TimeSpan_"
+                    },
+                    "Lunch": {
+                        "type": "number",
+                        "format": "double",
+                        "nullable": true
+                    },
+                    "Rate": {
+                        "type": "number",
+                        "format": "double",
+                        "nullable": true
+                    },
+                    "WorkTicketNumber": {
+                        "type": "integer",
+                        "format": "int32",
+                        "nullable": true
+                    },
+                    "ForceOTToThisJob": {
+                        "type": "boolean",
+                        "nullable": true
+                    }
+                },
+                "example": [
+                    {
+                        "op": "replace",
+                        "path": "/hours",
+                        "value": 8
+                    },
+                    {
+                        "op": "replace",
+                        "path": "/rate",
+                        "value": 15.5
+                    }
+                ]
+            },
+            "System.Nullable_System.TimeSpan_": {
+                "type": "object",
+                "properties": {
+                    "HasValue": {
+                        "type": "boolean"
+                    },
+                    "Value": {
+                        "$ref": "#/components/schemas/System.TimeSpan"
+                    }
+                }
+            },
+            "System.TimeSpan": {
+                "type": "object",
+                "properties": {
+                    "Ticks": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "Days": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "Hours": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "Milliseconds": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "Minutes": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "Seconds": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "TotalDays": {
+                        "type": "number",
+                        "format": "double"
+                    },
+                    "TotalHours": {
+                        "type": "number",
+                        "format": "double"
+                    },
+                    "TotalMilliseconds": {
+                        "type": "number",
+                        "format": "double"
+                    },
+                    "TotalMinutes": {
+                        "type": "number",
+                        "format": "double"
+                    },
+                    "TotalSeconds": {
+                        "type": "number",
+                        "format": "double"
+                    }
+                }
+            },
+            "TeamSoftware.WinTeam.Timekeeping.Models.Requests.OvertimeRequest": {
+                "type": "object",
+                "properties": {
+                    "StartDate": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "EndDate": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "JobNumberFilter": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "EmployeeNumberFilter": {
+                        "type": "array",
+                        "items": {
+                            "type": "integer",
+                            "format": "int32"
+                        }
+                    }
+                },
+                "example": {
+                    "startDate": "2020-08-22T01:53:00.0000000+00:00",
+                    "endDate": "2020-10-22T01:53:00.0000000+00:00",
+                    "jobNumberFilter": [
+                        "10048A"
+                    ],
+                    "employeeNumberFilter": [
+                        1550
+                    ]
+                }
+            },
+            "TeamSoftware.WinTeam.Timekeeping.Models.Response.BlobStorageResponse": {
+                "type": "object",
+                "properties": {
+                    "Uri": {
+                        "type": "string"
+                    }
+                },
+                "example": {
+                    "uri": "uriExample.site"
+                }
+            },
+            "TeamSoftware.WinTeam.Timekeeping.Functions.Models.Requests.PostTimekeepingRequest": {
+                "type": "object",
+                "properties": {
+                    "EmployeeNumber": {
+                        "type": "integer",
+                        "format": "int32",
+                        "nullable": true
+                    },
+                    "JobNumber": {
+                        "type": "string"
+                    },
+                    "WorkDate": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                    },
+                    "Hours": {
+                        "type": "number",
+                        "format": "double",
+                        "nullable": true
+                    },
+                    "CategoryDetailId": {
+                        "type": "integer",
+                        "format": "int32",
+                        "nullable": true
+                    },
+                    "InTime": {
+                        "$ref": "#/components/schemas/System.TimeSpan"
+                    },
+                    "OutTime": {
+                        "$ref": "#/components/schemas/System.TimeSpan"
+                    },
+                    "Lunch": {
+                        "type": "number",
+                        "format": "double",
+                        "nullable": true
+                    },
+                    "Rate": {
+                        "type": "number",
+                        "format": "double",
+                        "nullable": true
+                    },
+                    "WorkTicketNumber": {
+                        "type": "integer",
+                        "format": "int32",
+                        "nullable": true
+                    }
+                },
+                "example": {
+                    "employeeNumber": 1002,
+                    "jobNumber": "11252A",
+                    "workDate": "2022-10-10T12:00:00.0000000+00:00",
+                    "hours": 8,
+                    "categoryDetailId": 1,
+                    "inTime": "2026-04-09T04:00:00.0000000+00:00",
+                    "outTime": "2026-04-09T12:00:00.0000000+00:00",
+                    "lunch": null,
+                    "rate": null,
+                    "workTicketNumber": null
+                }
+            },
+            "TeamSoftware.WinTeam.Timekeeping.Functions.Requests.PostTimekeepingBatchRequest": {
+                "type": "object",
+                "properties": {
+                    "TimekeepingEntries": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/TeamSoftware.WinTeam.Timekeeping.Functions.Models.TimekeepingBatchEntity"
+                        }
+                    }
+                },
+                "example": {
+                    "timekeepingEntries": [
+                        {
+                            "jobNumber": "11252A",
+                            "workDate": "2022-10-10T12:00:00.0000000+00:00",
+                            "hours": 8,
+                            "categoryDetailId": 1,
+                            "inTime": "2026-04-09T04:00:00.0000000+00:00",
+                            "outTime": "2026-04-09T12:00:00.0000000+00:00",
+                            "lunch": null,
+                            "rate": null,
+                            "workTicketNumber": null
+                        },
+                        {
+                            "jobNumber": 10002,
+                            "workDate": "2022-10-10T12:00:00.0000000+00:00",
+                            "hours": 8,
+                            "categoryDetailId": 1,
+                            "inTime": "2026-04-09T05:00:00.0000000+00:00",
+                            "outTime": "2026-04-09T01:00:00.0000000+00:00",
+                            "lunch": 1,
+                            "rate": 10,
+                            "workTicketNumber": null
+                        }
+                    ]
+                }
+            },
+            "TeamSoftware.WinTeam.Timekeeping.Functions.Models.TimekeepingBatchEntity": {
+                "type": "object",
+                "properties": {
+                    "JobNumber": {
+                        "type": "string"
+                    },
+                    "WorkDate": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                    },
+                    "Hours": {
+                        "type": "number",
+                        "format": "double",
+                        "nullable": true
+                    },
+                    "CategoryDetailId": {
+                        "type": "integer",
+                        "format": "int32",
+                        "nullable": true
+                    },
+                    "InTime": {
+                        "$ref": "#/components/schemas/System.Nullable_System.TimeSpan_"
+                    },
+                    "OutTime": {
+                        "$ref": "#/components/schemas/System.Nullable_System.TimeSpan_"
+                    },
+                    "Lunch": {
+                        "type": "number",
+                        "format": "double",
+                        "nullable": true
+                    },
+                    "Rate": {
+                        "type": "number",
+                        "format": "double",
+                        "nullable": true
+                    },
+                    "WorkTicketNumber": {
+                        "type": "integer",
+                        "format": "int32",
+                        "nullable": true
+                    }
+                }
+            },
+            "TeamSoftware.WinTeam.Timekeeping.Functions.Models.Responses.PostTimekeepingBatchResponse": {
+                "type": "object",
+                "properties": {
+                    "Request": {
+                        "$ref": "#/components/schemas/TeamSoftware.WinTeam.Timekeeping.Models.Response.TimekeepingResponse"
+                    },
+                    "Errors": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/TeamSoftware.Azure.Handler.Models.ValidationError"
+                        }
+                    },
+                    "Status": {
+                        "$ref": "#/components/schemas/TeamSoftware.Azure.Handler.Http.Models.Response"
+                    }
+                },
+                "example": {
+                    "data": [
+                        {
+                            "request": {
+                                "Id": null,
+                                "EmployeeNumber": 1991,
+                                "jobNumber": 10002,
+                                "workDate": "2022-10-10T12:00:00.0000000+00:00",
+                                "hours": 8,
+                                "categoryDetailId": 1,
+                                "inTime": "2026-04-09T05:00:00.0000000+00:00",
+                                "outTime": "2026-04-09T01:00:00.0000000+00:00",
+                                "lunch": 1,
+                                "rate": 10,
+                                "workTicketNumber": null
+                            },
+                            "status": {
+                                "success": false,
+                                "serverResponse": null
+                            },
+                            "errors": null
+                        },
+                        {
+                            "request": {
+                                "id": null,
+                                "employeeNumber": 1991,
+                                "jobNumber": "11252A",
+                                "workDate": "2022-10-10T12:00:00.0000000+00:00",
+                                "hours": 8,
+                                "categoryDetailId": 1,
+                                "inTime": null,
+                                "outTime": "2026-04-09T12:00:00.0000000+00:00",
+                                "lunch": null,
+                                "rate": null,
+                                "workTicketNumber": null
+                            },
+                            "status": {
+                                "success": false,
+                                "serverResponse": "Operation failed! See the Errors for more information."
+                            },
+                            "errors": [
+                                {
+                                    "fieldName": "inTime",
+                                    "errorMessage": "'in Time' should not be empty.",
+                                    "attemptedValue": 2500
+                                }
+                            ]
+                        }
+                    ],
+                    "summary": {
+                        "failureCount": 2,
+                        "successCount": 0,
+                        "total": 2
+                    }
+                }
+            },
+            "TeamSoftware.WinTeam.Timekeeping.Models.Response.TimekeepingResponse": {
+                "type": "object",
+                "properties": {
+                    "Id": {
+                        "type": "integer",
+                        "format": "int32",
+                        "nullable": true
+                    },
+                    "EmployeeNumber": {
+                        "type": "integer",
+                        "format": "int32",
+                        "nullable": true
+                    },
+                    "JobNumber": {
+                        "type": "string"
+                    },
+                    "WorkDate": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                    },
+                    "Hours": {
+                        "type": "number",
+                        "format": "double",
+                        "nullable": true
+                    },
+                    "CategoryDetailId": {
+                        "type": "integer",
+                        "format": "int32",
+                        "nullable": true
+                    },
+                    "InTime": {
+                        "$ref": "#/components/schemas/System.Nullable_System.TimeSpan_"
+                    },
+                    "OutTime": {
+                        "$ref": "#/components/schemas/System.Nullable_System.TimeSpan_"
+                    },
+                    "Lunch": {
+                        "type": "number",
+                        "format": "double",
+                        "nullable": true
+                    },
+                    "Rate": {
+                        "type": "number",
+                        "format": "double",
+                        "nullable": true
+                    },
+                    "WorkTicketNumber": {
+                        "type": "integer",
+                        "format": "int32",
+                        "nullable": true
+                    }
+                }
+            }
+        },
+        "securitySchemes": {
+            "apiKeyHeader": {
+                "type": "apiKey",
+                "name": "Ocp-Apim-Subscription-Key",
+                "in": "header"
+            },
+            "apiKeyQuery": {
+                "type": "apiKey",
+                "name": "subscription-key",
+                "in": "query"
+            }
+        }
+    },
+    "security": [
+        {
+            "apiKeyHeader": []
+        },
+        {
+            "apiKeyQuery": []
+        }
+    ]
+}
