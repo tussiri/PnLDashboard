@@ -737,7 +737,7 @@ TRAILING_JOB_RATE_BASIS = "trailing_job_rate"
 PRICE_UNPRICED_SQL = """
 WITH closed AS (
   SELECT job_number, company, month, direct_labor, actual_hours
-  FROM core.fact_job_cost_month
+  FROM mart.v_job_cost_month_effective
   WHERE (month + interval '1 month' - interval '1 day')::date + %(lag_days)s::int < current_date
     AND coalesce(actual_hours, 0) > 0 AND coalesce(direct_labor, 0) > 0
 ),

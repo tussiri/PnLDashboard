@@ -248,7 +248,7 @@ jc AS (
          c.revenue, c.direct_labor, c.payroll_taxes_insurance, c.materials, c.subcontractors, c.equipment_supplies,
          c.other_direct_costs, c.total_direct_costs, c.gross_profit, c.budget_revenue, c.budget_direct_costs, c.budget_labor,
          c.budget_hours, c.actual_hours, c.overtime_hours, c.data_quality_status
-  FROM core.fact_job_cost_month c
+  FROM mart.v_job_cost_month_effective c
   JOIN jobs jb ON jb.job_number = c.job_number
 ),
 parent_jc AS (
