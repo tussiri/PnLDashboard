@@ -1367,6 +1367,17 @@ export interface LeadershipSiteResponse {
   photos: { configured: boolean; project_id: string | null; items: LeadershipPhoto[] | null; error: string | null }
 }
 
+export interface LeadershipVendorsResponse {
+  account: string
+  since: string
+  vendor_type_ids: string[]
+  total: number
+  by_vendor: { vendor_number: number; vendor_name: string; amount: number; invoices: number }[]
+  by_site: { company: string; job_number: string; site_name: string; amount: number; invoices: number }[]
+  by_month: { month: string; amount: number; invoices: number }[]
+  lines: (LeadershipInvoiceLine & { company: string; job_number: string; site_name: string })[]
+}
+
 export type LeadershipImportKind = 'pay_report' | 'job_cost'
 
 export interface LeadershipImportFile {

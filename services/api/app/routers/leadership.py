@@ -204,13 +204,25 @@ def leadership_site(company: str, job_number: str, weeks: int = Query(13, ge=1, 
     return {"source": source_block(), "site": site_out, "weeks": rows, "invoices": invoices, "photos": photos}
 
 
-def subcontractor_invoices(cursor: Any, job_key: int, months: int) -> dict[str, Any]:
-    """AP GL distribution lines coded to the job from vendors whose type is a subcontractor type
-    (setting subcontractor_vendor_type_ids, default [6]), newest first."""
+def subcontractor_type_ids(cursor: Any) -> list[str]:
+    """Vendor type ids that count as subcontractors (setting subcontractor_vendor_type_ids, default [6])."""
     cursor.execute("SELECT value FROM ops.app_setting WHERE key = 'subcontractor_vendor_type_ids'")
     row = cursor.fetchone()
-    type_ids = [str(v) for v in (row["value"] if row and isinstance(row["value"], list) else [6])]
-    since = (date.today().replace(day=1) - timedelta(days=31 * (months - 1))).replace(day=1)
+    return [str(v) for v in (row["value"] if row and isinstance(row["value"], list) else [6])]
+
+
+def months_back(months: int) -> date:
+    """First day of the month `months - 1` months before this one."""
+    first = date.today().replace(day=1)
+    for _ in range(months - 1):
+        first = (first - timedelta(days=1)).replace(day=1)
+    return first
+
+
+def subcontractor_invoices(cursor: Any, job_key: int, months: int) -> dict[str, Any]:
+    """AP GL distribution lines coded to the job from subcontractor vendors, newest first."""
+    type_ids = subcontractor_type_ids(cursor)
+    since = months_back(months)
     cursor.execute(
         """
         SELECT d.invoice_number, d.invoice_date, d.gl_account_number, d.amount, v.vendor_number, v.vendor_name,
@@ -224,6 +236,50 @@ def subcontractor_invoices(cursor: Any, job_key: int, months: int) -> dict[str, 
     )
     lines = [jsonable(dict(r)) for r in cursor.fetchall()]
     return {"since": since.isoformat(), "vendor_type_ids": type_ids, "total": round(sum(l["amount"] or 0 for l in lines), 2), "lines": lines}
+
+
+@router.get("/vendors")
+def leadership_vendors(account: str = Query(..., description="An account slug"), months: int = Query(6, ge=1, le=24)) -> dict[str, Any]:
+    """Subcontractor invoice lines coded to the account's sites (AP GL distributions from subcontractor
+    vendors), with totals by vendor, by site and by month."""
+    with connection() as conn, conn.cursor() as cursor:
+        cursor.execute("SELECT 1 FROM ops.account WHERE slug = %s", (account,))
+        if cursor.fetchone() is None:
+            raise HTTPException(status_code=404, detail=f"Unknown account {account!r}")
+        type_ids = subcontractor_type_ids(cursor)
+        since = months_back(months)
+        cursor.execute(
+            """
+            SELECT d.invoice_number, d.invoice_date, d.gl_account_number, d.amount, v.vendor_number, v.vendor_name, v.vendor_type_id,
+                   j.company, j.job_number, j.job_name AS site_name
+            FROM core.fact_ap_distribution d
+            JOIN core.dim_vendor v ON v.vendor_number = d.vendor_number AND v.source = d.source
+            JOIN core.dim_job j ON j.job_key = d.job_key AND j.valid_to IS NULL
+            JOIN ops.account_job aj ON aj.company = j.company AND aj.job_number = j.job_number
+            WHERE aj.account_slug = %s AND d.invoice_date >= %s AND v.vendor_type_id::text = ANY (%s)
+            ORDER BY d.invoice_date DESC, d.invoice_number
+            """,
+            (account, since, type_ids),
+        )
+        lines = [jsonable(dict(r)) for r in cursor.fetchall()]
+
+    def group(key: Any, name: Any) -> list[dict[str, Any]]:
+        out: dict[Any, dict[str, Any]] = {}
+        for line in lines:
+            k = key(line)
+            g = out.setdefault(k, {**name(line), "amount": 0.0, "invoices": set()})
+            g["amount"] += line["amount"] or 0
+            g["invoices"].add(line["invoice_number"])
+        return sorted(({**g, "amount": round(g["amount"], 2), "invoices": len(g["invoices"])} for g in out.values()), key=lambda g: -g["amount"])
+
+    return {
+        "account": account, "since": since.isoformat(), "vendor_type_ids": type_ids,
+        "total": round(sum(l["amount"] or 0 for l in lines), 2),
+        "by_vendor": group(lambda l: l["vendor_number"], lambda l: {"vendor_number": l["vendor_number"], "vendor_name": l["vendor_name"]}),
+        "by_site": group(lambda l: (l["company"], l["job_number"]), lambda l: {"company": l["company"], "job_number": l["job_number"], "site_name": l["site_name"]}),
+        "by_month": sorted(group(lambda l: l["invoice_date"][:7], lambda l: {"month": f"{l['invoice_date'][:7]}-01"}), key=lambda g: g["month"]),
+        "lines": lines,
+    }
 
 
 # ── administration ──────────────────────────────────────────────────────────

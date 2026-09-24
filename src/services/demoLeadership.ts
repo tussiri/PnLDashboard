@@ -6,7 +6,7 @@
  */
 import fixture from '../leadership/fixtures/plano-we-2026-09-20.json'
 import type {
-  LeadershipAccount, LeadershipRole, LeadershipConfig, LeadershipRow, LeadershipRowsQuery, LeadershipRowsResponse, LeadershipSiteResponse, LeadershipWeek, SourceBlock,
+  LeadershipAccount, LeadershipRole, LeadershipConfig, LeadershipRow, LeadershipRowsQuery, LeadershipRowsResponse, LeadershipSiteResponse, LeadershipVendorsResponse, LeadershipWeek, SourceBlock,
 } from './apiTypes'
 
 export const DEMO_LEADERSHIP_WEEK = '2026-09-14'
@@ -127,4 +127,14 @@ export function demoLeadershipSite(company: string, jobNumber: string, query: { 
     invoices: { since: '2026-04-01', vendor_type_ids: ['6'], total: last?.prior_sub ?? 0, lines: last && last.prior_sub > 0 ? [{ invoice_number: 'DEMO-1', invoice_date: '2026-08-31', gl_account_number: '44000', amount: last.prior_sub, vendor_number: 1, vendor_name: 'Demo subcontractor', vendor_type_id: 6 }] : [] },
     photos: { configured: false, project_id: null, items: null, error: null },
   }
+}
+
+export function demoLeadershipVendors(account: string): LeadershipVendorsResponse {
+  const rows = baseRows().filter((r) => r.account_slug === account && r.prior_sub > 0)
+  const lines = rows.map((r, i) => ({ invoice_number: `DEMO-${i + 1}`, invoice_date: '2026-08-31', gl_account_number: '44000', amount: r.prior_sub, vendor_number: 1 + (i % 2), vendor_name: i % 2 ? 'Demo floor care' : 'Demo subcontractor', vendor_type_id: 6, company: r.company ?? '', job_number: r.job_number, site_name: r.site_name }))
+  const total = lines.reduce((a, l) => a + l.amount, 0)
+  const byVendor = [1, 2].map((n) => ({ vendor_number: n, vendor_name: n === 2 ? 'Demo floor care' : 'Demo subcontractor', amount: lines.filter((l) => l.vendor_number === n).reduce((a, l) => a + l.amount, 0), invoices: lines.filter((l) => l.vendor_number === n).length })).filter((v) => v.invoices)
+  return { account, since: '2026-04-01', vendor_type_ids: ['6'], total, by_vendor: byVendor,
+    by_site: lines.map((l) => ({ company: l.company, job_number: l.job_number, site_name: l.site_name, amount: l.amount, invoices: 1 })),
+    by_month: lines.length ? [{ month: '2026-08-01', amount: total, invoices: lines.length }] : [], lines }
 }
