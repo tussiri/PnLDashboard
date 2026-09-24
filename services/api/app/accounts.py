@@ -5,7 +5,8 @@
 * The seed (config/accounts/seed.json) is loaded into an empty `ops.account`. Reloading adds
   missing accounts, segments and job rows and never overwrites a mapping an administrator changed.
 * After every mart rebuild `auto_assign` maps jobs first seen since the seed: a current job whose
-  parent-account label is in an account's `source_parent_accounts` gets a row with the segment
+  parent job is mapped joins that job's account, else a job whose parent-account label is in an
+  account's `source_parent_accounts` joins that account. Either way it gets the segment
   `resolve_segment` picks, `assigned_by = 'auto'` and `needs_review = true`.
 """
 from __future__ import annotations
@@ -18,6 +19,8 @@ from typing import Any
 ROLES = ("site", "catch_all", "non_billed")
 SEGMENT_SOURCES = ("explicit", "sub_account", "company", "fallback")
 REVENUE_METHODS = ("monthly_div", "weekly_billing", "per_visit")
+REVENUE_ALLOCATIONS = ("none", "budget_hours")
+COST_BASES = ("labor", "labor_plus_vendor")
 
 
 def seed_path() -> Path:
@@ -50,6 +53,10 @@ def validate_seed(data: dict[str, Any]) -> None:
         slugs.add(slug)
         if account.get("segment_source", "explicit") not in SEGMENT_SOURCES:
             raise ValueError(f"{slug}: segment_source must be one of {SEGMENT_SOURCES}")
+        if account.get("revenue_allocation", "none") not in REVENUE_ALLOCATIONS:
+            raise ValueError(f"{slug}: revenue_allocation must be one of {REVENUE_ALLOCATIONS}")
+        if account.get("cost_basis", "labor") not in COST_BASES:
+            raise ValueError(f"{slug}: cost_basis must be one of {COST_BASES}")
         if account.get("revenue_method", "monthly_div") not in REVENUE_METHODS:
             raise ValueError(f"{slug}: revenue_method must be one of {REVENUE_METHODS}")
         segment_names = {s["name"] for s in account.get("segments", [])}
@@ -86,16 +93,16 @@ def apply_seed(cursor: Any, data: dict[str, Any]) -> dict[str, int]:
             """
             INSERT INTO ops.account (slug, name, featured, sort, target_labor_pct, watch_band, revenue_method,
                                      revenue_divisor, budget_reliability_ratio, source_parent_accounts,
-                                     segment_source, fallback_segment, updated_by)
+                                     segment_source, fallback_segment, revenue_allocation, cost_basis, updated_by)
             VALUES (%(slug)s, %(name)s, %(featured)s, %(sort)s, %(target_labor_pct)s, %(watch_band)s, %(revenue_method)s,
                     %(revenue_divisor)s, %(budget_reliability_ratio)s, %(source_parent_accounts)s,
-                    %(segment_source)s, %(fallback_segment)s, 'seed')
+                    %(segment_source)s, %(fallback_segment)s, %(revenue_allocation)s, %(cost_basis)s, 'seed')
             ON CONFLICT (slug) DO NOTHING
             """,
             {
                 "featured": True, "sort": 100, "target_labor_pct": 0.645, "watch_band": 0.10, "revenue_method": "monthly_div",
                 "revenue_divisor": 4.33, "budget_reliability_ratio": 0.80, "source_parent_accounts": [],
-                "segment_source": "explicit", **{k: v for k, v in account.items() if k not in ("segments", "jobs")},
+                "segment_source": "explicit", "revenue_allocation": "none", "cost_basis": "labor", **{k: v for k, v in account.items() if k not in ("segments", "jobs")},
             },
         )
         counts["accounts"] += cursor.rowcount
@@ -130,17 +137,32 @@ def ensure_seeded(cursor: Any) -> dict[str, int] | None:
 
 
 AUTO_ASSIGN_SQL = """
-WITH candidates AS (
-  SELECT DISTINCT ON (j.company, j.job_number)
-         j.company, j.job_number, a.slug, a.segment_source, a.fallback_segment,
-         (SELECT m.sub_account FROM mart.job_month m WHERE m.job_key = j.job_key AND m.sub_account IS NOT NULL
-           ORDER BY m.month DESC LIMIT 1) AS sub_account
-  FROM core.dim_job j
-  JOIN core.dim_parent_account pa ON pa.parent_account_key = j.parent_account_key
-  JOIN ops.account a ON pa.account_name = ANY (a.source_parent_accounts)
+WITH unmapped AS (
+  SELECT j.* FROM core.dim_job j
   WHERE j.valid_to IS NULL AND j.job_number IS NOT NULL AND j.company IS NOT NULL
     AND NOT EXISTS (SELECT 1 FROM ops.account_job x WHERE x.company = j.company AND x.job_number = j.job_number)
-  ORDER BY j.company, j.job_number, a.sort
+),
+matches AS (
+  -- 1: the job's parent job is mapped (a family stays in one account; a parent's billing may be
+  --    allocated over its children)
+  SELECT j.job_key, j.company, j.job_number, a.slug, a.segment_source, a.fallback_segment, 0 AS rank, a.sort
+  FROM unmapped j
+  JOIN ops.account_job pj ON pj.company = j.company AND pj.job_number = j.parent_job_number
+  JOIN ops.account a ON a.slug = pj.account_slug
+  UNION ALL
+  -- 2: the job's current parent-account label feeds a featured account
+  SELECT j.job_key, j.company, j.job_number, a.slug, a.segment_source, a.fallback_segment, 1 AS rank, a.sort
+  FROM unmapped j
+  JOIN core.dim_parent_account pa ON pa.parent_account_key = j.parent_account_key
+  JOIN ops.account a ON pa.account_name = ANY (a.source_parent_accounts)
+),
+candidates AS (
+  SELECT DISTINCT ON (m.company, m.job_number)
+         m.company, m.job_number, m.slug, m.segment_source, m.fallback_segment,
+         (SELECT jm.sub_account FROM mart.job_month jm WHERE jm.job_key = m.job_key AND jm.sub_account IS NOT NULL
+           ORDER BY jm.month DESC LIMIT 1) AS sub_account
+  FROM matches m
+  ORDER BY m.company, m.job_number, m.rank, m.sort
 )
 SELECT c.*, array(SELECT s.name FROM ops.account_segment s WHERE s.account_slug = c.slug ORDER BY s.sort) AS segments
 FROM candidates c

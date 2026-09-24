@@ -1225,6 +1225,10 @@ export interface LeadershipAccount {
   source_parent_accounts: string[]
   segment_source: LeadershipSegmentSource
   fallback_segment: string
+  /** budget_hours: a parent job's billing is spread over its child sites by budget hours. */
+  revenue_allocation: 'none' | 'budget_hours'
+  /** labor: labor % (the reference); labor_plus_vendor: cost % = (labor + vendor) / invoice. */
+  cost_basis: 'labor' | 'labor_plus_vendor'
   segments: LeadershipSegment[]
   sites: number
   needs_review: number
@@ -1283,6 +1287,8 @@ export interface LeadershipRow {
   days_with_labor: number
   revenue_month: string | null
   revenue_month_amount: number
+  /** Revenue moved onto (+) or off (-) this row by the account's parent-job allocation. */
+  revenue_allocated: number
   revenue_month_basis: string | null
   invoice_week: number | null
   prior_revenue: number
@@ -1393,5 +1399,5 @@ export interface LeadershipAccountJob {
   is_active: boolean | null
 }
 
-export type LeadershipAccountPatch = Partial<Pick<LeadershipAccount, 'name' | 'featured' | 'sort' | 'target_labor_pct' | 'watch_band' | 'revenue_method' | 'revenue_divisor' | 'budget_reliability_ratio' | 'source_parent_accounts' | 'segment_source' | 'fallback_segment'>>
+export type LeadershipAccountPatch = Partial<Pick<LeadershipAccount, 'name' | 'featured' | 'sort' | 'target_labor_pct' | 'watch_band' | 'revenue_method' | 'revenue_divisor' | 'budget_reliability_ratio' | 'source_parent_accounts' | 'segment_source' | 'fallback_segment' | 'revenue_allocation' | 'cost_basis'>>
 export interface LeadershipJobMapping { account_slug: string | null; segment?: string | null; role?: LeadershipRole; companycam_project_id?: string | null }

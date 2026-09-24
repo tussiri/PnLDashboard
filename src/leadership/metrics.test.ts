@@ -115,6 +115,41 @@ describe('leadership metrics against the Plano reference, week ending 2026-09-20
   })
 })
 
+describe('cost basis, segment targets and allocation', () => {
+  const base = { ...rows[1], sub_week: 1000 } // Academy HS: invoice 12642 / 4.33, labor 2431.26
+  it('ignores vendor cost under the labor basis and counts it under labor_plus_vendor', () => {
+    const labor = siteMetrics(base, opts)
+    expect(labor.measurePct).toBeCloseTo(labor.laborPct!, 12)
+    expect(labor.cost).toBe(2431.26)
+    const cost = siteMetrics(base, { ...opts, costBasis: 'labor_plus_vendor' })
+    expect(cost.cost).toBeCloseTo(3431.26, 8)
+    expect(cost.measurePct!).toBeCloseTo(3431.26 / (12642 / 4.33), 10)
+    expect(cost.laborPct!).toBeCloseTo(labor.laborPct!, 12)
+    expect(cost.overDollars).toBeCloseTo(3431.26 - (12642 / 4.33) * 0.645, 8)
+    expect(cost.status).toBe('over')
+  })
+
+  it('judges a fully subcontracted site by $ over target with no hours over', () => {
+    const sub = siteMetrics({ ...base, labor: 0, hours: 0, ot_hours: 0, ot_dollars: 0, sub_week: 2500 }, { ...opts, costBasis: 'labor_plus_vendor' })
+    expect(sub.overDollars).toBeCloseTo(2500 - (12642 / 4.33) * 0.645, 8)
+    expect(sub.overHours).toBe(0)
+  })
+
+  it('applies a segment target override to sites and segment rollups', () => {
+    const s = accountSummary(rows, { ...opts, segmentTargets: { 'High School': 0.7 } }, fixture.segments)
+    const hs = s.segments.find((x) => x.segment === 'High School')!
+    expect(hs.target).toBe(0.7)
+    expect(job('801').target).toBe(0.645)
+    expect(s.sites.find((r) => r.job_number === '801')!.target).toBe(0.7)
+    expect(hs.rollup.over).toBeLessThan(exp.segments['High School'].over)
+  })
+
+  it('notes revenue allocated from a parent job', () => {
+    const s = accountSummary([{ ...rows[1], revenue_allocated: 400 }, { ...rows[2], revenue_allocated: 0 }], opts)
+    expect(s.notes.find((n) => n.kind === 'revenue_allocated')).toEqual({ kind: 'revenue_allocated', jobs: 1, amount: 400 })
+  })
+})
+
 describe('leadership formats', () => {
   it('matches the reference formatters', () => {
     expect(money(1234.6)).toBe('$1,235')

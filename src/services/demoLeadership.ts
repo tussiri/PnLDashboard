@@ -63,7 +63,7 @@ function baseRows(): LeadershipRow[] {
     ...r,
     week_start: DEMO_LEADERSHIP_WEEK, week_end: addDays(DEMO_LEADERSHIP_WEEK, 6),
     needs_review: false, labor_basis: 'pay_report' as const, employees: Math.max(1, Math.round(r.hours / 30)), days_with_labor: r.hours > 0 ? 7 : 0,
-    revenue_month: '2026-08-01', revenue_month_basis: 'job_cost', invoice_week: null,
+    revenue_month: '2026-08-01', revenue_allocated: 0, revenue_month_basis: 'job_cost', invoice_week: null,
     prior_labor_basis: 'pay_report' as const, prior_sub_basis: r.prior_sub > 0 ? ('ap_distribution' as const) : ('job_cost' as const),
     delivery_model: 'self_perform' as const, sub_week: 0, sub_week_basis: null, consumables_cost: null, consumables_basis: null,
     latitude: 33.02 + jitter(`${r.job_number}-lat`, 0.004) - 1, longitude: -96.72 + jitter(`${r.job_number}-lon`, 0.004) - 1,
@@ -89,7 +89,7 @@ function demoAccounts(): LeadershipAccount[] {
   return SPECS.map((s) => ({
     slug: s.slug, name: s.name, featured: true, sort: s.sort, target_labor_pct: s.target ?? 0.645, watch_band: 0.1,
     revenue_method: 'monthly_div', revenue_divisor: 4.33, budget_reliability_ratio: 0.8, source_parent_accounts: [s.name],
-    segment_source: 'explicit', fallback_segment: s.fallback, segments: s.segments.map((name, i) => ({ name, sort: i + 1, target_labor_pct: null })),
+    segment_source: 'explicit', fallback_segment: s.fallback, revenue_allocation: 'none', cost_basis: ['amazon', 'fedex', 'whole-foods'].includes(s.slug) ? 'labor_plus_vendor' : 'labor', segments: s.segments.map((name, i) => ({ name, sort: i + 1, target_labor_pct: null })),
     sites: rows.filter((r) => r.account_slug === s.slug).length, needs_review: 0, updated_at: '2026-09-21T06:00:00Z', updated_by: 'demo',
   }))
 }

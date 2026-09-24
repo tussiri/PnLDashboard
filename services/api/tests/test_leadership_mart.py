@@ -7,7 +7,8 @@ from pathlib import Path
 
 from app.leadership import REBUILD_SQL
 
-MIGRATION = Path(__file__).resolve().parents[3] / "database" / "migrations" / "030_leadership_week.sql"
+MIGRATIONS = Path(__file__).resolve().parents[3] / "database" / "migrations"
+DDL_FILES = ("030_leadership_week.sql", "031_revenue_allocation_cost_basis.sql")
 
 
 def _top_level_items(text: str) -> list[str]:
@@ -31,9 +32,9 @@ def test_insert_and_select_lists_align_with_the_table():
     columns = [c.strip() for c in re.search(r"INSERT INTO mart\.leadership_week \((.*?)\)\s*WITH", REBUILD_SQL, re.S)[1].split(",")]
     final_select = REBUILD_SQL[REBUILD_SQL.rindex("\nSELECT") + len("\nSELECT"):REBUILD_SQL.rindex("FROM assembled a")]
     assert len(_top_level_items(final_select)) == len(columns)
-    ddl = MIGRATION.read_text()
+    ddl = "\n".join((MIGRATIONS / f).read_text() for f in DDL_FILES)
     for column in columns:
-        assert re.search(rf"^\s+{column} ", ddl, re.M), column
+        assert re.search(rf"^\s+(ADD COLUMN IF NOT EXISTS )?{column} ", ddl, re.M), column
 
 
 def test_takes_the_subcontract_gl_range_as_parameters():

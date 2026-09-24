@@ -35,7 +35,9 @@
      "target_labor_pct": null
     }
    ],
-   "jobs": []
+   "jobs": [],
+   "revenue_allocation": "none",
+   "cost_basis": "labor_plus_vendor"
   },
   {
    "slug": "fedex",
@@ -66,7 +68,9 @@
      "target_labor_pct": null
     }
    ],
-   "jobs": []
+   "jobs": [],
+   "revenue_allocation": "none",
+   "cost_basis": "labor_plus_vendor"
   },
   {
    "slug": "plano-isd",
@@ -622,7 +626,9 @@
      "segment": null,
      "role": "non_billed"
     }
-   ]
+   ],
+   "revenue_allocation": "none",
+   "cost_basis": "labor"
   },
   {
    "slug": "white-settlement-isd",
@@ -665,6 +671,12 @@
     {
      "company": "Crane IFS",
      "job_number": "112",
+     "segment": null,
+     "role": "catch_all"
+    },
+    {
+     "company": "Crane IFS",
+     "job_number": "113",
      "segment": "Support & Special Programs",
      "role": "site"
     },
@@ -758,7 +770,9 @@
      "segment": "Support & Special Programs",
      "role": "site"
     }
-   ]
+   ],
+   "revenue_allocation": "budget_hours",
+   "cost_basis": "labor"
   },
   {
    "slug": "henderson-isd",
@@ -870,7 +884,9 @@
      "segment": "Support & Special Programs",
      "role": "site"
     }
-   ]
+   ],
+   "revenue_allocation": "none",
+   "cost_basis": "labor"
   },
   {
    "slug": "aldi",
@@ -905,7 +921,9 @@
      "target_labor_pct": null
     }
    ],
-   "jobs": []
+   "jobs": [],
+   "revenue_allocation": "none",
+   "cost_basis": "labor"
   },
   {
    "slug": "whole-foods",
@@ -940,7 +958,9 @@
      "target_labor_pct": null
     }
    ],
-   "jobs": []
+   "jobs": [],
+   "revenue_allocation": "none",
+   "cost_basis": "labor_plus_vendor"
   },
   {
    "slug": "apple-retail",
@@ -961,7 +981,9 @@
      "target_labor_pct": null
     }
    ],
-   "jobs": []
+   "jobs": [],
+   "revenue_allocation": "none",
+   "cost_basis": "labor"
   }
  ]
 }

@@ -1,7 +1,9 @@
 """Leadership labor P&L routes (docs/api-contract.md "Leadership labor P&L").
 
 Reads serve mart.leadership_week joined at read time with the account mapping (ops.account_job), so
-a configuration change applies without a rebuild. The browser computes every derived metric
+a configuration change applies without a rebuild. For accounts with revenue_allocation 'budget_hours'
+the revenue-month revenue includes the parent-to-children split (revenue_allocated = the amount
+moved onto, or off, the row). The browser computes every derived metric
 (src/leadership/metrics.ts) from the rows, as the reference dashboard did, so the target input
 recalculates instantly. Writes (account configuration, job mapping, file imports) are admin-only.
 """
@@ -27,12 +29,14 @@ ACCOUNT_SCOPES = ("all", "featured", "other")
 
 ROW_SQL = """
 SELECT w.week_start, w.week_end, w.company, w.job_number, w.site_name, w.parent_account,
-       aj.account_slug, coalesce(aj.segment, a.fallback_segment) AS segment,
+       aj.account_slug, CASE WHEN aj.role = 'site' THEN coalesce(aj.segment, a.fallback_segment) END AS segment,
        CASE WHEN aj.account_slug IS NULL THEN 'site' ELSE aj.role END AS role,
        coalesce(aj.needs_review, false) AS needs_review,
        w.hours, w.ot_hours, w.labor, w.labor_basis, w.ot_dollars, w.budget_hours, w.budget_dollars,
-       w.employees, w.days_with_labor, w.revenue_month, w.revenue_month_amount AS revenue_month_amount,
-       w.revenue_month_basis, w.invoice_week, w.prior_revenue, w.prior_labor, w.prior_labor_basis,
+       w.employees, w.days_with_labor, w.revenue_month,
+       w.revenue_month_amount + CASE WHEN a.revenue_allocation = 'budget_hours' THEN w.revenue_alloc_in - w.revenue_alloc_out ELSE 0 END AS revenue_month_amount,
+       CASE WHEN a.revenue_allocation = 'budget_hours' THEN w.revenue_alloc_in - w.revenue_alloc_out ELSE 0 END AS revenue_allocated,
+       w.revenue_month_basis, w.invoice_week, w.prior_revenue + CASE WHEN a.revenue_allocation = 'budget_hours' THEN w.revenue_alloc_in - w.revenue_alloc_out ELSE 0 END AS prior_revenue, w.prior_labor, w.prior_labor_basis,
        w.prior_sub, w.prior_sub_basis, w.delivery_model, w.sub_week, w.sub_week_basis,
        w.consumables_cost, w.consumables_basis,
        j.latitude, j.longitude, j.city, j.state_province
@@ -231,6 +235,8 @@ class AccountPatch(BaseModel):
     watch_band: float | None = Field(None, ge=0, lt=1)
     revenue_method: str | None = None
     revenue_divisor: float | None = Field(None, gt=0)
+    revenue_allocation: str | None = None
+    cost_basis: str | None = None
     budget_reliability_ratio: float | None = Field(None, ge=0, le=2)
     source_parent_accounts: list[str] | None = None
     segment_source: str | None = None
@@ -259,6 +265,10 @@ def update_account(slug: str, patch: AccountPatch, request: Request) -> dict[str
     changes = patch.model_dump(exclude_none=True)
     if patch.revenue_method is not None and patch.revenue_method not in accounts.REVENUE_METHODS:
         raise HTTPException(status_code=422, detail=f"revenue_method must be one of {accounts.REVENUE_METHODS}")
+    if patch.revenue_allocation is not None and patch.revenue_allocation not in accounts.REVENUE_ALLOCATIONS:
+        raise HTTPException(status_code=422, detail=f"revenue_allocation must be one of {accounts.REVENUE_ALLOCATIONS}")
+    if patch.cost_basis is not None and patch.cost_basis not in accounts.COST_BASES:
+        raise HTTPException(status_code=422, detail=f"cost_basis must be one of {accounts.COST_BASES}")
     if patch.segment_source is not None and patch.segment_source not in accounts.SEGMENT_SOURCES:
         raise HTTPException(status_code=422, detail=f"segment_source must be one of {accounts.SEGMENT_SOURCES}")
     if not changes:

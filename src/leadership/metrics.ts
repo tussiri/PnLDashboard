@@ -9,6 +9,8 @@ export type SiteRole = 'site' | 'catch_all' | 'non_billed'
 export type RevenueMethod = 'monthly_div' | 'weekly_billing'
 export type LaborStatus = 'on_target' | 'watch' | 'over' | 'no_billing'
 export type LaborBasis = 'pay_report' | 'payroll_rate' | 'trailing_rate_estimate'
+/** What an account is measured by: labor % (the reference) or cost % = (labor + vendor) / invoice. */
+export type CostBasis = 'labor' | 'labor_plus_vendor'
 
 /** One job for one week, as the API delivers it. */
 export interface WeekRow {
@@ -33,6 +35,10 @@ export interface WeekRow {
   prior_labor: number
   prior_sub: number
   labor_basis?: LaborBasis
+  /** Vendor (subcontractor) cost for the week; counted only under cost basis labor_plus_vendor. */
+  sub_week?: number
+  /** Revenue moved onto (+) or off (-) this row by a parent-job allocation. */
+  revenue_allocated?: number
 }
 
 export interface MetricOptions {
@@ -45,14 +51,26 @@ export interface MetricOptions {
   watchBand?: number
   /** Budget hours below this share of actual hours are flagged as unreliable. */
   budgetReliabilityRatio?: number
+  costBasis?: CostBasis
+  /** Per-segment targets that override `target` (e.g. Crane West sites of Amazon). */
+  segmentTargets?: Record<string, number>
 }
 
 export interface SiteMetrics extends WeekRow {
   invoice: number
   laborPct: number | null
+  /** Vendor cost counted in the measure (0 under cost basis labor). */
+  vendor: number
+  /** Labor plus counted vendor cost. */
+  cost: number
+  costPct: number | null
+  /** The account's measure: laborPct, or costPct under labor_plus_vendor. Drives status and $ over target. */
+  measurePct: number | null
   /** labor ÷ (hours + ½ OT hours): the straight-time rate. */
   baseRate: number
+  /** Cost above target × invoice. */
   overDollars: number
+  /** $ over ÷ base rate (0 for a site with no labor hours, e.g. fully subcontracted). */
   overHours: number
   /** ½ × OT hours. */
   otPremiumHours: number
@@ -65,6 +83,8 @@ export interface SiteMetrics extends WeekRow {
   otPremiumDollars: number
   /** Prior closed month (labor + subcontractor) ÷ revenue. */
   priorLaborPct: number | null
+  /** The target this row is judged against. */
+  target: number
   status: LaborStatus
 }
 
@@ -72,6 +92,8 @@ export interface Rollup {
   count: number
   invoice: number
   labor: number
+  vendor: number
+  cost: number
   hours: number
   otHours: number
   otDollars: number
@@ -82,6 +104,8 @@ export interface Rollup {
   /** Rows above target. */
   over: number
   laborPct: number | null
+  costPct: number | null
+  measurePct: number | null
   otPct: number
   priorRevenue: number
   priorCost: number
@@ -109,11 +133,19 @@ export function baseRateOf(labor: number, hours: number, otHours: number): numbe
   return hours > 0 ? labor / (hours + 0.5 * otHours) : 0
 }
 
+/** The target for a row: its segment's override, else the account target. */
+export const targetFor = (row: Pick<WeekRow, 'segment'>, opts: MetricOptions) => (row.segment != null ? opts.segmentTargets?.[row.segment] : undefined) ?? opts.target
+
 export function siteMetrics(row: WeekRow, opts: MetricOptions): SiteMetrics {
+  const target = targetFor(row, opts)
   const invoice = invoiceOf(row, opts)
+  const vendor = opts.costBasis === 'labor_plus_vendor' ? row.sub_week ?? 0 : 0
+  const cost = row.labor + vendor
   const laborPct = ratio(row.labor, invoice)
+  const costPct = ratio(cost, invoice)
+  const measurePct = opts.costBasis === 'labor_plus_vendor' ? costPct : laborPct
   const baseRate = baseRateOf(row.labor, row.hours, row.ot_hours)
-  const overDollars = invoice > 0 ? Math.max(0, row.labor - invoice * opts.target) : 0
+  const overDollars = invoice > 0 ? Math.max(0, cost - invoice * target) : 0
   const overHours = baseRate > 0 ? overDollars / baseRate : 0
   const otPremiumHours = 0.5 * row.ot_hours
   const overFromOtPremium = Math.min(otPremiumHours, overHours)
@@ -121,6 +153,10 @@ export function siteMetrics(row: WeekRow, opts: MetricOptions): SiteMetrics {
     ...row,
     invoice,
     laborPct,
+    vendor,
+    cost,
+    costPct,
+    measurePct,
     baseRate,
     overDollars,
     overHours,
@@ -130,26 +166,29 @@ export function siteMetrics(row: WeekRow, opts: MetricOptions): SiteMetrics {
     otPct: row.hours > 0 ? row.ot_hours / row.hours : 0,
     otPremiumDollars: row.ot_dollars / 3,
     priorLaborPct: ratio(row.prior_labor + row.prior_sub, row.prior_revenue),
-    status: statusOf(laborPct, opts.target, opts.watchBand),
+    target,
+    status: statusOf(measurePct, target, opts.watchBand),
   }
 }
 
-export function rollup(rows: SiteMetrics[], target: number): Rollup {
+export function rollup(rows: SiteMetrics[], target: number, costBasis: CostBasis = 'labor'): Rollup {
   const s = rows.reduce(
     (a, r) => {
-      a.invoice += r.invoice; a.labor += r.labor; a.hours += r.hours; a.otHours += r.ot_hours
+      a.invoice += r.invoice; a.labor += r.labor; a.vendor += r.vendor; a.cost += r.cost; a.hours += r.hours; a.otHours += r.ot_hours
       a.otDollars += r.ot_dollars; a.budgetHours += r.budget_hours; a.budgetDollars += r.budget_dollars
       a.overHours += r.overHours; a.overDollars += r.overDollars
       a.priorRevenue += r.prior_revenue; a.priorCost += r.prior_labor + r.prior_sub
-      if (r.laborPct != null && r.laborPct > target) a.over += 1
+      if (r.measurePct != null && r.measurePct > (r.target ?? target)) a.over += 1
       return a
     },
-    { invoice: 0, labor: 0, hours: 0, otHours: 0, otDollars: 0, budgetHours: 0, budgetDollars: 0, overHours: 0, overDollars: 0, over: 0, priorRevenue: 0, priorCost: 0 },
+    { invoice: 0, labor: 0, vendor: 0, cost: 0, hours: 0, otHours: 0, otDollars: 0, budgetHours: 0, budgetDollars: 0, overHours: 0, overDollars: 0, over: 0, priorRevenue: 0, priorCost: 0 },
   )
   return {
     ...s,
     count: rows.length,
     laborPct: ratio(s.labor, s.invoice),
+    costPct: ratio(s.cost, s.invoice),
+    measurePct: ratio(costBasis === 'labor_plus_vendor' ? s.cost : s.labor, s.invoice),
     otPct: s.hours > 0 ? s.otHours / s.hours : 0,
     priorLaborPct: ratio(s.priorCost, s.priorRevenue),
   }
@@ -164,8 +203,9 @@ export type AccountNote =
   | { kind: 'billed_no_labor'; jobs: { job_number: string; site_name: string }[] }
   | { kind: 'budget_unreliable'; ratio: number }
   | { kind: 'labor_estimated'; jobs: number; labor: number }
+  | { kind: 'revenue_allocated'; jobs: number; amount: number }
 
-export interface SegmentSummary { segment: string; rollup: Rollup; status: LaborStatus }
+export interface SegmentSummary { segment: string; target: number; rollup: Rollup; status: LaborStatus }
 
 export interface AccountSummary {
   sites: SiteMetrics[]
@@ -198,34 +238,38 @@ export function accountSummary(rows: WeekRow[], opts: MetricOptions, segmentOrde
   const nbRows = sites.filter((r) => r.role === 'non_billed')
   const accountRows = sites.filter((r) => r.role !== 'non_billed')
 
-  const all = rollup(sites, target)
-  const account = rollup(accountRows, target)
-  const billed = rollup(billedRows, target)
-  const catchAll = rollup(catchRows, target)
-  const nonBilled = rollup(nbRows, target)
+  const basis = opts.costBasis ?? 'labor'
+  const all = rollup(sites, target, basis)
+  const account = rollup(accountRows, target, basis)
+  const billed = rollup(billedRows, target, basis)
+  const catchAll = rollup(catchRows, target, basis)
+  const nonBilled = rollup(nbRows, target, basis)
   const catchHours = catchAllOverHours(catchRows)
 
   const present = [...new Set(billedRows.map((r) => r.segment ?? ''))].filter(Boolean)
   const ordered = [...segmentOrder.filter((s) => present.includes(s)), ...present.filter((s) => !segmentOrder.includes(s)).sort()]
   const segments = ordered.map((segment) => {
-    const r = rollup(billedRows.filter((x) => x.segment === segment), target)
-    return { segment, rollup: r, status: statusOf(r.laborPct, target, opts.watchBand) }
+    const segmentTarget = opts.segmentTargets?.[segment] ?? target
+    const r = rollup(billedRows.filter((x) => x.segment === segment), segmentTarget, basis)
+    return { segment, target: segmentTarget, rollup: r, status: statusOf(r.measurePct, segmentTarget, opts.watchBand) }
   })
 
   const invoiced = billedRows.filter((r) => r.invoice > 0)
   const overRows = invoiced.filter((r) => r.overHours > 0.5)
   const fromOtPremium = overRows.reduce((a, r) => a + r.overFromOtPremium, 0)
-  const overRollup = rollup(overRows, target)
+  const overRollup = rollup(overRows, target, basis)
 
   const notes: AccountNote[] = []
-  for (const c of catchRows) notes.push({ kind: 'catch_all', job_number: c.job_number, labor: c.labor, hours: c.hours, otHours: c.ot_hours, accountLaborPct: account.laborPct, sitesLaborPct: billed.laborPct })
-  for (const n of nbRows) notes.push({ kind: 'non_billed', job_number: n.job_number, labor: n.labor, hours: n.hours, otHours: n.ot_hours, allInLaborPct: all.laborPct })
+  for (const c of catchRows) notes.push({ kind: 'catch_all', job_number: c.job_number, labor: c.labor, hours: c.hours, otHours: c.ot_hours, accountLaborPct: account.measurePct, sitesLaborPct: billed.measurePct })
+  for (const n of nbRows) notes.push({ kind: 'non_billed', job_number: n.job_number, labor: n.labor, hours: n.hours, otHours: n.ot_hours, allInLaborPct: all.measurePct })
   const noLabor = sites.filter((r) => r.invoice > 0 && r.labor === 0)
   if (noLabor.length) notes.push({ kind: 'billed_no_labor', jobs: noLabor.map((r) => ({ job_number: r.job_number, site_name: r.site_name })) })
   const budgetRatio = all.hours > 0 ? all.budgetHours / all.hours : null
   if (budgetRatio != null && budgetRatio < (opts.budgetReliabilityRatio ?? DEFAULTS.budgetReliabilityRatio)) notes.push({ kind: 'budget_unreliable', ratio: budgetRatio })
   const estimated = sites.filter((r) => r.labor_basis && r.labor_basis !== 'pay_report')
   if (estimated.length) notes.push({ kind: 'labor_estimated', jobs: estimated.length, labor: estimated.reduce((a, r) => a + r.labor, 0) })
+  const allocated = sites.filter((r) => (r.revenue_allocated ?? 0) > 0)
+  if (allocated.length) notes.push({ kind: 'revenue_allocated', jobs: allocated.length, amount: allocated.reduce((a, r) => a + (r.revenue_allocated ?? 0), 0) })
 
   return {
     sites,

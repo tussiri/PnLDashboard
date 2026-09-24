@@ -17,8 +17,13 @@ stored: routers/leadership.py joins ops.account_job at read time.
   dollars when the pay report covers every day of it, else the job-cost labor
   (mart.job_month.labor_cost); prior_sub = the greater of the job-cost subcontract line and the AP
   distributions in the subcontract GL range for the job and month (prior_sub_basis says which).
-* sub_week / sub_week_basis / delivery_model come from mart.job_week: vendor cost shown beside labor
-  for subcontracted sites, never added into labor %.
+* sub_week / sub_week_basis / delivery_model come from mart.job_week (vendor cost). A site with no
+  job_week row (billed, no timekeeping) takes the revenue month's subcontract cost apportioned by
+  days (basis 'prior_month_prorated'). Accounts with cost_basis 'labor_plus_vendor' measure cost %
+  with it; others show it beside labor.
+* revenue_alloc_in / revenue_alloc_out: for a parent job billed for its family while no child carries
+  revenue in the revenue month, the parent's revenue split over the children by their budget hours
+  in that month. Applied at read time only for accounts with revenue_allocation 'budget_hours'.
 * invoice_week = mart.job_week.invoicing (billing apportioned to the week), used only by accounts
   whose revenue_method is weekly_billing.
 """
@@ -31,9 +36,10 @@ INSERT INTO mart.leadership_week (
   week_start, week_end, job_key, company, job_number, site_name, parent_account,
   hours, ot_hours, labor, labor_basis, ot_dollars, budget_hours, budget_dollars, employees, days_with_labor,
   revenue_month, revenue_month_amount, revenue_month_basis, invoice_week,
-  prior_revenue, prior_labor, prior_labor_basis, prior_sub, prior_sub_basis, delivery_model, sub_week, sub_week_basis, rebuilt_at)
+  prior_revenue, prior_labor, prior_labor_basis, prior_sub, prior_sub_basis, delivery_model, sub_week, sub_week_basis,
+  revenue_alloc_in, revenue_alloc_out, rebuilt_at)
 WITH jobs AS (
-  SELECT j.job_key, j.job_number, j.job_name, j.company, pa.account_name AS parent_account
+  SELECT j.job_key, j.job_number, j.job_name, j.company, j.parent_job_number, pa.account_name AS parent_account
   FROM core.dim_job j
   LEFT JOIN core.dim_parent_account pa ON pa.parent_account_key = j.parent_account_key
   WHERE j.valid_to IS NULL AND j.job_number IS NOT NULL
@@ -71,10 +77,33 @@ week_month AS (
          (SELECT max(m.month) FROM jc_months m WHERE m.month < date_trunc('month', w.week_start + 6)::date) AS revenue_month
   FROM (SELECT DISTINCT week_start FROM all_weeks) w
 ),
+alloc AS (
+  -- Parent jobs billed for the family while no child carries revenue in the revenue month: the
+  -- parent's revenue is split over the children by their budget hours in that month.
+  SELECT wm.week_start, p.job_key AS parent_key, c.job_key AS child_key, prm.revenue AS parent_revenue,
+         coalesce(cm.budget_hours, 0) AS budget_hours,
+         sum(coalesce(cm.budget_hours, 0)) OVER (PARTITION BY wm.week_start, p.job_key) AS family_budget_hours
+  FROM week_month wm
+  JOIN mart.job_month prm ON prm.month = wm.revenue_month AND prm.revenue <> 0
+  JOIN jobs p ON p.job_key = prm.job_key
+  JOIN jobs c ON c.parent_job_number = p.job_number AND c.company IS NOT DISTINCT FROM p.company AND c.job_key <> p.job_key
+  LEFT JOIN mart.job_month cm ON cm.job_key = c.job_key AND cm.month = wm.revenue_month
+  WHERE NOT EXISTS (
+    SELECT 1 FROM jobs c2 JOIN mart.job_month m2 ON m2.job_key = c2.job_key AND m2.month = wm.revenue_month AND m2.revenue <> 0
+    WHERE c2.parent_job_number = p.job_number AND c2.company IS NOT DISTINCT FROM p.company AND c2.job_key <> p.job_key)
+),
+alloc_in AS (
+  SELECT week_start, child_key AS job_key, parent_key, round(parent_revenue * budget_hours / family_budget_hours, 2) AS amount
+  FROM alloc WHERE family_budget_hours > 0 AND budget_hours > 0
+),
+alloc_out AS (
+  SELECT week_start, parent_key AS job_key, sum(amount) AS amount FROM alloc_in GROUP BY 1, 2
+),
 keys AS (
   SELECT job_key, week_start FROM mart.job_week
   UNION SELECT job_key, week_start FROM pr
   UNION SELECT m.job_key, wm.week_start FROM week_month wm JOIN mart.job_month m ON m.month = wm.revenue_month AND m.revenue <> 0
+  UNION SELECT job_key, week_start FROM alloc_in
 ),
 ap_sub AS (
   SELECT v.job_key, v.month, sum(v.amount) AS amount
@@ -118,7 +147,8 @@ assembled AS (
          wm.revenue_month,
          rm.revenue AS rm_revenue, rm.revenue_basis AS rm_basis, rm.labor_cost AS rm_labor, rm.subcontract_cost AS rm_sub,
          mc.company IS NOT NULL AS month_covered, prm.labor AS prm_labor, aps.amount AS ap_sub,
-         jw.delivery_model, coalesce(jw.sub_dollars, 0) AS sub_week, jw.sub_basis AS sub_week_basis
+         jw.job_key IS NOT NULL AS has_jw, jw.delivery_model, coalesce(jw.sub_dollars, 0) AS sub_week, jw.sub_basis AS sub_week_basis,
+         coalesce(ain.amount, 0) AS alloc_in, coalesce(aout.amount, 0) AS alloc_out
   FROM keys k
   JOIN jobs jb ON jb.job_key = k.job_key
   LEFT JOIN mart.job_week jw ON jw.job_key = k.job_key AND jw.week_start = k.week_start
@@ -130,6 +160,9 @@ assembled AS (
   LEFT JOIN month_cover mc ON mc.month = wm.revenue_month AND mc.company = jb.company
   LEFT JOIN pr_month prm ON prm.job_key = k.job_key AND prm.month = wm.revenue_month
   LEFT JOIN ap_sub aps ON aps.job_key = k.job_key AND aps.month = wm.revenue_month
+  LEFT JOIN (SELECT week_start, job_key, sum(amount) AS amount FROM alloc_in GROUP BY 1, 2) ain
+         ON ain.job_key = k.job_key AND ain.week_start = k.week_start
+  LEFT JOIN alloc_out aout ON aout.job_key = k.job_key AND aout.week_start = k.week_start
 )
 SELECT
   a.week_start, a.week_start + 6, a.job_key, a.company, a.job_number, a.site_name, a.parent_account,
@@ -148,7 +181,15 @@ SELECT
   CASE WHEN a.month_covered THEN 'pay_report' WHEN a.rm_labor IS NOT NULL THEN 'job_cost' END,
   greatest(coalesce(a.rm_sub, 0), coalesce(a.ap_sub, 0)),
   CASE WHEN coalesce(a.ap_sub, 0) > coalesce(a.rm_sub, 0) THEN 'ap_distribution' WHEN a.rm_sub IS NOT NULL THEN 'job_cost' END,
-  a.delivery_model, a.sub_week, a.sub_week_basis,
+  a.delivery_model,
+  CASE WHEN a.has_jw THEN a.sub_week
+       WHEN a.revenue_month IS NOT NULL
+         THEN round(greatest(coalesce(a.rm_sub, 0), coalesce(a.ap_sub, 0)) * 7
+                    / extract(day FROM (a.revenue_month + interval '1 month' - interval '1 day')), 2)
+       ELSE 0 END,
+  CASE WHEN a.has_jw THEN a.sub_week_basis
+       WHEN greatest(coalesce(a.rm_sub, 0), coalesce(a.ap_sub, 0)) > 0 THEN 'prior_month_prorated' END,
+  a.alloc_in, a.alloc_out,
   now()
 FROM assembled a
 """

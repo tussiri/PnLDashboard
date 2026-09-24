@@ -381,10 +381,11 @@ are Monday-based; the views label them by the week-ending Sunday. Any date in a 
 ```
 LeadershipAccount = { slug, name, featured, sort, target_labor_pct, watch_band, revenue_method: 'monthly_div'|'weekly_billing'|'per_visit',
   revenue_divisor, budget_reliability_ratio, source_parent_accounts: [], segment_source: 'explicit'|'sub_account'|'company'|'fallback',
-  fallback_segment, segments: [{name, sort, target_labor_pct|null}], sites, needs_review, updated_at, updated_by }
+  fallback_segment, revenue_allocation: 'none'|'budget_hours', cost_basis: 'labor'|'labor_plus_vendor',
+  segments: [{name, sort, target_labor_pct|null}], sites, needs_review, updated_at, updated_by }
 LeadershipRow = { week_start, week_end, company, job_number, site_name, parent_account, account_slug|null (Other), segment, role: 'site'|'catch_all'|'non_billed',
   needs_review, hours, ot_hours, labor, labor_basis: 'pay_report'|'trailing_rate_estimate', ot_dollars (full 1.5x pay), budget_hours, budget_dollars,
-  employees, days_with_labor, revenue_month, revenue_month_amount, revenue_month_basis, invoice_week, prior_revenue, prior_labor,
+  employees, days_with_labor, revenue_month, revenue_month_amount, revenue_allocated, revenue_month_basis, invoice_week, prior_revenue, prior_labor,
   prior_labor_basis: 'pay_report'|'job_cost', prior_sub, prior_sub_basis: 'job_cost'|'ap_distribution', delivery_model, sub_week, sub_week_basis,
   consumables_cost|null, consumables_basis|null, latitude, longitude, city, state_province }
 LeadershipImportFile = { import_file_id, kind, file_name, origin: 'upload'|'inbox', status: 'loaded'|'failed'|'duplicate', rows_read, rows_loaded,
@@ -398,4 +399,11 @@ job-cost revenue before the month the week ends in; `revenue_month_amount` its r
 `prior_labor` = the Pay Report total when it covers the whole month, else job-cost labor;
 `prior_sub` = the greater of the job-cost subcontract line and AP distributions in the subcontract GL
 range. A job with revenue in the revenue month has a row even without labor that week. `sub_week` is
-vendor cost for subcontracted sites, shown beside labor and never included in labor %.
+vendor cost (a site without timekeeping takes the revenue month's subcontract cost apportioned by
+days, basis `prior_month_prorated`). Accounts with `cost_basis = 'labor_plus_vendor'` are measured by
+cost % = (labor + sub_week) / invoice (status and $ over target follow it; hours over target stay
+labor-based); others by labor %, with vendor cost shown beside it. With `revenue_allocation =
+'budget_hours'`, a parent job billed for its family while no child carries revenue in the revenue
+month has that revenue spread over the children by their budget hours (migration 031):
+`revenue_month_amount` and `prior_revenue` include it and `revenue_allocated` shows the amount moved.
+`PUT /leadership/accounts/{slug}` also accepts `revenue_allocation` and `cost_basis`.
