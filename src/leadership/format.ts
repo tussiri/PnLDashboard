@@ -17,7 +17,7 @@ export const hours = (v: number | null | undefined) => (missing(v) ? DASH : Math
 export const hours1 = (v: number | null | undefined) =>
   missing(v) ? DASH : v.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
 
-/** A fraction as a percentage to one decimal: 0.6455 → "64.6%". */
+/** A fraction as a percentage to one decimal: 0.6455 is "64.6%". */
 export const pct = (v: number | null | undefined) => (v == null || !Number.isFinite(v) ? DASH : `${(v * 100).toFixed(1)}%`)
 
 /** Signed percentage points: +2.4 pts. */

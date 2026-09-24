@@ -2,7 +2,9 @@ import type {
   CompanyCamStatus,
   SiteVendorsResponse,
   AccountsResponse, AlertsResponse, ApSummary, AppSetting, ArAgingResponse, ArInvoicesQuery, ArInvoicesResponse,
-  BudgetVariance, ConnectionTestResult, DimensionsResponse, ExecutiveAccountsResponse, ExecutiveLaborPl, ExecutiveLaborPlQuery, FinanceReferenceLoadResult, FinanceReferenceStatus, ForecastBuildResult, ForecastHistoryResponse, ForecastsQuery,
+  BudgetVariance, ConnectionTestResult,
+  LeadershipAccount, LeadershipAccountJob, LeadershipAccountPatch, LeadershipConfig, LeadershipImportFile, LeadershipImportKind,
+  LeadershipJobMapping, LeadershipRowsQuery, LeadershipRowsResponse, LeadershipSegment, LeadershipSiteResponse, DimensionsResponse, ExecutiveAccountsResponse, ExecutiveLaborPl, ExecutiveLaborPlQuery, FinanceReferenceLoadResult, FinanceReferenceStatus, ForecastBuildResult, ForecastHistoryResponse, ForecastsQuery,
   ForecastMetaResponse, ForecastsResponse, FreshnessResponse, FullSyncResult, IntegrationStatus, SarusStatus, SyncOptions, JobDetailResponse, JobForecastResponse,
   JobsResponse, LaborPace, LaborPaceQuery, LaborSummary, PortfolioSummary, RebuildResult, ReportingQuery, RunMeta,
   SettingsResponse, SyncRunResult, SyncRunsResponse, SystemStatus, TimekeepingSummary, TrackRecordQuery, TrackRecordResponse, WatermarkResetResult } from './apiTypes'
@@ -70,10 +72,12 @@ export interface RequestOptions {
   admin?: boolean
   signal?: AbortSignal
   timeoutMs?: number
+  /** Keep ratio fields as fractions (the leadership routes: src/leadership/metrics.ts works in fractions). */
+  rawRatios?: boolean
 }
 
 export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { method = 'GET', query, body, admin = false, signal, timeoutMs = 20_000 } = options
+  const { method = 'GET', query, body, admin = false, signal, timeoutMs = 20_000, rawRatios = false } = options
   const url = `${apiBaseUrl()}${path}${buildQuery(query)}`
   const headers: Record<string, string> = { Accept: 'application/json' }
   if (body !== undefined) headers['Content-Type'] = 'application/json'
@@ -111,7 +115,7 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
   }
   if (response.status === 204) return undefined as T
   const payload = await response.json() as T
-  return method === 'GET' ? ratiosToPoints(payload) : payload
+  return method === 'GET' && !rawRatios ? ratiosToPoints(payload) : payload
 }
 
 const reporting = (query?: ReportingQuery): QueryParams => ({ ...query })
@@ -168,6 +172,38 @@ export const api = {
   // Executive labor P&L (weekly)
   executiveLaborPl: (query?: ExecutiveLaborPlQuery, signal?: AbortSignal) => request<ExecutiveLaborPl>('/executive/labor-pl', { query: { ...query }, signal }),
   executiveAccounts: (signal?: AbortSignal) => request<ExecutiveAccountsResponse>('/executive/accounts', { signal }),
+  // Leadership labor P&L (ratios stay fractions)
+  leadershipConfig: (signal?: AbortSignal) => request<LeadershipConfig>('/leadership/config', { signal, rawRatios: true }),
+  leadershipRows: (query?: LeadershipRowsQuery, signal?: AbortSignal) => request<LeadershipRowsResponse>('/leadership/rows', { query: { ...query }, signal, rawRatios: true }),
+  leadershipSite: (company: string, jobNumber: string, query?: { week?: string; weeks?: number }, signal?: AbortSignal) =>
+    request<LeadershipSiteResponse>(`/leadership/sites/${encodeURIComponent(company)}/${encodeURIComponent(jobNumber)}`, { query: { ...query }, signal, rawRatios: true }),
+  leadershipUpdateAccount: (slug: string, patch: LeadershipAccountPatch, signal?: AbortSignal) =>
+    request<LeadershipAccount>(`/leadership/accounts/${encodeURIComponent(slug)}`, { method: 'PUT', body: patch, admin: true, signal }),
+  leadershipReplaceSegments: (slug: string, segments: Pick<LeadershipSegment, 'name' | 'target_labor_pct'>[], signal?: AbortSignal) =>
+    request<LeadershipAccount & { jobs_moved_to_fallback: number }>(`/leadership/accounts/${encodeURIComponent(slug)}/segments`, { method: 'PUT', body: segments, admin: true, signal }),
+  leadershipAccountJobs: (query?: { account?: string; needs_review?: boolean; unmapped?: boolean }, signal?: AbortSignal) =>
+    request<{ jobs: LeadershipAccountJob[] }>('/leadership/account-jobs', { query: { ...query }, admin: true, signal, rawRatios: true }),
+  leadershipMapJob: (company: string, jobNumber: string, mapping: LeadershipJobMapping, signal?: AbortSignal) =>
+    request<LeadershipAccountJob>(`/leadership/account-jobs/${encodeURIComponent(company)}/${encodeURIComponent(jobNumber)}`, { method: 'PUT', body: mapping, admin: true, signal }),
+  leadershipReloadSeed: (signal?: AbortSignal) => request<{ added: { accounts: number; segments: number; jobs: number } }>('/leadership/accounts/seed', { method: 'POST', admin: true, signal }),
+  leadershipImports: (limit = 25, signal?: AbortSignal) => request<{ files: LeadershipImportFile[] }>('/leadership/imports', { query: { limit }, admin: true, signal, rawRatios: true }),
+  leadershipUpload: (file: File, kind?: LeadershipImportKind, signal?: AbortSignal) => uploadImport(file, kind, signal),
+}
+
+/** Multipart upload of one export file (the JSON `request` helper cannot send FormData). */
+async function uploadImport(file: File, kind: LeadershipImportKind | undefined, signal?: AbortSignal): Promise<{ file: LeadershipImportFile; marts: unknown }> {
+  const form = new FormData()
+  form.append('file', file)
+  if (kind) form.append('kind', kind)
+  const headers: Record<string, string> = { Accept: 'application/json' }
+  if (adminToken) headers['X-Admin-Token'] = adminToken
+  const response = await fetch(`${apiBaseUrl()}/leadership/imports`, { method: 'POST', body: form, headers, signal })
+  if (!response.ok) {
+    let detail = response.statusText || `HTTP ${response.status}`
+    try { const payload = await response.json() as { detail?: unknown }; if (typeof payload?.detail === 'string') detail = payload.detail } catch { /* keep statusText */ }
+    throw new ApiError(response.status, detail, '/leadership/imports')
+  }
+  return response.json() as Promise<{ file: LeadershipImportFile; marts: unknown }>
 }
 
 export type LiveApi = typeof api

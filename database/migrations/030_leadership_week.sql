@@ -9,6 +9,8 @@
 -- subcontract = the greater of the job-cost line and AP invoices coded to the job (a partial job-cost
 -- export can miss vendor bills). sub_week is mart.job_week's vendor cost, shown beside labor for
 -- subcontracted sites and never added into labor %.
+-- The account mapping is not stored here: routes join ops.account_job at read time, so an
+-- administrator's change applies without a rebuild.
 -- Consumables stay null until a capture method exists (docs/consumables-strategy.md).
 
 CREATE TABLE IF NOT EXISTS mart.leadership_week (
@@ -19,10 +21,6 @@ CREATE TABLE IF NOT EXISTS mart.leadership_week (
   job_number text NOT NULL,
   site_name text,
   parent_account text,
-  account_slug text,
-  segment text,
-  role text NOT NULL DEFAULT 'site',
-  needs_review boolean NOT NULL DEFAULT false,
   hours numeric(12, 2) NOT NULL DEFAULT 0,
   ot_hours numeric(12, 2) NOT NULL DEFAULT 0,
   labor numeric(14, 2) NOT NULL DEFAULT 0,
@@ -49,7 +47,7 @@ CREATE TABLE IF NOT EXISTS mart.leadership_week (
   rebuilt_at timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY (job_key, week_start)
 );
-CREATE INDEX IF NOT EXISTS leadership_week_account_idx ON mart.leadership_week (week_start, account_slug);
+CREATE INDEX IF NOT EXISTS leadership_week_week_idx ON mart.leadership_week (week_start);
 
 COMMENT ON TABLE mart.leadership_week IS
-  'Weekly labor P&L rows for the leadership views. labor_basis: pay_report | trailing_rate_estimate. ot_dollars is full overtime pay (1.5x). account_slug null = Other.';
+  'Weekly labor P&L rows for the leadership views. labor_basis: pay_report | trailing_rate_estimate. ot_dollars is full overtime pay (1.5x). Account, segment and role are joined at read time from ops.account_job.';

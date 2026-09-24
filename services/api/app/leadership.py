@@ -1,6 +1,7 @@
 """mart.leadership_week: the weekly labor P&L behind the leadership views (migration 030).
 
-Rebuilt after mart.job_week and the account mapping in every mart rebuild (marts.rebuild_tables).
+Rebuilt after mart.job_week in every mart rebuild (marts.rebuild_tables). The account mapping is not
+stored: routers/leadership.py joins ops.account_job at read time.
 
 * Keys: every (job, Monday week) in mart.job_week or the imported pay report.
 * Pay report coverage: a company's week counts as covered when core.pay_report_coverage spans each
@@ -27,7 +28,7 @@ from typing import Any
 
 REBUILD_SQL = """
 INSERT INTO mart.leadership_week (
-  week_start, week_end, job_key, company, job_number, site_name, parent_account, account_slug, segment, role, needs_review,
+  week_start, week_end, job_key, company, job_number, site_name, parent_account,
   hours, ot_hours, labor, labor_basis, ot_dollars, budget_hours, budget_dollars, employees, days_with_labor,
   revenue_month, revenue_month_amount, revenue_month_basis, invoice_week,
   prior_revenue, prior_labor, prior_labor_basis, prior_sub, prior_sub_basis, delivery_model, sub_week, sub_week_basis, rebuilt_at)
@@ -107,7 +108,6 @@ pr_month AS (
 assembled AS (
   SELECT k.job_key, k.week_start, jb.company, jb.job_number,
          coalesce(jb.job_name, jw.site_name) AS site_name, jb.parent_account,
-         aj.account_slug, aj.segment, coalesce(aj.role, 'site') AS role, coalesce(aj.needs_review, false) AS needs_review,
          wc.company IS NOT NULL AND pr.job_key IS NOT NULL AS covered,
          jw.hours AS jw_hours, coalesce(jw.ot_hours, 0) + coalesce(jw.dt_hours, 0) AS jw_ot, jw.direct_dollars AS jw_labor,
          pr.hours AS pr_hours, pr.ot_hours AS pr_ot, pr.labor AS pr_labor, pr.ot_dollars AS pr_ot_dollars,
@@ -125,7 +125,6 @@ assembled AS (
   LEFT JOIN pr ON pr.job_key = k.job_key AND pr.week_start = k.week_start
   LEFT JOIN tk_emp te ON te.job_key = k.job_key AND te.week_start = k.week_start
   LEFT JOIN week_cover wc ON wc.week_start = k.week_start AND wc.company = jb.company
-  LEFT JOIN ops.account_job aj ON aj.company = jb.company AND aj.job_number = jb.job_number
   LEFT JOIN week_month wm ON wm.week_start = k.week_start
   LEFT JOIN mart.job_month rm ON rm.job_key = k.job_key AND rm.month = wm.revenue_month
   LEFT JOIN month_cover mc ON mc.month = wm.revenue_month AND mc.company = jb.company
@@ -133,8 +132,7 @@ assembled AS (
   LEFT JOIN ap_sub aps ON aps.job_key = k.job_key AND aps.month = wm.revenue_month
 )
 SELECT
-  a.week_start, a.week_start + 6, a.job_key, a.company, a.job_number, a.site_name, a.parent_account, a.account_slug,
-  a.segment, a.role, a.needs_review,
+  a.week_start, a.week_start + 6, a.job_key, a.company, a.job_number, a.site_name, a.parent_account,
   CASE WHEN a.covered THEN a.pr_hours ELSE coalesce(a.jw_hours, 0) END,
   CASE WHEN a.covered THEN a.pr_ot ELSE a.jw_ot END,
   CASE WHEN a.covered THEN a.pr_labor ELSE coalesce(a.jw_labor, 0) END,

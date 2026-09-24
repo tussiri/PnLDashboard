@@ -18,7 +18,7 @@ export interface WeekRow {
   segment: string | null
   role: SiteRole
   /** Monthly revenue the weekly invoice is derived from (method `monthly_div`). */
-  revenue_month: number
+  revenue_month_amount: number
   /** Billed amount for the week itself (method `weekly_billing`). */
   invoice_week?: number | null
   labor: number
@@ -102,7 +102,7 @@ export function statusOf(laborPct: number | null, target: number, watchBand = DE
 export function invoiceOf(row: WeekRow, opts: MetricOptions): number {
   const method = opts.revenueMethod ?? DEFAULTS.revenueMethod
   if (method === 'weekly_billing') return row.invoice_week ?? 0
-  return row.revenue_month / (opts.divisor ?? DEFAULTS.divisor)
+  return row.revenue_month_amount / (opts.divisor ?? DEFAULTS.divisor)
 }
 
 export function baseRateOf(labor: number, hours: number, otHours: number): number {

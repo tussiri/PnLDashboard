@@ -14,6 +14,7 @@ import type {
   ForecastMetric, ForecastRow, ForecastsQuery, GeoPrecision, GroupTotals, IsoMonth, JobRow, JobStatus, KeyAccountDimension, LaborPaceQuery, OtherAccountDimension, PaceRow, Period, RangeBlock,
   ReportingQuery, RunMeta, ScopeBlock, ScopeMode, SeriesStatus, SourceBlock, SourceStatus, TrackRecordQuery, TrackRecordRow,
 } from './apiTypes'
+import { demoLeadershipConfig, demoLeadershipRows, demoLeadershipSite } from './demoLeadership'
 import { addMonths, daysInMonth, listMonths, priorRange, resolveRange } from './period'
 
 export type DashboardApi = LiveApi
@@ -875,6 +876,16 @@ export function createDemoApi(options: DemoApiOptions = {}): DashboardApi {
     // Executive labor P&L (weekly)
     executiveLaborPl: (query: ExecutiveLaborPlQuery = {}, signal) => settle(() => demoExecutiveLaborPl(query), signal),
     executiveAccounts: (signal) => settle(() => ({ accounts: demoExecutiveAccounts(), source }), signal),
+    leadershipConfig: (signal) => settle(demoLeadershipConfig, signal),
+    leadershipRows: (query, signal) => settle(() => demoLeadershipRows(query), signal),
+    leadershipSite: (company, jobNumber, query, signal) => settle(() => demoLeadershipSite(company, jobNumber, query), signal),
+    leadershipUpdateAccount: () => notAvailable('Account update'),
+    leadershipReplaceSegments: () => notAvailable('Segment update'),
+    leadershipAccountJobs: () => notAvailable('Job mapping'),
+    leadershipMapJob: () => notAvailable('Job mapping'),
+    leadershipReloadSeed: () => notAvailable('Seed reload'),
+    leadershipImports: (_limit, signal) => settle(() => ({ files: [] }), signal),
+    leadershipUpload: () => notAvailable('File import'),
   }
 
   function sourceRows(): SourceStatus[] {

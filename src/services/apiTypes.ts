@@ -1196,3 +1196,202 @@ export interface ExecutiveAccountsResponse {
   accounts: ExecutiveAccount[]
   source?: SourceBlock
 }
+
+// Leadership labor P&L (contract "Leadership labor P&L", added 2026-09-23)
+// Ratios in these payloads stay fractions (target_labor_pct: 0.645); the client does not convert them.
+
+export type LeadershipRole = 'site' | 'catch_all' | 'non_billed'
+export type LeadershipLaborBasis = 'pay_report' | 'payroll_rate' | 'trailing_rate_estimate'
+export type LeadershipRevenueMethod = 'monthly_div' | 'weekly_billing' | 'per_visit'
+export type LeadershipSegmentSource = 'explicit' | 'sub_account' | 'company' | 'fallback'
+
+export interface LeadershipSegment {
+  name: string
+  sort: number
+  /** Overrides the account target for this segment; null = the account target. */
+  target_labor_pct: number | null
+}
+
+export interface LeadershipAccount {
+  slug: string
+  name: string
+  featured: boolean
+  sort: number
+  target_labor_pct: number
+  watch_band: number
+  revenue_method: LeadershipRevenueMethod
+  revenue_divisor: number
+  budget_reliability_ratio: number
+  source_parent_accounts: string[]
+  segment_source: LeadershipSegmentSource
+  fallback_segment: string
+  segments: LeadershipSegment[]
+  sites: number
+  needs_review: number
+  updated_at: string
+  updated_by: string | null
+}
+
+export interface LeadershipWeek {
+  week_start: string
+  week_end: string
+  days_with_labor: number
+  /** Share of the week's labor dollars that come from the pay report; null when none do. */
+  pay_report_share: number | null
+  revenue_month: string | null
+  in_progress: boolean
+}
+
+export interface LeadershipStatus {
+  rebuilt_at: string | null
+  leadership_rebuilt_at: string | null
+  syncs: { integration_name: string; status: string; completed_at: string | null; started_at: string }[]
+  imports: Partial<Record<LeadershipImportKind, { kind: LeadershipImportKind; file_name: string; status: string; period_from: string | null; period_to: string | null; rows_loaded: number; loaded_at: string }>>
+  pay_report_through: { company: string; through: string }[]
+}
+
+export interface LeadershipConfig {
+  source?: SourceBlock
+  accounts: LeadershipAccount[]
+  weeks: LeadershipWeek[]
+  default_week: string | null
+  status: LeadershipStatus
+}
+
+/** One job for one Monday week (mart.leadership_week joined with the account mapping). */
+export interface LeadershipRow {
+  week_start: string
+  week_end: string
+  company: string | null
+  job_number: string
+  site_name: string
+  parent_account: string | null
+  /** null = Other. */
+  account_slug: string | null
+  segment: string | null
+  role: LeadershipRole
+  needs_review: boolean
+  hours: number
+  ot_hours: number
+  labor: number
+  labor_basis: LeadershipLaborBasis
+  /** Full overtime pay (1.5x). */
+  ot_dollars: number
+  budget_hours: number
+  budget_dollars: number
+  employees: number
+  days_with_labor: number
+  revenue_month: string | null
+  revenue_month_amount: number
+  revenue_month_basis: string | null
+  invoice_week: number | null
+  prior_revenue: number
+  prior_labor: number
+  prior_labor_basis: 'pay_report' | 'job_cost' | null
+  prior_sub: number
+  prior_sub_basis: 'job_cost' | 'ap_distribution' | null
+  delivery_model: 'self_perform' | 'subcontracted' | null
+  /** Vendor cost for the week (shown beside labor for subcontracted sites, never inside labor %). */
+  sub_week: number
+  sub_week_basis: string | null
+  consumables_cost: number | null
+  consumables_basis: 'actual' | 'estimate' | null
+  latitude: number | null
+  longitude: number | null
+  city: string | null
+  state_province: string | null
+}
+
+export interface LeadershipRowsQuery {
+  /** Any date in the week; defaults to the latest complete week. */
+  week?: string
+  weeks?: number
+  /** An account slug, or featured | other | all. */
+  account?: string
+}
+
+export interface LeadershipRowsResponse {
+  source?: SourceBlock
+  week: string | null
+  weeks: string[]
+  account: string
+  rows: LeadershipRow[]
+}
+
+export interface LeadershipInvoiceLine {
+  invoice_number: string
+  invoice_date: string
+  gl_account_number: string | null
+  amount: number
+  vendor_number: number
+  vendor_name: string
+  vendor_type_id: number | null
+}
+
+export interface LeadershipPhoto {
+  id: string | number | null
+  captured_at: number | string | null
+  thumbnail: string | null
+  web: string | null
+  creator_name: string | null
+}
+
+export interface LeadershipSiteResponse {
+  source?: SourceBlock
+  site: {
+    company: string
+    job_number: string
+    site_name: string
+    address_line_1: string | null
+    city: string | null
+    state_province: string | null
+    postal_code: string | null
+    latitude: number | null
+    longitude: number | null
+    parent_job_number: string | null
+    delivery_model: string | null
+    parent_account: string | null
+    account_slug: string | null
+    segment: string | null
+    role: LeadershipRole
+    companycam_project_id: string | null
+  }
+  weeks: LeadershipRow[]
+  invoices: { since: string; vendor_type_ids: string[]; total: number; lines: LeadershipInvoiceLine[] }
+  photos: { configured: boolean; project_id: string | null; items: LeadershipPhoto[] | null; error: string | null }
+}
+
+export type LeadershipImportKind = 'pay_report' | 'job_cost'
+
+export interface LeadershipImportFile {
+  import_file_id: number
+  kind: LeadershipImportKind
+  file_name: string
+  origin: 'upload' | 'inbox'
+  status: 'loaded' | 'failed' | 'duplicate'
+  rows_read: number
+  rows_loaded: number
+  companies: string[]
+  period_from: string | null
+  period_to: string | null
+  errors: string[]
+  uploaded_by: string | null
+  loaded_at: string
+}
+
+export interface LeadershipAccountJob {
+  company: string
+  job_number: string
+  account_slug: string | null
+  segment: string | null
+  role: LeadershipRole
+  companycam_project_id: string | null
+  assigned_by: 'seed' | 'auto' | 'admin'
+  needs_review: boolean
+  job_name: string | null
+  parent_account: string | null
+  is_active: boolean | null
+}
+
+export type LeadershipAccountPatch = Partial<Pick<LeadershipAccount, 'name' | 'featured' | 'sort' | 'target_labor_pct' | 'watch_band' | 'revenue_method' | 'revenue_divisor' | 'budget_reliability_ratio' | 'source_parent_accounts' | 'segment_source' | 'fallback_segment'>>
+export interface LeadershipJobMapping { account_slug: string | null; segment?: string | null; role?: LeadershipRole; companycam_project_id?: string | null }

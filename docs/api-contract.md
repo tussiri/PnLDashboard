@@ -353,3 +353,49 @@ above, all additive:
 - `mart.job_month` gained `sub_account` (migration 018), written by the same
   `app.weekly.apply_sub_accounts` pass that labels `mart.job_week`, so the sub-account drill-down
   works on the monthly mart. A mart rebuild is required after applying the migration.
+
+## Leadership labor P&L (added 2026-09-23)
+
+The leadership views (Home, Account, Analytics) read `mart.leadership_week` (migration 030, rules
+in `services/api/app/leadership.py`) joined at read time with the account configuration
+(`ops.account`, `ops.account_segment`, `ops.account_job`, migration 028), so configuration edits
+apply without a rebuild. **Ratios in these payloads are fractions** (`target_labor_pct: 0.645`); the
+browser client does not convert them. Every derived metric (weekly invoice, labor %, base rate, $ and
+hours over target, OT premium, prior-month labor % including subcontractor cost, status) is computed
+in the browser by `src/leadership/metrics.ts`, pinned by tests to the Plano reference week. Weeks
+are Monday-based; the views label them by the week-ending Sunday. Any date in a week selects it.
+
+| Route | Response |
+|---|---|
+| `GET /leadership/config` | `{source, accounts: [LeadershipAccount], weeks: [{week_start, week_end, days_with_labor, pay_report_share, revenue_month, in_progress}], default_week, status: {rebuilt_at, leadership_rebuilt_at, syncs: [{integration_name, status, completed_at, started_at}], imports: {pay_report?, job_cost?: {file_name, period_from, period_to, rows_loaded, loaded_at}}, pay_report_through: [{company, through}]}}`. `default_week` = the latest complete week. |
+| `GET /leadership/rows?week=&weeks=1&account=featured` | `{source, week, weeks: [ISO], account, rows: [LeadershipRow]}` for `weeks` (1–26) weeks ending at `week`. `account` = a slug, `featured`, `other` (unmapped or non-featured) or `all`. 404 for an unknown slug. |
+| `GET /leadership/sites/{company}/{job_number}?weeks=13&week=` | `{source, site: {company, job_number, site_name, address_line_1, city, state_province, postal_code, latitude, longitude, parent_job_number, delivery_model, parent_account, account_slug, segment, role, companycam_project_id}, weeks: [LeadershipRow], invoices: {since, vendor_type_ids, total, lines: [{invoice_number, invoice_date, gl_account_number, amount, vendor_number, vendor_name, vendor_type_id}]}, photos: {configured, project_id, items: [{id, captured_at, thumbnail, web, creator_name}] \| null, error}}`. Invoices are AP GL distribution lines coded to the job from subcontractor vendors (setting `subcontractor_vendor_type_ids`, default `[6]`) over the last 6 months. Photos are fetched server-side from CompanyCam when a token and the job's `companycam_project_id` exist. 404 for an unknown job. |
+| `PUT /leadership/accounts/{slug}` (admin) body: any of `name, featured, sort, target_labor_pct, watch_band, revenue_method, revenue_divisor, budget_reliability_ratio, source_parent_accounts, segment_source, fallback_segment` | the updated `LeadershipAccount` |
+| `PUT /leadership/accounts/{slug}/segments` (admin) body `[{name, target_labor_pct}]` | the account plus `jobs_moved_to_fallback`; the fallback segment must stay in the list |
+| `GET /leadership/account-jobs?account=&needs_review=&unmapped=` (admin) | `{jobs: [{company, job_number, account_slug, segment, role, companycam_project_id, assigned_by, needs_review, job_name, parent_account, is_active}]}`; `unmapped=true` lists current jobs in Other |
+| `PUT /leadership/account-jobs/{company}/{job_number}` (admin) body `{account_slug \| null, segment, role, companycam_project_id}` | the mapping row (`assigned_by: 'admin'`, `needs_review: false`); `account_slug: null` unmaps the job (Other) |
+| `POST /leadership/accounts/seed` (admin) | `{added: {accounts, segments, jobs}}`: adds what `config/accounts/seed.json` has and the database lacks; never overwrites |
+| `GET /leadership/imports?limit=25` (admin) | `{files: [LeadershipImportFile]}` |
+| `POST /leadership/imports` (admin, multipart `file`, optional `kind` = `pay_report` \| `job_cost`, `rebuild` = true) | `{file: LeadershipImportFile, marts: RebuildResult \| null}`; formats in `docs/export-feeds.md`. A file already loaded comes back `status: 'duplicate'`. |
+
+```
+LeadershipAccount = { slug, name, featured, sort, target_labor_pct, watch_band, revenue_method: 'monthly_div'|'weekly_billing'|'per_visit',
+  revenue_divisor, budget_reliability_ratio, source_parent_accounts: [], segment_source: 'explicit'|'sub_account'|'company'|'fallback',
+  fallback_segment, segments: [{name, sort, target_labor_pct|null}], sites, needs_review, updated_at, updated_by }
+LeadershipRow = { week_start, week_end, company, job_number, site_name, parent_account, account_slug|null (Other), segment, role: 'site'|'catch_all'|'non_billed',
+  needs_review, hours, ot_hours, labor, labor_basis: 'pay_report'|'trailing_rate_estimate', ot_dollars (full 1.5x pay), budget_hours, budget_dollars,
+  employees, days_with_labor, revenue_month, revenue_month_amount, revenue_month_basis, invoice_week, prior_revenue, prior_labor,
+  prior_labor_basis: 'pay_report'|'job_cost', prior_sub, prior_sub_basis: 'job_cost'|'ap_distribution', delivery_model, sub_week, sub_week_basis,
+  consumables_cost|null, consumables_basis|null, latitude, longitude, city, state_province }
+LeadershipImportFile = { import_file_id, kind, file_name, origin: 'upload'|'inbox', status: 'loaded'|'failed'|'duplicate', rows_read, rows_loaded,
+  companies: [], period_from, period_to, errors: [], uploaded_by, loaded_at }
+```
+
+Row rules (`mart.leadership_week`): labor, hours, OT hours and OT dollars come from the imported Pay
+Report when it covers every passed day of the company's week, else from `mart.job_week` (trailing-rate
+labor; OT dollars estimated at 1.5x the straight-time rate). `revenue_month` = the latest month with
+job-cost revenue before the month the week ends in; `revenue_month_amount` its revenue for the job.
+`prior_labor` = the Pay Report total when it covers the whole month, else job-cost labor;
+`prior_sub` = the greater of the job-cost subcontract line and AP distributions in the subcontract GL
+range. A job with revenue in the revenue month has a row even without labor that week. `sub_week` is
+vendor cost for subcontracted sites, shown beside labor and never included in labor %.
