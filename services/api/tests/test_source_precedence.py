@@ -233,7 +233,7 @@ def test_timekeeping_normalization_prices_api_rows_at_trailing_rate() -> None:
     assert len(pricing) == 1
     text, params = pricing[0]
     assert params == {"source": "winteam_api", "lag_days": 5, "months": 3, "basis": "trailing_job_rate"}
-    assert "FROM core.fact_job_cost_month" in text
+    assert "FROM mart.v_job_cost_month_effective" in text
     assert "WHERE t.source = %(source)s AND t.labor_cost_basis IS DISTINCT FROM %(basis)s" in text
     assert re.search(r"UPDATE core\.fact_timekeeping t SET .* WHERE u\.timekeeping_key = t\.timekeeping_key AND t\.source = %\(source\)s AND u\.rate IS NOT NULL", text)
     assert "coalesce(jr.rate, cr.rate, pr.rate)" in text

@@ -69,7 +69,7 @@ from typing import Any
 
 import psycopg
 
-from . import accounts, weekly
+from . import accounts, leadership, weekly
 from .config import settings
 from .db import connection
 
@@ -554,6 +554,7 @@ def rebuild_tables() -> tuple[int, int, int]:
                 portfolio_rows = cursor.rowcount
                 job_week_rows = weekly.rebuild(cursor)
                 accounts.sync_accounts(cursor)
+                leadership.rebuild(cursor, (sub_low, sub_high))
         except psycopg.errors.LockNotAvailable as exc:
             raise MartRebuildBlocked(
                 f"Mart rebuild could not take its locks within {settings.mart_rebuild_lock_timeout_seconds}s; "
