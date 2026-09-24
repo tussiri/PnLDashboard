@@ -9,6 +9,7 @@ COPY services/api/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 COPY services/api/app ./app
 COPY database/migrations ./database/migrations
+COPY config/accounts ./config/accounts
 
 RUN useradd --create-home --uid 10001 appuser && chown -R appuser:appuser /app
 USER appuser
