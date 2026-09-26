@@ -7,7 +7,7 @@ import { hours, hours1, money, pct, rate } from '../format'
 import { accountSummary, type AccountSummary as Summary, type MetricOptions, type SiteMetrics as Metrics } from '../metrics'
 import { Overview } from '../Overview'
 import { ACCOUNT_TABS, monthShort, weekLabel, type AccountTab } from '../routes'
-import { freshnessLine, PageHeader } from '../Shell'
+import { PageHeader, updatedLine } from '../Shell'
 import { useLeadership } from '../state'
 import { Badge, Empty, Kpi, LoadError, Pills, Skeleton, SortTable, toneOf, type Column } from '../ui'
 import { SiteDrawer } from './SiteDrawer'
@@ -18,10 +18,10 @@ type SiteMetrics = Metrics<LeadershipRow>
 
 const SiteMap = lazy(() => import('./SiteMap'))
 
-const TAB_LABEL: Record<AccountTab, string> = { overview: 'Overview', sites: 'Sites', 'over-target': 'Over Target', overtime: 'Overtime', map: 'Map', vendors: 'Vendors' }
+const TAB_LABEL: Record<AccountTab, string> = { overview: 'Overview', sites: 'Sites', 'over-target': 'Over target', overtime: 'Overtime', map: 'Map', vendors: 'Vendors' }
 const shortName = (name: string) => name.replace(/^[A-Z][A-Za-z]+ ?- ?/, '').replace(/ (Elementary|Middle|High) School$/, ' $1').replace(' Senior High School', ' Sr High')
 
-export const roleBadge = (r: Metrics) => (r.role === 'catch_all' ? <Badge status="none" label="Catch-all" /> : r.role === 'non_billed' ? <Badge status="none" label="Unbilled" /> : <Badge status={r.status} />)
+export const roleBadge = (r: Metrics) => (r.role === 'catch_all' ? <Badge status="none" label="Catch-all" /> : r.role === 'non_billed' ? <Badge status="none" label="Non-billed" /> : <Badge status={r.status} />)
 
 function useSiteOpener() {
   const { navigate } = useLeadership()
@@ -39,17 +39,17 @@ function SitesTab({ account, summary, priorShort }: { account: LeadershipAccount
   const m = measureLabel(account)
   const cols: Column<SiteMetrics>[] = [
     { key: 'job', header: 'Job', left: true, value: (r) => r.job_number },
-    { key: 'name', header: 'Location', left: true, value: (r) => r.site_name, className: 'nm' },
+    { key: 'name', header: 'Site', left: true, value: (r) => r.site_name, className: 'nm' },
     { key: 'inv', header: 'Invoice', value: (r) => r.invoice, render: (r) => money(r.invoice) },
     { key: 'lab', header: 'Labor $', value: (r) => r.labor, render: (r) => money(r.labor) },
     ...(vendor ? [{ key: 'ven', header: 'Vendor $', value: (r: SiteMetrics) => r.vendor, render: (r: SiteMetrics) => money(r.vendor) }] : []),
     { key: 'lp', header: m, value: (r) => r.measurePct, render: (r) => <span className={toneOf(r.status)}>{pct(r.measurePct)}</span> },
-    { key: 'prior', header: `${priorShort} LP`, value: (r) => r.priorLaborPct, render: (r) => <span className="neutral">{pct(r.priorLaborPct)}</span> },
+    { key: 'prior', header: `${priorShort} actual`, value: (r) => r.priorLaborPct, render: (r) => <span className="neutral">{pct(r.priorLaborPct)}</span> },
     { key: 'hrs', header: 'Hours', value: (r) => r.hours, render: (r) => hours1(r.hours) },
-    { key: 'bh', header: 'WT budget hrs', value: (r) => r.budget_hours, render: (r) => <span className="neutral">{hours1(r.budget_hours)}</span> },
+    { key: 'bh', header: 'Budget hrs', value: (r) => r.budget_hours, render: (r) => <span className="neutral">{hours1(r.budget_hours)}</span> },
     { key: 'oth', header: 'OT hrs', value: (r) => r.ot_hours, render: (r) => hours1(r.ot_hours) },
     { key: 'otp', header: 'OT %', value: (r) => r.otPct, render: (r) => <span className={r.otPct > 0.25 ? 'bad' : r.otPct > 0.15 ? 'warn' : ''}>{pct(r.otPct)}</span> },
-    { key: 'over', header: 'Hrs over target', value: (r) => r.overHours, render: (r) => (r.overHours > 0.5 ? <span className="bad">{hours1(r.overHours)}</span> : '–') },
+    { key: 'over', header: 'Hrs over', value: (r) => r.overHours, render: (r) => (r.overHours > 0.5 ? <span className="bad">{hours1(r.overHours)}</span> : '–') },
     { key: 'st', header: 'Status', value: (r) => r.measurePct, render: roleBadge, csv: (r) => (r.role === 'site' ? r.status : r.role) },
   ]
   const s = accountSummary(rows, { target: 0 }, [])
@@ -71,10 +71,10 @@ function OverTargetTab({ account, summary, options, priorShort }: { account: Lea
   const catchJobs = summary.sites.filter((r) => r.role === 'catch_all')
   const cols: Column<SiteMetrics>[] = [
     { key: 'job', header: 'Job', left: true, value: (r) => r.job_number },
-    { key: 'name', header: 'Location', left: true, value: (r) => r.site_name, className: 'nm' },
+    { key: 'name', header: 'Site', left: true, value: (r) => r.site_name, className: 'nm' },
     { key: 'seg', header: 'Segment', left: true, value: (r) => r.segment, render: (r) => <span className="neutral">{r.segment}</span> },
     { key: 'lp', header: measureLabel(account), value: (r) => r.measurePct, render: (r) => <span className={toneOf(r.status)}>{pct(r.measurePct)}</span> },
-    { key: 'prior', header: `${priorShort} LP`, value: (r) => r.priorLaborPct, render: (r) => <span className="neutral">{pct(r.priorLaborPct)}</span> },
+    { key: 'prior', header: `${priorShort} actual`, value: (r) => r.priorLaborPct, render: (r) => <span className="neutral">{pct(r.priorLaborPct)}</span> },
     { key: 'od', header: '$ over', value: (r) => r.overDollars, render: (r) => money(r.overDollars) },
     { key: 'oh', header: 'Hrs over', value: (r) => r.overHours, render: (r) => <><b>{hours1(r.overHours)}</b><span className="bar" style={{ width: Math.min(80, r.overHours / 3) }} aria-hidden="true" /></> },
     { key: 'op', header: 'OT premium hrs', value: (r) => r.overFromOtPremium, render: (r) => hours1(r.overFromOtPremium) },
@@ -83,14 +83,13 @@ function OverTargetTab({ account, summary, options, priorShort }: { account: Lea
   ]
   return <>
     <div className="kpi-lg">
-      <Kpi label="Locations over target" value={o.rows.length} sub={`of ${o.billedCount} billed`} tone={o.rows.length ? 'bad' : 'ok'} />
-      <Kpi label="Hours over target" value={hours(o.rollup.overHours)} sub="Base-rate equivalent hours" tone="bad" />
-      <Kpi label="Dollars over target" value={money(o.rollup.overDollars)} sub={`${account.cost_basis === 'labor_plus_vendor' ? 'Cost' : 'Labor'} above ${pct(options.target)} of invoice`} tone="bad" />
-      <Kpi label="From OT premium" value={hours(o.fromOtPremium)} sub={`${pct(o.rollup.overHours ? o.fromOtPremium / o.rollup.overHours : 0)} of the overage`} tone="warn" />
-      <Kpi label="From extra hours" value={hours(o.fromExtraHours)} sub="Hours beyond what billing supports" />
+      <Kpi label="Sites over target" value={o.rows.length} sub={`of ${o.billedCount} billed`} tone={o.rows.length ? 'bad' : 'ok'} />
+      <Kpi label="Hours over target" value={hours(o.rollup.overHours)} sub={catchJobs.length ? `Sites only; ${hours(summary.catchAllOverHours)} catch-all` : undefined} tone="bad" />
+      <Kpi label="Dollars over target" value={money(o.rollup.overDollars)} sub={`Above ${pct(options.target)} of invoice`} tone="bad" />
+      <Kpi label="From OT premium" value={hours(o.fromOtPremium)} sub={`${pct(o.rollup.overHours ? o.fromOtPremium / o.rollup.overHours : 0)} of hours over`} tone="warn" />
+      <Kpi label="From extra hours" value={hours(o.fromExtraHours)} />
     </div>
-    {catchJobs.length > 0 && <div className="note info"><b>Plus {hours(summary.catchAllOverHours)} base-rate hours from {catchJobs.map((r) => `job ${r.job_number}`).join(', ')}</b>, the catch-all with no billing. The header's hours over target ({hours(summary.headerOverHours)}) includes them; this tab ranks sites only.</div>}
-    {top.length ? <ChartCard title={`Hours over target: top ${top.length} sites`} height={Math.max(160, top.length * 24 + 50)}
+    {top.length ? <ChartCard title={`Hours over target, top ${top.length}`} height={Math.max(160, top.length * 24 + 50)}
       legend={<><Swatch color={t.warn} label="OT premium hours" /><Swatch color={t.bad} label="Extra hours" /></>}
       chart={<OverHoursChart labels={top.map((r) => shortName(r.site_name))} premium={top.map((r) => r.overFromOtPremium)} extra={top.map((r) => r.overFromExtraHours)} />}
       table={<table><thead><tr><th className="nosort l">Site</th><th className="nosort">OT premium hrs</th><th className="nosort">Extra hrs</th></tr></thead><tbody>{top.map((r) => <tr key={r.job_number}><td className="l">{r.site_name}</td><td>{hours1(r.overFromOtPremium)}</td><td>{hours1(r.overFromExtraHours)}</td></tr>)}</tbody></table>} />
@@ -108,7 +107,7 @@ function OvertimeTab({ account, summary }: { account: LeadershipAccount; summary
   const unbilled = summary.sites.filter((r) => r.role !== 'site').map((r) => r.job_number)
   const cols: Column<SiteMetrics>[] = [
     { key: 'job', header: 'Job', left: true, value: (r) => r.job_number },
-    { key: 'name', header: 'Location', left: true, value: (r) => r.site_name, className: 'nm' },
+    { key: 'name', header: 'Site', left: true, value: (r) => r.site_name, className: 'nm' },
     { key: 'seg', header: 'Segment', left: true, value: (r) => r.segment ?? (r.role === 'catch_all' ? 'Catch-all' : 'Non-billed'), render: (r) => <span className="neutral">{r.segment ?? (r.role === 'catch_all' ? 'Catch-all' : 'Non-billed')}</span> },
     { key: 'hrs', header: 'Hours', value: (r) => r.hours, render: (r) => hours1(r.hours) },
     { key: 'oth', header: 'OT hrs', value: (r) => r.ot_hours, render: (r) => hours1(r.ot_hours) },
@@ -121,11 +120,11 @@ function OvertimeTab({ account, summary }: { account: LeadershipAccount; summary
     <div className="kpi-lg">
       <Kpi label="OT hours" value={hours(o.hours)} sub={`${pct(o.pctOfHours)} of all hours`} tone={o.pctOfHours > 0.1 ? 'warn' : ''} />
       <Kpi label="OT dollars" value={money(o.dollars)} sub={`${pct(o.pctOfLabor)} of labor $`} />
-      <Kpi label="OT premium cost" value={money(o.premiumDollars)} sub="The half-time portion only" tone="bad" />
-      <Kpi label="Locations with OT" value={o.rowsWithOt} sub={`of ${o.rowsWithLabor} with labor`} />
-      <Kpi label="Catch-all + non-billed OT" value={hours(o.unbilledOtHours)} sub={unbilled.length ? `OT hours in jobs ${unbilled.join(', ')}` : 'None configured'} tone={o.unbilledOtHours > 0 ? 'warn' : ''} />
+      <Kpi label="OT premium" value={money(o.premiumDollars)} sub="Half-time portion" tone="bad" />
+      <Kpi label="Sites with OT" value={o.rowsWithOt} sub={`of ${o.rowsWithLabor} with labor`} />
+      <Kpi label="Catch-all and non-billed OT" value={hours(o.unbilledOtHours)} sub={unbilled.length ? `Jobs ${unbilled.join(', ')}` : undefined} tone={o.unbilledOtHours > 0 ? 'warn' : ''} />
     </div>
-    {top.length ? <ChartCard title={`OT hours by site: top ${top.length}`} height={Math.max(160, top.length * 24 + 50)}
+    {top.length ? <ChartCard title={`OT hours, top ${top.length}`} height={Math.max(160, top.length * 24 + 50)}
       legend={<><Swatch color={t.warn} label="OT hours" /><Swatch color={t.bad} label="Over 25% of hours" /><Swatch color={t.muted} label="Catch-all or non-billed" /></>}
       chart={<OtHoursChart labels={top.map((r) => shortName(r.site_name))} values={top.map((r) => r.ot_hours)} tones={top.map((r) => (r.role !== 'site' ? 'muted' : r.otPct > 0.25 ? 'bad' : 'warn'))}
         details={top.map((r) => `${r.ot_hours.toFixed(1)} OT hrs, ${pct(r.otPct)} of hours, ${money(r.ot_dollars)}`)} />}
@@ -144,13 +143,13 @@ export function Account() {
   const summary = useMemo(() => (account && rows.length ? accountSummary(rows, options, segmentOrder(account)) : null), [account, rows, options])
   const flags = useMemo(() => dataFlags(config.data, weekStart, rows), [config.data, weekStart, rows])
   const priorShort = monthShort(rows.find((r) => r.revenue_month)?.revenue_month)
-  const subtitle = [weekStart ? weekLabel(weekStart) : null, freshnessLine(config.data)].filter(Boolean).join('. ')
+  const subtitle = [weekStart ? weekLabel(weekStart) : null, updatedLine(config.data)].filter(Boolean).join('. ')
   const setTab = (next: AccountTab) => navigate({ view: 'account', account: account?.slug, tab: next })
   let body
   if (rowsQuery.error) body = <LoadError error={rowsQuery.error} onRetry={rowsQuery.refetch} />
   else if (!rowsQuery.data || !account) body = <Skeleton height={360} />
   else if (tab === 'vendors') body = <Vendors account={account} />
-  else if (!summary) body = <Empty>No rows for {account.name} in the selected week.</Empty>
+  else if (!summary) body = <Empty>No data for this week.</Empty>
   else if (tab === 'overview') body = <Overview account={account} rows={rows} summary={summary} options={options} flags={flags} />
   else if (tab === 'sites') body = <SitesTab account={account} summary={summary} priorShort={priorShort} />
   else if (tab === 'over-target') body = <OverTargetTab account={account} summary={summary} options={options} priorShort={priorShort} />

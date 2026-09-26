@@ -56,13 +56,13 @@ export default function SiteMap({ account, summary }: { account: LeadershipAccou
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sites.length, account.slug, t, summary])
 
-  if (!sites.length) return <Empty>No {account.name} site has coordinates.</Empty>
+  if (!sites.length) return <Empty>No sites have coordinates.</Empty>
   return <>
     <div className="legend" aria-label="Marker colors">
       <Swatch color={t.ok} label={STATUS_LABEL.on_target} /><Swatch color={t.warn} label={STATUS_LABEL.watch} /><Swatch color={t.bad} label={STATUS_LABEL.over} />
       <Swatch color={t.text3} label={STATUS_LABEL.no_billing} /><Swatch color={t.muted} label="Catch-all or non-billed" />
     </div>
-    {failed ? <Empty>The map could not load.</Empty> : <div className="map" ref={box} role="region" aria-label={`Map of ${sites.length} ${account.name} sites; the Sites tab lists the same sites`} />}
-    {missing.length > 0 && <p className="foot">Not on the map (no coordinates): {missing.map((r) => `${r.job_number} ${r.site_name}`).join(', ')}.</p>}
+    {failed ? <Empty>Map failed to load.</Empty> : <div className="map" ref={box} role="region" aria-label={`Map of ${sites.length} ${account.name} sites; the Sites tab lists the same sites`} />}
+    {missing.length > 0 && <p className="foot">No coordinates: {missing.map((r) => `${r.job_number} ${r.site_name}`).join(', ')}.</p>}
   </>
 }

@@ -5,7 +5,7 @@ import { money, pct, pts } from '../format'
 import { accountSummary, statusOf } from '../metrics'
 import { Overview } from '../Overview'
 import { addDays, weekLabel } from '../routes'
-import { freshnessLine, PageHeader } from '../Shell'
+import { PageHeader, updatedLine } from '../Shell'
 import { useLeadership } from '../state'
 import { Badge, Empty, LoadError, Skeleton, toneOf } from '../ui'
 
@@ -18,11 +18,11 @@ function StripCard({ account, rows, prior, selected, onSelect, optionsFor }: {
   const measure = s?.account.measurePct ?? null
   const status = statusOf(measure, options.target, options.watchBand)
   const change = measure != null && p?.account.measurePct != null ? measure - p.account.measurePct : null
-  if (!s) return <div className="acct empty" aria-label={`${account.name}: no sites mapped`}><div className="acct__hdr"><span className="acct__name">{account.name}</span><Badge status="none" label="No sites" /></div><div className="ks">No mapped sites</div></div>
+  if (!s) return <div className="acct empty" aria-label={`${account.name}: no sites mapped`}><div className="acct__hdr"><span className="acct__name">{account.name}</span><Badge status="none" label="No sites" /></div></div>
   return <button type="button" className="acct" aria-pressed={selected} onClick={onSelect}>
     <div className="acct__hdr"><span className="acct__name">{account.name}</span><Badge status={status} /></div>
     <div className="acct__grid">
-      <div><div className="kl">{measureLabel(account)}</div><b className={toneOf(status)}>{pct(measure)}</b><small>{change == null ? 'No prior week' : `${pts(change)} wk`}</small></div>
+      <div><div className="kl">{measureLabel(account)}</div><b className={toneOf(status)}>{pct(measure)}</b><small>{change == null ? '–' : `${pts(change)} wk`}</small></div>
       <div><div className="kl">$ over</div><b>{money(s.billed.overDollars + s.catchAll.cost)}</b><small>{s.billed.over} sites</small></div>
       <div><div className="kl">OT %</div><b className={s.account.otPct > 0.15 ? 'bad' : s.account.otPct > 0.1 ? 'warn' : ''}>{pct(s.account.otPct)}</b><small>{Math.round(s.account.otHours).toLocaleString('en-US')} hrs</small></div>
     </div>
@@ -39,7 +39,7 @@ export function Home() {
   const options = useMemo(() => optionsFor(selectedAccount), [optionsFor, selectedAccount])
   const summary = useMemo(() => (selectedRows.length && selectedAccount ? accountSummary(selectedRows, options, segmentOrder(selectedAccount)) : null), [selectedRows, selectedAccount, options])
   const flags = useMemo(() => dataFlags(config.data, weekStart, selectedRows), [config.data, weekStart, selectedRows])
-  const subtitle = [weekStart ? weekLabel(weekStart) : null, freshnessLine(config.data)].filter(Boolean).join('. ')
+  const subtitle = [weekStart ? weekLabel(weekStart) : null, updatedLine(config.data)].filter(Boolean).join('. ')
   if (config.error) return <><PageHeader title="Leadership P&L" /><LoadError error={config.error} onRetry={config.refetch} /></>
   return <>
     <PageHeader title={selectedAccount ? `${selectedAccount.name} Labor P&L` : 'Leadership P&L'} subtitle={subtitle} />
@@ -51,8 +51,8 @@ export function Home() {
           onSelect={() => navigate({ account: a.slug }, { replace: true })} />)}</div>}
     <h2 className="sr-only">{selectedAccount?.name} overview</h2>
     {!all ? <Skeleton height={320} />
-      : !selectedAccount || !summary ? <Empty>No rows for {selectedAccount?.name ?? 'this account'} in the selected week.</Empty>
+      : !selectedAccount || !summary ? <Empty>No data for this week.</Empty>
         : <Overview account={selectedAccount} rows={selectedRows} summary={summary} options={options} flags={flags} />}
-    {selectedAccount && summary && <p className="foot"><a href={`#/account/${selectedAccount.slug}${weekStart ? `?week=${addDays(weekStart, 6)}` : ''}`}>Open {selectedAccount.name} sites, over target, overtime, map and vendors</a></p>}
+    {selectedAccount && summary && <p className="foot"><a href={`#/account/${selectedAccount.slug}${weekStart ? `?week=${addDays(weekStart, 6)}` : ''}`}>All {selectedAccount.name} sites</a></p>}
   </>
 }

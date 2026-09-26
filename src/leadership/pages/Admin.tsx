@@ -10,6 +10,7 @@ import { Empty, LoadError, Pills, Skeleton, SortTable, type Column } from '../ui
 const TAB_LABEL: Record<AdminTab, string> = { accounts: 'Accounts', jobs: 'Job mapping', imports: 'Imports', data: 'Data and sync' }
 const ROLE_LABEL: Record<LeadershipRole, string> = { site: 'Site', catch_all: 'Catch-all', non_billed: 'Non-billed' }
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e))
+const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
 /** Refresh every cached query after a change (configuration applies at read time). */
 const refreshAll = () => queryClient.invalidate()
@@ -17,10 +18,11 @@ const refreshAll = () => queryClient.invalidate()
 function useAction() {
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null)
-  const run = async (label: string, fn: () => Promise<unknown>) => {
+  /** `done` is the success message; a failure shows the error. */
+  const run = async (done: string, fn: () => Promise<unknown>) => {
     setBusy(true); setMessage(null)
-    try { await fn(); setMessage({ ok: true, text: `${label}: done` }); refreshAll() }
-    catch (e) { setMessage({ ok: false, text: `${label}: ${errorText(e)}` }) }
+    try { await fn(); setMessage({ ok: true, text: done }); refreshAll() }
+    catch (e) { setMessage({ ok: false, text: errorText(e) }) }
     finally { setBusy(false) }
   }
   const view = message && <p className={`msg ${message.ok ? 'ok' : 'bad'}`} role="status">{message.text}</p>
@@ -58,16 +60,16 @@ function AccountEditor({ account }: { account: LeadershipAccount }) {
       <label className="field"><span>Divisor</span><input type="number" step="0.01" value={draft.revenue_divisor} onChange={(e) => setDraft({ ...draft, revenue_divisor: num(e.target.value) })} /></label>
       <label className="field"><span>Parent billing</span><select value={draft.revenue_allocation} onChange={(e) => setDraft({ ...draft, revenue_allocation: e.target.value as LeadershipAccount['revenue_allocation'] })}>
         <option value="none">Keep on parent</option><option value="budget_hours">Spread by budget hours</option></select></label>
-      <label className="field"><span>Budget reliable at (ratio)</span><input type="number" step="0.05" value={draft.budget_reliability_ratio} onChange={(e) => setDraft({ ...draft, budget_reliability_ratio: num(e.target.value) })} /></label>
+      <label className="field"><span>Budget reliability ratio</span><input type="number" step="0.05" value={draft.budget_reliability_ratio} onChange={(e) => setDraft({ ...draft, budget_reliability_ratio: num(e.target.value) })} /></label>
       <label className="field"><span>Fallback segment</span><select value={draft.fallback_segment} onChange={(e) => setDraft({ ...draft, fallback_segment: e.target.value })}>
         {account.segments.map((s) => <option key={s.name}>{s.name}</option>)}</select></label>
       <label className="field"><span>Sort</span><input type="number" value={draft.sort} onChange={(e) => setDraft({ ...draft, sort: num(e.target.value) })} /></label>
-      <label className="field"><span>Featured</span><select value={draft.featured ? 'yes' : 'no'} onChange={(e) => setDraft({ ...draft, featured: e.target.value === 'yes' })}><option value="yes">Yes</option><option value="no">No (Other)</option></select></label>
+      <label className="field"><span>Featured</span><select value={draft.featured ? 'yes' : 'no'} onChange={(e) => setDraft({ ...draft, featured: e.target.value === 'yes' })}><option value="yes">Yes</option><option value="no">No</option></select></label>
       <div className="field"><button type="submit" className="btn primary" disabled={busy}>Save account</button></div>
     </form>
     <div className="ct" style={{ marginTop: 14 }}><span>Segments</span></div>
     <div className="tw"><table><caption className="sr-only">{account.name} segments</caption>
-      <thead><tr><th className="nosort l">Segment</th><th className="nosort">Target % override</th><th className="nosort"></th></tr></thead>
+      <thead><tr><th className="nosort l">Segment</th><th className="nosort">Target %</th><th className="nosort"></th></tr></thead>
       <tbody>{segments.map((s, i) => <tr key={i}>
         <td className="l"><label className="sr-only" htmlFor={`seg-${account.slug}-${i}`}>Segment name</label><input id={`seg-${account.slug}-${i}`} type="text" value={s.name} onChange={(e) => setSegments(segments.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))} /></td>
         <td><label className="sr-only" htmlFor={`segt-${account.slug}-${i}`}>Target override</label><input id={`segt-${account.slug}-${i}`} type="number" step="0.5" placeholder="Account" value={s.target} onChange={(e) => setSegments(segments.map((x, j) => (j === i ? { ...x, target: e.target.value } : x)))} /></td>
@@ -83,7 +85,7 @@ function AccountsTab() {
   const { busy, run, view } = useAction()
   const accounts = config.data?.accounts ?? []
   return <>
-    <div className="ctrl" style={{ marginBottom: 12 }}><button type="button" className="btn" disabled={busy} onClick={() => run('Seed reload', () => api.leadershipReloadSeed())}>Add missing accounts and jobs from the seed file</button>{view}</div>
+    <div className="ctrl" style={{ marginBottom: 12 }}><button type="button" className="btn" disabled={busy} onClick={() => run('Seed reloaded', () => api.leadershipReloadSeed())}>Reload seed</button>{view}</div>
     {accounts.map((a) => <AccountEditor key={a.slug} account={a} />)}
   </>
 }
@@ -123,7 +125,7 @@ function JobsTab() {
   const accounts = config.data?.accounts ?? []
   const jobs = useMemo(() => (q.data?.jobs ?? []).filter((j) => !filter || `${j.job_number} ${j.job_name ?? ''} ${j.parent_account ?? ''}`.toLowerCase().includes(filter.toLowerCase())), [q.data, filter])
   return <>
-    <Pills label="Jobs" value={view} onChange={setView} options={[{ value: 'review', label: 'To review' }, { value: 'mapped', label: 'Mapped' }, { value: 'unmapped', label: 'Other (unmapped)' }]} />
+    <Pills label="Jobs" value={view} onChange={setView} options={[{ value: 'review', label: 'To review' }, { value: 'mapped', label: 'Mapped' }, { value: 'unmapped', label: 'Unmapped' }]} />
     <div className="ctrl" style={{ marginBottom: 10 }}>
       {view !== 'unmapped' && <><label htmlFor="ja">Account</label><select id="ja" value={account} onChange={(e) => setAccount(e.target.value)}><option value="">All</option>{accounts.map((a) => <option key={a.slug} value={a.slug}>{a.name}</option>)}</select></>}
       <label htmlFor="jf" className="sr-only">Search jobs</label><input id="jf" type="search" placeholder="Search job or name" value={filter} onChange={(e) => setFilter(e.target.value)} />
@@ -147,19 +149,19 @@ function ImportsTab() {
     { key: 'at', header: 'Loaded', left: true, value: (f) => f.loaded_at, render: (f) => new Date(f.loaded_at).toLocaleString('en-US') },
     { key: 'kind', header: 'Feed', left: true, value: (f) => (f.kind === 'pay_report' ? 'Pay report' : 'Job cost') },
     { key: 'file', header: 'File', left: true, value: (f) => f.file_name, className: 'nm' },
-    { key: 'status', header: 'Status', left: true, value: (f) => f.status, render: (f) => <span className={f.status === 'loaded' ? 'ok' : f.status === 'failed' ? 'bad' : 'neutral'}>{f.status}</span> },
-    { key: 'rows', header: 'Rows loaded', value: (f) => f.rows_loaded, render: (f) => `${f.rows_loaded.toLocaleString('en-US')} of ${f.rows_read.toLocaleString('en-US')}` },
+    { key: 'status', header: 'Status', left: true, value: (f) => f.status, render: (f) => <span className={f.status === 'loaded' ? 'ok' : f.status === 'failed' ? 'bad' : 'neutral'}>{cap(f.status)}</span> },
+    { key: 'rows', header: 'Rows', value: (f) => f.rows_loaded, render: (f) => `${f.rows_loaded.toLocaleString('en-US')} of ${f.rows_read.toLocaleString('en-US')}` },
     { key: 'period', header: 'Period', left: true, value: (f) => f.period_from, render: (f) => (f.period_from ? `${f.period_from} to ${f.period_to}` : '–') },
     { key: 'co', header: 'Companies', left: true, value: (f) => f.companies.join(', ') },
     { key: 'err', header: 'Errors', left: true, value: (f) => f.errors.length, render: (f) => (f.errors.length ? <details><summary>{f.errors.length}</summary><ul className="errors">{f.errors.map((e, i) => <li key={i}>{e}</li>)}</ul></details> : '0') },
   ]
   return <>
     <div className="card">
-      <div className="ct"><span>Upload an export</span><a href="#/admin/imports" className="ks">Formats: docs/export-feeds.md</a></div>
+      <div className="ct"><span>Upload</span></div>
       <form className="form-grid" onSubmit={(e) => { e.preventDefault(); if (file) void run(`Imported ${file.name}`, () => api.leadershipUpload(file, kind || undefined)) }}>
         <label className="field"><span>File (CSV or XLSX)</span><input type="file" accept=".csv,.xlsx,.xlsm" onChange={(e) => setFile(e.target.files?.[0] ?? null)} /></label>
-        <label className="field"><span>Feed</span><select value={kind} onChange={(e) => setKind(e.target.value as '' | LeadershipImportKind)}><option value="">Detect from name and columns</option><option value="pay_report">Pay Report Timekeeping</option><option value="job_cost">Job Cost Analysis</option></select></label>
-        <div className="field"><button type="submit" className="btn primary" disabled={!file || busy}>{busy ? 'Importing and rebuilding' : 'Import'}</button></div>
+        <label className="field"><span>Feed</span><select value={kind} onChange={(e) => setKind(e.target.value as '' | LeadershipImportKind)}><option value="">Auto-detect</option><option value="pay_report">Pay Report Timekeeping</option><option value="job_cost">Job Cost Analysis</option></select></label>
+        <div className="field"><button type="submit" className="btn primary" disabled={!file || busy}>{busy ? 'Importing' : 'Import'}</button></div>
       </form>
       {view}
     </div>
@@ -175,8 +177,8 @@ function DataTab() {
   type Run = SyncRunsResponse['runs'][number]
   const cols: Column<Run>[] = [
     { key: 'at', header: 'Started', left: true, value: (r) => r.started_at, render: (r) => new Date(r.started_at).toLocaleString('en-US') },
-    { key: 'res', header: 'Resource', left: true, value: (r) => r.resource_name },
-    { key: 'st', header: 'Status', left: true, value: (r) => r.status, render: (r) => <span className={r.status === 'succeeded' ? 'ok' : r.status === 'failed' ? 'bad' : 'neutral'}>{r.status}</span> },
+    { key: 'res', header: 'Feed', left: true, value: (r) => r.resource_name },
+    { key: 'st', header: 'Status', left: true, value: (r) => r.status, render: (r) => <span className={r.status === 'succeeded' ? 'ok' : r.status === 'failed' ? 'bad' : 'neutral'}>{cap(r.status)}</span> },
     { key: 'f', header: 'Fetched', value: (r) => r.records_fetched },
     { key: 'i', header: 'Inserted', value: (r) => r.records_inserted },
     { key: 'e', header: 'Error', left: true, value: (r) => r.error_message ?? '', className: 'nm' },
@@ -185,14 +187,14 @@ function DataTab() {
     <div className="card">
       <div className="ct"><span>Status</span><span className="ks">{freshnessLine(config.data)}</span></div>
       <div className="ctrl">
-        <button type="button" className="btn" disabled={busy} onClick={() => run('WinTeam sync', () => api.syncAll())}>Sync WinTeam now</button>
-        <button type="button" className="btn" disabled={busy} onClick={() => run('Sarus sync', () => api.syncSarus())}>Sync Sarus now</button>
-        <button type="button" className="btn" disabled={busy} onClick={() => run('Mart rebuild', () => api.rebuildMarts())}>Rebuild marts</button>
+        <button type="button" className="btn" disabled={busy} onClick={() => run('WinTeam synced', () => api.syncAll())}>Sync WinTeam</button>
+        <button type="button" className="btn" disabled={busy} onClick={() => run('Sarus synced', () => api.syncSarus())}>Sync Sarus</button>
+        <button type="button" className="btn" disabled={busy} onClick={() => run('Marts rebuilt', () => api.rebuildMarts())}>Rebuild marts</button>
         {busy && <span className="ks">Running</span>}
       </div>
       {view}
     </div>
-    <div className="card"><div className="ct"><span>Recent sync runs</span></div>
+    <div className="card"><div className="ct"><span>Sync runs</span></div>
       {q.error ? <LoadError error={q.error} onRetry={q.refetch} /> : !q.data ? <Skeleton height={200} /> : <SortTable caption="Sync runs" rows={q.data.runs} columns={cols} defaultSort={{ key: 'at', dir: -1 }} />}</div>
   </>
 }
@@ -200,10 +202,10 @@ function DataTab() {
 export function Admin() {
   const { route, navigate, user } = useLeadership()
   const tab = route.adminTab ?? 'accounts'
-  if (user.role !== 'admin') return <Empty>Administration requires the Administrator role.</Empty>
+  if (user.role !== 'admin') return <Empty>Admin only.</Empty>
   return <>
-    <PageHeader title="Administration" account={false} week={false} target={false} />
-    <nav className="tabs" role="tablist" aria-label="Administration">
+    <PageHeader title="Admin" account={false} week={false} target={false} />
+    <nav className="tabs" role="tablist" aria-label="Admin">
       {ADMIN_TABS.map((t) => <button key={t} type="button" role="tab" className="tab" aria-selected={tab === t} onClick={() => navigate({ view: 'admin', adminTab: t })}>{TAB_LABEL[t]}</button>)}
     </nav>
     <section role="tabpanel" aria-label={TAB_LABEL[tab]}>

@@ -4,7 +4,7 @@ import { measureLabel, rowsOfWeek, segmentOrder, useRows } from '../data'
 import { hours, hours1, money, pct } from '../format'
 import { accountSummary, statusOf, type MetricOptions, type Rollup, type SiteMetrics as Metrics } from '../metrics'
 import { weekLabel } from '../routes'
-import { freshnessLine, PageHeader } from '../Shell'
+import { PageHeader, updatedLine } from '../Shell'
 import { useLeadership } from '../state'
 import { Badge, Empty, LoadError, Pills, Skeleton, SortTable, STATUS_LABEL, toneOf, type Column } from '../ui'
 import { roleBadge } from './Account'
@@ -77,43 +77,43 @@ export function Analytics() {
     { key: 'over', header: '$ over', value: (g) => g.rollup.overDollars, render: (g) => money(g.rollup.overDollars) },
     { key: 'hrs', header: 'Hours', value: (g) => g.rollup.hours, render: (g) => hours(g.rollup.hours) },
     { key: 'otp', header: 'OT %', value: (g) => g.rollup.otPct, render: (g) => pct(g.rollup.otPct) },
-    { key: 'prior', header: 'Prior month LP', value: (g) => g.rollup.priorLaborPct, render: (g) => <span className="neutral">{pct(g.rollup.priorLaborPct)}</span> },
+    { key: 'prior', header: 'Prior month', value: (g) => g.rollup.priorLaborPct, render: (g) => <span className="neutral">{pct(g.rollup.priorLaborPct)}</span> },
     { key: 'st', header: 'Status', value: (g) => g.rollup.measurePct, render: (g) => <Badge status={statusOf(g.rollup.measurePct, g.target, g.watchBand)} />, csv: (g) => statusOf(g.rollup.measurePct, g.target, g.watchBand) },
   ]
   const siteCols: Column<Site>[] = [
     { key: 'acct', header: 'Account', left: true, value: (s) => s.accountName },
     { key: 'grp', header: scope === OTHER ? 'Account group' : 'Segment', left: true, value: (s) => s.groupName, className: 'nm' },
     { key: 'job', header: 'Job', left: true, value: (s) => s.job_number },
-    { key: 'name', header: 'Location', left: true, value: (s) => s.site_name, className: 'nm' },
+    { key: 'name', header: 'Site', left: true, value: (s) => s.site_name, className: 'nm' },
     { key: 'co', header: 'Company', left: true, value: (s) => s.company, render: (s) => <span className="neutral">{s.company}</span> },
     { key: 'inv', header: 'Invoice', value: (s) => s.invoice, render: (s) => money(s.invoice) },
     { key: 'lab', header: 'Labor $', value: (s) => s.labor, render: (s) => money(s.labor) },
     { key: 'ven', header: 'Vendor $', value: (s) => s.sub_week, render: (s) => money(s.sub_week) },
     { key: 'm', header: 'Labor / cost %', value: (s) => s.measurePct, render: (s) => <span className={toneOf(s.status)}>{pct(s.measurePct)}</span> },
-    { key: 'prior', header: 'Prior LP', value: (s) => s.priorLaborPct, render: (s) => <span className="neutral">{pct(s.priorLaborPct)}</span> },
+    { key: 'prior', header: 'Prior month', value: (s) => s.priorLaborPct, render: (s) => <span className="neutral">{pct(s.priorLaborPct)}</span> },
     { key: 'hrs', header: 'Hours', value: (s) => s.hours, render: (s) => hours1(s.hours) },
     { key: 'oth', header: 'OT hrs', value: (s) => s.ot_hours, render: (s) => hours1(s.ot_hours) },
     { key: 'over', header: 'Hrs over', value: (s) => s.overHours, render: (s) => (s.overHours > 0.5 ? <span className="bad">{hours1(s.overHours)}</span> : '–') },
-    { key: 'basis', header: 'Labor basis', left: true, value: (s) => (s.labor_basis === 'pay_report' ? 'Pay report' : 'Estimate'), render: (s) => <span className="neutral">{s.labor_basis === 'pay_report' ? 'Pay report' : 'Estimate'}</span> },
+    { key: 'basis', header: 'Labor basis', left: true, value: (s) => (s.labor_basis === 'pay_report' ? 'Pay report' : 'Estimated'), render: (s) => <span className="neutral">{s.labor_basis === 'pay_report' ? 'Pay report' : 'Estimated'}</span> },
     { key: 'st', header: 'Status', value: (s) => s.measurePct, render: roleBadge, csv: (s) => (s.role === 'site' ? s.status : s.role) },
   ]
-  const subtitle = [weekStart ? weekLabel(weekStart) : null, freshnessLine(config.data)].filter(Boolean).join('. ')
+  const subtitle = [weekStart ? weekLabel(weekStart) : null, updatedLine(config.data)].filter(Boolean).join('. ')
   const set = (next: Parameters<typeof navigate>[0]) => navigate(next, { replace: true })
   return <>
     <PageHeader title="Analytics" subtitle={subtitle} />
-    {q.error ? <LoadError error={q.error} onRetry={q.refetch} /> : !q.data ? <Skeleton height={400} /> : !sites.length ? <Empty>No rows in the selected week.</Empty> : <>
+    {q.error ? <LoadError error={q.error} onRetry={q.refetch} /> : !q.data ? <Skeleton height={400} /> : !sites.length ? <Empty>No data for this week.</Empty> : <>
       <div className="card">
         <div className="ct"><span>Accounts</span>{scope && <button type="button" className="linkbtn" onClick={() => set({ account: undefined, segment: undefined })}>All accounts</button>}</div>
         <SortTable caption="Accounts" rows={level1} columns={groupCols('Account')} defaultSort={{ key: 'inv', dir: -1 }} csvName="accounts"
           onRowClick={(g) => set({ account: g.key, segment: undefined })} rowLabel={(g) => `Drill into ${g.name}`} rowClass={(g) => (g.key === scope ? 'tot' : '')} />
       </div>
       {scope && <div className="card">
-        <div className="ct"><span>{scope === OTHER ? 'Other: account groups' : `${scopeAccount?.name}: segments`}</span>{route.segment && <button type="button" className="linkbtn" onClick={() => set({ segment: undefined })}>All {scope === OTHER ? 'groups' : 'segments'}</button>}</div>
+        <div className="ct"><span>{scope === OTHER ? 'Other by account group' : `${scopeAccount?.name} by segment`}</span>{route.segment && <button type="button" className="linkbtn" onClick={() => set({ segment: undefined })}>All {scope === OTHER ? 'groups' : 'segments'}</button>}</div>
         <SortTable caption="Groups" rows={level2} columns={groupCols(scope === OTHER ? 'Account group' : 'Segment')} defaultSort={{ key: 'inv', dir: -1 }} csvName={`${scope}-groups`}
           onRowClick={(g) => set({ segment: g.key })} rowLabel={(g) => `Show sites in ${g.name}`} rowClass={(g) => (g.key === route.segment ? 'tot' : '')} />
       </div>}
       <div className="card">
-        <div className="ct"><span>Sites{route.segment ? `: ${route.segment}` : scope ? `: ${scope === OTHER ? 'Other' : scopeAccount?.name}` : ''}</span></div>
+        <div className="ct"><span>{route.segment ?? (scope ? (scope === OTHER ? 'Other' : scopeAccount?.name) : 'All')} sites</span></div>
         <Pills label="Status" value={(route.status ?? 'all') as (typeof STATUSES)[number]} onChange={(v) => set({ status: v === 'all' ? undefined : v })}
           options={STATUSES.map((s) => ({ value: s, label: s === 'all' ? 'All' : STATUS_LABEL[s] }))} />
         <SortTable caption="Sites" rows={filtered} columns={siteCols} defaultSort={{ key: 'over', dir: -1 }} csvName={`sites-${scope ?? 'all'}`}

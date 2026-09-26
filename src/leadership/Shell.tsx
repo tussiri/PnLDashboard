@@ -15,15 +15,22 @@ const THEMES: { theme: Theme; label: string; icon: ReactNode }[] = [
   { theme: 'dark', label: 'Dark theme', icon: <Moon size={14} aria-hidden="true" /> },
 ]
 
-/** "Data as of" line: last mart rebuild and the pay report's last covered day. */
-export function freshnessLine(config: ReturnType<typeof useLeadership>['config']['data']): string {
+type Config = ReturnType<typeof useLeadership>['config']['data']
+const stamp = (iso: string) => new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+
+/** Page subtitle: when the marts were last rebuilt. */
+export function updatedLine(config: Config): string {
   if (!config) return ''
-  const rebuilt = config.status.rebuilt_at ? `Data as of ${new Date(config.status.rebuilt_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}` : 'Data not built'
+  return config.status.rebuilt_at ? `Updated ${stamp(config.status.rebuilt_at)}` : 'Not built'
+}
+
+/** Admin status line: last rebuild, pay report coverage and the last Relay sync. */
+export function freshnessLine(config: Config): string {
+  if (!config) return ''
   const through = config.status.pay_report_through
-  const pay = through.length ? `pay report through ${through.map((p) => p.through).sort().at(-1)}` : 'no pay report loaded'
   const relay = config.status.syncs.find((s) => s.integration_name === 'relay')
-  const relayText = relay?.completed_at ? `; Relay synced ${new Date(relay.completed_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}` : ''
-  return `${rebuilt}; ${pay}${relayText}`
+  return [updatedLine(config), through.length ? `Pay report through ${through.map((p) => p.through).sort().at(-1)}` : 'No pay report',
+    relay?.completed_at ? `Relay ${stamp(relay.completed_at)}` : null].filter(Boolean).join('. ')
 }
 
 export function Shell({ children }: { children: ReactNode }) {
