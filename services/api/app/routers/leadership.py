@@ -54,7 +54,8 @@ def allocate_parent_billing(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     'budget_hours'). Per account and week: when the account's catch-all jobs carry revenue-month
     revenue and none of its sites do, that revenue moves to the sites present that week in proportion
     to their revenue-month budget hours, else their revenue-month actual hours, else this week's hours.
-    Totals are preserved (the last site takes the rounding). Internal `_` fields are removed."""
+    Totals are preserved: the heaviest-weighted site takes the rounding, so a zero-weight site gets
+    exactly nothing (not a stray cent that reads as billing). Internal `_` fields are removed."""
     groups: dict[tuple[str, str], list[dict[str, Any]]] = {}
     for r in rows:
         if r.get("_allocation") == "budget_hours" and r.get("account_slug"):
@@ -72,13 +73,12 @@ def allocate_parent_billing(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         pool = sum(r["revenue_month_amount"] for r in sources)
         prior_pool = sum(r["prior_revenue"] or 0 for r in sources)
         total = sum(weights)
-        given = prior_given = 0.0
-        for i, (r, w) in enumerate(zip(sites, weights)):
-            last = i == len(sites) - 1
-            share = round(pool - given, 2) if last else round(pool * w / total, 2)
-            prior_share = round(prior_pool - prior_given, 2) if last else round(prior_pool * w / total, 2)
-            given += share
-            prior_given += prior_share
+        shares = [round(pool * w / total, 2) for w in weights]
+        prior_shares = [round(prior_pool * w / total, 2) for w in weights]
+        heaviest = max(range(len(weights)), key=lambda i: weights[i])
+        shares[heaviest] = round(shares[heaviest] + pool - sum(shares), 2)
+        prior_shares[heaviest] = round(prior_shares[heaviest] + prior_pool - sum(prior_shares), 2)
+        for r, share, prior_share in zip(sites, shares, prior_shares):
             r["revenue_month_amount"] = share
             r["prior_revenue"] = (r["prior_revenue"] or 0) + prior_share
             r["revenue_allocated"] = share
@@ -143,7 +143,8 @@ def default_week(weeks: list[dict[str, Any]]) -> str | None:
 
 
 def status_block(cursor: Any) -> dict[str, Any]:
-    """Data freshness for the header and notes: last rebuild, last WinTeam sync per integration,
+    """Data freshness for the header and notes: last rebuild, sync health per integration (failed when
+    any resource's latest run failed; a resource the tenant is not entitled to, HTTP 403, is ignored),
     latest import per feed and the pay report's last covered day per company."""
     cursor.execute(
         """
@@ -154,8 +155,15 @@ def status_block(cursor: Any) -> dict[str, Any]:
     head = dict(cursor.fetchone())
     cursor.execute(
         """
-        SELECT DISTINCT ON (integration_name) integration_name, status, completed_at, started_at
-        FROM ops.integration_sync_run ORDER BY integration_name, started_at DESC
+        WITH latest AS (
+            SELECT DISTINCT ON (integration_name, resource_name) integration_name, status, error_message, completed_at, started_at
+            FROM ops.integration_sync_run ORDER BY integration_name, resource_name, started_at DESC
+        )
+        SELECT integration_name,
+               CASE WHEN bool_or(status = 'failed' AND position('not_entitled' in coalesce(error_message, '')) <> 1) THEN 'failed'
+                    WHEN bool_or(status = 'running') THEN 'running' ELSE 'succeeded' END AS status,
+               max(completed_at) AS completed_at, max(started_at) AS started_at
+        FROM latest GROUP BY integration_name ORDER BY integration_name
         """
     )
     syncs = [jsonable(dict(r)) for r in cursor.fetchall()]

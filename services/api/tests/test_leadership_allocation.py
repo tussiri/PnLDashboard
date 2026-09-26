@@ -25,6 +25,13 @@ def test_falls_back_to_actual_hours_without_budget():
     assert {r["allocation_weight"] for r in rows} == {"actual_hours"}
 
 
+def test_rounding_goes_to_the_heaviest_site_never_a_zero_weight_one():
+    rows = allocate_parent_billing([row("140", "catch_all", 100.0), row("141", "site", bh=10), row("142", "site", bh=10),
+                                    row("143", "site", bh=10), row("148", "site", bh=0)])
+    assert [r["revenue_month_amount"] for r in rows] == [0, 33.34, 33.33, 33.33, 0]
+    assert round(sum(r["revenue_month_amount"] for r in rows), 2) == 100.0
+
+
 def test_leaves_accounts_whose_sites_bill_themselves_alone():
     rows = allocate_parent_billing([row("800", "catch_all", 1000.0), row("801", "site", revenue=12642.0, bh=45.8), row("802", "site", bh=65)])
     assert [r["revenue_month_amount"] for r in rows] == [1000.0, 12642.0, 0]
