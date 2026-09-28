@@ -3,8 +3,10 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
+import time
 from pathlib import Path
 
+import psycopg
 from psycopg import sql
 
 from .db import connection
@@ -13,8 +15,28 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 logger = logging.getLogger("migrations")
 
 
+# A freshly provisioned managed database (a Render blueprint's first apply) can refuse connections
+# for a few minutes after the deploy that needs it has started. Wait for it instead of failing.
+WAIT_SECONDS = int(os.getenv("MIGRATE_WAIT_SECONDS", "300"))
+
+
+def wait_for_database(deadline_seconds: int = WAIT_SECONDS, interval: float = 5.0) -> None:
+    deadline = time.monotonic() + deadline_seconds
+    while True:
+        try:
+            with connection() as conn, conn.cursor() as cursor:
+                cursor.execute("SELECT 1")
+            return
+        except psycopg.OperationalError as exc:
+            if time.monotonic() + interval > deadline:
+                raise
+            logger.info("Database not accepting connections yet (%s); retrying in %.0fs", str(exc).splitlines()[0], interval)
+            time.sleep(interval)
+
+
 def run() -> None:
     migrations = Path(__file__).resolve().parent.parent / "database" / "migrations"
+    wait_for_database()
     with connection() as conn, conn.cursor() as cursor:
         cursor.execute(
             """
