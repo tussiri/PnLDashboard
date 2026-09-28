@@ -83,12 +83,14 @@ RESET_TABLES = RESET_FACT_TABLES + RESET_DIM_TABLES + RESET_MART_TABLES
 NEVER_RESET_TABLES = ("raw.winteam_record", "ops.source_watermark", "ops.app_setting", "ops.integration_sync_run", "mart.rebuild_log")
 # API fact rows may point (job_key / customer_key / vendor_key) at a reference-only dimension row;
 # those pointers are cleared before the dimension row goes and re-pointed by the next API jobs /
-# vendors normalization (normalize.py steps 9 / vendors) - the marts join on the natural keys.
+# vendors normalization (normalize.repoint_facts / vendors) - the marts join on the natural keys.
 _FK_TO_DIM = (
     ("core.fact_timekeeping", "job_key", "core.dim_job", "job_key"),
     ("core.fact_schedule", "job_key", "core.dim_job", "job_key"),
     ("core.fact_ar_invoice", "job_key", "core.dim_job", "job_key"),
     ("core.fact_gl_budget", "job_key", "core.dim_job", "job_key"),
+    ("core.fact_job_budget", "job_key", "core.dim_job", "job_key"),
+    ("core.fact_ap_distribution", "job_key", "core.dim_job", "job_key"),
     ("core.fact_ar_invoice", "customer_key", "core.dim_customer", "customer_key"),
     ("core.fact_ap_invoice", "vendor_key", "core.dim_vendor", "vendor_key"),
     ("core.fact_ap_payment", "vendor_key", "core.dim_vendor", "vendor_key"),

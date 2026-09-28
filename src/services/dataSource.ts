@@ -24,8 +24,8 @@ export interface ModeDecision {
 }
 
 export const BANNERS = {
-  marts_empty: 'No WinTeam data synced yet — showing labeled demo data',
-  unreachable: 'API unreachable — demo data',
+  marts_empty: 'Demo data: no WinTeam data synced',
+  unreachable: 'Demo data: API unreachable',
 } as const
 
 /** Pure selection rule so it can be unit tested without network. */

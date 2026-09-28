@@ -16,7 +16,7 @@ from __future__ import annotations
 import json
 import os
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 from urllib.parse import urlparse
 
@@ -32,7 +32,9 @@ RESOURCE_NAMES: tuple[str, ...] = (
     "timekeeping",
     "job_schedules",
     "gl_budgets",
+    "job_budgets",
     "ap_invoices",
+    "ap_invoice_details",
     "ar_invoices",
     "ap_payments",
 )
@@ -147,6 +149,12 @@ class Settings:
     winteam_subscription_key: str
     winteam_subscription_key_header: str
     winteam_extra_headers: dict[str, str]
+    # Second WinTeam database: Sarus. A separate tenant the primary credentials do not reach.
+    winteam_sarus_enabled: bool
+    winteam_sarus_base_url: str
+    winteam_sarus_tenant_id: str
+    winteam_sarus_subscription_key: str
+    winteam_sarus_extra_headers: dict[str, str]
     winteam_resources: tuple[str, ...]
     winteam_customer_numbers: tuple[str, ...]
     winteam_location_ids: tuple[int, ...]
@@ -154,15 +162,24 @@ class Settings:
     winteam_backfill_months: int
     winteam_window_days: int
     winteam_lookback_days: int
+    winteam_deep_lookback_days: int
     winteam_gl_fiscal_years: int
     winteam_schedule_jobs_limit: int
     winteam_gl_jobs_limit: int
     winteam_normalize: bool
-    poll_seconds: int
     request_timeout_seconds: int
     max_pages_per_sync: int
     allow_insecure_http: bool
     max_retries: int
+    ap_detail_invoice_limit: int
+    companycam_api_token: str
+    # Folder the nightly sync loads WinTeam export files from (docs/export-feeds.md).
+    import_inbox_dir: str
+    # Relay (integration_mapper) read-only export for FedEx (app/relay.py). Server-side only.
+    relay_base_url: str
+    relay_export_token: str
+    relay_timeout_seconds: int
+    companycam_match_rule: str
     ingestion_idle_in_transaction_timeout_seconds: int
     mart_rebuild_lock_timeout_seconds: int
 
@@ -188,13 +205,27 @@ class Settings:
             winteam_subscription_key=_text(env, "WINTEAM_SUBSCRIPTION_KEY"),
             winteam_subscription_key_header=_text(env, "WINTEAM_SUBSCRIPTION_KEY_HEADER", "Ocp-Apim-Subscription-Key"),
             winteam_extra_headers=_json_object(env, "WINTEAM_HEADERS_JSON"),
+            # Sarus is its own WinTeam database. Blank base URL = the same gateway as the primary
+            # tenant (routing, not a secret). The key and tenant id never fall back to the primary's:
+            # an implicit credential fallback is how one tenant's data ends up under another's.
+            winteam_sarus_enabled=_boolean(env, "WINTEAM_SARUS_ENABLED"),
+            winteam_sarus_base_url=_normalize_base_url(
+                _text(env, "WINTEAM_SARUS_BASE_URL") or _text(env, "WINTEAM_BASE_URL"),
+                _text(env, "WINTEAM_API_PREFIX", "/wtnextgen"),
+            ),
+            winteam_sarus_tenant_id=_text(env, "WINTEAM_SARUS_TENANT_ID"),
+            winteam_sarus_subscription_key=_text(env, "WINTEAM_SARUS_SUBSCRIPTION_KEY"),
+            winteam_sarus_extra_headers=_json_object(env, "WINTEAM_SARUS_HEADERS_JSON"),
             winteam_resources=parse_resources(_text(env, "WINTEAM_RESOURCES")),
             winteam_customer_numbers=parse_csv(_text(env, "WINTEAM_CUSTOMER_NUMBERS")),
             winteam_location_ids=_location_ids(_text(env, "WINTEAM_LOCATION_IDS")),
             winteam_page_size=_integer(env, "WINTEAM_PAGE_SIZE", 100, maximum=10_000),
             winteam_backfill_months=_integer(env, "WINTEAM_BACKFILL_MONTHS", 18, maximum=120),
             winteam_window_days=_integer(env, "WINTEAM_WINDOW_DAYS", 16, maximum=366),
-            winteam_lookback_days=_integer(env, "WINTEAM_LOOKBACK_DAYS", 35, minimum=0, maximum=366),
+            # Syncs run on demand only. A normal sync re-reads this many days before the last one (late
+            # punches, approvals); a deep sync re-reads WINTEAM_DEEP_LOOKBACK_DAYS for edits made later.
+            winteam_lookback_days=_integer(env, "WINTEAM_LOOKBACK_DAYS", 3, minimum=0, maximum=366),
+            winteam_deep_lookback_days=_integer(env, "WINTEAM_DEEP_LOOKBACK_DAYS", 35, minimum=0, maximum=366),
             winteam_gl_fiscal_years=_integer(env, "WINTEAM_GL_FISCAL_YEARS", 2, maximum=10),
             winteam_schedule_jobs_limit=_integer(env, "WINTEAM_SCHEDULE_JOBS_LIMIT", 0, minimum=0),
             # Cap the per-job GL budget pull (0 = every active job); mirrors WINTEAM_SCHEDULE_JOBS_LIMIT.
@@ -202,7 +233,6 @@ class Settings:
             # false = land raw payloads only; the worker and the admin sync endpoints skip normalization
             # (used while the marts cannot yet arbitrate between the API and the finance_reference source).
             winteam_normalize=_boolean(env, "WINTEAM_NORMALIZE", True),
-            poll_seconds=_integer(env, "WINTEAM_POLL_SECONDS", 300, minimum=30),
             request_timeout_seconds=_integer(env, "WINTEAM_REQUEST_TIMEOUT_SECONDS", 30),
             max_pages_per_sync=_integer(env, "WINTEAM_MAX_PAGES_PER_SYNC", 500),
             allow_insecure_http=_boolean(env, "WINTEAM_ALLOW_INSECURE_HTTP"),
@@ -213,6 +243,23 @@ class Settings:
             ingestion_idle_in_transaction_timeout_seconds=_integer(
                 env, "WINTEAM_IDLE_IN_TRANSACTION_TIMEOUT_SECONDS", 60, minimum=0, maximum=3600
             ),
+            # ap_invoice_details is one GET per AP invoice. Only invoices whose distributions are not
+            # already landed are fetched, so the first run backfills and later runs cost roughly the
+            # month's new invoices. 0 = no cap.
+            ap_detail_invoice_limit=_integer(
+                env, "WINTEAM_AP_DETAIL_INVOICE_LIMIT", 0, minimum=0, maximum=100000
+            ),
+            # CompanyCam site photos. Server-side only - the browser never sees this token and
+            # never calls CompanyCam directly. Absent by default, so photos stay off until the
+            # production token is added to the server .env. Never give it a VITE_ prefix.
+            companycam_api_token=_text(env, "COMPANYCAM_API_TOKEN"),
+            import_inbox_dir=_text(env, "IMPORT_INBOX_DIR", "/imports/inbox"),
+            relay_base_url=_text(env, "RELAY_BASE_URL").rstrip("/"),
+            relay_export_token=_text(env, "RELAY_EXPORT_TOKEN"),
+            relay_timeout_seconds=_integer(env, "RELAY_TIMEOUT_SECONDS", 60, maximum=600),
+            # How a CompanyCam project is matched to a WinTeam job. Unset until the production data
+            # has been probed: job_number_in_name | address | project_map.
+            companycam_match_rule=_text(env, "COMPANYCAM_MATCH_RULE"),
             # The mart rebuild TRUNCATEs and refills mart.*; behind a stuck writer it should fail fast
             # with a diagnosable message rather than queue up. 0 = wait indefinitely (old behaviour).
             mart_rebuild_lock_timeout_seconds=_integer(
@@ -248,6 +295,31 @@ class Settings:
         parsed = urlparse(self.finance_reference_database_url)
         return parsed.hostname or None
 
+    @property
+    def winteam_sarus_configured(self) -> bool:
+        return bool(self.winteam_sarus_base_url and self.winteam_sarus_tenant_id)
+
+    def sarus_settings(self, *, enabled: bool | None = None) -> "Settings":
+        """These settings pointed at the Sarus database, so the same GET-only client serves it.
+
+        `enabled` overrides WINTEAM_SARUS_ENABLED - used by the credential probe, which must work
+        before ingestion is switched on.
+        """
+        from .tenants import SARUS_RESOURCE_NAMES  # tenants -> sources.rules -> config
+
+        return replace(
+            self,
+            winteam_enabled=self.winteam_sarus_enabled if enabled is None else enabled,
+            winteam_base_url=self.winteam_sarus_base_url,
+            winteam_tenant_id=self.winteam_sarus_tenant_id,
+            winteam_subscription_key=self.winteam_sarus_subscription_key,
+            winteam_extra_headers=dict(self.winteam_sarus_extra_headers),
+            # The primary tenant's resource list, location filter and customer list do not apply.
+            winteam_resources=SARUS_RESOURCE_NAMES,
+            winteam_location_ids=(),
+            winteam_customer_numbers=(),
+        )
+
     def winteam_headers(self) -> dict[str, str]:
         """Headers for every WinTeam call. Never log the returned dict."""
         headers: dict[str, str] = dict(self.winteam_extra_headers)
@@ -258,6 +330,10 @@ class Settings:
         return headers
 
     def validate(self) -> None:
+        if self.winteam_sarus_tenant_id and self.winteam_sarus_tenant_id == self.winteam_tenant_id:
+            raise ConfigurationError(
+                "WINTEAM_SARUS_TENANT_ID is the primary tenant's id; it must name the Sarus database"
+            )
         if self.finance_reference_database_url:
             parsed = urlparse(self.finance_reference_database_url)
             if parsed.scheme not in {"postgresql", "postgres"} or not parsed.hostname:

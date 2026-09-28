@@ -1,4 +1,4 @@
-# Northstar Facilities API contract (v1)
+# Crane IFS API contract (v1)
 
 All routes are served under `/api/v1` by the FastAPI service and proxied same-origin by nginx.
 All responses are JSON with snake_case keys and numbers as numbers. Empty data returns `200` with
@@ -36,15 +36,21 @@ Optional filters on every reporting endpoint: `account` (parent account name), `
 | Route | Response |
 |---|---|
 | `GET /system/status` | `{database, winteam: IntegrationStatus, marts: {latest_month, rebuilt_at, job_month_rows}, forecast: {run_id, engine_version, latest_closed_month, generated_at} \| null}` |
-| `GET /integrations/winteam` | `IntegrationStatus = {enabled, configured, base_url_host, normalize_enabled, resources: [{name, enabled, entitled: true|false|null, kind, last_status, last_completed_at, records_fetched, watermark}], poll_seconds}` — `entitled=false` after the gateway answered 403 for that resource |
+| `GET /integrations/winteam` | `IntegrationStatus = {enabled, configured, base_url_host, normalize_enabled, resources: [{name, enabled, entitled: true|false|null, kind, last_status, last_completed_at, records_fetched, watermark}], poll_seconds: null, sync: 'on_demand'}` — `entitled=false` after the gateway answered 403 for that resource. Nothing polls WinTeam; `poll_seconds` is always null. |
 | `POST /integrations/winteam/test` (admin) | `{ok, resource, records_in_probe, total_count}` |
-| `POST /integrations/winteam/sync/{resource}` (admin) | `{run_id, resource, status, fetched, inserted, normalized}` |
+| `POST /integrations/winteam/sync/{resource}?deep=` (admin) | `{run_id, resource, status, fetched, inserted, normalized, message?}` — always runs (the daily skip does not apply to a named resource) |
 | `POST /integrations/winteam/watermark/{resource}/reset` (admin) | `{resource, watermark_removed, next_sync}` — the next sync of that resource backfills `WINTEAM_BACKFILL_MONTHS` (raw records are kept; replays are idempotent) |
-| `POST /integrations/winteam/sync` (admin) | `{runs: [...as above], marts: RebuildResult}` — full sync, normalize, rebuild marts, rebuild forecasts |
+| `POST /integrations/winteam/sync?normalize=&resources=&force=&deep=` (admin) | `{runs: [...as above], marts: RebuildResult \| null, normalized, not_entitled}` — on-demand sync (nothing polls WinTeam), normalize, rebuild marts and forecasts. Timekeeping and AP re-read 3 days before the last sync, 35 with `deep=true`. Jobs, vendors, budgets and AR synced within 20 hours come back `status: 'skipped'` unless `force=true`; `marts` is null when every resource was skipped. |
 | `POST /marts/rebuild` (admin) | `RebuildResult = {job_month_rows, portfolio_month_rows, forecast: ForecastBuildResult \| null, seconds}` |
 | `POST /forecasts/rebuild` (admin) | `ForecastBuildResult = {run_id, forecast_rows, accuracy_rows, track_rows, status_rows, sites_forecast}` |
 | `GET /integrations/winteam/runs?limit=25` | `{runs: [{id, resource_name, status, started_at, completed_at, records_fetched, records_inserted, error_message}]}` |
-| `GET /data/freshness` | `{resources: [{resource_name, last_status, last_completed_at, records_fetched, records_inserted, watermark_value, seconds_since_last_completion}], marts: {...}}` |
+| `GET /integrations/winteam/sarus` | `{configured, enabled, base_url_host, has_subscription_key, ingestion, resources: [{name, enabled, kind, last_status, last_completed_at, records_fetched, watermark, entitled}], precedence: {sarus_timekeeping_from, sarus_timekeeping_to, sarus_ap_invoice_from, sarus_ap_invoice_to, sarus_ar_invoices_api}}` — the second WinTeam database (Sarus). Never returns the tenant id or key. `ingestion` is true when `WINTEAM_SARUS_ENABLED` and the tenant is configured; the worker then syncs it each poll, before the primary. Sarus rows carry source `winteam_sarus` and supersede only Sarus export rows inside their own window (migration 026). |
+| `POST /integrations/winteam/sarus/sync?normalize=&resources=&force=&deep=` (admin) | Same shape as `POST /integrations/winteam/sync`: `{runs, marts, normalized, not_entitled}`. GET-only against WinTeam; 409 unless `WINTEAM_SARUS_ENABLED`. Resources: jobs (raw only), vendors, timekeeping, job_budgets, ap_invoices, ap_invoice_details, ar_invoices. |
+| `POST /integrations/winteam/sarus/test` (admin) | `{ok, jobs_total, company_numbers, matches_known_sarus_jobs, matches_known_crane_jobs, sample_jobs, configured, enabled, base_url_host, has_subscription_key, ingestion}` — one read-only GET of the Sarus jobs list; works before `WINTEAM_SARUS_ENABLED`, lands nothing. Company numbers are per database (Sarus and Crane both have company 1), so identity is judged by job: `matches_known_crane_jobs` above zero means the id points back at the Crane tenant. |
+| `GET /integrations/companycam` | `{configured, base_url, match_rule, note}` — whether site photos are wired. The token is server-side only and is never returned. |
+| `GET /integrations/companycam/probe?limit=5` (admin) | `{configured, projects_returned, fields_present, sample, next_step}` — read-only look at real CompanyCam projects so a project-to-job match rule can be chosen from evidence rather than guessed. |
+| `GET /data/reconciliation?months=6` | `{ar_chain: [{month, raw_invoices, core_invoices, raw_revenue, core_revenue, variance, exact}], ingestion_exact, suppressed_ar: [...], suppressed_ar_total, uncosted_revenue: [...], uncosted_revenue_total, healthy, note}`. Proves published figures trace to WinTeam payloads. `raw -> core` must reconcile to the cent - a variance is an ingestion defect. `suppressed_ar` is invoiced AR published as zero revenue (margin too low); `uncosted_revenue` is revenue published with no labor basis (margin too high). A month is reportable only when both are zero. |
+| `GET /data/freshness` | `{resources: [{resource_name, last_status, last_completed_at, records_fetched, records_inserted, last_error, watermark_value, seconds_since_last_completion, overdue: null, overdue_after_seconds: null, not_entitled}], ingestion: {healthy, overdue_resources: [], overdue_after_seconds: null, poll_seconds: null, sync: 'on_demand', reference_stale, reference_stale_after_seconds}, marts: {...}}`. WinTeam is synced on demand only, so no resource is judged overdue; `seconds_since_last_completion` is the age of its last sync. Resources the tenant is not entitled to (HTTP 403) carry `not_entitled`. `reference_stale` covers the hand-loaded finance_reference export (the primary job-cost P&L source; stale after 7 days, at which point the newest months carry labor without revenue). `healthy` is false when it is stale. |
 | `GET /settings` | `{settings: [{key, value, description, updated_at}]}` |
 | `PUT /settings/{key}` (admin) body `{value}` | updated setting |
 | `GET /dimensions` | `{months: [ISO], month_status: [{month, status: "closed" \| "in_progress" \| "no_revenue"}], latest_month, latest_closed_month, default_month, accounts: [], regions: [], branches: [], service_types: [], verticals: [], customers: [{customer_number, customer_name}]}` |
@@ -98,6 +104,14 @@ equivalent prior range (prior month / prior quarter-to-date / prior year-to-date
 Status rule (server-side, disclosed in `/settings`): Critical when gross margin < target − 7 pts,
 or labor over budget by > 13%, or OT > 15% of hours, or weighted AR days > 65; Watch at margin
 < target, labor over budget > 7%, OT > 10%, AR days > 45; else Healthy.
+
+### `GET /jobs/{job_number}/subcontractors?months=12`
+
+`{job_number, range, total_cost, vendors: [{vendor_name, vendor_number, invoices, amount, share, last_invoice_date, gl_accounts}], basis}`
+
+Who is paid to work a site, from `core.fact_ap_distribution` — WinTeam's own coding of a payable to
+a job, so these are booked costs with their GL accounts rather than an apportionment or a
+trailing-average projection. Ordered by amount. `share` is null when the site's total is zero.
 
 ### `GET /jobs/{job_number}?months=24`
 
@@ -339,3 +353,90 @@ above, all additive:
 - `mart.job_month` gained `sub_account` (migration 018), written by the same
   `app.weekly.apply_sub_accounts` pass that labels `mart.job_week`, so the sub-account drill-down
   works on the monthly mart. A mart rebuild is required after applying the migration.
+
+## Leadership labor P&L (added 2026-09-23)
+
+WinTeam sync cadence changed the same day: the worker runs one incremental sync a night
+(`app/nightly.py`, setting `nightly_sync`); the integration status fields `sync: 'on_demand'` and
+`poll_seconds: null` still describe the on-demand routes, and the nightly run is recorded in
+`ops.integration_sync_run` as integration `nightly` (reported by `GET /leadership/config` `status.syncs`).
+
+The leadership views (Home, Account, Analytics) read `mart.leadership_week` (migration 030, rules
+in `services/api/app/leadership.py`) joined at read time with the account configuration
+(`ops.account`, `ops.account_segment`, `ops.account_job`, migration 028), so configuration edits
+apply without a rebuild. **Ratios in these payloads are fractions** (`target_labor_pct: 0.645`); the
+browser client does not convert them. Every derived metric (weekly invoice, labor %, base rate, $ and
+hours over target, OT premium, prior-month labor % including subcontractor cost, status) is computed
+in the browser by `src/leadership/metrics.ts`, pinned by tests to the Plano reference week. Weeks
+are Monday-based; the views label them by the week-ending Sunday. Any date in a week selects it.
+
+| Route | Response |
+|---|---|
+| `GET /leadership/config` | `{source, accounts: [LeadershipAccount], weeks: [{week_start, week_end, days_with_labor, pay_report_share, revenue_month, in_progress}], default_week, status: {rebuilt_at, leadership_rebuilt_at, syncs: [{integration_name, status, completed_at, started_at}], imports: {pay_report?, job_cost?: {file_name, period_from, period_to, rows_loaded, loaded_at}}, pay_report_through: [{company, through}]}}`. `default_week` = the latest complete week. A `syncs` entry is `failed` when the latest run of any of that integration's resources failed, except a resource the tenant is not entitled to (HTTP 403, error `not_entitled`). |
+| `GET /leadership/rows?week=&weeks=1&account=featured` | `{source, week, weeks: [ISO], account, rows: [LeadershipRow]}` for `weeks` (1–26) weeks ending at `week`. `account` = a slug, `featured`, `other` (unmapped or non-featured) or `all`. 404 for an unknown slug. |
+| `GET /leadership/sites/{company}/{job_number}?weeks=13&week=` | `{source, site: {company, job_number, site_name, address_line_1, city, state_province, postal_code, latitude, longitude, parent_job_number, delivery_model, parent_account, account_slug, segment, role, companycam_project_id}, weeks: [LeadershipRow], invoices: {since, vendor_type_ids, total, lines: [{invoice_number, invoice_date, gl_account_number, amount, vendor_number, vendor_name, vendor_type_id}]}, photos: {configured, project_id, items: [{id, captured_at, thumbnail, web, creator_name}] \| null, error}}`. Invoices are AP GL distribution lines coded to the job from subcontractor vendors (setting `subcontractor_vendor_type_ids`, default `[6]`) over the last 6 months. Photos are fetched server-side from CompanyCam when a token and the job's `companycam_project_id` exist. 404 for an unknown job. |
+| `GET /leadership/vendors?account=&months=6` | `{account, since, vendor_type_ids, total, by_vendor: [{vendor_number, vendor_name, amount, invoices}], by_site: [{company, job_number, site_name, amount, invoices}], by_month: [{month, amount, invoices}], lines: [invoice line + {company, job_number, site_name}]}`: subcontractor AP distribution lines coded to the account's sites since the first of the month `months - 1` back. 404 for an unknown slug. |
+| `PUT /leadership/accounts/{slug}` (admin) body: any of `name, featured, sort, target_labor_pct, watch_band, revenue_method, revenue_divisor, budget_reliability_ratio, source_parent_accounts, segment_source, fallback_segment` | the updated `LeadershipAccount` |
+| `PUT /leadership/accounts/{slug}/segments` (admin) body `[{name, target_labor_pct}]` | the account plus `jobs_moved_to_fallback`; the fallback segment must stay in the list |
+| `GET /leadership/account-jobs?account=&needs_review=&unmapped=` (admin) | `{jobs: [{company, job_number, account_slug, segment, role, companycam_project_id, assigned_by, needs_review, job_name, parent_account, is_active}]}`; `unmapped=true` lists current jobs in Other |
+| `PUT /leadership/account-jobs/{company}/{job_number}` (admin) body `{account_slug \| null, segment, role, companycam_project_id}` | the mapping row (`assigned_by: 'admin'`, `needs_review: false`); `account_slug: null` unmaps the job (Other) |
+| `POST /leadership/accounts/seed` (admin) | `{added: {accounts, segments, jobs}}`: adds what `config/accounts/seed.json` has and the database lacks; never overwrites |
+| `GET /leadership/imports?limit=25` (admin) | `{files: [LeadershipImportFile]}` |
+| `POST /leadership/imports` (admin, multipart `file`, optional `kind` = `pay_report` \| `job_cost`, `rebuild` = true) | `{file: LeadershipImportFile, marts: RebuildResult \| null}`; formats in `docs/export-feeds.md`. A file already loaded comes back `status: 'duplicate'`. |
+
+```
+LeadershipAccount = { slug, name, featured, sort, target_labor_pct, watch_band, revenue_method: 'monthly_div'|'weekly_billing'|'per_visit',
+  revenue_divisor, budget_reliability_ratio, source_parent_accounts: [], segment_source: 'explicit'|'sub_account'|'company'|'fallback',
+  fallback_segment, revenue_allocation: 'none'|'budget_hours', cost_basis: 'labor'|'labor_plus_vendor',
+  segments: [{name, sort, target_labor_pct|null}], sites, needs_review, updated_at, updated_by }
+LeadershipRow = { week_start, week_end, company, job_number, site_name, parent_account, account_slug|null (Other), segment, role: 'site'|'catch_all'|'non_billed',
+  needs_review, hours, ot_hours, labor, labor_basis: 'pay_report'|'trailing_rate_estimate', ot_dollars (full 1.5x pay), budget_hours, budget_dollars,
+  employees, days_with_labor, revenue_month, revenue_month_amount, revenue_allocated, revenue_month_basis, invoice_week, prior_revenue, prior_labor,
+  prior_labor_basis: 'pay_report'|'job_cost', prior_sub, prior_sub_basis: 'job_cost'|'ap_distribution', delivery_model, sub_week, sub_week_basis,
+  consumables_cost|null, consumables_basis|null, latitude, longitude, city, state_province }
+LeadershipImportFile = { import_file_id, kind, file_name, origin: 'upload'|'inbox', status: 'loaded'|'failed'|'duplicate', rows_read, rows_loaded,
+  companies: [], period_from, period_to, errors: [], uploaded_by, loaded_at }
+```
+
+Row rules (`mart.leadership_week`): labor, hours, OT hours and OT dollars come from the imported Pay
+Report when it covers every passed day of the company's week, else from `mart.job_week` (trailing-rate
+labor; OT dollars estimated at 1.5x the straight-time rate). `revenue_month` = the latest month with
+job-cost revenue before the month the week ends in; `revenue_month_amount` its revenue for the job.
+`prior_labor` = the Pay Report total when it covers the whole month, else job-cost labor;
+`prior_sub` = the greater of the job-cost subcontract line and AP distributions in the subcontract GL
+range. A job with revenue in the revenue month has a row even without labor that week. `sub_week` is
+vendor cost (a site without timekeeping takes the revenue month's subcontract cost apportioned by
+days, basis `prior_month_prorated`). Accounts with `cost_basis = 'labor_plus_vendor'` are measured by
+cost % = (labor + sub_week) / invoice (status and $ over target follow it; hours over target stay
+labor-based); others by labor %, with vendor cost shown beside it. With `revenue_allocation =
+'budget_hours'`, when the account's catch-all jobs carry revenue-month revenue and none of its sites
+do (White Settlement ISD on job 112, Crowley ISD on job 910), that revenue is spread over the sites
+present in the week by revenue-month budget hours, else revenue-month actual hours (migration 033,
+computed at read time): `revenue_month_amount` and `prior_revenue` include it and
+`revenue_allocated` shows the amount moved onto (+) or off (-) the row, `allocation_weight` the weight used
+(`budget_hours` | `actual_hours` | `week_hours`, null when nothing moved). `PUT /leadership/accounts/{slug}` also accepts `revenue_allocation` and `cost_basis`.
+
+## Relay (FedEx) feeds, added 2026-09-24
+
+The dashboard pulls Relay's (integration_mapper) read-only export (`GET /export/dashboard/{ap,ar,sites,work-orders}`,
+bearer token; Relay `docs/DASHBOARD_EXPORT.md`) into `core.relay_*` snapshots (migration 034, `app/relay.py`), nightly
+and on demand. Settings `RELAY_BASE_URL`, `RELAY_EXPORT_TOKEN` (server-side only).
+
+| Route | Response |
+|---|---|
+| `GET /integrations/relay` | `{configured, base_url_host, feeds: [{feed: 'ap'\|'ar'\|'sites'\|'work_orders', rows, status?, completed_at?, error_message?}]}`. Never returns the token. |
+| `POST /integrations/relay/sync?rebuild=true` (admin) | `{runs: [{feed, status, fetched, loaded, error?}], failed: [feed], marts: RebuildResult \| null}`. GET-only against Relay. 409 when not configured. A feed that returns no rows never empties a snapshot that has rows (that feed fails instead). |
+
+Effects on `mart.leadership_week` for the WinTeam jobs Relay covers (never Sarus):
+- `sub_week` = the week's service month (the month holding the week's Thursday) of Relay payables, excluding
+  self-perform legs, spread by days: actual when at least 90% of the site contract is invoiced or there is no
+  contract (`sub_week_basis` `relay_ap`), else the contract amount (`relay_contract`); Crane's own sites carry
+  none (`relay_self_perform`).
+- `prior_sub` = the greater of job cost, WinTeam AP distributions and Relay payables (`prior_sub_basis` `relay_ap`).
+- `revenue_month_amount` / `prior_revenue` come from Relay AR when job cost does not cover the month
+  (`revenue_month_basis` `relay_ar`).
+- `delivery_model` falls back to Relay's self-perform flag.
+
+`GET /leadership/sites/{company}/{job}` and `GET /leadership/vendors` invoice lines gain `source`
+(`winteam` | `relay`), and for Relay lines `service_month`, `status`, `in_winteam`, `payment_status`; a Relay payable
+already among the WinTeam lines (same vendor and invoice number) is not repeated.

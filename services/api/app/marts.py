@@ -17,6 +17,8 @@ and every row says which one it used (`revenue_basis`, `labor_basis`):
   the effective timekeeping rows when the month has punches, else actual_hours / overtime_hours from the
   job-cost row. A job invoiced or worked in such a month without a job-cost row keeps its AR
   invoiced_total and hours but carries 0 revenue / cost and the quality note `no_job_cost_row`.
+  A parent job whose child jobs carry job-cost revenue in the month keeps its own job-cost row even
+  at 0 revenue: its AR is the contract invoice that job cost already spread over the children.
 * Otherwise (the WinTeam API source, or in-progress months of the reference source such as the
   month being worked): revenue / invoiced_total / collected_total / invoice_count come from
   the effective AR invoices grouped by job and service_month (billingPeriodFrom month, else invoiceDate
@@ -67,7 +69,7 @@ from typing import Any
 
 import psycopg
 
-from . import weekly
+from . import accounts, leadership, weekly
 from .config import settings
 from .db import connection
 
@@ -79,6 +81,9 @@ class MartRebuildBlocked(RuntimeError):
 
 
 API_SOURCE = "winteam_api"
+SARUS_SOURCE = "winteam_sarus"
+SARUS_COMPANY = "Sarus"
+API_SOURCES = (API_SOURCE, SARUS_SOURCE)
 EFFECTIVE_VIEWS = {
     "timekeeping": "mart.v_timekeeping_effective",
     "ar_invoice": "mart.v_ar_invoice_effective",
@@ -86,10 +91,10 @@ EFFECTIVE_VIEWS = {
 }
 
 
-# ── source precedence (pure mirror of the 011 views) ────────────────────────
-def api_window(rows: list[dict[str, Any]], date_field: str) -> tuple[Any, Any]:
-    """[min, max] of `date_field` over the API rows; (None, None) when the API has none."""
-    dates = [r[date_field] for r in rows if r.get("source") == API_SOURCE and r.get(date_field) is not None]
+# ── source precedence (pure mirror of the 011 / 026 views) ──────────────────
+def api_window(rows: list[dict[str, Any]], date_field: str, source: str = API_SOURCE) -> tuple[Any, Any]:
+    """[min, max] of `date_field` over the rows of one API source; (None, None) when it has none."""
+    dates = [r[date_field] for r in rows if r.get("source") == source and r.get(date_field) is not None]
     return (min(dates), max(dates)) if dates else (None, None)
 
 
@@ -99,17 +104,23 @@ def covered_by_api(company: str | None, api_companies: list[str] | tuple[str, ..
 
 
 def effective_rows(rows: list[dict[str, Any]], date_field: str, api_companies: list[str] | tuple[str, ...]) -> list[dict[str, Any]]:
-    """Day-grain precedence: API rows always; non-API rows only outside the API window or for companies the API does not serve."""
+    """Day-grain precedence per database: API rows always; an export row is dropped inside the primary
+    window when its company is one the primary serves, and inside the Sarus window when it is Sarus."""
     lo, hi = api_window(rows, date_field)
+    s_lo, s_hi = api_window(rows, date_field, SARUS_SOURCE)
     out: list[dict[str, Any]] = []
     for r in rows:
-        if r.get("source") == API_SOURCE:
+        if r.get("source") in API_SOURCES:
             out.append(r)
             continue
         d = r.get(date_field)
         inside = lo is not None and d is not None and lo <= d <= hi
-        if not (inside and covered_by_api(r.get("company"), api_companies)):
-            out.append(r)
+        inside_sarus = s_lo is not None and d is not None and s_lo <= d <= s_hi
+        if inside and covered_by_api(r.get("company"), api_companies):
+            continue
+        if inside_sarus and r.get("company") == SARUS_COMPANY:
+            continue
+        out.append(r)
     return out
 
 
@@ -138,9 +149,17 @@ def resolve_api_job(raw_job_number: str | None, dim_rows: list[dict[str, Any]], 
 
 
 def effective_ar_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Invoice-grain precedence: an API invoice supersedes the export invoice with the same (customer_number, invoice_number)."""
-    api_keys = {(r["customer_number"], r["invoice_number"]) for r in rows if r.get("source") == API_SOURCE}
-    return [r for r in rows if r.get("source") == API_SOURCE or (r["customer_number"], r["invoice_number"]) not in api_keys]
+    """Invoice-grain precedence: an API invoice supersedes the export invoice with the same
+    (customer_number, invoice_number) of its own database (company Sarus -> winteam_sarus)."""
+    api_keys = {(r["source"], r["customer_number"], r["invoice_number"]) for r in rows if r.get("source") in API_SOURCES}
+
+    def own_source(r: dict[str, Any]) -> str:
+        return SARUS_SOURCE if r.get("company") == SARUS_COMPANY else API_SOURCE
+
+    return [
+        r for r in rows
+        if r.get("source") in API_SOURCES or (own_source(r), r["customer_number"], r["invoice_number"]) not in api_keys
+    ]
 
 JOB_MONTH_SQL = """
 INSERT INTO mart.job_month (
@@ -151,13 +170,14 @@ INSERT INTO mart.job_month (
   scheduled_hours, budget_revenue, budget_labor, budget_subcontract, budget_supplies,
   employee_count, work_days, last_work_date, data_quality_status, quality_notes, rebuilt_at,
   source, company, delivery_model, geo_precision, payroll_ti_cost, subcontract_cost, supplies_cost, other_direct_cost,
-  budget_direct_cost, budget_hours, revenue_basis, labor_basis, double_time_hours
+  budget_direct_cost, budget_hours, revenue_basis, labor_basis, subcontract_basis, double_time_hours
 )
 WITH jobs AS (
   SELECT j.job_key, j.job_number, j.job_name, pa.account_name AS parent_account,
          j.region_name, j.branch_name, j.service_type, j.vertical, j.manager_name,
          j.city, j.state_province, j.country_code, j.latitude, j.longitude, j.is_active,
-         j.source, j.company, j.delivery_model, j.geo_precision, j.customer_number AS dim_customer_number
+         j.source, j.company, j.delivery_model, j.geo_precision, j.customer_number AS dim_customer_number,
+         j.parent_job_number
   FROM core.dim_job j
   LEFT JOIN core.dim_parent_account pa ON pa.parent_account_key = j.parent_account_key
   WHERE j.valid_to IS NULL AND j.job_number IS NOT NULL
@@ -205,13 +225,43 @@ bd AS (
   JOIN jobs jb ON jb.job_number = b.job_number
   GROUP BY jb.job_key, m.budget_month
 ),
+apd AS (
+  -- Subcontract cost per job-month from AP GL distributions (migration 020). This is WinTeam's own
+  -- coding of a payable to a site, so it needs no apportionment and no trailing-average projection:
+  -- the accounts are whatever `gl_account_classes.subcontract` names (44000-44999 for this tenant).
+  SELECT jb.job_key, v.month,
+         sum(v.amount) FILTER (
+           WHERE (v.gl_account_number)::bigint BETWEEN %(subcontract_gl_low)s AND %(subcontract_gl_high)s
+         ) AS subcontract,
+         sum(v.amount) FILTER (
+           WHERE (v.gl_account_number)::bigint BETWEEN %(other_direct_gl_low)s AND %(other_direct_gl_high)s
+         ) AS other_direct
+  FROM mart.v_ap_distribution_month v
+  JOIN jobs jb ON jb.job_key = v.job_key
+  WHERE v.gl_account_number ~ '^[0-9]+$'
+    AND ((v.gl_account_number)::bigint BETWEEN %(subcontract_gl_low)s AND %(subcontract_gl_high)s
+      OR (v.gl_account_number)::bigint BETWEEN %(other_direct_gl_low)s AND %(other_direct_gl_high)s)
+  GROUP BY jb.job_key, v.month
+),
 jc AS (
   SELECT jb.job_key, c.month, c.source,
          c.revenue, c.direct_labor, c.payroll_taxes_insurance, c.materials, c.subcontractors, c.equipment_supplies,
          c.other_direct_costs, c.total_direct_costs, c.gross_profit, c.budget_revenue, c.budget_direct_costs, c.budget_labor,
          c.budget_hours, c.actual_hours, c.overtime_hours, c.data_quality_status
-  FROM core.fact_job_cost_month c
+  FROM mart.v_job_cost_month_effective c
   JOIN jobs jb ON jb.job_number = c.job_number
+),
+parent_jc AS (
+  -- A parent job invoiced for the whole contract while the job-cost P&L spreads that revenue over
+  -- its child sites (Plano ISD: the district invoice is billed on job 800, job cost carries it on
+  -- 801-896 and 0 on 800). Falling back to AR for the parent counted the contract twice, so a parent
+  -- whose children carry job-cost revenue in the month keeps its own job-cost row, zero included.
+  SELECT p.job_key, c_jc.month
+  FROM jobs p
+  JOIN jobs c ON c.parent_job_number = p.job_number AND c.job_key <> p.job_key
+             AND c.company IS NOT DISTINCT FROM p.company
+  JOIN jc c_jc ON c_jc.job_key = c.job_key AND coalesce(c_jc.revenue, 0) <> 0
+  GROUP BY p.job_key, c_jc.month
 ),
 lb AS (
   SELECT jb.job_key, l.month, sum(l.budget_labor) AS budget_labor, sum(l.budget_hours) AS budget_hours
@@ -220,10 +270,28 @@ lb AS (
   GROUP BY jb.job_key, l.month
 ),
 jc_months AS (
-  -- CLOSED months covered by a job-cost import: revenue and cost come ONLY from the job-cost P&L
-  -- there (a job without a job-cost row in such a month has 0 job-cost revenue, never its AR
-  -- amount). A month is closed once month_end + close_lag_days is in the past; an in-progress
-  -- month's job-cost import is partial (invoicing still running) and is labelled job_cost_partial.
+  -- CLOSED months covered by a job-cost import: a job WITH a job-cost row in such a month takes its
+  -- revenue and cost from the job-cost P&L, never from AR, so the finance-approved figure wins
+  -- wherever it exists. A job the export SKIPPED falls back to its own AR and timekeeping and says
+  -- so in revenue_basis / labor_basis; it is not reported as zero.
+  --
+  -- A job-cost row is only taken when it actually carries revenue. The export ships half-posted
+  -- months as rows with revenue 0 and real labor (data_quality_status = 'warning'), and taking those
+  -- literally suppressed $4.34M of invoiced July AR and $5.39M of August across 334 job-months -
+  -- job 500's August read $0 against $517,334.27 that WinTeam had already invoiced. A row with no
+  -- revenue is not a P&L; the job falls back to its own AR and says so. Where the month genuinely
+  -- had no billing, AR is 0 too and `greatest` still yields 0, so a real zero is preserved.
+  --
+  -- This gate used to be month-level only: one job-cost row anywhere in a month forced every job in
+  -- that month onto the job-cost basis, and a job absent from the export was published at 0 revenue
+  -- against a full month of labor. That assumes the export is complete for a closed month. The
+  -- 2026-09-03 export covers July partially and August barely, so July understated revenue by
+  -- $3.66M (two fifths of it) and August by $7.86M (five sixths) - the business appeared to
+  -- collapse. Per-row bases
+  -- already exist for exactly this; mixed bases within a month are disclosed, not prevented.
+  --
+  -- A month is closed once month_end + close_lag_days is in the past; an in-progress month's
+  -- job-cost import is partial (invoicing still running) and is labelled job_cost_partial.
   SELECT DISTINCT month FROM core.fact_job_cost_month
   WHERE (month + interval '1 month' - interval '1 day')::date
         + coalesce((SELECT (value #>> '{}')::int FROM ops.app_setting WHERE key = 'close_lag_days'), 5) < current_date
@@ -241,6 +309,7 @@ keys AS (
   UNION SELECT job_key, month FROM bd
   UNION SELECT job_key, month FROM jc
   UNION SELECT job_key, month FROM lb
+  UNION SELECT job_key, month FROM apd
 ),
 assembled AS (
   SELECT
@@ -248,9 +317,11 @@ assembled AS (
     jb.region_name, jb.branch_name, jb.service_type, jb.vertical, jb.manager_name,
     jb.city, jb.state_province, jb.country_code, jb.latitude, jb.longitude, k.month, jb.is_active,
     jb.company, jb.delivery_model, jb.geo_precision, coalesce(jc.source, jb.source) AS source,
-    jm.month IS NOT NULL AS has_jc,
-    jc.job_key IS NULL AND jm.month IS NOT NULL AS missing_jc_row,
-    CASE WHEN jm.month IS NOT NULL THEN coalesce(jc.revenue, 0) ELSE greatest(coalesce(ar.revenue, 0), coalesce(jc.revenue, 0)) END AS revenue,
+    jm.month IS NOT NULL AND jc.job_key IS NOT NULL AND (coalesce(jc.revenue, 0) <> 0 OR pj.job_key IS NOT NULL) AS has_jc,
+    jm.month IS NOT NULL AND (jc.job_key IS NULL OR coalesce(jc.revenue, 0) = 0) AND pj.job_key IS NULL AS missing_jc_row,
+    CASE WHEN jm.month IS NOT NULL AND jc.job_key IS NOT NULL AND (coalesce(jc.revenue, 0) <> 0 OR pj.job_key IS NOT NULL)
+           THEN jc.revenue
+         ELSE greatest(coalesce(ar.revenue, 0), coalesce(jc.revenue, 0)) END AS revenue,
     coalesce(ar.invoiced_total, 0) AS invoiced_total,
     coalesce(ar.collected_total, 0) AS collected_total,
     coalesce(ar.invoice_count, 0) AS invoice_count,
@@ -261,14 +332,24 @@ assembled AS (
     CASE WHEN tk.job_key IS NOT NULL THEN tk.overtime_hours
          WHEN jc.job_key IS NOT NULL THEN coalesce(jc.overtime_hours, 0) ELSE 0 END AS overtime_hours,
     coalesce(tk.double_time_hours, 0) AS double_time_hours,
-    CASE WHEN jm.month IS NOT NULL THEN coalesce(jc.direct_labor, 0)
+    CASE WHEN jm.month IS NOT NULL AND jc.job_key IS NOT NULL THEN coalesce(jc.direct_labor, 0)
          WHEN tk.job_key IS NOT NULL THEN coalesce(tk.labor_cost, 0)
          ELSE coalesce(jc.direct_labor, 0) END AS labor_cost,
-    CASE WHEN jm.month IS NOT NULL THEN 0 ELSE round(coalesce(tk.labor_cost, 0) * %(burden)s::numeric, 2) END AS burden_cost,
+    CASE WHEN jm.month IS NOT NULL AND jc.job_key IS NOT NULL THEN 0
+         ELSE round(coalesce(tk.labor_cost, 0) * %(burden)s::numeric, 2) END AS burden_cost,
     CASE WHEN jc.job_key IS NOT NULL THEN coalesce(jc.payroll_taxes_insurance, 0) ELSE 0 END AS payroll_ti_cost,
-    CASE WHEN jc.job_key IS NOT NULL THEN coalesce(jc.subcontractors, 0) ELSE 0 END AS subcontract_cost,
+    -- The export's subcontract line wins only where the export row was the one actually used for
+    -- this job-month (same gate as revenue); otherwise the AP distributions carry it. Before those
+    -- distributions existed this fell to 0 and the weekly view projected a trailing average instead.
+    CASE WHEN jm.month IS NOT NULL AND jc.job_key IS NOT NULL AND (coalesce(jc.revenue, 0) <> 0 OR pj.job_key IS NOT NULL)
+           THEN coalesce(jc.subcontractors, 0)
+         ELSE coalesce(apd.subcontract, 0) END AS subcontract_cost,
+    CASE WHEN jm.month IS NOT NULL AND jc.job_key IS NOT NULL AND (coalesce(jc.revenue, 0) <> 0 OR pj.job_key IS NOT NULL) THEN 'job_cost'
+         WHEN apd.job_key IS NOT NULL THEN 'ap_distribution' END AS subcontract_basis,
     CASE WHEN jc.job_key IS NOT NULL THEN coalesce(jc.materials, 0) + coalesce(jc.equipment_supplies, 0) ELSE 0 END AS supplies_cost,
-    CASE WHEN jc.job_key IS NOT NULL THEN coalesce(jc.other_direct_costs, 0) ELSE 0 END AS other_direct_cost,
+    CASE WHEN jm.month IS NOT NULL AND jc.job_key IS NOT NULL AND (coalesce(jc.revenue, 0) <> 0 OR pj.job_key IS NOT NULL)
+           THEN coalesce(jc.other_direct_costs, 0)
+         ELSE coalesce(apd.other_direct, 0) END AS other_direct_cost,
     jc.total_direct_costs AS jc_direct_cost,
     jc.gross_profit AS jc_gross_profit,
     coalesce(sc.scheduled_hours, 0) AS scheduled_hours,
@@ -284,10 +365,10 @@ assembled AS (
     coalesce(tk.work_days, 0) AS work_days,
     tk.last_work_date,
     jc.data_quality_status AS jc_quality,
-    CASE WHEN jm.month IS NOT NULL THEN 'job_cost'
+    CASE WHEN jm.month IS NOT NULL AND jc.job_key IS NOT NULL AND (coalesce(jc.revenue, 0) <> 0 OR pj.job_key IS NOT NULL) THEN 'job_cost'
          WHEN coalesce(jc.revenue, 0) > coalesce(ar.revenue, 0) THEN 'job_cost_partial'
          WHEN ar.job_key IS NOT NULL THEN 'ar_invoice' END AS revenue_basis,
-    CASE WHEN jm.month IS NOT NULL THEN 'job_cost'
+    CASE WHEN jm.month IS NOT NULL AND jc.job_key IS NOT NULL THEN 'job_cost'
          WHEN tk.job_key IS NOT NULL THEN coalesce(tk.labor_basis, 'hours_x_rate')
          WHEN jc.job_key IS NOT NULL THEN 'job_cost_partial' END AS labor_basis
   FROM keys k
@@ -297,7 +378,9 @@ assembled AS (
   LEFT JOIN sc ON sc.job_key = k.job_key AND sc.month = k.month
   LEFT JOIN bd ON bd.job_key = k.job_key AND bd.month = k.month
   LEFT JOIN jc ON jc.job_key = k.job_key AND jc.month = k.month
+  LEFT JOIN apd ON apd.job_key = k.job_key AND apd.month = k.month
   LEFT JOIN jc_months jm ON jm.month = k.month
+  LEFT JOIN parent_jc pj ON pj.job_key = k.job_key AND pj.month = k.month
   LEFT JOIN lb ON lb.job_key = k.job_key AND lb.month = k.month
   LEFT JOIN cust ON cust.job_key = k.job_key
   WHERE k.month <= date_trunc('month', current_date)::date
@@ -328,7 +411,7 @@ SELECT
   CASE WHEN cardinality(notes) > 0 THEN 'warning' ELSE 'passed' END,
   to_jsonb(notes), now(),
   coalesce(source, 'winteam_api'), company, delivery_model, geo_precision, payroll_ti_cost, subcontract_cost, supplies_cost, other_direct_cost,
-  budget_direct_cost, budget_hours, revenue_basis, labor_basis, double_time_hours
+  budget_direct_cost, budget_hours, revenue_basis, labor_basis, subcontract_basis, double_time_hours
 FROM finished
 """
 
@@ -400,6 +483,29 @@ def _burden_rate(conn: Any) -> float:
         return 0.0
 
 
+def _gl_range(conn: Any, class_name: str) -> tuple[int, int]:
+    """The GL account range `gl_account_classes.<class_name>` names, as (low, high).
+
+    Tenant-specific and editable from the Administration page, never hardcoded. Falls back to an
+    empty range - which matches no account and therefore contributes no cost - rather than guessing,
+    so a malformed or absent class understates instead of inventing.
+
+    Only RANGES can classify an AP distribution: the API's distribution line carries accountNumber
+    but no glAccountDescription, so the keyword rules in the same setting have nothing to match on
+    and apply to the export path alone.
+    """
+    with conn.cursor() as cursor:
+        cursor.execute("SELECT value FROM ops.app_setting WHERE key = 'gl_account_classes'")
+        row = cursor.fetchone()
+    try:
+        ranges = ((row["value"] if row else {}) or {}).get(class_name, {}).get("ranges") or []
+        pairs = [(int(lo), int(hi)) for lo, hi in ranges if lo is not None and hi is not None]
+        return (min(lo for lo, _ in pairs), max(hi for _, hi in pairs)) if pairs else (1, 0)
+    except (AttributeError, TypeError, ValueError):
+        logger.warning("gl_account_classes.%s is malformed; no AP distribution counts as %s", class_name, class_name)
+        return (1, 0)
+
+
 def _start_log(conn: Any) -> int:
     with conn.cursor() as cursor:
         cursor.execute("INSERT INTO mart.rebuild_log (status) VALUES ('running') RETURNING id")
@@ -432,15 +538,23 @@ def rebuild_tables() -> tuple[int, int, int]:
     """
     with connection(lock_timeout_ms=settings.mart_rebuild_lock_timeout_seconds * 1000) as conn:
         rate = _burden_rate(conn)
+        sub_low, sub_high = _gl_range(conn, "subcontract")
+        oth_low, oth_high = _gl_range(conn, "other_direct")
         try:
             with conn.cursor() as cursor:
                 cursor.execute("TRUNCATE mart.job_month")
-                cursor.execute(JOB_MONTH_SQL, {"burden": rate})
+                cursor.execute(JOB_MONTH_SQL, {"burden": rate,
+                                               "subcontract_gl_low": sub_low,
+                                               "subcontract_gl_high": sub_high,
+                                               "other_direct_gl_low": oth_low,
+                                               "other_direct_gl_high": oth_high})
                 job_rows = cursor.rowcount
                 cursor.execute("TRUNCATE mart.portfolio_month")
                 cursor.execute(PORTFOLIO_MONTH_SQL)
                 portfolio_rows = cursor.rowcount
                 job_week_rows = weekly.rebuild(cursor)
+                accounts.sync_accounts(cursor)
+                leadership.rebuild(cursor, (sub_low, sub_high))
         except psycopg.errors.LockNotAvailable as exc:
             raise MartRebuildBlocked(
                 f"Mart rebuild could not take its locks within {settings.mart_rebuild_lock_timeout_seconds}s; "

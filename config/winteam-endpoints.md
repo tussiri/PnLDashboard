@@ -70,12 +70,77 @@ Response fields are stored verbatim in `raw.winteam_record.payload` and promoted
 
 * jobs 643 (all with `taxAddress.latitude/longitude`), vendors 279, timekeeping ~8,100 punches per week, ap_invoices ~580 per month, ar_invoices per customer number (AMAZ01 255 invoices, COST01 27, AIRG01 3).
 * `job_schedules` and `ap_payments`: HTTP 403 (not entitled). `gl_budgets`: no budget found on the first five active jobs (400 as above, also without `fiscalYear`).
-* `jobTiers[].tierValue` arrives as a string; `companyNumber` as a number.
-* Redacted samples per resource: `sources/winteam_samples/<resource>.json`.
 
-## Known limitations of the documented API
+## What the API does and does not expose (verified against production, 2026-09-20)
 
-* Payments are not linked to invoices, so AP open balances cannot be derived (`open_estimate` is null).
-* Receivables are not date-filterable and expose `invoiceTotal`/`amountPaid` only; AR open balance = invoiceTotal - amountPaid.
-* No endpoint reports deletions; records removed in WinTeam stay in the warehouse until a reviewed tombstone process exists.
-* Invoices are attributed to `billingPeriodFrom` month (else invoice month) and are **not** recognized revenue until Finance approves that definition.
+**Correction.** An earlier revision of this file claimed AP invoices are header-only and that no
+AP dollar could be attributed to a site. That was wrong. It described the payload of the AP *list*
+endpoint, which is all this connector syncs; the per-invoice endpoint carries full GL distributions.
+
+`GET /accounts/v1/api/payables/invoices/{invoiceNumber}` returns, on the live tenant:
+
+```json
+"generalLedgerDistributions": [
+  {"accountNumber": 40902, "jobNumber": "900", "amount": 906.21}
+]
+```
+
+Sampled over the eight largest August invoices, six carry distributions and the line amounts sum
+exactly to the invoice total (e.g. Complete Facilities Maintenance, $184,653.22, one line, job 296).
+Two invoice numbers answered 404 and need their encoding worked out. So **subcontract, materials,
+supplies and other direct costs are attributable to a job and a GL account through this API**, at a
+cost of one GET per invoice (7,258 to backfill; roughly 700-1,300 a month ongoing).
+
+There is still no report endpoint: the Job Cost Analysis P&L itself is not exposed, and everything
+GL-shaped under Jobs v2 is a **budget** (`glBudgetDetails` = glAccountNumber, glAccountDescription,
+financialStatement, jobCostAnalysis, budgetTotal, period1..period12 — the right shape for a job P&L,
+but the budget column). `jobCostAnalysis` and `financialStatement` are flags classifying the chart of
+accounts, not posted amounts. The P&L is therefore *rebuildable* from primitives — AR invoices for
+revenue, timekeeping for labor, AP GL distributions for every other direct cost — rather than
+readable as a finished statement.
+
+The published OpenAPI documents are much larger than `WinTeamAPI.txt` records: Accounts v1 has 22
+paths (not 3), Jobs v2 has 10, Timekeeping v2 has 5. Notable GETs not currently synced:
+
+| Endpoint | Why it matters | Live status |
+|---|---|---|
+| `payables/invoices/{invoiceNumber}` | GL distributions: job-level cost | **works** |
+| `payables/payments/{paymentId}/applied-invoices` | would make AP open balance derivable | untested |
+| `receivables/invoices/{invoiceNumber}/details` | AR line detail | untested |
+| `receivables/invoices/customers/{n}/outstanding-invoices` | open AR direct from WinTeam | untested |
+| `receivables/customer-terms` | payment terms, so AR aging can bucket by days PAST DUE | **HTTP 403** |
+| `jobs/{jobKey}/budgets` | contracted billRate / payRate per position | **works** (job 500 returns a posted 2026 budget) |
+
+`jobs/{jobKey}/gl-budgets` remains empty for this tenant: 2,772 of 2,808 job-years answer 400 and the
+rest return empty detail arrays, leaving `core.fact_gl_budget` at 0 rows for roughly six minutes of
+every fifteen-minute poll. Consider removing it from `WINTEAM_RESOURCES` until budgets are populated.
+
+Timekeeping v2 also exposes `POST /timekeeping/overtime` and `POST /timekeeping/queue-overtime`,
+which return WinTeam's own regularDollars / overtimeDollars / doubletimeDollars per employee-job-day
+under the tenant's real OT rules — authoritative labor cost rather than our derived approximation.
+**They have not been called.** They are POSTs, and the documented response carries `isModified: true`,
+so whether they compute-and-return or compute-and-persist is unverified. This connector is read-only
+and issues GETs only; confirm the semantics with TEAM before any use.
+
+## Entitlement probe, Employees / Schedules / Jobs / Timekeeping / Vendors (2026-09-23)
+
+OpenAPI documents for five services are kept in `config/winteam-openapi/`. Every GET in them that
+could feed the labor P&L was probed once against the production tenant, read-only, through
+`WinTeamClient` (29 requests). Personal-data GETs (profile, taxes, direct deposits, emergency
+contacts) were not called.
+
+| Endpoint | Would provide | Result |
+|---|---|---|
+| `employees/v1/api/employees/{n}/payments/` | employee base pay rate, OT method (prices rate-0 punches) | **HTTP 403** |
+| `employees/v1/api/employees/`, `/employees/{n}/` | employee roster, status, location | **HTTP 403** |
+| `employees/v1/api/pay-info/overtime-methods/`, `/types/`, `/classifications/`, `/custom-fields/definitions/` | lookups | **HTTP 403** |
+| `employees/v1/api/supervisors` | supervisor names for `dim_job.supervisor_id` | **HTTP 403** |
+| `schedules/v1/api/shiftDetails` | hour type names per category (regular vs OT) | **HTTP 403** |
+| `schedules/v1/api/post-setups`, `/jobs/{n}/bill-codes` | posts, bill codes | **HTTP 403** |
+| `jobs/v2/api/jobs/{jobKey}/schedules` | scheduled hours | **HTTP 403** (unchanged) |
+| `jobs/v2/api/jobs/{jobKey}/budgets` (GET, documented in Jobs v2) | budget hours by day of week, pay rate | **works** |
+
+The Employees and Schedules services are not in the tenant's subscription. Labor dollars, the
+OT category mapping and supervisor names therefore still cannot come from the API; the Pay Report
+Timekeeping export remains the only source of gross pay. `POST /timekeeping/overtime` was not
+called (see above).

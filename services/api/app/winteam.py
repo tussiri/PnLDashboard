@@ -53,7 +53,7 @@ import logging
 import time
 from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, field
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import quote
 from uuid import UUID
@@ -61,10 +61,16 @@ from uuid import UUID
 import httpx
 
 from .config import RESOURCE_NAMES, Settings, settings
+from .tenants import PRIMARY, Tenant
 from .db import connection
 
 logger = logging.getLogger("winteam")
 INTEGRATION = "winteam"
+# Masters that change slowly: an on-demand sync re-reads them at most once per DAILY_MIN_AGE.
+DAILY_RESOURCES = frozenset({"jobs", "vendors", "job_budgets", "gl_budgets", "ar_invoices"})
+DAILY_MIN_AGE = timedelta(hours=20)
+# How long a record WinTeam could not serve (404 / 5xx) is left alone before it is asked again.
+UNRETRIEVABLE_RECHECK = timedelta(days=7)
 RETRYABLE_STATUSES = frozenset({408, 425, 429, 500, 502, 503, 504})
 NOT_ENTITLED = "not_entitled"
 # Text of the documented 400 the gl-budgets endpoint returns for a job/year without a budget.
@@ -111,6 +117,85 @@ def id_gl_budgets(record: dict[str, Any]) -> str:
     return f"{job_number}:{fiscal_year}:{detail_id}"
 
 
+DAY_KEYS = ("sun", "mon", "tue", "wed", "thu", "fri", "sat", "hol")
+
+
+def id_job_budgets(record: dict[str, Any]) -> str:
+    """One raw record per budget line: the budget's id plus the line's position."""
+    _require(record, "jobNumber", "budgetId", "lineIndex")
+    return f"{_text(record, 'jobNumber')}:{_text(record, 'budgetId')}:{_text(record, 'lineIndex')}"
+
+
+def flatten_job_budget(entry: dict[str, Any]) -> list[dict[str, Any]]:
+    """Explode one job budget into its detail lines, flattening hours/rates onto each.
+
+    A line is budgeted hours PER DAY OF WEEK plus a pay rate, which is finer than a monthly figure
+    and apportions to a week exactly - no proration. `hol` is the holiday column, carried separately
+    because a week containing one is not a normal week.
+    """
+    details = entry.get("details") or []
+    if not isinstance(details, list):
+        return []
+    header = {
+        "budgetId": entry.get("id"),
+        "effectiveDate": entry.get("effectiveDate"),
+        "endDate": entry.get("endDate"),
+        "status": entry.get("status"),
+        "notes": entry.get("notes"),
+    }
+    out: list[dict[str, Any]] = []
+    for index, line in enumerate(details):
+        if not isinstance(line, dict):
+            continue
+        hours = line.get("hours") if isinstance(line.get("hours"), dict) else {}
+        rates = line.get("rates") if isinstance(line.get("rates"), dict) else {}
+        day_of_week = hours.get("dayOfWeek") if isinstance(hours.get("dayOfWeek"), dict) else {}
+        out.append({
+            **header,
+            "lineIndex": index,
+            "description": hours.get("description"),
+            "hoursType": hours.get("type"),
+            "salaried": hours.get("salaried"),
+            "billRate": rates.get("billRate"),
+            "payRate": rates.get("payRate"),
+            **{day: day_of_week.get(day) for day in DAY_KEYS},
+        })
+    return out
+
+
+def id_ap_distributions(record: dict[str, Any]) -> str:
+    """One raw record per GL distribution line, keyed by its position on the invoice.
+
+    accountNumber and jobNumber can repeat on one invoice (two lines can code the same job and
+    account), so the line index is what makes the key unique. A reordered invoice therefore lands as
+    new versions rather than updates; normalization replaces an invoice's lines as a set, so that
+    costs an extra raw row and changes nothing downstream.
+    """
+    _require(record, "invoiceNumber", "lineIndex")
+    return (f"{_text(record, 'companyNumber')}:{_text(record, 'vendorNumber')}"
+            f":{_text(record, 'invoiceNumber')}:{_text(record, 'lineIndex')}")
+
+
+def flatten_ap_distribution(invoice: dict[str, Any]) -> list[dict[str, Any]]:
+    """Explode one AP invoice into its generalLedgerDistributions, carrying the header down.
+
+    This is the only place the API attributes a payable to a site: the AP *list* endpoint returns
+    headers alone, which is why AP was long believed to be company-wide. An invoice with no
+    distributions yields nothing.
+    """
+    lines = invoice.get("generalLedgerDistributions") or []
+    if not isinstance(lines, list):
+        return []
+    header = {key: invoice.get(key) for key in
+              ("invoiceNumber", "vendorNumber", "companyNumber", "invoiceDate", "postingDate", "invoiceAmount")}
+    out: list[dict[str, Any]] = []
+    for index, line in enumerate(lines):
+        if not isinstance(line, dict):
+            continue
+        out.append({**header, **line, "lineIndex": index})
+    return out
+
+
 def id_ap_invoices(record: dict[str, Any]) -> str:
     _require(record, "invoiceNumber")
     return f"{_text(record, 'companyNumber')}:{_text(record, 'vendorNumber')}:{_text(record, 'invoiceNumber')}"
@@ -144,6 +229,14 @@ class Resource:
         return self.kind in {"date_window", "per_job_date_window"}
 
 
+# An unbroken run of per-invoice failures is an outage; scattered ones are odd invoice numbers.
+AP_DETAIL_MAX_CONSECUTIVE_ERRORS = 25
+# 400/404 is WinTeam answering "this number is not addressable" (slashes, spaces, reused numbers), not
+# an outage. Expense reimbursements such as "JUssiri 08/2026" come in runs, newest first, and 25 of
+# them in a row used to trip the outage breaker, roll back, and block every later invoice (2026-09-23).
+# Only a much longer unbroken run of not-found answers is treated as a misconfiguration.
+AP_DETAIL_MAX_CONSECUTIVE_NOT_FOUND = 500
+
 RESOURCES: dict[str, Resource] = {
     "jobs": Resource(
         "jobs", "/jobs/v2/api/jobs", "list", "paged", id_jobs,
@@ -165,9 +258,20 @@ RESOURCES: dict[str, Resource] = {
         "gl_budgets", "/jobs/v2/api/jobs/{jobKey}/gl-budgets", "per_job", "data_array", id_gl_budgets,
         "GL budgets per active job and fiscal year; glBudgetDetails are flattened one row per record.",
     ),
+    "job_budgets": Resource(
+        "job_budgets", "/jobs/v2/api/jobs/{jobKey}/budgets", "per_job", "data_array", id_job_budgets,
+        "Budgeted hours per day of week and the pay rate behind them, per active job; the only "
+        "source of budget hours and dollars for this tenant (gl-budgets returns nothing).",
+    ),
     "ap_invoices": Resource(
         "ap_invoices", "/accounts/v1/api/payables/invoices", "date_window", "paged", id_ap_invoices,
         "Accounts payable invoices by date window.", ("dateFrom", "dateTo"),
+    ),
+    "ap_invoice_details": Resource(
+        "ap_invoice_details", "/accounts/v1/api/payables/invoices/{invoiceNumber}", "per_invoice", "data_array",
+        id_ap_distributions,
+        "GL distributions per AP invoice (accountNumber, jobNumber, amount) - the only endpoint that "
+        "attributes a payable to a site; the list endpoint returns headers alone.",
     ),
     "ar_invoices": Resource(
         "ar_invoices", "/accounts/v1/api/receivables/invoices/", "per_customer", "paged", id_ar_invoices,
@@ -420,8 +524,12 @@ class WinTeamClient:
     def close(self) -> None:
         self._client.close()
 
-    def get(self, path: str, params: dict[str, Any] | None = None) -> Any:
-        """GET and decode. Returns None for 204. Retries 429/5xx/transport errors with backoff."""
+    def get(self, path: str, params: dict[str, Any] | None = None, *, retry_server_errors: bool = True) -> Any:
+        """GET and decode. Returns None for 204. Retries 429/5xx/transport errors with backoff.
+
+        retry_server_errors=False raises a 5xx at once (429 is still honoured): used where a 500 is
+        a property of the record asked for, not a transient fault, so retrying only adds load.
+        """
         attempt = 0
         while True:
             self.requests_made += 1
@@ -437,7 +545,7 @@ class WinTeamClient:
             if status == 204:
                 return None
             if status in RETRYABLE_STATUSES:
-                if attempt >= self.max_retries:
+                if attempt >= self.max_retries or (not retry_server_errors and status != 429):
                     raise WinTeamError(error_message(status, _safe_json(response)), status_code=status)
                 self._backoff(attempt, response.headers.get("Retry-After"), f"HTTP {status} on {path}")
                 attempt += 1
@@ -492,6 +600,7 @@ class PullOptions:
     customer_numbers: tuple[str, ...] | None = None  # ar_invoices: only these customer numbers
     start_date: date | None = None                   # date-windowed resources: first day to pull
     jobs_limit: int | None = None                    # per-job resources: at most this many jobs
+    deep: bool = False                               # date-windowed resources: re-read WINTEAM_DEEP_LOOKBACK_DAYS
 
     @property
     def bounded(self) -> bool:
@@ -503,8 +612,13 @@ def canonical_json(record: dict[str, Any]) -> str:
 
 
 class WinTeamIngestion:
-    def __init__(self, config: Settings | None = None) -> None:
+    """GET-only connector for one WinTeam database (`tenant`: PRIMARY, or tenants.SARUS with
+    Settings.sarus_settings()). The tenant decides the raw resource names, the core source, the
+    winteam_id prefix and the sync-run / watermark integration name (see tenants.py)."""
+
+    def __init__(self, config: Settings | None = None, tenant: Tenant = PRIMARY) -> None:
         self.config = config or settings
+        self.tenant = tenant
 
     # ── public API ───────────────────────────────────────────────────────────
     def enabled_resources(self) -> list[Resource]:
@@ -534,7 +648,8 @@ class WinTeamIngestion:
             "base_url_host": self.config.winteam_base_url_host,
             "normalize_enabled": self.config.winteam_normalize,
             "resources": resources,
-            "poll_seconds": self.config.poll_seconds,
+            "poll_seconds": None,
+            "sync": "on_demand",
         }
 
     def test_connection(self) -> dict[str, Any]:
@@ -554,8 +669,15 @@ class WinTeamIngestion:
         customer_numbers: Sequence[str] | None = None,
         start_date: date | None = None,
         jobs_limit: int | None = None,
+        force: bool = False,
+        deep: bool = False,
     ) -> dict[str, Any]:
         """Pull one resource into raw, then (optionally) promote it into core. Never raises for pull failures.
+
+        Nothing calls this on a schedule: every sync is started by an administrator. A resource in
+        DAILY_RESOURCES that succeeded within DAILY_MIN_AGE is skipped unless force=True, so
+        pressing sync twice does not re-read slow-moving masters. deep=True widens the re-read of
+        date-windowed resources to WINTEAM_DEEP_LOOKBACK_DAYS.
 
         normalize: None = WINTEAM_NORMALIZE. The keyword overrides bound a validation pull (only these
         receivables customers / from this date / at most this many jobs); a bounded pull is recorded
@@ -573,7 +695,12 @@ class WinTeamIngestion:
             customer_numbers=tuple(str(n).strip() for n in customer_numbers if str(n).strip()) if customer_numbers is not None else None,
             start_date=start_date,
             jobs_limit=jobs_limit,
+            deep=deep,
         )
+        if not force and not options.bounded and resource.name in DAILY_RESOURCES:
+            last = self._last_success(resource.name)
+            if last is not None and datetime.now(timezone.utc) - last < DAILY_MIN_AGE:
+                return self._skipped(resource, last)
 
         run_id = self._start_run(resource.name)
         today = date.today()
@@ -600,12 +727,21 @@ class WinTeamIngestion:
             response["normalized"] = self._normalize(resource, result, run_id)
         return response
 
-    def sync_all(self, normalize: bool | None = None, resources: Sequence[str] | None = None) -> dict[str, Any]:
+    def sync_all(
+        self,
+        normalize: bool | None = None,
+        resources: Sequence[str] | None = None,
+        *,
+        rebuild: bool = True,
+        force: bool = False,
+        deep: bool = False,
+    ) -> dict[str, Any]:
         """Sync the enabled resources in dependency order (a 403 skips only that resource).
 
         normalize: None = WINTEAM_NORMALIZE. The marts are rebuilt only when normalization ran, because
         a raw-only sync changes nothing the marts read. `resources` restricts the run to a subset of
-        the enabled resources (canonical order is kept).
+        the enabled resources (canonical order is kept). rebuild=False leaves the rebuild to the caller
+        (the worker syncs the Sarus database first and rebuilds once, after the primary).
         """
         self._require_enabled()
         if normalize is None:
@@ -617,10 +753,12 @@ class WinTeamIngestion:
             if unknown:
                 raise WinTeamError(f"Unknown resource(s): {', '.join(unknown)}; valid names: {', '.join(RESOURCES)}")
             selected = [resource for resource in selected if resource.name in wanted]
-        runs = [self.sync(resource.name, normalize=normalize) for resource in selected]
+        runs = [self.sync(resource.name, normalize=normalize, force=force, deep=deep) for resource in selected]
         not_entitled = [run["resource"] for run in runs if run.get("entitled") is False]
-        if not normalize:
+        if not any(run.get("status") != "skipped" for run in runs):
             return {"runs": runs, "marts": None, "normalized": False, "not_entitled": not_entitled}
+        if not normalize or not rebuild:
+            return {"runs": runs, "marts": None, "normalized": bool(normalize), "not_entitled": not_entitled}
         from . import marts
 
         try:
@@ -642,13 +780,15 @@ class WinTeamIngestion:
         if kind == "list":
             self._pull_list(resource, client, conn, run_id, result)
         elif kind == "date_window":
-            for start, stop in self._windows(resource, today, options.start_date):
+            for start, stop in self._windows(resource, today, options.start_date, options.deep):
                 result.windows += 1
                 self._pull_pages(resource, client, conn, run_id, resource.path, self._date_params(resource, start, stop), result)
         elif kind == "per_job":
             self._pull_per_job(resource, client, conn, run_id, result, today, options)
         elif kind == "per_job_date_window":
             self._pull_per_job_windows(resource, client, conn, run_id, result, today, options)
+        elif kind == "per_invoice":
+            self._pull_per_invoice(resource, client, conn, run_id, result, options)
         elif kind == "per_customer":
             self._pull_per_customer(resource, client, conn, run_id, result, options)
         else:  # pragma: no cover - guarded by the catalogue
@@ -670,7 +810,12 @@ class WinTeamIngestion:
         jobs = self._active_job_numbers(conn, limit)
         if options.jobs_limit is not None:
             result.scope["jobs_limit"] = limit
-        years = fiscal_years(today, self.config.winteam_gl_fiscal_years)
+        # gl_budgets is asked per fiscal year; job_budgets returns every budget revision in one call.
+        years: list[int | None] = (
+            list(fiscal_years(today, self.config.winteam_gl_fiscal_years))
+            if resource.name == "gl_budgets" else [None]
+        )
+        flatten = flatten_gl_budget if resource.name == "gl_budgets" else flatten_job_budget
         if not jobs:
             result.message = "No active jobs in core.dim_job yet; sync jobs first"
         no_budget = 0
@@ -678,21 +823,98 @@ class WinTeamIngestion:
             path = resource.path.format(jobKey=quote(job_number, safe=""))
             for year in years:
                 try:
-                    payload = client.get(path, {"fiscalYear": year})
+                    payload = client.get(path, {"fiscalYear": year} if year is not None else {})
                 except WinTeamError as exc:
-                    if is_no_gl_budget(exc):  # 404, or 400 "Invalid Job Number and Fiscal Year combination"
+                    # 404, the live tenant's 400 "Invalid Job Number and Fiscal Year combination",
+                    # and 204/empty all mean "this job has no budget" rather than a failure.
+                    if is_no_gl_budget(exc) or exc.status_code in {400, 404}:
                         no_budget += 1
                         continue
                     raise
-                records = [record for entry in parse_data_array(payload) for record in flatten_gl_budget(entry)]
+                records = [record for entry in parse_data_array(payload) for record in flatten(entry)]
                 for record in records:
                     record.setdefault("jobNumber", job_number)
-                    record.setdefault("fiscalYear", year)
+                    if year is not None:
+                        record.setdefault("fiscalYear", year)
                 self._land(conn, run_id, resource, records, result)
-            if index % 25 == 0:
+            if index % 50 == 0:
                 logger.info("WinTeam %s: %s/%s jobs processed", resource.name, index, len(jobs))
         if jobs:
-            result.message = f"{len(jobs)} job(s) x {len(years)} fiscal year(s) probed; {no_budget} job-year(s) without a budget"
+            # gl_budgets is probed per job-year, job_budgets per job; the count says which.
+            if years != [None]:
+                result.message = (f"{len(jobs)} job(s) x {len(years)} fiscal year(s) probed; "
+                                  f"{no_budget} job-year(s) without a budget")
+            else:
+                result.message = f"{len(jobs)} job(s) probed; {no_budget} without a budget"
+
+    def _pull_per_invoice(
+        self, resource: Resource, client: WinTeamClient, conn: Any, run_id: UUID, result: PullResult, options: PullOptions
+    ) -> None:
+        """One GET per AP invoice, for invoices whose distributions are not landed yet.
+
+        The work is bounded by what is missing rather than by a date window: the first run backfills
+        the whole AP history, later runs cost about the month's new invoices. Some invoice numbers
+        answer 404 (numbers carrying spaces or slashes, and vendors whose invoices are not keyed this
+        way); those are counted and skipped, never raised, so one odd invoice cannot fail the run.
+        """
+        invoices = self._ap_invoices_missing_details(conn, self.config.ap_detail_invoice_limit)
+        if not invoices:
+            result.message = "No AP invoices awaiting GL distributions"
+            return
+        missing, no_lines, unserviceable, consecutive, consecutive_missing = 0, 0, 0, 0, 0
+        for index, invoice_number in enumerate(invoices, start=1):
+            path = resource.path.format(invoiceNumber=quote(str(invoice_number), safe=""))
+            try:
+                payload = client.get(path, retry_server_errors=False)
+            except WinTeamError as exc:
+                # 400/404: the number is not addressable this way (spaces, slashes, non-standard
+                # keys). 500 after the client's retries: WinTeam cannot serve that one invoice -
+                # observed on invoice 1384, which answered 500 on all four attempts. Neither should
+                # end a backfill of thousands. A genuine outage looks different, and
+                # AP_DETAIL_MAX_CONSECUTIVE_ERRORS is what tells them apart: an unbroken run of 5xx
+                # answers is the API being down. A run of 400/404 is a run of odd invoice numbers.
+                if exc.status_code in {400, 404}:
+                    missing += 1
+                elif exc.status_code is not None and exc.status_code >= 500:
+                    unserviceable += 1
+                    logger.warning("WinTeam %s: invoice %s unserviceable (HTTP %s); skipping",
+                                   resource.name, invoice_number, exc.status_code)
+                else:
+                    raise
+                # Not asked again for UNRETRIEVABLE_RECHECK: the same number fails the same way.
+                self._remember_unretrievable(conn, resource, str(invoice_number), exc.status_code)
+                if exc.status_code in {400, 404}:
+                    # The API answered, so it is up: this is not a step toward an outage.
+                    consecutive = 0
+                    consecutive_missing += 1
+                    if consecutive_missing >= AP_DETAIL_MAX_CONSECUTIVE_NOT_FOUND:
+                        raise WinTeamError(
+                            f"{consecutive_missing} consecutive AP invoices not found ending at {invoice_number}; "
+                            f"check the AP invoice detail path",
+                            status_code=exc.status_code,
+                        ) from exc
+                    continue
+                consecutive += 1
+                if consecutive >= AP_DETAIL_MAX_CONSECUTIVE_ERRORS:
+                    raise WinTeamError(
+                        f"{consecutive} consecutive AP invoice detail failures ending at {invoice_number}; "
+                        f"treating as an outage rather than skipping",
+                        status_code=exc.status_code,
+                    ) from exc
+                continue
+            consecutive = consecutive_missing = 0
+            self._forget_unretrievable(conn, resource, str(invoice_number))
+            records = [line for entry in parse_data_array(payload) for line in flatten_ap_distribution(entry)]
+            if not records:
+                no_lines += 1
+                continue
+            self._land(conn, run_id, resource, records, result)
+            if index % 250 == 0:
+                logger.info("WinTeam %s: %s/%s invoices processed", resource.name, index, len(invoices))
+        result.message = (
+            f"{len(invoices)} invoice(s) probed; {missing} not retrievable by invoice number; "
+            f"{unserviceable} unserviceable (HTTP 5xx); {no_lines} with no GL distributions"
+        )
 
     def _pull_per_job_windows(
         self, resource: Resource, client: WinTeamClient, conn: Any, run_id: UUID, result: PullResult, today: date, options: PullOptions
@@ -701,7 +923,7 @@ class WinTeamIngestion:
         jobs = self._active_job_numbers(conn, limit)
         if options.jobs_limit is not None:
             result.scope["jobs_limit"] = limit
-        windows = self._windows(resource, today, options.start_date)
+        windows = self._windows(resource, today, options.start_date, options.deep)
         result.windows = len(windows)
         if not jobs:
             result.message = "No active jobs in core.dim_job yet; sync jobs first"
@@ -798,17 +1020,30 @@ class WinTeamIngestion:
         from_name, to_name = resource.date_params
         return {from_name: rfc3339_start(start), to_name: rfc3339_end(stop)}
 
-    def _windows(self, resource: Resource, today: date, start_date: date | None = None) -> list[tuple[date, date]]:
+    def _windows(self, resource: Resource, today: date, start_date: date | None = None, deep: bool = False) -> list[tuple[date, date]]:
         if start_date is not None:
             start = min(start_date, today)
         else:
-            start = window_start(
-                self._read_watermark(resource.name), today, self.config.winteam_backfill_months, self.config.winteam_lookback_days
-            )
+            lookback = self.config.winteam_deep_lookback_days if deep else self.config.winteam_lookback_days
+            start = window_start(self._read_watermark(resource.name), today, self.config.winteam_backfill_months, lookback)
         return date_windows(start, today, self.config.winteam_window_days)
 
     def _active_job_numbers(self, conn: Any, limit: int = 0) -> list[str]:
         with conn.cursor() as cursor:
+            if self.tenant is not PRIMARY:
+                # A secondary database's own job list (landed raw by its jobs resource): the warehouse
+                # dimension mixes both databases, and a shared number means a different job in each.
+                cursor.execute(
+                    """
+                    SELECT DISTINCT nullif(btrim(payload->>'jobNumber'), '') AS job_number
+                    FROM raw.v_winteam_current
+                    WHERE resource_name = %s AND nullif(btrim(payload->>'jobNumber'), '') IS NOT NULL
+                    ORDER BY 1
+                    """,
+                    (self.tenant.raw_resource("jobs"),),
+                )
+                numbers = [row["job_number"] for row in cursor.fetchall()]
+                return numbers[:limit] if limit > 0 else numbers
             cursor.execute(
                 """
                 SELECT job_number FROM core.dim_job
@@ -819,6 +1054,38 @@ class WinTeamIngestion:
             numbers = [row["job_number"] for row in cursor.fetchall()]
         return numbers[:limit] if limit > 0 else numbers
 
+    def _ap_invoices_missing_details(self, conn: Any, limit: int = 0) -> list[str]:
+        """AP invoice numbers with no distribution landed yet, newest first.
+
+        Driving off what is missing keeps the fan-out proportional to new work instead of to the
+        size of AP: the backfill runs once, then each poll asks only about invoices that arrived
+        since. An invoice that failed (404 or 5xx) is left out for UNRETRIEVABLE_RECHECK, then asked
+        once more in case the number was corrected in WinTeam.
+        """
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT a.invoice_number
+                FROM core.fact_ap_invoice a
+                WHERE a.source = %(source)s AND a.invoice_number IS NOT NULL
+                  AND NOT EXISTS (
+                    SELECT 1 FROM raw.winteam_record r
+                    WHERE r.resource_name = %(resource)s
+                      AND r.payload->>'invoiceNumber' = a.invoice_number
+                  )
+                  AND NOT EXISTS (
+                    SELECT 1 FROM ops.winteam_unretrievable u
+                    WHERE u.integration_name = %(integration)s AND u.resource_name = 'ap_invoice_details'
+                      AND u.record_key = a.invoice_number AND u.last_attempt_at > now() - %(recheck)s
+                  )
+                ORDER BY a.invoice_date DESC NULLS LAST, a.invoice_number
+                """,
+                {"source": self.tenant.source, "resource": self.tenant.raw_resource("ap_invoice_details"),
+                 "integration": self.tenant.integration, "recheck": UNRETRIEVABLE_RECHECK},
+            )
+            numbers = [row["invoice_number"] for row in cursor.fetchall()]
+        return numbers[:limit] if limit > 0 else numbers
+
     def _customer_numbers(self, conn: Any) -> list[str]:
         """WINTEAM_CUSTOMER_NUMBERS union core.dim_customer.customer_number (every source), as strings.
 
@@ -827,6 +1094,22 @@ class WinTeamIngestion:
         """
         configured = [str(n).strip() for n in self.config.winteam_customer_numbers if str(n).strip()]
         with conn.cursor() as cursor:
+            if self.tenant.company is not None:
+                # A secondary database is asked only for the customers its own jobs and invoices
+                # carry: a number is matched literally, and the same number can name a different
+                # customer in each database.
+                cursor.execute(
+                    """
+                    SELECT customer_number FROM core.dim_job
+                    WHERE company = %(company)s AND valid_to IS NULL AND nullif(btrim(customer_number), '') IS NOT NULL
+                    UNION
+                    SELECT customer_number FROM core.fact_ar_invoice
+                    WHERE company = %(company)s AND nullif(btrim(customer_number), '') IS NOT NULL
+                    ORDER BY 1
+                    """,
+                    {"company": self.tenant.company},
+                )
+                return merge_customer_numbers(configured, [str(row["customer_number"]).strip() for row in cursor.fetchall()])
             if configured:
                 cursor.execute(
                     """
@@ -860,7 +1143,7 @@ class WinTeamIngestion:
                     VALUES (%s, %s, %s, NULL, %s, %s::jsonb)
                     ON CONFLICT (resource_name, source_record_id, payload_hash) DO NOTHING
                     """,
-                    (run_id, resource.name, source_id, digest, canonical),
+                    (run_id, self.tenant.raw_resource(resource.name), source_id, digest, canonical),
                 )
                 result.inserted += cursor.rowcount
                 result.fetched += 1
@@ -870,9 +1153,13 @@ class WinTeamIngestion:
     def _normalize(self, resource: Resource, result: PullResult, run_id: UUID) -> int | None:
         from . import normalize
 
+        if not normalize.normalizes(resource.name, self.tenant):
+            return None
         try:
             seen = result.seen_ids if resource.name == "jobs" else None
-            return normalize.normalize_resource(resource.name, seen_ids=seen)
+            if self.tenant is PRIMARY:
+                return normalize.normalize_resource(resource.name, seen_ids=seen)
+            return normalize.normalize_resource(resource.name, seen_ids=seen, tenant=self.tenant)
         except Exception as exc:  # noqa: BLE001
             logger.exception("Normalization failed for %s", resource.name)
             self._annotate_run(run_id, f"normalization failed: {str(exc)[:800]}")
@@ -912,20 +1199,20 @@ class WinTeamIngestion:
                 WHERE integration_name = %s
                 ORDER BY resource_name, started_at DESC
                 """,
-                (INTEGRATION,),
+                (self.tenant.integration,),
             )
             return {row["resource_name"]: row for row in cursor.fetchall()}
 
     def _watermarks(self) -> dict[str, str]:
         with self._connection() as conn, conn.cursor() as cursor:
-            cursor.execute("SELECT resource_name, watermark_value FROM ops.source_watermark WHERE integration_name = %s", (INTEGRATION,))
+            cursor.execute("SELECT resource_name, watermark_value FROM ops.source_watermark WHERE integration_name = %s", (self.tenant.integration,))
             return {row["resource_name"]: row["watermark_value"] for row in cursor.fetchall()}
 
     def _read_watermark(self, resource_name: str) -> str | None:
         with self._connection() as conn, conn.cursor() as cursor:
             cursor.execute(
                 "SELECT watermark_value FROM ops.source_watermark WHERE integration_name = %s AND resource_name = %s",
-                (INTEGRATION, resource_name),
+                (self.tenant.integration, resource_name),
             )
             row = cursor.fetchone()
             return row["watermark_value"] if row else None
@@ -934,7 +1221,7 @@ class WinTeamIngestion:
         with self._connection() as conn, conn.cursor() as cursor:
             cursor.execute(
                 "INSERT INTO ops.integration_sync_run (integration_name, resource_name, status) VALUES (%s, %s, 'running') RETURNING id",
-                (INTEGRATION, resource_name),
+                (self.tenant.integration, resource_name),
             )
             run_id = cursor.fetchone()["id"]
             conn.commit()
@@ -962,9 +1249,49 @@ class WinTeamIngestion:
                     ON CONFLICT (integration_name, resource_name)
                     DO UPDATE SET watermark_value = excluded.watermark_value, updated_at = excluded.updated_at
                     """,
-                    (INTEGRATION, watermark, run_id),
+                    (self.tenant.integration, watermark, run_id),
                 )
             conn.commit()
+
+    def _last_success(self, resource_name: str) -> datetime | None:
+        with self._connection() as conn, conn.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT max(completed_at) AS at FROM ops.integration_sync_run
+                WHERE integration_name = %s AND resource_name = %s AND status = 'succeeded'
+                """,
+                (self.tenant.integration, resource_name),
+            )
+            row = cursor.fetchone()
+            return row["at"] if row else None
+
+    @staticmethod
+    def _skipped(resource: Resource, last: datetime) -> dict[str, Any]:
+        return {
+            "run_id": None, "resource": resource.name, "status": "skipped", "fetched": 0, "inserted": 0,
+            "normalized": None, "requests": 0, "windows": 0,
+            "message": f"synced at {last.isoformat(timespec='minutes')}; refreshed at most daily (force=true to re-read)",
+        }
+
+    def _remember_unretrievable(self, conn: Any, resource: Resource, key: str, status_code: int | None) -> None:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO ops.winteam_unretrievable (integration_name, resource_name, record_key, status_code)
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT (integration_name, resource_name, record_key) DO UPDATE
+                  SET status_code = excluded.status_code, attempts = ops.winteam_unretrievable.attempts + 1,
+                      last_attempt_at = now()
+                """,
+                (self.tenant.integration, resource.name, key, status_code),
+            )
+
+    def _forget_unretrievable(self, conn: Any, resource: Resource, key: str) -> None:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                "DELETE FROM ops.winteam_unretrievable WHERE integration_name = %s AND resource_name = %s AND record_key = %s",
+                (self.tenant.integration, resource.name, key),
+            )
 
     def _annotate_run(self, run_id: UUID, note: str) -> None:
         with self._connection() as conn, conn.cursor() as cursor:
@@ -973,3 +1300,10 @@ class WinTeamIngestion:
 
 
 winteam = WinTeamIngestion()
+
+
+def sarus_ingestion(*, enabled: bool | None = None) -> WinTeamIngestion:
+    """The connector pointed at the Sarus database (WINTEAM_SARUS_*); `enabled` overrides WINTEAM_SARUS_ENABLED."""
+    from .tenants import SARUS
+
+    return WinTeamIngestion(settings.sarus_settings(enabled=enabled), tenant=SARUS)

@@ -8,6 +8,7 @@ applies to the reference database (host only).
 from __future__ import annotations
 
 import json
+from urllib.parse import urlparse
 import logging
 from datetime import datetime, timezone
 from typing import Any
@@ -16,13 +17,14 @@ import psycopg
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
-from .. import marts
+from .. import companycam, marts, relay
 from ..common import (PRIMARY_SOURCES, configured_key_accounts, month_status_rows, jsonable,
                       require_admin)
 from ..config import settings
 from ..db import connection, database_ready
+from .. import reconcile
 from ..sources import finance_reference
-from ..winteam import RESOURCES, WinTeamError, winteam
+from ..winteam import RESOURCES, WinTeamError, parse_paged, sarus_ingestion, winteam
 
 logger = logging.getLogger("platform")
 router = APIRouter()
@@ -160,11 +162,13 @@ def integration_test() -> dict[str, Any]:
 def integration_sync(
     resource: str,
     normalize: bool | None = Query(None, description="false = land raw payloads only; default WINTEAM_NORMALIZE"),
+    deep: bool = Query(False, description="true = re-read WINTEAM_DEEP_LOOKBACK_DAYS (35) instead of WINTEAM_LOOKBACK_DAYS (3)"),
 ) -> dict[str, Any]:
     if resource not in RESOURCES:
         raise HTTPException(status_code=404, detail=f"Unknown resource {resource}; valid names: {', '.join(RESOURCES)}")
     try:
-        result = winteam.sync(resource, normalize=normalize)
+        # Naming one resource is an explicit request for it: the daily skip does not apply.
+        result = winteam.sync(resource, normalize=normalize, force=True, deep=deep)
     except WinTeamError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     if result.get("status") != "succeeded":
@@ -196,10 +200,12 @@ def integration_reset_watermark(resource: str) -> dict[str, Any]:
 def integration_sync_all(
     normalize: bool | None = Query(None, description="false = raw landing only, no normalization or mart rebuild; default WINTEAM_NORMALIZE"),
     resources: str | None = Query(None, description="Comma separated subset of the enabled resources"),
+    force: bool = Query(False, description="true = also re-read jobs, vendors, budgets and AR synced within the last 20 hours"),
+    deep: bool = Query(False, description="true = re-read WINTEAM_DEEP_LOOKBACK_DAYS (35) of timekeeping and AP instead of WINTEAM_LOOKBACK_DAYS (3)"),
 ) -> dict[str, Any]:
     selected = [name.strip() for name in resources.split(",") if name.strip()] if resources else None
     try:
-        return jsonable(winteam.sync_all(normalize=normalize, resources=selected))
+        return jsonable(winteam.sync_all(normalize=normalize, resources=selected, force=force, deep=deep))
     except WinTeamError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
@@ -231,13 +237,183 @@ def integration_runs(limit: int = Query(25, ge=1, le=200)) -> dict[str, Any]:
     return {"runs": runs}
 
 
+# WinTeam is synced on demand only (worker.py never calls it), so no resource is behind a schedule:
+# freshness reports each resource's age since its last completed sync and never calls it overdue.
+# finance_reference is the PRIMARY source of the job-cost P&L (revenue, direct labor, subcontract
+# cost by site and month) and is loaded by hand from a restored dump - nothing polls it. Left
+# unreloaded it does not go blank, it goes SHORT: timekeeping keeps arriving from the live API
+# while revenue stops at the last exported month, so the newest months show labor against little or
+# no revenue and read as a collapse in margin. The export follows the monthly close, so a load older
+# than this is behind by at least one closed month and the P&L months it feeds cannot be trusted.
+REFERENCE_STALE_AFTER_SECONDS = 7 * 86400
+
+
+def _mark_overdue(resource: dict[str, Any]) -> dict[str, Any]:
+    """Add `overdue` (always None: nothing is scheduled), `overdue_after_seconds` (None) and
+    `not_entitled` (the tenant answered HTTP 403) to one freshness row."""
+    resource["overdue_after_seconds"] = None
+    resource["not_entitled"] = (resource.get("last_status") == "failed"
+                                and "not_entitled" in (resource.get("last_error") or ""))
+    resource["overdue"] = None
+    return resource
+
+
+def _sarus_identity() -> dict[str, Any]:
+    return {
+        "configured": settings.winteam_sarus_configured,
+        "enabled": settings.winteam_sarus_enabled,
+        "base_url_host": urlparse(settings.winteam_sarus_base_url).hostname if settings.winteam_sarus_base_url else None,
+        "has_subscription_key": bool(settings.winteam_sarus_subscription_key),
+        "ingestion": settings.winteam_sarus_enabled and settings.winteam_sarus_configured,
+        "sync": "on_demand",
+    }
+
+
+@router.get("/integrations/winteam/sarus")
+def winteam_sarus_status() -> dict[str, Any]:
+    """The second WinTeam database: identity, per-resource runs and the precedence windows. Never
+    returns the tenant id or key."""
+    status = sarus_ingestion().status()
+    with connection() as conn, conn.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT sarus_timekeeping_from, sarus_timekeeping_to, sarus_ap_invoice_from, sarus_ap_invoice_to,
+                   sarus_ar_invoices_api
+            FROM mart.v_source_precedence
+            """
+        )
+        window = cursor.fetchone() or {}
+    return jsonable({
+        **_sarus_identity(),
+        "resources": [r for r in status["resources"] if r["enabled"]],
+        "precedence": dict(window),
+    })
+
+
+@router.post("/integrations/winteam/sarus/sync", dependencies=[Depends(require_admin)])
+def winteam_sarus_sync(
+    normalize: bool | None = Query(None, description="false = raw landing only, no normalization or mart rebuild; default WINTEAM_NORMALIZE"),
+    resources: str | None = Query(None, description="Comma separated subset of the Sarus resources"),
+    force: bool = Query(False, description="true = also re-read jobs, vendors, budgets and AR synced within the last 20 hours"),
+    deep: bool = Query(False, description="true = re-read WINTEAM_DEEP_LOOKBACK_DAYS (35) of timekeeping and AP instead of WINTEAM_LOOKBACK_DAYS (3)"),
+) -> dict[str, Any]:
+    """Sync the Sarus database now (GET-only, as the primary). Requires WINTEAM_SARUS_ENABLED; nothing
+    syncs it on a schedule."""
+    selected = [name.strip() for name in resources.split(",") if name.strip()] if resources else None
+    try:
+        return jsonable(sarus_ingestion().sync_all(normalize=normalize, resources=selected, force=force, deep=deep))
+    except WinTeamError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/integrations/winteam/sarus/test", dependencies=[Depends(require_admin)])
+def winteam_sarus_test() -> dict[str, Any]:
+    """Read-only credential check against the Sarus database: one GET of the jobs list.
+
+    Works before WINTEAM_SARUS_ENABLED is set, so credentials can be checked first. Reports which
+    company numbers the tenant returns, so it is plain whether the id points at Sarus or back at
+    a Crane company. Lands nothing.
+    """
+    if not settings.winteam_sarus_configured:
+        return {**_sarus_identity(), "ok": False,
+                "error": "Set WINTEAM_SARUS_TENANT_ID (and WINTEAM_SARUS_SUBSCRIPTION_KEY) in the server .env"}
+    connector = sarus_ingestion(enabled=True)
+    try:
+        with connector._client() as client:
+            page = parse_paged(client.get("/jobs/v2/api/jobs", {"pageSize": 100, "pageNumber": 1}))
+    except WinTeamError as exc:
+        return {**_sarus_identity(), "ok": False, "status_code": exc.status_code, "error": str(exc)[:300]}
+    companies = sorted({str(r.get("companyNumber")) for r in page.results if r.get("companyNumber") is not None})
+    # Company numbers are numbered per WinTeam database - Sarus and Crane both have a company 1 - so
+    # they cannot tell the two apart. Job identity can: a Sarus tenant returns the jobs the export
+    # already knows as Sarus (300 "Amazon - BDL3/7"), and a Crane tenant returns Crane jobs.
+    known = known_jobs_by_company()
+    api_jobs = {(str(r.get("jobNumber")), str(r.get("jobDescription") or "").strip()) for r in page.results}
+    return {
+        **_sarus_identity(),
+        "ok": True,
+        "jobs_total": page.total_count,
+        "company_numbers": companies,
+        "matches_known_sarus_jobs": len(api_jobs & known.get("Sarus", set())),
+        "matches_known_crane_jobs": len(api_jobs & known.get("Crane", set())),
+        "sample_jobs": [
+            {"jobNumber": r.get("jobNumber"), "jobDescription": r.get("jobDescription"), "companyNumber": r.get("companyNumber")}
+            for r in page.results[:8]
+        ],
+    }
+
+
+def known_jobs_by_company() -> dict[str, set[tuple[str, str]]]:
+    """(job number, job name) already in the warehouse, grouped Sarus vs Crane."""
+    with connection() as conn, conn.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT CASE WHEN company = 'Sarus' THEN 'Sarus' ELSE 'Crane' END AS ns,
+                   regexp_replace(job_number, '^[A-Za-z]+:', '') AS job_number, btrim(job_name) AS job_name
+            FROM core.dim_job WHERE valid_to IS NULL AND job_name IS NOT NULL
+            """
+        )
+        out: dict[str, set[tuple[str, str]]] = {}
+        for row in cursor.fetchall():
+            out.setdefault(row["ns"], set()).add((str(row["job_number"]), str(row["job_name"])))
+    return out
+
+
+@router.get("/integrations/relay")
+def relay_status() -> dict[str, Any]:
+    """Relay (integration_mapper) FedEx feeds: wired or not, last run per feed, snapshot sizes."""
+    return jsonable(relay.status())
+
+
+@router.post("/integrations/relay/sync", dependencies=[Depends(require_admin)])
+def relay_sync(rebuild: bool = Query(True, description="Rebuild the marts after the pull")) -> dict[str, Any]:
+    """Pull every Relay feed (GET only against Relay), replace the snapshots, then rebuild the marts."""
+    if not relay.configured():
+        raise HTTPException(status_code=409, detail="Relay is not configured (RELAY_BASE_URL and RELAY_EXPORT_TOKEN)")
+    result = relay.sync()
+    loaded = any(r["status"] == "succeeded" for r in result["runs"])
+    return jsonable({**result, "marts": marts.rebuild_all(initiated_by="relay-sync") if rebuild and loaded else None})
+
+
+@router.get("/integrations/companycam")
+def companycam_status() -> dict[str, Any]:
+    """Whether site photos are available. Never returns the token."""
+    return companycam.status()
+
+
+@router.get("/integrations/companycam/probe", dependencies=[Depends(require_admin)])
+def companycam_probe(limit: int = Query(5, ge=1, le=25)) -> dict[str, Any]:
+    """Read-only look at real CompanyCam projects, to choose a match rule from evidence.
+
+    Admin-only and deliberately small: it reports which fields the projects carry and a handful of
+    redacted samples, not a customer's photo library. Run it once with the production token to see
+    whether projects hold the job number in their name, a usable address, or neither.
+    """
+    if not companycam.configured():
+        return companycam.status()
+    try:
+        return companycam.probe(limit=limit)
+    except companycam.CompanyCamError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@router.get("/data/reconciliation")
+def data_reconciliation(months: int = Query(6, ge=1, le=24)) -> dict[str, Any]:
+    """Prove the published figures trace to WinTeam payloads (app.reconcile).
+
+    `raw -> core` must agree to the cent. `suppressed_ar` is invoiced AR the mart publishes as zero
+    revenue - never correct, and the defect that hid $9.7M across July and August 2026.
+    """
+    return reconcile.ar_chain(months=months)
+
+
 @router.get("/data/freshness")
 def data_freshness() -> dict[str, Any]:
     with connection() as conn, conn.cursor() as cursor:
         cursor.execute(
             """
             SELECT resource_name, last_status, last_completed_at, records_fetched, records_inserted,
-                   watermark_value, seconds_since_last_completion
+                   last_error, watermark_value, seconds_since_last_completion
             FROM mart.v_winteam_ingestion_freshness
             """
         )
@@ -254,6 +430,7 @@ def data_freshness() -> dict[str, Any]:
                     "last_completed_at": None,
                     "records_fetched": None,
                     "records_inserted": None,
+                    "last_error": None,
                     "watermark_value": None,
                     "seconds_since_last_completion": None,
                 }
@@ -261,16 +438,32 @@ def data_freshness() -> dict[str, Any]:
     reference_names = {"load", "reset", "settings", "stage", "dim_job", "fact_job_cost_month", "fact_labor_budget_month",
                        "fact_timekeeping", "fact_ar_invoice", "fact_ap_invoice"}
     resources.extend(v for k, v in by_name.items() if k not in reference_names)  # historical resource names no longer in the catalogue
+    resources = [_mark_overdue(r) for r in resources]
     reference = finance_reference.last_load()
+    reference_age = (
+        int((datetime.now(timezone.utc) - datetime.fromisoformat(reference["completed_at"])).total_seconds())
+        if reference and reference.get("completed_at") else None
+    )
+    reference_stale = bool(
+        settings.finance_reference_configured
+        and (reference_age is None or reference_age > REFERENCE_STALE_AFTER_SECONDS)
+    )
     return {
         "resources": resources,
+        "ingestion": {
+            "healthy": not reference_stale,
+            "overdue_resources": [],
+            "overdue_after_seconds": None,
+            "poll_seconds": None,
+            "sync": "on_demand",
+            "reference_stale": reference_stale,
+            "reference_stale_after_seconds": REFERENCE_STALE_AFTER_SECONDS,
+        },
         "finance_reference": {
             "configured": settings.finance_reference_configured,
             "last_load": reference,
-            "seconds_since_last_completion": (
-                int((datetime.now(timezone.utc) - datetime.fromisoformat(reference["completed_at"])).total_seconds())
-                if reference and reference.get("completed_at") else None
-            ),
+            "seconds_since_last_completion": reference_age,
+            "stale": reference_stale,
         },
         "marts": _marts_block(),
     }

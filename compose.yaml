@@ -13,16 +13,16 @@ x-api-environment: &api-environment
   WINTEAM_SUBSCRIPTION_KEY: ${WINTEAM_SUBSCRIPTION_KEY:-}
   WINTEAM_SUBSCRIPTION_KEY_HEADER: ${WINTEAM_SUBSCRIPTION_KEY_HEADER:-Ocp-Apim-Subscription-Key}
   WINTEAM_HEADERS_JSON: '${WINTEAM_HEADERS_JSON:-{}}'
-  WINTEAM_RESOURCES: ${WINTEAM_RESOURCES:-jobs,vendors,timekeeping,job_schedules,gl_budgets,ap_invoices,ar_invoices,ap_payments}
+  WINTEAM_RESOURCES: ${WINTEAM_RESOURCES:-jobs,vendors,timekeeping,job_schedules,job_budgets,ap_invoices,ap_invoice_details,ar_invoices,ap_payments}
   WINTEAM_CUSTOMER_NUMBERS: ${WINTEAM_CUSTOMER_NUMBERS:-}
   WINTEAM_LOCATION_IDS: ${WINTEAM_LOCATION_IDS:-}
   WINTEAM_PAGE_SIZE: ${WINTEAM_PAGE_SIZE:-100}
   WINTEAM_BACKFILL_MONTHS: ${WINTEAM_BACKFILL_MONTHS:-18}
   WINTEAM_WINDOW_DAYS: ${WINTEAM_WINDOW_DAYS:-16}
-  WINTEAM_LOOKBACK_DAYS: ${WINTEAM_LOOKBACK_DAYS:-35}
+  WINTEAM_LOOKBACK_DAYS: ${WINTEAM_LOOKBACK_DAYS:-3}
+  WINTEAM_DEEP_LOOKBACK_DAYS: ${WINTEAM_DEEP_LOOKBACK_DAYS:-35}
   WINTEAM_GL_FISCAL_YEARS: ${WINTEAM_GL_FISCAL_YEARS:-2}
   WINTEAM_SCHEDULE_JOBS_LIMIT: ${WINTEAM_SCHEDULE_JOBS_LIMIT:-0}
-  WINTEAM_POLL_SECONDS: ${WINTEAM_POLL_SECONDS:-300}
   WINTEAM_REQUEST_TIMEOUT_SECONDS: ${WINTEAM_REQUEST_TIMEOUT_SECONDS:-30}
   WINTEAM_MAX_PAGES_PER_SYNC: ${WINTEAM_MAX_PAGES_PER_SYNC:-500}
   WINTEAM_MAX_RETRIES: ${WINTEAM_MAX_RETRIES:-4}
@@ -30,6 +30,22 @@ x-api-environment: &api-environment
   WINTEAM_GL_JOBS_LIMIT: ${WINTEAM_GL_JOBS_LIMIT:-0}
   WINTEAM_API_PREFIX: ${WINTEAM_API_PREFIX:-/wtnextgen}
   WINTEAM_ALLOW_INSECURE_HTTP: ${WINTEAM_ALLOW_INSECURE_HTTP:-false}
+  # Every variable config.py reads must be listed here: this block is an explicit allow-list, so a
+  # key present in .env but missing below never reaches the container and silently keeps its default.
+  WINTEAM_AP_DETAIL_INVOICE_LIMIT: ${WINTEAM_AP_DETAIL_INVOICE_LIMIT:-0}
+  WINTEAM_IDLE_IN_TRANSACTION_TIMEOUT_SECONDS: ${WINTEAM_IDLE_IN_TRANSACTION_TIMEOUT_SECONDS:-60}
+  MART_REBUILD_LOCK_TIMEOUT_SECONDS: ${MART_REBUILD_LOCK_TIMEOUT_SECONDS:-30}
+  WINTEAM_SARUS_ENABLED: ${WINTEAM_SARUS_ENABLED:-false}
+  WINTEAM_SARUS_BASE_URL: ${WINTEAM_SARUS_BASE_URL:-}
+  WINTEAM_SARUS_TENANT_ID: ${WINTEAM_SARUS_TENANT_ID:-}
+  WINTEAM_SARUS_SUBSCRIPTION_KEY: ${WINTEAM_SARUS_SUBSCRIPTION_KEY:-}
+  WINTEAM_SARUS_HEADERS_JSON: '${WINTEAM_SARUS_HEADERS_JSON:-{}}'
+  COMPANYCAM_API_TOKEN: ${COMPANYCAM_API_TOKEN:-}
+  COMPANYCAM_MATCH_RULE: ${COMPANYCAM_MATCH_RULE:-}
+  IMPORT_INBOX_DIR: ${IMPORT_INBOX_DIR:-/imports/inbox}
+  RELAY_BASE_URL: ${RELAY_BASE_URL:-}
+  RELAY_EXPORT_TOKEN: ${RELAY_EXPORT_TOKEN:-}
+  RELAY_TIMEOUT_SECONDS: ${RELAY_TIMEOUT_SECONDS:-60}
   # Second source: the restored Finance_Dashboard dump (read-only database in the same Postgres).
   # Empty = source not configured. The default is the local restored dump.
   FINANCE_REFERENCE_DATABASE_URL: ${FINANCE_REFERENCE_DATABASE_URL:-postgresql://facilities_app:facilities_dev@postgres:5432/finance_reference}
@@ -91,6 +107,8 @@ services:
     restart: unless-stopped
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]
     environment: *api-environment
+    volumes:
+      - ${IMPORTS_HOST_DIR:-./imports}:/imports
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -109,6 +127,8 @@ services:
     restart: unless-stopped
     command: ["python", "-m", "app.worker"]
     environment: *api-environment
+    volumes:
+      - ${IMPORTS_HOST_DIR:-./imports}:/imports
     depends_on:
       migrate:
         condition: service_completed_successfully

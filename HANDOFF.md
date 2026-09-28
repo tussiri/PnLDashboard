@@ -17,35 +17,38 @@ share the same core/mart tables, combined by explicit precedence rules (`docs/wi
   that file): jobs (643, exact coordinates), vendors, timekeeping (rolling window, ~8k punches a
   week), AP invoices and AR invoices with applied cash. Job schedules and AP payments answer 403
   (subscription not entitled) and are skipped; GL budgets answer 400/404 for jobs without a budget.
-  The worker syncs every `WINTEAM_POLL_SECONDS`, normalizes, rebuilds marts and forecasts. Inside the
+  Syncs run once a night (app/nightly.py, 02:30 America/Chicago, setting `nightly_sync`) and on
+  demand (Administration page or the admin routes), then normalize and rebuild marts and forecasts. Inside the
   API's date window API rows are the truth for the companies the tenant serves (Crane IFS, Crane
   West, Crane Southwest); exports fill everything else (Sarus, and all history before the window).
+- **relay** (integration_mapper, FedEx only): the read-only export of Relay, pulled nightly into `core.relay_*`
+  (`app/relay.py`, migration 034). It carries FedEx subcontractor payables by WinTeam job and service month,
+  FedEx AR with supersession applied, self-perform stations and contract amounts; the weekly mart prefers it
+  for FedEx vendor cost and billing. Configure `RELAY_BASE_URL` and `RELAY_EXPORT_TOKEN` (one of Relay's
+  `DASHBOARD_EXPORT_TOKENS`). The export itself is on Relay branch `feature/dashboard-export`.
 - **finance_reference**: the WinTeam report exports restored from the Finance_Dashboard PostgreSQL
   dump (`finance_reference` database, read-only). It is the only source of the Job Cost Analysis
   P&L (revenue, direct labor, subcontract cost by site and month), daily labor budgets, and the AR/AP
   aging snapshots. Reload from the Administration page after restoring a newer dump.
 
-Views: the **Executive Overview** is a replica of the executives' Amazon Labor P&L dashboard
-(weekly labor cost, hours, OT and labor % of invoicing vs BU target, by site and business unit) for
-the key accounts only (setting `key_accounts`: FedEx including the FXE/FXG station jobs, Amazon,
-School districts, Whole Foods, Aldi; "All" = those combined), backed by `mart.job_week`
-(`docs/executive-pl.md`). It slices account → sub-account (school districts, FedEx Express/Ground)
-→ delivery model (self-performed sites carry hours and labor; subcontracted sites carry vendor cost)
-→ week, shows per-site invoicing, labor, vendor cost, cost % and margin, projects in-progress vendor
-cost from the trailing three closed months and shows live AP subcontractor invoicing (company-wide,
-WinTeam AP is not job-linked; subcontractor vendors = setting `subcontractor_vendor_types`, type 6).
-Charts follow one system (month ticks, single axis, shared domains, clamped anomalies, expandable
-cards with tables and CSV). Account grouping rules (`account_groups`) are re-applied after every
-jobs sync so jobs first seen through the live API land in the right account. Every other view defaults to the same **key accounts** (`scope=key`, the server default on every
-reporting endpoint) and reaches the ~89 other accounts by drill-down: the filter bar shows one
-scope/account control plus period and month, with delivery, company, region, branch, service and
-vertical collapsed behind "More filters" (`docs/reporting-scope.md`, `docs/frontend.md`). Key
-accounts are 94.1% of all-account revenue; each view states its scope and the Financial Summary
-discloses the share it leaves out. Every other view sits behind
-role-based access (`docs/auth-rbac.md`): executives see only the Executive Overview; analysts see
-all analysis views; admins also see Administration. Local instance runs `APP_AUTH_MODE=dev` with
-users `executive` / `analyst` / `admin` (password `dev-<username>`); production needs
-`APP_AUTH_MODE=required`, `APP_SESSION_SECRET` and `APP_USERS_JSON` in the server `.env`.
+Views (rebuilt 2026-09-23, plan in `docs/leadership-rebuild-plan.md`): a leadership labor P&L modeled
+on the Plano ISD reference dashboard, dynamic by account.
+
+- **Home**: portfolio strip across the featured accounts (labor or cost %, $ over target, OT %,
+  change vs prior week) and the reference Overview for the selected account.
+- **Account**: tabs Overview, Sites, Over Target, Overtime, Map, Vendors; a site row opens a drawer
+  with the site's weekly P&L, a 13-week trend, subcontractor invoices and CompanyCam photos.
+- **Analytics**: every account including Other, drilled account -> segment (Other: account group)
+  -> site, with filters, sorting and CSV.
+- **Admin** (admin role): accounts, segments and targets; job mapping (review queue, Other, role,
+  CompanyCam project); export imports; sync runs and on-demand sync.
+
+Account, week, target and open site live in the URL. Accounts are configuration, not code
+(`ops.account`, `ops.account_segment`, `ops.account_job`; seed `config/accounts/seed.json`). Derived
+metrics are computed in the browser by `src/leadership/metrics.ts`, pinned by tests to the reference
+week (week ending 2026-09-20). Labor dollars come from the imported Pay Report when it covers the
+week, else a labeled trailing-rate estimate (`docs/export-feeds.md`). Every role sees Home, Account
+and Analytics; admins also see Admin.
 
 The forecasting engine is the "trust layer" engine ported from the Finance_Reporting
 (Crane IFS) codebase: closed-month gates, a one-sided anomaly tripwire, walk-forward selection
@@ -64,7 +67,7 @@ The reference implementation the models were ported from is
 
 ## Technology and service layout
 
-- Frontend: React 18, TypeScript, Vite, Recharts, Leaflet (+ MarkerCluster, Heat)
+- Frontend: React 18, TypeScript, Vite, Chart.js (react-chartjs-2), Leaflet (+ MarkerCluster)
 - Web runtime: nginx serving the Vite build and proxying `/api/` same-origin
 - API: FastAPI + psycopg 3 (`services/api`)
 - Ingestion: background Python worker calling the documented WinTeam endpoints
@@ -136,8 +139,15 @@ documented WinTeam GET endpoints (WinTeamAPI.txt)
 - `sources/geo/city_centroids.json`: approximate city centroids used for map placement
 - `services/winteam-sim/`: simulator (README lists the tenant GUID and customer numbers)
 - `src/services/{apiTypes,api,demoApi,dataSource,queryClient}.ts`: frontend data seam
-- `src/views/*.tsx`: one view per nav item; `src/components/DataGrid.tsx`, `ChartKit.tsx`
-- `src/components/OperationsMap.tsx`: Leaflet map (keep plugins dynamically loaded)
+- `src/leadership/`: the app (metrics, routes, state, Shell, Overview, charts, ui, pages/*)
+- `src/leadership/pages/SiteMap.tsx`: Leaflet map (cluster plugin loaded after the global `L`)
+- `services/api/app/{accounts,imports,leadership,nightly}.py`, `routers/leadership.py`: account
+  configuration, export imports, the weekly leadership mart, the nightly schedule, the routes
+
+## Hosted deployment
+
+`render.yaml` is the Render blueprint (web, private API, worker, PostgreSQL; deploys `main`). The
+runbook, including the one-time restore of the local data, is `docs/deploy-render.md`.
 
 ## Local startup
 
@@ -217,7 +227,12 @@ Administration page (needs the admin token from `INGESTION_ADMIN_TOKEN`): test c
 all or one resource, rebuild marts, rebuild forecasts, edit `ops.app_setting` values, view sync
 runs. Equivalent routes: `POST /api/v1/integrations/winteam/{test,sync,sync/{resource}}`,
 `POST /api/v1/marts/rebuild`, `POST /api/v1/forecasts/rebuild` with header `X-Admin-Token`.
-The worker syncs every `WINTEAM_POLL_SECONDS` and rebuilds marts and forecasts after each sync.
+The worker runs one sync a night (`app/nightly.py`): import inbox (`IMPORT_INBOX_DIR`, mounted from
+`./imports`), WinTeam primary and Sarus incrementally, one mart rebuild. It runs only inside
+`window_hours` after the configured time, so a missed night is skipped. A normal sync re-reads 3 days before the last one (`WINTEAM_LOOKBACK_DAYS`);
+`deep=true` re-reads 35 (`WINTEAM_DEEP_LOOKBACK_DAYS`); jobs, vendors, budgets and AR are re-read at
+most once per 20 hours unless `force=true`; AP invoices WinTeam cannot serve are not asked for again for
+7 days (`ops.winteam_unretrievable`). Sarus: `POST /api/v1/integrations/winteam/sarus/sync`.
 
 ## Known limitations
 

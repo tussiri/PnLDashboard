@@ -1,0 +1,40 @@
+import { describe, expect, it } from 'vitest'
+import { formatRoute, monthLabel, parseRoute, weekEndOf, weekLabel, weekStartOf, weekTick, type Route } from './routes'
+
+describe('leadership routes', () => {
+  it('round-trips every view with its selections', () => {
+    const routes: Route[] = [
+      { view: 'home', account: 'plano-isd', week: '2026-09-20', target: 64.5 },
+      { view: 'account', account: 'plano-isd', tab: 'sites', week: '2026-09-20', site: { company: 'Crane Southwest', job: '801' } },
+      { view: 'account', account: 'fedex', tab: 'overview' },
+      { view: 'account', account: 'fedex', tab: 'sites', selfOnly: true },
+      { view: 'analytics', week: '2026-09-20', account: 'other', status: 'over', q: 'elementary', segment: 'High School' },
+      { view: 'admin', adminTab: 'imports' },
+    ]
+    for (const route of routes) expect(parseRoute(formatRoute(route))).toEqual(route)
+  })
+
+  it('writes readable URLs', () => {
+    expect(formatRoute({ view: 'home', account: 'plano-isd', week: '2026-09-20', target: 64.5 })).toBe('#/home?account=plano-isd&week=2026-09-20&target=64.5')
+    expect(formatRoute({ view: 'account', account: 'plano-isd', tab: 'over-target' })).toBe('#/account/plano-isd/over-target')
+    expect(formatRoute({ view: 'admin', adminTab: 'accounts', week: '2026-09-20' })).toBe('#/admin')
+  })
+
+  it('falls back safely on unknown or malformed input', () => {
+    expect(parseRoute('')).toEqual({ view: 'home' })
+    expect(parseRoute('#/overview')).toEqual({ view: 'home' })
+    expect(parseRoute('#/account/amazon/nonsense?week=Sept&target=abc')).toEqual({ view: 'account', account: 'amazon', tab: 'overview' })
+    expect(parseRoute('#/admin/unknown')).toEqual({ view: 'admin', adminTab: 'accounts' })
+    expect(parseRoute('#/home?site=noseparator').site).toBeUndefined()
+    expect(parseRoute('#/home?site=Crane%20IFS~12~A').site).toEqual({ company: 'Crane IFS~12', job: 'A' })
+  })
+
+  it('labels Monday weeks by their ending Sunday', () => {
+    expect(weekEndOf('2026-09-14')).toBe('2026-09-20')
+    expect(weekStartOf('2026-09-20')).toBe('2026-09-14')
+    expect(weekStartOf('2026-09-14')).toBe('2026-09-14')
+    expect(weekLabel('2026-09-14')).toBe('Week ending Sep 20, 2026')
+    expect(weekTick('2026-08-31')).toBe('Sep 6')
+    expect(monthLabel('2026-08-01')).toBe('Aug 2026')
+  })
+})

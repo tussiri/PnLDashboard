@@ -1,0 +1,12 @@
+-- 023: how much of a week's invoicing is estimated, not just whether any of it is.
+--
+-- A week that straddles a month boundary is computed per slice and can legitimately mix bases: the
+-- week of 2026-08-31 is one day of August (real AR, prorated) and six of September (carried forward,
+-- because FedEx, Amazon and Whole Foods have no September billing run). The row stored one
+-- invoicing_basis chosen by day count, so the six-day slice won and 331 job-weeks reported as pure
+-- carry-forward while holding a day of actual AR - indistinguishable from a week that is entirely
+-- estimate.
+--
+-- invoicing_basis now reads 'mixed' when the slices genuinely disagree, and this column carries the
+-- estimated portion in dollars so a reader (or a card) can state the share rather than a flag.
+ALTER TABLE mart.job_week ADD COLUMN IF NOT EXISTS invoicing_estimated_amount numeric(18,2);

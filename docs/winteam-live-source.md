@@ -204,6 +204,35 @@ What stays as it was:
 * `/ap/summary` open balances still come from the AP aging snapshot; its invoiced / vendor / due
   figures read the effective AP invoices.
 
+### Second database: Sarus (migration 026)
+
+Sarus is its own WinTeam database, reached with its own tenant id and key (`WINTEAM_SARUS_*`).
+Its job, vendor, employee and invoice numbers overlap Crane's, so `app/tenants.py` keeps it apart
+at every layer:
+
+| Layer | Primary (Crane) | Sarus |
+|---|---|---|
+| raw `resource_name` | `timekeeping` | `sarus/timekeeping` |
+| core `source` | `winteam_api` | `winteam_sarus` |
+| `winteam_id` | `api:<id>` | `api:sarus:<id>` |
+| sync runs / watermarks | `integration_name = 'winteam'` | `'winteam_sarus'` |
+| job resolution | `mart.v_api_job_map` | `mart.v_sarus_job_map` (bare row when it is a Sarus job, else `Sarus:<n>`) |
+| company | `company_numbers` labels | always `Sarus` |
+| vendors | as numbered | `+ rules.SARUS_VENDOR_OFFSET` |
+
+Resources read from Sarus: jobs (raw only - the export owns the Sarus job dimension; the list drives
+the per-job budget pull), vendors, timekeeping, job_budgets, ap_invoices, ap_invoice_details,
+ar_invoices (customers: those on Sarus jobs and invoices).
+
+Precedence is per database. `winteam_api` keeps its window and company scoping unchanged.
+`winteam_sarus` has its own window (`sarus_timekeeping_from / to`, `sarus_ap_invoice_from / to` in
+`mart.v_source_precedence`) and supersedes only export rows whose company is `Sarus`, so a Sarus
+backfill never widens the Crane window. AR: an API invoice supersedes only the export invoice of its
+own database with the same `(customer_number, invoice_number)`.
+
+Sarus is synced on demand only, like the primary: the Administration page's Sync Sarus, or
+`POST /api/v1/integrations/winteam/sarus/sync` (requires `WINTEAM_SARUS_ENABLED=true`).
+
 ### Pricing punches the API reports without a rate
 
 24% of the live punches carry `rate = 0`. `normalize.normalize_timekeeping` now prices those with the

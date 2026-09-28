@@ -1,0 +1,9 @@
+#!/bin/sh
+# Sourced by the nginx entrypoint before the templates are rendered. The /api proxy resolves the API
+# hostname per request, so nginx needs a resolver: the first nameserver in resolv.conf (Docker's
+# embedded DNS locally, the platform's on Render) unless NGINX_RESOLVER is set.
+if [ -z "${NGINX_RESOLVER:-}" ]; then
+  ns=$(awk '/^nameserver/ { print $2; exit }' /etc/resolv.conf)
+  case "$ns" in *:*) ns="[$ns]" ;; esac
+  export NGINX_RESOLVER="${ns:-127.0.0.11}"
+fi

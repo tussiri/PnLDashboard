@@ -125,7 +125,14 @@ def test_catalogue_matches_documentation() -> None:
     assert RESOURCES["gl_budgets"].envelope == "data_array"
     assert RESOURCES["ar_invoices"].kind == "per_customer"
     assert RESOURCES["job_schedules"].kind == "per_job_date_window"
-    assert list(RESOURCES) == ["jobs", "vendors", "timekeeping", "job_schedules", "gl_budgets", "ap_invoices", "ar_invoices", "ap_payments"]
+    assert RESOURCES["ap_invoice_details"].path == "/accounts/v1/api/payables/invoices/{invoiceNumber}"
+    assert RESOURCES["ap_invoice_details"].kind == "per_invoice"
+    assert RESOURCES["ap_invoice_details"].envelope == "data_array"
+    assert RESOURCES["job_budgets"].path == "/jobs/v2/api/jobs/{jobKey}/budgets"
+    assert RESOURCES["job_budgets"].kind == "per_job"
+    assert list(RESOURCES) == ["jobs", "vendors", "timekeeping", "job_schedules", "gl_budgets",
+                               "job_budgets", "ap_invoices", "ap_invoice_details", "ar_invoices",
+                               "ap_payments"]
 
 
 # ── windows and watermarks ───────────────────────────────────────────────────
@@ -354,6 +361,10 @@ class FakeCursor:
             self._rows = [{"customer_number": n} for n in self.conn.customers]
         elif "select job_number from core.dim_job" in text:
             self._rows = [{"job_number": n} for n in self.conn.jobs]
+        elif "select max(completed_at) as at" in text:
+            self._rows = [{"at": self.conn.last_success}]
+        elif "select a.invoice_number from core.fact_ap_invoice a" in text:
+            self._rows = [{"invoice_number": n} for n in self.conn.invoices]
         elif "select distinct on (resource_name)" in text:
             self._rows = list(self.conn.latest_runs)
         elif "select watermark_value" in text:
@@ -377,7 +388,9 @@ class FakeCursor:
 class FakeConn:
     """Stands in for an autocommit psycopg connection: only `transaction()` opens one."""
 
-    def __init__(self, customers=(), jobs=(), latest_runs=(), watermark=None) -> None:
+    def __init__(self, customers=(), jobs=(), latest_runs=(), watermark=None, last_success=None, invoices=()) -> None:
+        self.last_success = last_success
+        self.invoices = list(invoices)
         self.customers = list(customers)
         self.jobs = list(jobs)
         self.latest_runs = list(latest_runs)
@@ -610,3 +623,226 @@ def test_land_writes_its_batch_in_one_transaction(monkeypatch) -> None:
     ing._land(conn, uuid4(), RESOURCES["vendors"], [{"vendorNumber": 1}, {"vendorNumber": 2}], result)
     assert inside == [True, True] and result.fetched == 2
     assert conn.in_transaction is False
+
+
+# ── AP GL distributions ──────────────────────────────────────────────────────
+def test_flatten_ap_distribution_carries_the_header_onto_every_line() -> None:
+    """The list endpoint returns headers alone; only this per-invoice shape attributes cost to a job."""
+    from app.winteam import flatten_ap_distribution
+
+    lines = flatten_ap_distribution({
+        "invoiceNumber": "9010236526", "vendorNumber": 1033, "companyNumber": 3,
+        "invoiceDate": "2026-09-17", "postingDate": "2026-09-17", "invoiceAmount": 906.21,
+        "generalLedgerDistributions": [
+            {"accountNumber": 40902, "jobNumber": "900", "amount": 906.21},
+            {"accountNumber": 41000, "jobNumber": "901", "amount": 0},
+        ],
+    })
+    assert [l["lineIndex"] for l in lines] == [0, 1]
+    assert [l["jobNumber"] for l in lines] == ["900", "901"]
+    assert all(l["invoiceNumber"] == "9010236526" and l["vendorNumber"] == 1033 for l in lines)
+    assert all(l["invoiceDate"] == "2026-09-17" for l in lines)
+
+
+def test_flatten_ap_distribution_yields_nothing_without_distributions() -> None:
+    from app.winteam import flatten_ap_distribution
+
+    assert flatten_ap_distribution({"invoiceNumber": "X", "generalLedgerDistributions": []}) == []
+    assert flatten_ap_distribution({"invoiceNumber": "X"}) == []
+    assert flatten_ap_distribution({"invoiceNumber": "X", "generalLedgerDistributions": "nope"}) == []
+
+
+def test_distribution_identity_separates_repeated_job_and_account() -> None:
+    """One invoice may code the same job and account twice; the line position is what disambiguates."""
+    from app.winteam import id_ap_distributions
+
+    base = {"companyNumber": 3, "vendorNumber": 1033, "invoiceNumber": "9010236526",
+            "accountNumber": 40902, "jobNumber": "900"}
+    assert id_ap_distributions({**base, "lineIndex": 0}) != id_ap_distributions({**base, "lineIndex": 1})
+    assert id_ap_distributions({**base, "lineIndex": 0}) == "3:1033:9010236526:0"
+
+
+def test_ap_detail_outage_threshold_is_defined_and_small() -> None:
+    """Scattered per-invoice failures are skipped; an unbroken run of them is an outage. The
+    threshold is what separates the two, and a 7,000-invoice backfill must not die on one bad
+    invoice (1384 answered HTTP 500 on all four attempts)."""
+    from app.winteam import AP_DETAIL_MAX_CONSECUTIVE_ERRORS
+
+    assert 5 <= AP_DETAIL_MAX_CONSECUTIVE_ERRORS <= 100
+
+
+def _per_invoice_harness(monkeypatch, answers):
+    """Run _pull_per_invoice over `answers` (invoice number -> payload, or an HTTP status to raise)."""
+    from urllib.parse import quote
+    from uuid import uuid4
+
+    from app.winteam import RESOURCES, PullResult, WinTeamError
+
+    ing = WinTeamIngestion(Settings.load(ENABLED_ENV))
+    landed, remembered = [], []
+    monkeypatch.setattr(ing, "_ap_invoices_missing_details", lambda conn, limit=0: list(answers))
+    monkeypatch.setattr(ing, "_remember_unretrievable", lambda conn, resource, key, status: remembered.append(key))
+    monkeypatch.setattr(ing, "_forget_unretrievable", lambda conn, resource, key: None)
+    monkeypatch.setattr(ing, "_land", lambda conn, run_id, resource, records, result: landed.extend(records))
+
+    class Client:
+        def get(self, path, params=None, retry_server_errors=True):
+            answer = next(v for k, v in answers.items() if path.endswith(quote(k, safe="")))
+            if isinstance(answer, int):
+                raise WinTeamError(f"HTTP {answer}", status_code=answer)
+            return answer
+
+    result = PullResult()
+    ing._pull_per_invoice(RESOURCES["ap_invoice_details"], Client(), object(), uuid4(), result, None)
+    return landed, remembered, result
+
+
+def test_a_run_of_not_found_invoices_is_not_an_outage(monkeypatch) -> None:
+    """30 slash-numbered expense reimbursements answering 404, newest first, must not stop the
+    vendor invoice behind them (the 2026-09-23 stall)."""
+    answers = {f"JUssiri {i:02d}/2026": 404 for i in range(30)}
+    answers["1426"] = {"data": [{"invoiceNumber": "1426", "vendorNumber": 1162, "companyNumber": 3,
+                                 "generalLedgerDistributions": [{"accountNumber": 44000, "jobNumber": "853", "amount": 12759.13}]}]}
+    landed, remembered, result = _per_invoice_harness(monkeypatch, answers)
+    assert [l["jobNumber"] for l in landed] == ["853"]
+    assert len(remembered) == 30
+    assert "30 not retrievable" in result.message
+
+
+def test_a_run_of_server_errors_is_still_an_outage(monkeypatch) -> None:
+    import pytest
+
+    from app.winteam import AP_DETAIL_MAX_CONSECUTIVE_ERRORS, WinTeamError
+
+    answers = {str(1000 + i): 500 for i in range(AP_DETAIL_MAX_CONSECUTIVE_ERRORS + 1)}
+    with pytest.raises(WinTeamError, match="treating as an outage"):
+        _per_invoice_harness(monkeypatch, answers)
+
+
+# ── job budgets ──────────────────────────────────────────────────────────────
+def test_flatten_job_budget_spreads_hours_across_the_week() -> None:
+    """Budget is hours PER DAY OF WEEK plus a rate, which apportions to a week without proration."""
+    from app.winteam import flatten_job_budget, id_job_budgets
+
+    lines = flatten_job_budget({
+        "id": 119, "effectiveDate": "2026-01-01T00:00:00", "endDate": "2026-12-31T00:00:00",
+        "status": "Posted - Cannot Edit",
+        "details": [{
+            "hours": {"description": "Ops/Regular", "type": 15, "salaried": False,
+                      "dayOfWeek": {"sun": 545.83, "mon": 545.83, "tue": 545.83, "wed": 545.83,
+                                    "thu": 545.83, "fri": 545.83, "sat": 545.83, "hol": 545.83}},
+            "rates": {"billRate": None, "payRate": 17.5},
+        }],
+    })
+    assert len(lines) == 1
+    line = lines[0]
+    assert line["budgetId"] == 119 and line["lineIndex"] == 0
+    assert line["payRate"] == 17.5 and line["billRate"] is None
+    assert line["mon"] == 545.83 and line["hol"] == 545.83
+    assert line["description"] == "Ops/Regular" and line["salaried"] is False
+    line["jobNumber"] = "500"
+    assert id_job_budgets(line) == "500:119:0"
+
+
+def test_a_budget_with_no_detail_lines_yields_nothing() -> None:
+    from app.winteam import flatten_job_budget
+
+    assert flatten_job_budget({"id": 7, "details": []}) == []
+    assert flatten_job_budget({"id": 7}) == []
+    assert flatten_job_budget({"id": 7, "details": "nope"}) == []
+
+
+def test_a_missing_day_stays_missing_rather_than_becoming_zero() -> None:
+    """A budget that omits Saturday is not a budget of zero Saturday hours."""
+    from app.winteam import flatten_job_budget
+
+    line = flatten_job_budget({"id": 1, "details": [
+        {"hours": {"dayOfWeek": {"mon": 8}}, "rates": {"payRate": 20}},
+    ]})[0]
+    assert line["mon"] == 8
+    assert line["sat"] is None and line["hol"] is None
+
+
+# ── on-demand syncs ask WinTeam for as little as possible ───────────────────
+def test_server_errors_can_be_raised_without_retrying() -> None:
+    calls: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(1)
+        return httpx.Response(500, json={"success": False, "serverResponse": "Oops"})
+
+    client, sleeps = make_client(handler, max_retries=4)
+    with pytest.raises(WinTeamError) as info:
+        client.get("/accounts/v1/api/payables/invoices/6.12.26", retry_server_errors=False)
+    assert info.value.status_code == 500 and len(calls) == 1 and sleeps == []
+
+
+def test_rate_limits_are_still_honoured_without_server_retries() -> None:
+    responses = iter([httpx.Response(429, headers={"Retry-After": "2"}), httpx.Response(200, json={"data": []})])
+    client, sleeps = make_client(lambda request: next(responses), max_retries=2)
+    assert client.get("/x", retry_server_errors=False) == {"data": []}
+    assert sleeps == [2.0]
+
+
+def test_daily_resources_are_skipped_when_synced_recently(monkeypatch) -> None:
+    from datetime import datetime, timedelta, timezone
+
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request.url.path)
+        return httpx.Response(200, json=paged([{"vendorNumber": 7}]))
+
+    recent = datetime.now(timezone.utc) - timedelta(hours=2)
+    conn = FakeConn(last_success=recent)
+    ing = ingestion(monkeypatch, handler, conn, {"WINTEAM_RESOURCES": "vendors"})
+    skipped = ing.sync("vendors", normalize=False)
+    assert skipped["status"] == "skipped" and skipped["requests"] == 0 and calls == []
+    outcome = ing.sync_all(normalize=True)
+    assert outcome["runs"][0]["status"] == "skipped" and outcome["marts"] is None
+    forced = ing.sync("vendors", normalize=False, force=True)
+    assert forced["status"] == "succeeded" and len(calls) == 1
+    conn.last_success = datetime.now(timezone.utc) - timedelta(hours=30)
+    assert ing.sync("vendors", normalize=False)["status"] == "succeeded"
+
+
+def test_timekeeping_is_never_daily_skipped(monkeypatch) -> None:
+    from datetime import datetime, timezone
+
+    conn = FakeConn(last_success=datetime.now(timezone.utc))
+    ing = ingestion(monkeypatch, lambda request: httpx.Response(200, json=paged([])), conn, {"WINTEAM_RESOURCES": "timekeeping"})
+    assert ing.sync("timekeeping", normalize=False)["status"] == "succeeded"
+
+
+def test_lookback_is_short_unless_deep(monkeypatch) -> None:
+    conn = FakeConn(watermark="2026-09-20")
+    ing = ingestion(monkeypatch, lambda request: httpx.Response(204), conn, {"WINTEAM_WINDOW_DAYS": "366"})
+    today = date(2026, 9, 22)
+    assert ing._windows(RESOURCES["timekeeping"], today)[0][0] == date(2026, 9, 17)
+    assert ing._windows(RESOURCES["timekeeping"], today, deep=True)[0][0] == date(2026, 8, 16)
+
+
+def test_unretrievable_invoices_are_remembered_and_not_retried(monkeypatch) -> None:
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request.url.path)
+        if request.url.path.endswith("/6.12.26"):
+            return httpx.Response(500, json={"success": False, "serverResponse": "Oops"})
+        if request.url.path.endswith("/A%2F1") or request.url.path.endswith("/A/1"):
+            return httpx.Response(404)
+        return httpx.Response(200, json={"data": [{"invoiceNumber": "900", "vendorNumber": 1, "generalLedgerDistributions": [
+            {"lineIndex": 1, "accountNumber": "5000", "jobNumber": "100", "amount": 10}]}]})
+
+    conn = FakeConn(invoices=["6.12.26", "A/1", "900"])
+    ing = ingestion(monkeypatch, handler, conn, {"WINTEAM_RESOURCES": "ap_invoice_details", "WINTEAM_MAX_RETRIES": "4"})
+    monkeypatch.setattr(ing, "_client", lambda: make_client(handler, max_retries=4)[0])
+    run = ing.sync("ap_invoice_details", normalize=False)
+    assert run["status"] == "succeeded"
+    assert len(calls) == 3  # one request per invoice: the 500 is not retried
+    remembered = [p for sql, p in conn.statements if "INSERT INTO ops.winteam_unretrievable" in sql]
+    assert [(p[2], p[3]) for p in remembered] == [("6.12.26", 500), ("A/1", 404)]
+    forgotten = [p for sql, p in conn.statements if "DELETE FROM ops.winteam_unretrievable" in sql]
+    assert [p[2] for p in forgotten] == ["900"]
+    query = next((" ".join(sql.split()), p) for sql, p in conn.statements if "SELECT a.invoice_number" in sql)
+    assert "u.last_attempt_at > now() - %(recheck)s" in query[0] and query[1]["integration"] == "winteam"

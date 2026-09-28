@@ -88,9 +88,33 @@ export interface IntegrationStatus {
   configured: boolean
   base_url_host: string | null
   resources: IntegrationResource[]
-  poll_seconds: number
+  /** Always null: WinTeam is synced on demand only, never on a schedule. */
+  poll_seconds: number | null
+  sync?: 'on_demand'
   normalize_enabled?: boolean
 }
+
+/** GET /integrations/winteam/sarus - the second WinTeam database. Never carries the tenant id or key. */
+export interface SarusStatus {
+  configured: boolean
+  enabled: boolean
+  base_url_host: string | null
+  has_subscription_key: boolean
+  ingestion: boolean
+  sync?: 'on_demand'
+  resources: IntegrationResource[]
+  precedence: {
+    sarus_timekeeping_from: string | null
+    sarus_timekeeping_to: string | null
+    sarus_ap_invoice_from: string | null
+    sarus_ap_invoice_to: string | null
+    sarus_ar_invoices_api: number
+  }
+}
+
+/** Options of an on-demand sync. force: also re-read the daily resources synced within 20 hours;
+ *  deep: re-read 35 days of timekeeping and AP instead of 3. */
+export interface SyncOptions { force?: boolean; deep?: boolean }
 
 export interface MartsStatus {
   latest_month: IsoMonth | null
@@ -168,12 +192,15 @@ export interface ConnectionTestResult {
 export interface WatermarkResetResult { resource: string; watermark_removed: boolean; next_sync: string }
 
 export interface SyncRunResult {
-  run_id: string | number
+  /** null for a skipped resource (no run was started). */
+  run_id: string | number | null
   resource: string
+  /** 'succeeded' | 'failed' | 'skipped' (a daily resource synced within the last 20 hours). */
   status: string
   fetched: number
   inserted: number
-  normalized: number
+  normalized: number | null
+  message?: string
 }
 
 export interface ForecastBuildResult {
@@ -194,7 +221,10 @@ export interface RebuildResult {
 
 export interface FullSyncResult {
   runs: SyncRunResult[]
-  marts: RebuildResult
+  /** null when nothing was normalized (every resource skipped, or normalize=false). */
+  marts: RebuildResult | null
+  normalized?: boolean
+  not_entitled?: string[]
 }
 
 export interface SyncRun {
@@ -218,15 +248,65 @@ export interface FreshnessResource {
   last_completed_at: string | null
   records_fetched: number | null
   records_inserted: number | null
+  last_error: string | null
   watermark_value: string | null
   seconds_since_last_completion: number | null
+  /** The last run is older than `overdue_after_seconds`. null when the resource is not on the
+   *  worker's schedule (a retired name, or a finance_reference loader step). */
+  overdue: boolean | null
+  overdue_after_seconds: number | null
+  /** The tenant is not entitled to this resource (HTTP 403); it never completes and is never overdue. */
+  not_entitled: boolean
+}
+
+export interface IngestionHealth {
+  /** False when the finance_reference export is stale. WinTeam is synced on demand, so nothing is overdue. */
+  healthy: boolean
+  overdue_resources: string[]
+  overdue_after_seconds: number | null
+  poll_seconds: number | null
+  sync?: 'on_demand'
+  /** The hand-loaded job-cost export is behind; the newest P&L months carry labor without revenue. */
+  reference_stale?: boolean
+  reference_stale_after_seconds?: number
 }
 
 export interface FreshnessResponse {
   resources: FreshnessResource[]
+  /** Whether every polled resource has completed within its window. A hung worker leaves the run
+   *  rows saying "succeeded", so this is the only field that distinguishes live from stalled. */
+  ingestion?: IngestionHealth
   /** Per-source run summary when the API exposes both sources here (mirrors system/status.sources). */
   sources?: SourceStatus[]
   marts: MartsStatus & { last_rebuild_status?: string | null; portfolio_month_rows?: number } & Record<string, unknown>
+}
+
+/** One vendor paid to work a site, from AP GL distributions (booked cost, not apportioned). */
+export interface SiteVendor {
+  vendor_name: string
+  vendor_number: number | null
+  invoices: number
+  amount: number
+  /** Share of the site's total distributed AP cost; null when the total is zero. */
+  share: number | null
+  last_invoice_date: string | null
+  gl_accounts: string[]
+}
+
+export interface SiteVendorsResponse {
+  job_number: string
+  range: RangeBlock
+  total_cost: number
+  vendors: SiteVendor[]
+  basis: string
+}
+
+/** Whether site photos are wired. The token never leaves the server. */
+export interface CompanyCamStatus {
+  configured: boolean
+  base_url: string
+  match_rule: string | null
+  note?: string | null
 }
 
 export type SettingValue = string | number | boolean | null | Record<string, unknown> | unknown[]
@@ -792,6 +872,8 @@ export type ForecastMetric = 'revenue' | 'gross_profit' | 'labor_cost' | 'subcon
 /** Aggregate row identifiers: `__ALL__` = whole portfolio (only when no account is selected); `__ACCOUNT__` = the selected account. */
 export const PORTFOLIO_ROW = '__ALL__'
 export const ACCOUNT_ROW = '__ACCOUNT__'
+/** Lead row of a run narrowed by scope rather than by account (routers/forecast.py). */
+export const SCOPE_ROW = '__SCOPE__'
 
 export interface RunMeta {
   run_id: string | number
@@ -1114,3 +1196,227 @@ export interface ExecutiveAccountsResponse {
   accounts: ExecutiveAccount[]
   source?: SourceBlock
 }
+
+// Leadership labor P&L (contract "Leadership labor P&L", added 2026-09-23)
+// Ratios in these payloads stay fractions (target_labor_pct: 0.645); the client does not convert them.
+
+export type LeadershipRole = 'site' | 'catch_all' | 'non_billed'
+export type LeadershipLaborBasis = 'pay_report' | 'payroll_rate' | 'trailing_rate_estimate'
+export type LeadershipRevenueMethod = 'monthly_div' | 'weekly_billing' | 'per_visit'
+export type LeadershipSegmentSource = 'explicit' | 'sub_account' | 'company' | 'fallback'
+
+export interface LeadershipSegment {
+  name: string
+  sort: number
+  /** Overrides the account target for this segment; null = the account target. */
+  target_labor_pct: number | null
+}
+
+export interface LeadershipAccount {
+  slug: string
+  name: string
+  featured: boolean
+  sort: number
+  target_labor_pct: number
+  watch_band: number
+  revenue_method: LeadershipRevenueMethod
+  revenue_divisor: number
+  budget_reliability_ratio: number
+  source_parent_accounts: string[]
+  segment_source: LeadershipSegmentSource
+  fallback_segment: string
+  /** budget_hours: a parent job's billing is spread over its child sites by budget hours. */
+  revenue_allocation: 'none' | 'budget_hours'
+  /** labor: labor % (the reference); labor_plus_vendor: cost % = (labor + vendor) / invoice. */
+  cost_basis: 'labor' | 'labor_plus_vendor'
+  segments: LeadershipSegment[]
+  sites: number
+  needs_review: number
+  updated_at: string
+  updated_by: string | null
+}
+
+export interface LeadershipWeek {
+  week_start: string
+  week_end: string
+  days_with_labor: number
+  /** Share of the week's labor dollars that come from the pay report; null when none do. */
+  pay_report_share: number | null
+  revenue_month: string | null
+  in_progress: boolean
+}
+
+export interface LeadershipStatus {
+  rebuilt_at: string | null
+  leadership_rebuilt_at: string | null
+  syncs: { integration_name: string; status: string; completed_at: string | null; started_at: string }[]
+  imports: Partial<Record<LeadershipImportKind, { kind: LeadershipImportKind; file_name: string; status: string; period_from: string | null; period_to: string | null; rows_loaded: number; loaded_at: string }>>
+  pay_report_through: { company: string; through: string }[]
+}
+
+export interface LeadershipConfig {
+  source?: SourceBlock
+  accounts: LeadershipAccount[]
+  weeks: LeadershipWeek[]
+  default_week: string | null
+  status: LeadershipStatus
+}
+
+/** One job for one Monday week (mart.leadership_week joined with the account mapping). */
+export interface LeadershipRow {
+  week_start: string
+  week_end: string
+  company: string | null
+  job_number: string
+  site_name: string
+  parent_account: string | null
+  /** null = Other. */
+  account_slug: string | null
+  segment: string | null
+  role: LeadershipRole
+  needs_review: boolean
+  hours: number
+  ot_hours: number
+  labor: number
+  labor_basis: LeadershipLaborBasis
+  /** Full overtime pay (1.5x). */
+  ot_dollars: number
+  budget_hours: number
+  budget_dollars: number
+  employees: number
+  days_with_labor: number
+  revenue_month: string | null
+  revenue_month_amount: number
+  /** Revenue moved onto (+) or off (-) this row by the account's parent-job allocation. */
+  revenue_allocated: number
+  /** Weight used to spread parent-billed revenue: revenue-month budget hours, else actual hours, else this week's hours. */
+  allocation_weight?: 'budget_hours' | 'actual_hours' | 'week_hours' | null
+  revenue_month_basis: string | null
+  invoice_week: number | null
+  prior_revenue: number
+  prior_labor: number
+  prior_labor_basis: 'pay_report' | 'job_cost' | null
+  prior_sub: number
+  prior_sub_basis: 'job_cost' | 'ap_distribution' | null
+  delivery_model: 'self_perform' | 'subcontracted' | null
+  /** Vendor cost for the week (shown beside labor for subcontracted sites, never inside labor %). */
+  sub_week: number
+  sub_week_basis: string | null
+  consumables_cost: number | null
+  consumables_basis: 'actual' | 'estimate' | null
+  latitude: number | null
+  longitude: number | null
+  city: string | null
+  state_province: string | null
+}
+
+export interface LeadershipRowsQuery {
+  /** Any date in the week; defaults to the latest complete week. */
+  week?: string
+  weeks?: number
+  /** An account slug, or featured | other | all. */
+  account?: string
+}
+
+export interface LeadershipRowsResponse {
+  source?: SourceBlock
+  week: string | null
+  weeks: string[]
+  account: string
+  rows: LeadershipRow[]
+}
+
+export interface LeadershipInvoiceLine {
+  invoice_number: string
+  invoice_date: string
+  gl_account_number: string | null
+  amount: number
+  vendor_number: number
+  vendor_name: string
+  vendor_type_id: number | null
+  /** winteam: a posted AP GL distribution; relay: a FedEx payable from Relay not yet among them. */
+  source?: 'winteam' | 'relay'
+  service_month?: string | null
+  status?: string | null
+  in_winteam?: boolean
+  payment_status?: string | null
+}
+
+export interface LeadershipPhoto {
+  id: string | number | null
+  captured_at: number | string | null
+  thumbnail: string | null
+  web: string | null
+  creator_name: string | null
+}
+
+export interface LeadershipSiteResponse {
+  source?: SourceBlock
+  site: {
+    company: string
+    job_number: string
+    site_name: string
+    address_line_1: string | null
+    city: string | null
+    state_province: string | null
+    postal_code: string | null
+    latitude: number | null
+    longitude: number | null
+    parent_job_number: string | null
+    delivery_model: string | null
+    parent_account: string | null
+    account_slug: string | null
+    segment: string | null
+    role: LeadershipRole
+    companycam_project_id: string | null
+  }
+  weeks: LeadershipRow[]
+  invoices: { since: string; vendor_type_ids: string[]; total: number; lines: LeadershipInvoiceLine[] }
+  photos: { configured: boolean; project_id: string | null; items: LeadershipPhoto[] | null; error: string | null }
+}
+
+export interface LeadershipVendorsResponse {
+  account: string
+  since: string
+  vendor_type_ids: string[]
+  total: number
+  by_vendor: { vendor_number: number; vendor_name: string; amount: number; invoices: number }[]
+  by_site: { company: string; job_number: string; site_name: string; amount: number; invoices: number }[]
+  by_month: { month: string; amount: number; invoices: number }[]
+  lines: (LeadershipInvoiceLine & { company: string; job_number: string; site_name: string })[]
+}
+
+export type LeadershipImportKind = 'pay_report' | 'job_cost'
+
+export interface LeadershipImportFile {
+  import_file_id: number
+  kind: LeadershipImportKind
+  file_name: string
+  origin: 'upload' | 'inbox'
+  status: 'loaded' | 'failed' | 'duplicate'
+  rows_read: number
+  rows_loaded: number
+  companies: string[]
+  period_from: string | null
+  period_to: string | null
+  errors: string[]
+  uploaded_by: string | null
+  loaded_at: string
+}
+
+export interface LeadershipAccountJob {
+  company: string
+  job_number: string
+  account_slug: string | null
+  segment: string | null
+  role: LeadershipRole
+  companycam_project_id: string | null
+  assigned_by: 'seed' | 'auto' | 'admin'
+  needs_review: boolean
+  job_name: string | null
+  parent_account: string | null
+  is_active: boolean | null
+}
+
+export type LeadershipAccountPatch = Partial<Pick<LeadershipAccount, 'name' | 'featured' | 'sort' | 'target_labor_pct' | 'watch_band' | 'revenue_method' | 'revenue_divisor' | 'budget_reliability_ratio' | 'source_parent_accounts' | 'segment_source' | 'fallback_segment' | 'revenue_allocation' | 'cost_basis'>>
+export interface LeadershipJobMapping { account_slug: string | null; segment?: string | null; role?: LeadershipRole; companycam_project_id?: string | null }

@@ -74,7 +74,7 @@ from .db import connection
 
 log = logging.getLogger(__name__)
 
-ENGINE_VERSION = "v2.0-northstar"
+ENGINE_VERSION = "v2.0-crane"  # surfaced in the UI; "Northstar" is a retired placeholder name
 TARGET_NAME = "site_monthly"
 METRICS: tuple[str, ...] = ("revenue", "gross_profit", "labor_cost", "subcontract_cost")
 ACCOUNT_JOB = "__ACCOUNT__"
