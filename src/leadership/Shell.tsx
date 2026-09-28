@@ -74,7 +74,6 @@ export function PageHeader({ title, subtitle, account = true, week = true, targe
   return <header className="page">
     <div><h1>{title}</h1>{subtitle && <p>{subtitle}</p>}</div>
     <div className="ctrl">
-      {extra}
       {account && route.view !== 'analytics' && <><label htmlFor="acct">Account</label>
         <select id="acct" value={selectedAccount?.slug ?? ''} onChange={(e) => navigate({ account: e.target.value, site: undefined })}>
           {featured.map((a) => <option key={a.slug} value={a.slug}>{a.name}</option>)}
@@ -88,6 +87,7 @@ export function PageHeader({ title, subtitle, account = true, week = true, targe
           aria-describedby="tgt-hint" />
         <span id="tgt-hint" className="sr-only">{targetOverride != null ? 'Overrides the account and segment targets' : 'Account target'}</span>
         {targetOverride != null && <button type="button" className="linkbtn" onClick={() => navigate({ target: undefined }, { replace: true })}>Reset</button>}</>}
+      {extra}
     </div>
   </header>
 }

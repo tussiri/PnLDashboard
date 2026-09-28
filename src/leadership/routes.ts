@@ -4,6 +4,7 @@
  *
  *   #/home?account=plano-isd&week=2026-09-20&target=64.5
  *   #/account/plano-isd/sites?week=2026-09-20&site=Crane%20Southwest~801
+ *   #/account/fedex/sites?delivery=self      (subcontracted sites hidden)
  *   #/analytics?week=2026-09-20&account=other&status=over&q=elementary
  *   #/admin/imports
  *
@@ -30,6 +31,8 @@ export interface Route {
   q?: string
   status?: string
   segment?: string
+  /** Account view: hide subcontracted sites. */
+  selfOnly?: boolean
 }
 
 const ISO = /^\d{4}-\d{2}-\d{2}$/
@@ -65,6 +68,7 @@ export function parseRoute(hash: string): Route {
     const value = params.get(key)
     if (value) route[key] = value
   }
+  if (route.view === 'account' && params.get('delivery') === 'self') route.selfOnly = true
   return route
 }
 
@@ -80,6 +84,7 @@ export function formatRoute(route: Route): string {
   if (route.target != null && route.view !== 'admin') params.set('target', String(route.target))
   if (route.site && route.view !== 'admin') params.set('site', `${route.site.company}${SITE_SEP}${route.site.job}`)
   if (route.view === 'analytics') for (const key of ['q', 'status', 'segment'] as const) if (route[key]) params.set(key, route[key]!)
+  if (route.view === 'account' && route.selfOnly) params.set('delivery', 'self')
   const query = params.toString()
   return `#/${path}${query ? `?${query}` : ''}`
 }

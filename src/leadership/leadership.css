@@ -64,6 +64,8 @@ h2{font-size:14px;font-weight:600}
 header.page p{font-size:12px;color:var(--text3);margin-top:2px}
 .ctrl{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .ctrl label,.field>span{font-size:12px;color:var(--text3)}
+.ctrl label.check{display:inline-flex;align-items:center;gap:6px;color:var(--text2);cursor:pointer;min-height:32px}
+.check input{accent-color:var(--text);width:14px;height:14px;margin:0}
 select,input[type=number],input[type=text],input[type=password],input[type=search],input[type=file]{font-size:13px;padding:6px 10px;border:0.5px solid var(--border2);border-radius:var(--r);background:var(--bg);color:var(--text);outline:none;min-height:32px}
 input[type=number]{width:78px}
 input[type=search]{min-width:200px}

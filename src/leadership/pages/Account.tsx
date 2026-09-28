@@ -18,6 +18,9 @@ type SiteMetrics = Metrics<LeadershipRow>
 
 const SiteMap = lazy(() => import('./SiteMap'))
 
+/** Subcontracted: marked so, or no delivery model recorded and only vendor cost (no hours) this week. */
+const isSubcontracted = (r: LeadershipRow) => r.delivery_model === 'subcontracted' || (r.delivery_model == null && !r.hours && (r.sub_week ?? 0) > 0)
+
 const TAB_LABEL: Record<AccountTab, string> = { overview: 'Overview', sites: 'Sites', 'over-target': 'Over target', overtime: 'Overtime', map: 'Map', vendors: 'Vendors' }
 const shortName = (name: string) => name.replace(/^[A-Z][A-Za-z]+ ?- ?/, '').replace(/ (Elementary|Middle|High) School$/, ' $1').replace(' Senior High School', ' Sr High')
 
@@ -138,7 +141,10 @@ export function Account() {
   const { selectedAccount: account, route, navigate, weekStart, optionsFor, config } = useLeadership()
   const tab = route.tab ?? 'overview'
   const rowsQuery = useRows(account?.slug, 1)
-  const rows = useMemo(() => rowsOfWeek(rowsQuery.data?.rows, weekStart), [rowsQuery.data, weekStart])
+  const weekRows = useMemo(() => rowsOfWeek(rowsQuery.data?.rows, weekStart), [rowsQuery.data, weekStart])
+  const subcontracted = weekRows.filter(isSubcontracted).length
+  const selfOnly = Boolean(route.selfOnly) && subcontracted > 0
+  const rows = useMemo(() => (selfOnly ? weekRows.filter((r) => !isSubcontracted(r)) : weekRows), [weekRows, selfOnly])
   const options = useMemo(() => optionsFor(account), [optionsFor, account])
   const summary = useMemo(() => (account && rows.length ? accountSummary(rows, options, segmentOrder(account)) : null), [account, rows, options])
   const flags = useMemo(() => dataFlags(config.data, weekStart, rows), [config.data, weekStart, rows])
@@ -156,7 +162,9 @@ export function Account() {
   else if (tab === 'overtime') body = <OvertimeTab account={account} summary={summary} />
   else body = <Suspense fallback={<Skeleton height={520} />}><SiteMap account={account} summary={summary} /></Suspense>
   return <>
-    <PageHeader title={account ? `${account.name} Labor P&L` : 'Account'} subtitle={subtitle} />
+    <PageHeader title={account ? `${account.name} Labor P&L` : 'Account'} subtitle={subtitle}
+      extra={subcontracted > 0 && tab !== 'vendors' && <label className="check"><input type="checkbox" checked={selfOnly}
+        onChange={(e) => navigate({ selfOnly: e.target.checked || undefined }, { replace: true })} />Hide {subcontracted} subcontracted</label>} />
     <nav className="tabs" role="tablist" aria-label="Account views">
       {ACCOUNT_TABS.map((t) => <button key={t} type="button" role="tab" className="tab" aria-selected={tab === t} onClick={() => setTab(t)}>{TAB_LABEL[t]}</button>)}
     </nav>
