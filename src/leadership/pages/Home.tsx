@@ -18,7 +18,7 @@ function StripCard({ account, rows, prior, selected, onSelect, optionsFor }: {
   const measure = s?.account.measurePct ?? null
   const status = statusOf(measure, options.target, options.watchBand)
   const change = measure != null && p?.account.measurePct != null ? measure - p.account.measurePct : null
-  if (!s) return <div className="acct empty" aria-label={`${account.name}: no sites mapped`}><div className="acct__hdr"><span className="acct__name">{account.name}</span><Badge status="none" label="No sites" /></div></div>
+  if (!s) return <div className="acct acct--none" aria-label={`${account.name}: no sites mapped`}><div className="acct__hdr"><span className="acct__name">{account.name}</span><Badge status="none" label="No sites" /></div></div>
   return <button type="button" className="acct" aria-pressed={selected} onClick={onSelect}>
     <div className="acct__hdr"><span className="acct__name">{account.name}</span><Badge status={status} /></div>
     <div className="acct__grid">

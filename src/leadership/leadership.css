@@ -104,7 +104,7 @@ input[type=search]{min-width:200px}
 .acct__grid .kl{margin-bottom:1px}
 .acct__grid b{font-size:14px;font-weight:600}
 .acct__grid small{display:block;font-size:10.5px;color:var(--text3)}
-.acct.empty{cursor:default;opacity:.75}
+.acct--none{cursor:default;opacity:.75}
 
 /* Notes: one card of label / value rows; the label carries the tone. */
 .notes{background:var(--bg);border:0.5px solid var(--border);border-radius:var(--r);padding:4px 14px;margin-bottom:14px;font-size:12.5px;line-height:1.45}
