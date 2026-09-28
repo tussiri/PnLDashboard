@@ -40,23 +40,29 @@ def run() -> None:
                 "INSERT INTO public.schema_migrations (version, checksum) VALUES (%s, %s)",
                 (path.name, checksum),
             )
+        # The read-only analytics role (Metabase) exists where docker/postgres/init created it. A managed
+        # database (Render) has only the app user, so the grants are skipped there rather than failing.
         analytics_role = os.getenv("ANALYTICS_DB_USER", "facilities_analytics")
-        cursor.execute(
-            sql.SQL("GRANT USAGE ON SCHEMA core, mart TO {}").format(sql.Identifier(analytics_role))
-        )
-        cursor.execute(
-            sql.SQL("GRANT SELECT ON ALL TABLES IN SCHEMA core, mart TO {}").format(sql.Identifier(analytics_role))
-        )
-        cursor.execute(
-            sql.SQL("ALTER DEFAULT PRIVILEGES IN SCHEMA core GRANT SELECT ON TABLES TO {}").format(
-                sql.Identifier(analytics_role)
+        cursor.execute("SELECT 1 FROM pg_roles WHERE rolname = %s", (analytics_role,))
+        if cursor.fetchone():
+            cursor.execute(
+                sql.SQL("GRANT USAGE ON SCHEMA core, mart TO {}").format(sql.Identifier(analytics_role))
             )
-        )
-        cursor.execute(
-            sql.SQL("ALTER DEFAULT PRIVILEGES IN SCHEMA mart GRANT SELECT ON TABLES TO {}").format(
-                sql.Identifier(analytics_role)
+            cursor.execute(
+                sql.SQL("GRANT SELECT ON ALL TABLES IN SCHEMA core, mart TO {}").format(sql.Identifier(analytics_role))
             )
-        )
+            cursor.execute(
+                sql.SQL("ALTER DEFAULT PRIVILEGES IN SCHEMA core GRANT SELECT ON TABLES TO {}").format(
+                    sql.Identifier(analytics_role)
+                )
+            )
+            cursor.execute(
+                sql.SQL("ALTER DEFAULT PRIVILEGES IN SCHEMA mart GRANT SELECT ON TABLES TO {}").format(
+                    sql.Identifier(analytics_role)
+                )
+            )
+        else:
+            logger.info("Role %s does not exist; analytics grants skipped", analytics_role)
         conn.commit()
     logger.info("Database migrations are current")
 

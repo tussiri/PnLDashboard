@@ -1,0 +1,119 @@
+# Render blueprint for the Crane IFS dashboard. Runbook: docs/deploy-render.md.
+#
+# Three services and one database, mirroring compose.yaml without Metabase:
+#   crane-ifs-web     nginx: the built front end, and /api/ proxied to the private API
+#   crane-ifs-api     FastAPI, private (no public URL); migrations run before each deploy
+#   crane-ifs-worker  the 60-second tick that runs the nightly sync (02:30 America/Chicago)
+#   crane-ifs-db      PostgreSQL 16, reachable only from these services
+#
+# Secrets are `sync: false`: Render asks for them when the blueprint is applied, and they never
+# live in this file. Nothing secret is a VITE_ variable; the browser only ever talks to /api/v1.
+
+databases:
+  - name: crane-ifs-db
+    databaseName: facilities
+    user: facilities_app
+    plan: basic-256mb
+    diskSizeGB: 5              # the local database is ~0.5 GB with every raw WinTeam payload
+    postgresMajorVersion: "16" # matches compose.yaml, so a local dump restores cleanly
+    ipAllowList: []            # private network only; add your IP briefly for the one-time restore
+
+envVarGroups:
+  - name: crane-ifs-app
+    envVars:
+      # Sign-in: only the users in APP_USERS_JSON (docs/auth-rbac.md). The API refuses to start
+      # without them and a session secret.
+      - key: APP_AUTH_MODE
+        value: required
+      - key: APP_SESSION_SECRET
+        generateValue: true
+      - key: APP_USERS_JSON
+        sync: false
+      - key: INGESTION_ADMIN_TOKEN
+        generateValue: true
+      # WinTeam: read-only GETs on the documented endpoints. The resource list leaves out
+      # job_schedules and ap_payments, which this tenant is not entitled to (HTTP 403).
+      - key: WINTEAM_ENABLED
+        value: "true"
+      - key: WINTEAM_BASE_URL
+        sync: false
+      - key: WINTEAM_TENANT_ID
+        sync: false
+      - key: WINTEAM_SUBSCRIPTION_KEY
+        sync: false
+      - key: WINTEAM_RESOURCES
+        value: jobs,vendors,timekeeping,job_budgets,ap_invoices,ap_invoice_details,ar_invoices
+      - key: WINTEAM_CUSTOMER_NUMBERS
+        sync: false
+      - key: WINTEAM_SARUS_ENABLED
+        value: "true"
+      - key: WINTEAM_SARUS_BASE_URL
+        sync: false
+      - key: WINTEAM_SARUS_TENANT_ID
+        sync: false
+      - key: WINTEAM_SARUS_SUBSCRIPTION_KEY
+        sync: false
+      # Relay's dashboard export. Leave both empty until Relay's feature/dashboard-export is live;
+      # an unconfigured Relay is skipped, a configured but unreachable one is reported as failed.
+      - key: RELAY_BASE_URL
+        sync: false
+      - key: RELAY_EXPORT_TOKEN
+        sync: false
+      - key: COMPANYCAM_API_TOKEN
+        sync: false
+      - key: LOG_LEVEL
+        value: INFO
+
+services:
+  - type: pserv
+    name: crane-ifs-api
+    runtime: docker
+    dockerfilePath: ./services/api/Dockerfile
+    dockerContext: .
+    plan: starter
+    branch: main
+    autoDeploy: true
+    preDeployCommand: python -m app.migrate
+    dockerCommand: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    envVars:
+      - key: PORT
+        value: "8000"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: crane-ifs-db
+          property: connectionString
+      - fromGroup: crane-ifs-app
+
+  - type: worker
+    name: crane-ifs-worker
+    runtime: docker
+    dockerfilePath: ./services/api/Dockerfile
+    dockerContext: .
+    plan: starter
+    branch: main
+    autoDeploy: true
+    dockerCommand: python -m app.worker
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: crane-ifs-db
+          property: connectionString
+      - fromGroup: crane-ifs-app
+
+  - type: web
+    name: crane-ifs-web
+    runtime: docker
+    dockerfilePath: ./docker/web/Dockerfile
+    dockerContext: .
+    plan: starter
+    branch: main
+    autoDeploy: true
+    healthCheckPath: /healthz
+    envVars:
+      - key: PORT
+        value: "8080"
+      - key: API_UPSTREAM
+        fromService:
+          type: pserv
+          name: crane-ifs-api
+          property: hostport

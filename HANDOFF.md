@@ -144,6 +144,11 @@ documented WinTeam GET endpoints (WinTeamAPI.txt)
 - `services/api/app/{accounts,imports,leadership,nightly}.py`, `routers/leadership.py`: account
   configuration, export imports, the weekly leadership mart, the nightly schedule, the routes
 
+## Hosted deployment
+
+`render.yaml` is the Render blueprint (web, private API, worker, PostgreSQL; deploys `main`). The
+runbook, including the one-time restore of the local data, is `docs/deploy-render.md`.
+
 ## Local startup
 
 Frontend only (demo mode unless the stack is running; `pnpm dev` proxies `/api` to port 15173):
