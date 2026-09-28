@@ -31,12 +31,12 @@ function useSiteOpener() {
   return (r: LeadershipRow) => navigate({ site: { company: r.company ?? '', job: r.job_number } })
 }
 
-function SitesTab({ account, summary, priorShort }: { account: LeadershipAccount; summary: AccountSummary; priorShort: string }) {
+function SitesTab({ account, summary, priorShort, selfOnly }: { account: LeadershipAccount; summary: AccountSummary; priorShort: string; selfOnly: boolean }) {
   const [filter, setFilter] = useState('All')
   const open = useSiteOpener()
   const hasCatch = summary.sites.some((r) => r.role === 'catch_all')
   const hasNb = summary.sites.some((r) => r.role === 'non_billed')
-  const vendor = account.cost_basis === 'labor_plus_vendor'
+  const vendor = account.cost_basis === 'labor_plus_vendor' && !selfOnly
   const options = ['All', ...summary.segments.map((s) => s.segment), ...(hasCatch ? ['Catch-all'] : []), ...(hasNb ? ['Non-billed'] : [])]
   const rows = summary.sites.filter((r) => filter === 'All' || (filter === 'Catch-all' ? r.role === 'catch_all' : filter === 'Non-billed' ? r.role === 'non_billed' : r.segment === filter && r.role === 'site'))
   const m = measureLabel(account)
@@ -157,7 +157,7 @@ export function Account() {
   else if (tab === 'vendors') body = <Vendors account={account} />
   else if (!summary) body = <Empty>No data for this week.</Empty>
   else if (tab === 'overview') body = <Overview account={account} rows={rows} summary={summary} options={options} flags={flags} />
-  else if (tab === 'sites') body = <SitesTab account={account} summary={summary} priorShort={priorShort} />
+  else if (tab === 'sites') body = <SitesTab account={account} summary={summary} priorShort={priorShort} selfOnly={selfOnly} />
   else if (tab === 'over-target') body = <OverTargetTab account={account} summary={summary} options={options} priorShort={priorShort} />
   else if (tab === 'overtime') body = <OvertimeTab account={account} summary={summary} />
   else body = <Suspense fallback={<Skeleton height={520} />}><SiteMap account={account} summary={summary} /></Suspense>
