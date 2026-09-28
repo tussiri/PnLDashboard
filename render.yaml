@@ -6,61 +6,31 @@
 #   crane-ifs-worker  the 60-second tick that runs the nightly sync (02:30 America/Chicago)
 #   crane-ifs-db      PostgreSQL 16, reachable only from these services
 #
-# Secrets are `sync: false`: Render asks for them when the blueprint is applied, and they never
-# live in this file. Nothing secret is a VITE_ variable; the browser only ever talks to /api/v1.
+# Secrets are `sync: false` on the API, so Render asks for each one once when the blueprint is
+# applied; the worker reads the same values from the API with fromService. (An environment group
+# cannot hold `sync: false` or generated values, so the group carries only plain settings.)
+# Nothing secret is a VITE_ variable; the browser only ever talks to /api/v1.
 
 databases:
   - name: crane-ifs-db
     databaseName: facilities
     user: facilities_app
-    plan: basic-256mb
+    plan: 0.5c-1g              # the mart rebuild is analytical SQL over ~0.5 GB; 256 MB of RAM is tight
     diskSizeGB: 5              # the local database is ~0.5 GB with every raw WinTeam payload
     postgresMajorVersion: "16" # matches compose.yaml, so a local dump restores cleanly
     ipAllowList: []            # private network only; add your IP briefly for the one-time restore
 
 envVarGroups:
-  - name: crane-ifs-app
+  - name: crane-ifs-settings
     envVars:
-      # Sign-in: only the users in APP_USERS_JSON (docs/auth-rbac.md). The API refuses to start
-      # without them and a session secret.
-      - key: APP_AUTH_MODE
-        value: required
-      - key: APP_SESSION_SECRET
-        generateValue: true
-      - key: APP_USERS_JSON
-        sync: false
-      - key: INGESTION_ADMIN_TOKEN
-        generateValue: true
       # WinTeam: read-only GETs on the documented endpoints. The resource list leaves out
       # job_schedules and ap_payments, which this tenant is not entitled to (HTTP 403).
       - key: WINTEAM_ENABLED
         value: "true"
-      - key: WINTEAM_BASE_URL
-        sync: false
-      - key: WINTEAM_TENANT_ID
-        sync: false
-      - key: WINTEAM_SUBSCRIPTION_KEY
-        sync: false
       - key: WINTEAM_RESOURCES
         value: jobs,vendors,timekeeping,job_budgets,ap_invoices,ap_invoice_details,ar_invoices
-      - key: WINTEAM_CUSTOMER_NUMBERS
-        sync: false
       - key: WINTEAM_SARUS_ENABLED
         value: "true"
-      - key: WINTEAM_SARUS_BASE_URL
-        sync: false
-      - key: WINTEAM_SARUS_TENANT_ID
-        sync: false
-      - key: WINTEAM_SARUS_SUBSCRIPTION_KEY
-        sync: false
-      # Relay's dashboard export. Leave both empty until Relay's feature/dashboard-export is live;
-      # an unconfigured Relay is skipped, a configured but unreachable one is reported as failed.
-      - key: RELAY_BASE_URL
-        sync: false
-      - key: RELAY_EXPORT_TOKEN
-        sync: false
-      - key: COMPANYCAM_API_TOKEN
-        sync: false
       - key: LOG_LEVEL
         value: INFO
 
@@ -70,7 +40,7 @@ services:
     runtime: docker
     dockerfilePath: ./services/api/Dockerfile
     dockerContext: .
-    plan: starter
+    plan: 0.5c-512mb
     branch: main
     autoDeploy: true
     preDeployCommand: python -m app.migrate
@@ -82,14 +52,46 @@ services:
         fromDatabase:
           name: crane-ifs-db
           property: connectionString
-      - fromGroup: crane-ifs-app
+      - fromGroup: crane-ifs-settings
+      # Sign-in: only the users in APP_USERS_JSON (docs/auth-rbac.md). The API refuses to start
+      # without them and a session secret.
+      - key: APP_AUTH_MODE
+        value: required
+      - key: APP_SESSION_SECRET
+        generateValue: true
+      - key: APP_USERS_JSON
+        sync: false
+      - key: INGESTION_ADMIN_TOKEN
+        generateValue: true
+      # WINTEAM_ENABLED and WINTEAM_SARUS_ENABLED are true, so the API will not start without the
+      # base URLs and tenant ids. Relay stays empty until its dashboard export is deployed.
+      - key: WINTEAM_BASE_URL
+        sync: false
+      - key: WINTEAM_TENANT_ID
+        sync: false
+      - key: WINTEAM_SUBSCRIPTION_KEY
+        sync: false
+      - key: WINTEAM_CUSTOMER_NUMBERS
+        sync: false
+      - key: WINTEAM_SARUS_BASE_URL
+        sync: false
+      - key: WINTEAM_SARUS_TENANT_ID
+        sync: false
+      - key: WINTEAM_SARUS_SUBSCRIPTION_KEY
+        sync: false
+      - key: RELAY_BASE_URL
+        sync: false
+      - key: RELAY_EXPORT_TOKEN
+        sync: false
+      - key: COMPANYCAM_API_TOKEN
+        sync: false
 
   - type: worker
     name: crane-ifs-worker
     runtime: docker
     dockerfilePath: ./services/api/Dockerfile
     dockerContext: .
-    plan: starter
+    plan: 0.5c-512mb
     branch: main
     autoDeploy: true
     dockerCommand: python -m app.worker
@@ -98,14 +100,59 @@ services:
         fromDatabase:
           name: crane-ifs-db
           property: connectionString
-      - fromGroup: crane-ifs-app
+      - fromGroup: crane-ifs-settings
+      - key: WINTEAM_BASE_URL
+        fromService:
+          type: pserv
+          name: crane-ifs-api
+          envVarKey: WINTEAM_BASE_URL
+      - key: WINTEAM_TENANT_ID
+        fromService:
+          type: pserv
+          name: crane-ifs-api
+          envVarKey: WINTEAM_TENANT_ID
+      - key: WINTEAM_SUBSCRIPTION_KEY
+        fromService:
+          type: pserv
+          name: crane-ifs-api
+          envVarKey: WINTEAM_SUBSCRIPTION_KEY
+      - key: WINTEAM_CUSTOMER_NUMBERS
+        fromService:
+          type: pserv
+          name: crane-ifs-api
+          envVarKey: WINTEAM_CUSTOMER_NUMBERS
+      - key: WINTEAM_SARUS_BASE_URL
+        fromService:
+          type: pserv
+          name: crane-ifs-api
+          envVarKey: WINTEAM_SARUS_BASE_URL
+      - key: WINTEAM_SARUS_TENANT_ID
+        fromService:
+          type: pserv
+          name: crane-ifs-api
+          envVarKey: WINTEAM_SARUS_TENANT_ID
+      - key: WINTEAM_SARUS_SUBSCRIPTION_KEY
+        fromService:
+          type: pserv
+          name: crane-ifs-api
+          envVarKey: WINTEAM_SARUS_SUBSCRIPTION_KEY
+      - key: RELAY_BASE_URL
+        fromService:
+          type: pserv
+          name: crane-ifs-api
+          envVarKey: RELAY_BASE_URL
+      - key: RELAY_EXPORT_TOKEN
+        fromService:
+          type: pserv
+          name: crane-ifs-api
+          envVarKey: RELAY_EXPORT_TOKEN
 
   - type: web
     name: crane-ifs-web
     runtime: docker
     dockerfilePath: ./docker/web/Dockerfile
     dockerContext: .
-    plan: starter
+    plan: 0.5c-512mb
     branch: main
     autoDeploy: true
     healthCheckPath: /healthz

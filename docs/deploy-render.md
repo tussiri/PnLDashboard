@@ -9,13 +9,14 @@
 | `crane-ifs-worker` (background worker) | nightly sync at 02:30 America/Chicago | nothing inbound |
 | `crane-ifs-db` (PostgreSQL 16) | the `facilities` database | the three services; `ipAllowList: []` |
 
-All three services deploy `main` on every push. Estimated cost: three Starter instances plus a
-basic-256mb database.
+All three services deploy `main` on every push, so `render.yaml` must be on `main` before the
+blueprint is applied. Plans: three `0.5c-512mb` instances and a `0.5c-1g` database.
 
 ## 1. Apply the blueprint
 
 Render dashboard > New > Blueprint > the `tussiri/PnLDashboard` repository, branch `main`.
-Render asks for every `sync: false` value:
+Render asks for every `sync: false` value, all on `crane-ifs-api`; the worker reads the WinTeam,
+Sarus and Relay values from the API service, so each is entered once:
 
 | Variable | Value |
 |---|---|

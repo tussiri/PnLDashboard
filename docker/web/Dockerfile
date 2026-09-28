@@ -14,6 +14,7 @@ FROM nginx:1.27-alpine
 # only substitutes variables that are set, so nginx's own $variables pass through untouched.
 ENV API_UPSTREAM=api:8000
 COPY docker/web/default.conf.template /etc/nginx/templates/default.conf.template
-COPY --chmod=755 docker/web/15-resolver.envsh /docker-entrypoint.d/15-resolver.envsh
+COPY docker/web/15-resolver.envsh /docker-entrypoint.d/15-resolver.envsh
+RUN chmod 755 /docker-entrypoint.d/15-resolver.envsh
 COPY --from=build /app/dist /usr/share/nginx/html
 EXPOSE 8080
