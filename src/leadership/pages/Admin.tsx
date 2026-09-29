@@ -32,7 +32,7 @@ function useAction() {
 }
 
 function AccountEditor({ account }: { account: LeadershipAccount }) {
-  const { api } = useLeadership()
+  const { adminApi: api } = useLeadership()
   const { busy, run, view } = useAction()
   const [draft, setDraft] = useState(account)
   const [segments, setSegments] = useState(account.segments.map((s) => ({ name: s.name, target: s.target_labor_pct == null ? '' : String(s.target_labor_pct * 100) })))
@@ -83,7 +83,7 @@ function AccountEditor({ account }: { account: LeadershipAccount }) {
 }
 
 function AccountsTab() {
-  const { config, api } = useLeadership()
+  const { adminConfig: config, adminApi: api } = useLeadership()
   const { busy, run, view } = useAction()
   const accounts = config.data?.accounts ?? []
   return <>
@@ -93,7 +93,7 @@ function AccountsTab() {
 }
 
 function JobRow({ job, accounts, onSaved }: { job: LeadershipAccountJob; accounts: LeadershipAccount[]; onSaved: () => void }) {
-  const { api } = useLeadership()
+  const { adminApi: api } = useLeadership()
   const [slug, setSlug] = useState(job.account_slug ?? '')
   const [segment, setSegment] = useState(job.segment ?? '')
   const [role, setRole] = useState<LeadershipRole>(job.role ?? 'site')
@@ -118,7 +118,7 @@ function JobRow({ job, accounts, onSaved }: { job: LeadershipAccountJob; account
 }
 
 function JobsTab() {
-  const { api, config, keyPrefix, decision } = useLeadership()
+  const { adminApi: api, adminConfig: config, adminKeyPrefix: keyPrefix, decision } = useLeadership()
   const [view, setView] = useState<'review' | 'mapped' | 'unmapped'>('review')
   const [account, setAccount] = useState('')
   const [filter, setFilter] = useState('')

@@ -40,24 +40,20 @@ empty) until step 2.
 WinTeam's API has no job-cost revenue; the revenue history lives in the local database (loaded
 from the Finance_Dashboard export and uploads). Restore a dump of it over the empty schema.
 
-1. Dump the local database (`~/CraneIFS-render/facilities.dump` was made 2026-09-28; rerun to refresh it):
+1. Render > `crane-ifs-db` > Networking: add your current IP to the access list.
+2. With the local stack running, run the script and paste the database's **External Database URL**
+   (Render > `crane-ifs-db` > Connect) when it asks. Input is hidden and never stored. It dumps the
+   local database fresh, replaces the Render database's contents with it (`--clean` drops the empty
+   schema the first deploy created; the migration history matches the repository), and prints row
+   counts to confirm.
 
    ```bash
-   docker exec facilities-command-center-postgres-1 pg_dump -U postgres -d facilities -Fc --no-owner --no-privileges -f /tmp/facilities.dump
-   docker cp facilities-command-center-postgres-1:/tmp/facilities.dump ~/CraneIFS-render/facilities.dump
+   ./scripts/restore-to-render.sh
    ```
 
-2. Render > `crane-ifs-db` > Networking: add your current IP to the access list.
-3. Copy the database's **External Database URL** (Render > `crane-ifs-db` > Connect) and restore.
-   `--clean` replaces the empty schema the first deploy created; the dump's migration history
-   matches the repository, so later deploys apply only newer migrations.
-
-   ```bash
-   docker run --rm -it -v ~/CraneIFS-render:/dump postgres:16-alpine pg_restore --clean --if-exists --no-owner --no-privileges --dbname "<External Database URL>" /dump/facilities.dump
-   ```
-
-4. Remove your IP from the access list again.
-5. Sign in and check Home. The dump carries the built marts; the next nightly run refreshes them.
+3. Remove your IP from the access list again.
+4. Reload the site. The restore replaces users too, so the sign-in page shows **Create administrator**
+   again: use the setup code from step 1.
 
 ## 3. After go-live
 
