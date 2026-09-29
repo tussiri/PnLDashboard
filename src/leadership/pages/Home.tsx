@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import type { LeadershipAccount, LeadershipRow } from '../../services/apiTypes'
-import { dataFlags, measureLabel, rowsOfWeek, segmentOrder, useRows } from '../data'
-import { money, pct, pts } from '../format'
+import { dataFlags, rowsOfWeek, segmentOrder, useRows } from '../data'
+import { hours1, pct, pts } from '../format'
 import { accountSummary, statusOf } from '../metrics'
 import { Overview } from '../Overview'
 import { addDays, weekLabel } from '../routes'
@@ -22,8 +22,8 @@ function StripCard({ account, rows, prior, selected, onSelect, optionsFor }: {
   return <button type="button" className="acct" aria-pressed={selected} onClick={onSelect}>
     <div className="acct__hdr"><span className="acct__name">{account.name}</span><Badge status={status} /></div>
     <div className="acct__grid">
-      <div><div className="kl">{measureLabel(account)}</div><b className={toneOf(status)}>{pct(measure)}</b><small>{change == null ? '–' : `${pts(change)} wk`}</small></div>
-      <div><div className="kl">$ over</div><b>{money(s.billed.overDollars + s.catchAll.cost)}</b><small>{s.billed.over} sites</small></div>
+      <div><div className="kl">Labor %</div><b className={toneOf(status)}>{pct(measure)}</b><small>{change == null ? '–' : `${pts(change)} WoW`}</small></div>
+      <div><div className="kl">Hours to cut</div><b>{hours1(s.headerOverHours / 7)}/day</b><small>{s.billed.over} sites over</small></div>
       <div><div className="kl">OT %</div><b className={s.account.otPct > 0.15 ? 'bad' : s.account.otPct > 0.1 ? 'warn' : ''}>{pct(s.account.otPct)}</b><small>{Math.round(s.account.otHours).toLocaleString('en-US')} hrs</small></div>
     </div>
   </button>

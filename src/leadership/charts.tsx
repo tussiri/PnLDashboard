@@ -76,27 +76,13 @@ export function MixChart({ labels, invoice, cost, costLabel }: { labels: string[
   const t = useTokens()
   const o = base(t)
   const data = { labels, datasets: [
-    { label: 'Weekly invoice', data: invoice, backgroundColor: t.accent2, ...bar },
+    { label: 'Invoicing', data: invoice, backgroundColor: t.accent2, ...bar },
     { label: costLabel, data: cost, backgroundColor: t.accent, ...bar },
   ] }
   const options: ChartOptions<'bar'> = { ...o, indexAxis: 'y',
     scales: { x: { ...o.scales!.x, ticks: { color: t.text2, callback: (v) => `$${Number(v) / 1000}K` } }, y: { ...o.scales!.y, grid: { display: false } } },
     plugins: { ...o.plugins, tooltip: { ...o.plugins!.tooltip, callbacks: { label: (c) => `${c.dataset.label}: ${money(c.parsed.x)}` } } } }
-  return <Bar data={data} options={options} aria-label={`Weekly invoice and ${costLabel.toLowerCase()} by segment`} role="img" />
-}
-
-/** Stacked horizontal bars of hours over target: OT premium share and extra hours. */
-export function OverHoursChart({ labels, premium, extra }: { labels: string[]; premium: number[]; extra: number[] }) {
-  const t = useTokens()
-  const o = base(t)
-  const data = { labels, datasets: [
-    { label: 'OT premium hours', data: premium, backgroundColor: t.warn, ...bar, borderSkipped: false as const, borderRadius: 0 },
-    { label: 'Extra hours', data: extra, backgroundColor: t.bad, ...bar, borderSkipped: 'start' as const },
-  ] }
-  const options: ChartOptions<'bar'> = { ...o, indexAxis: 'y',
-    scales: { x: { ...o.scales!.x, stacked: true, title: { display: true, text: 'Base-rate equivalent hours', color: t.text3 } }, y: { ...o.scales!.y, stacked: true, grid: { display: false } } },
-    plugins: { ...o.plugins, tooltip: { ...o.plugins!.tooltip, callbacks: { label: (c) => `${c.dataset.label}: ${Number(c.parsed.x).toFixed(1)}` } } } }
-  return <Bar data={data} options={options} aria-label="Hours over target by site, split into OT premium and extra hours" role="img" />
+  return <Bar data={data} options={options} aria-label={`Invoicing and ${costLabel.toLowerCase()} by group`} role="img" />
 }
 
 /** Horizontal bars of OT hours; unbilled jobs muted, high OT share in the bad tone. */
@@ -123,4 +109,24 @@ export function TrendChart({ labels, values, target, label }: { labels: string[]
     scales: { x: { ...o.scales!.x, grid: { display: false } }, y: { ...o.scales!.y, beginAtZero: true, ticks: { color: t.text2, callback: (v) => `${v}%` } } },
     plugins: { ...o.plugins, tooltip: { ...o.plugins!.tooltip, callbacks: { label: (c) => `${c.dataset.label}: ${c.parsed.y == null ? 'no billing' : `${c.parsed.y.toFixed(1)}%`}` } } } }
   return <Line data={data} options={options} aria-label={`${label} by week against a ${pct(target)} target`} role="img" />
+}
+
+/** One site's weeks: worked, OT premium and sub hours stacked, against the allowance at target. */
+export function CutTrendChart({ labels, worked, premium, sub, allowance, subLabel }: {
+  labels: string[]; worked: (number | null)[]; premium: (number | null)[]; sub: (number | null)[]; allowance: (number | null)[]; subLabel: string
+}) {
+  const t = useTokens()
+  const o = base(t)
+  const stack = { ...bar, borderRadius: 0, stack: 'hours' }
+  const data = { labels, datasets: [
+    { type: 'bar' as const, label: 'Worked', data: worked, backgroundColor: t.accent2, ...stack },
+    { type: 'bar' as const, label: 'OT premium', data: premium, backgroundColor: t.warn, ...stack },
+    { type: 'bar' as const, label: subLabel, data: sub, backgroundColor: t.muted, ...stack },
+    { type: 'line' as const, label: 'Allowance', data: allowance, borderColor: t.text, borderDash: [5, 4], borderWidth: 1.5, pointRadius: 0, pointHitRadius: 6, spanGaps: true },
+  ] } as unknown as ChartData<'bar'>
+  const options: ChartOptions<'bar'> = { ...o,
+    interaction: { mode: 'index', intersect: false },
+    scales: { x: { ...o.scales!.x, stacked: true, grid: { display: false } }, y: { ...o.scales!.y, stacked: true, beginAtZero: true, title: { display: true, text: 'Hours', color: t.text3 } } },
+    plugins: { ...o.plugins, tooltip: { ...o.plugins!.tooltip, callbacks: { label: (c) => `${c.dataset.label}: ${c.parsed.y == null ? '–' : fmtHours(c.parsed.y)} h` } } } }
+  return <Chart type="bar" data={data} options={options} aria-label="Hours worked, OT premium and sub hours by week against the allowance" role="img" />
 }

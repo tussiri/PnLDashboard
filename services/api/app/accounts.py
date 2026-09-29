@@ -93,16 +93,16 @@ def apply_seed(cursor: Any, data: dict[str, Any]) -> dict[str, int]:
             """
             INSERT INTO ops.account (slug, name, featured, sort, target_labor_pct, watch_band, revenue_method,
                                      revenue_divisor, budget_reliability_ratio, source_parent_accounts,
-                                     segment_source, fallback_segment, revenue_allocation, cost_basis, updated_by)
+                                     segment_source, fallback_segment, revenue_allocation, cost_basis, segment_label, vendor_label, updated_by)
             VALUES (%(slug)s, %(name)s, %(featured)s, %(sort)s, %(target_labor_pct)s, %(watch_band)s, %(revenue_method)s,
                     %(revenue_divisor)s, %(budget_reliability_ratio)s, %(source_parent_accounts)s,
-                    %(segment_source)s, %(fallback_segment)s, %(revenue_allocation)s, %(cost_basis)s, 'seed')
+                    %(segment_source)s, %(fallback_segment)s, %(revenue_allocation)s, %(cost_basis)s, %(segment_label)s, %(vendor_label)s, 'seed')
             ON CONFLICT (slug) DO NOTHING
             """,
             {
                 "featured": True, "sort": 100, "target_labor_pct": 0.645, "watch_band": 0.10, "revenue_method": "monthly_div",
                 "revenue_divisor": 4.33, "budget_reliability_ratio": 0.80, "source_parent_accounts": [],
-                "segment_source": "explicit", "revenue_allocation": "none", "cost_basis": "labor", **{k: v for k, v in account.items() if k not in ("segments", "jobs")},
+                "segment_source": "explicit", "revenue_allocation": "none", "cost_basis": "labor", "segment_label": "Segment", "vendor_label": "Vendor", **{k: v for k, v in account.items() if k not in ("segments", "jobs")},
             },
         )
         counts["accounts"] += cursor.rowcount

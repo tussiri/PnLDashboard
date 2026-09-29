@@ -387,7 +387,7 @@ are Monday-based; the views label them by the week-ending Sunday. Any date in a 
 ```
 LeadershipAccount = { slug, name, featured, sort, target_labor_pct, watch_band, revenue_method: 'monthly_div'|'weekly_billing'|'per_visit',
   revenue_divisor, budget_reliability_ratio, source_parent_accounts: [], segment_source: 'explicit'|'sub_account'|'company'|'fallback',
-  fallback_segment, revenue_allocation: 'none'|'budget_hours', cost_basis: 'labor'|'labor_plus_vendor',
+  fallback_segment, revenue_allocation: 'none'|'budget_hours', cost_basis: 'labor'|'labor_plus_vendor', segment_label, vendor_label,
   segments: [{name, sort, target_labor_pct|null}], sites, needs_review, updated_at, updated_by }
 LeadershipRow = { week_start, week_end, company, job_number, site_name, parent_account, account_slug|null (Other), segment, role: 'site'|'catch_all'|'non_billed',
   needs_review, hours, ot_hours, labor, labor_basis: 'pay_report'|'trailing_rate_estimate', ot_dollars (full 1.5x pay), budget_hours, budget_dollars,
@@ -414,7 +414,7 @@ do (White Settlement ISD on job 112, Crowley ISD on job 910), that revenue is sp
 present in the week by revenue-month budget hours, else revenue-month actual hours (migration 033,
 computed at read time): `revenue_month_amount` and `prior_revenue` include it and
 `revenue_allocated` shows the amount moved onto (+) or off (-) the row, `allocation_weight` the weight used
-(`budget_hours` | `actual_hours` | `week_hours`, null when nothing moved). `PUT /leadership/accounts/{slug}` also accepts `revenue_allocation` and `cost_basis`.
+(`budget_hours` | `actual_hours` | `week_hours`, null when nothing moved). `PUT /leadership/accounts/{slug}` also accepts `revenue_allocation`, `cost_basis`, `segment_label` and `vendor_label` (1 to 30 characters; migration 036). The views use the weekly reports' vocabulary: Invoicing, Direct labor, the account's `vendor_label` (Agency sub, Subcontractor), Total labor, Labor % = total labor ÷ invoicing, On track / Watch / High, pp WoW, Budget and $ Var, and Hours to cut (worked + OT premium + sub hours against the allowance at target, per day); groups are named by `segment_label` (BU for Amazon).
 
 ## Relay (FedEx) feeds, added 2026-09-24
 

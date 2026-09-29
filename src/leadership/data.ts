@@ -23,9 +23,19 @@ export function useSummary(rows: LeadershipRow[] | undefined, account: Leadershi
   return useMemo(() => (rows ? accountSummary(rows, options, segmentOrder(account)) : null), [rows, account, options])
 }
 
-/** Measure label: "Labor %" or "Cost %" per the account's cost basis. */
-export const measureLabel = (account: LeadershipAccount | undefined) => (account?.cost_basis === 'labor_plus_vendor' ? 'Cost %' : 'Labor %')
-export const costLabel = (account: LeadershipAccount | undefined) => (account?.cost_basis === 'labor_plus_vendor' ? 'Labor + vendor $' : 'Labor $')
+/**
+ * The weekly reports' vocabulary. Labor % is total labor ÷ invoicing; total labor is direct labor plus,
+ * for accounts measured with it (cost basis labor_plus_vendor), agency or subcontractor cost.
+ */
+export const measureLabel = (_account?: LeadershipAccount) => 'Labor %'
+export const costLabel = (_account?: LeadershipAccount) => 'Total labor'
+export const includesVendor = (account: LeadershipAccount | undefined) => account?.cost_basis === 'labor_plus_vendor'
+/** What the account's groups are called: "BU" for Amazon, "Segment" by default. */
+export const segmentLabel = (account: LeadershipAccount | undefined) => account?.segment_label || 'Segment'
+/** What its non-payroll labor cost is called: "Agency sub", "Subcontractor", "Vendor". */
+export const vendorLabel = (account: LeadershipAccount | undefined) => account?.vendor_label || 'Vendor'
+/** A label inside a sentence: lower case, except an acronym such as BU. */
+export const inSentence = (label: string) => (/^[A-Z]{2,}$/.test(label) ? label : label.toLowerCase())
 
 /** Per-week measure series for a trend chart. */
 export function weeklySeries(rows: LeadershipRow[], weeks: string[], account: LeadershipAccount | undefined, options: MetricOptions) {

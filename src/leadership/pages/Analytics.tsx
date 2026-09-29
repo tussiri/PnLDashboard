@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import type { LeadershipAccount, LeadershipRow } from '../../services/apiTypes'
-import { measureLabel, rowsOfWeek, segmentOrder, useRows } from '../data'
+import { includesVendor, rowsOfWeek, segmentLabel, segmentOrder, useRows, inSentence, vendorLabel } from '../data'
 import { hours, hours1, money, pct } from '../format'
 import { accountSummary, statusOf, type MetricOptions, type Rollup, type SiteMetrics as Metrics } from '../metrics'
 import { weekLabel } from '../routes'
@@ -37,7 +37,7 @@ export function Analytics() {
       const account = key === OTHER ? undefined : accountBySlug(key)
       const options = account ? optionsFor(account) : otherOptions
       const s = accountSummary(list, options, segmentOrder(account))
-      for (const site of s.sites) out.push({ ...site, accountName: account?.name ?? 'Other', groupName: account ? site.segment ?? (site.role === 'catch_all' ? 'Catch-all' : 'Non-billed') : site.parent_account ?? 'Unassigned', measureName: measureLabel(account) })
+      for (const site of s.sites) out.push({ ...site, accountName: account?.name ?? 'Other', groupName: account ? site.segment ?? (site.role === 'catch_all' ? 'Catch-all' : 'Non-billed') : site.parent_account ?? 'Unassigned', measureName: includesVendor(account) ? `Direct + ${inSentence(vendorLabel(account))}` : 'Direct' })
     }
     return out
   }, [rows, featuredSlugs, accountBySlug, optionsFor, otherOptions])
@@ -56,12 +56,12 @@ export function Analytics() {
   const scopeAccount: LeadershipAccount | undefined = scope && scope !== OTHER ? accountBySlug(scope) : undefined
   const inScope = sites.filter((s) => !scope || (scope === OTHER ? s.accountName === 'Other' : s.account_slug === scope))
   const level1 = groupsFor(sites, (s) => (s.accountName === 'Other' ? OTHER : s.account_slug!), (s) => s.accountName,
-    (k) => (k === OTHER ? otherOptions : optionsFor(accountBySlug(k))), (k) => measureLabel(k === OTHER ? undefined : accountBySlug(k)))
+    (k) => (k === OTHER ? otherOptions : optionsFor(accountBySlug(k))), (k) => { const acct = k === OTHER ? undefined : accountBySlug(k); return includesVendor(acct) ? `Direct + ${inSentence(vendorLabel(acct))}` : 'Direct' })
     .sort((a, b) => (a.key === OTHER ? 1 : b.key === OTHER ? -1 : (accountBySlug(a.key)?.sort ?? 0) - (accountBySlug(b.key)?.sort ?? 0)))
   const level2 = scope ? groupsFor(inScope, (s) => s.groupName, (s) => s.groupName, (k) => {
     const o = scopeAccount ? optionsFor(scopeAccount) : otherOptions
     return { ...o, target: o.segmentTargets?.[k] ?? o.target }
-  }, () => measureLabel(scopeAccount)) : []
+  }, () => (includesVendor(scopeAccount) ? `Direct + ${inSentence(vendorLabel(scopeAccount))}` : 'Direct')) : []
   const filtered = inScope.filter((s) => (!route.segment || s.groupName === route.segment)
     && (!route.status || route.status === 'all' || (s.role === 'site' && s.status === route.status))
     && (!route.q || `${s.job_number} ${s.site_name} ${s.accountName} ${s.groupName} ${s.city ?? ''}`.toLowerCase().includes(route.q.toLowerCase())))
@@ -69,12 +69,12 @@ export function Analytics() {
   const groupCols = (label: string): Column<Group>[] => [
     { key: 'name', header: label, left: true, value: (g) => g.name, className: 'nm' },
     { key: 'sites', header: 'Sites', value: (g) => g.sites },
-    { key: 'inv', header: 'Weekly invoice', value: (g) => g.rollup.invoice, render: (g) => money(g.rollup.invoice) },
-    { key: 'cost', header: 'Cost', value: (g) => g.rollup.cost, render: (g) => money(g.rollup.cost) },
-    { key: 'm', header: 'Labor / cost %', value: (g) => g.rollup.measurePct, render: (g) => <span className={toneOf(statusOf(g.rollup.measurePct, g.target, g.watchBand))}>{pct(g.rollup.measurePct)}</span>, csv: (g) => g.rollup.measurePct },
-    { key: 'basis', header: 'Measure', left: true, value: (g) => g.measureName, render: (g) => <span className="neutral">{g.measureName}</span> },
+    { key: 'inv', header: 'Invoicing', value: (g) => g.rollup.invoice, render: (g) => money(g.rollup.invoice) },
+    { key: 'cost', header: 'Total labor', value: (g) => g.rollup.cost, render: (g) => money(g.rollup.cost) },
+    { key: 'm', header: 'Labor %', value: (g) => g.rollup.measurePct, render: (g) => <span className={toneOf(statusOf(g.rollup.measurePct, g.target, g.watchBand))}>{pct(g.rollup.measurePct)}</span>, csv: (g) => g.rollup.measurePct },
+    { key: 'basis', header: 'Basis', left: true, value: (g) => g.measureName, render: (g) => <span className="neutral">{g.measureName}</span> },
     { key: 'tgt', header: 'Target', value: (g) => g.target, render: (g) => pct(g.target) },
-    { key: 'over', header: '$ over', value: (g) => g.rollup.overDollars, render: (g) => money(g.rollup.overDollars) },
+    { key: 'var', header: '$ Var', value: (g) => g.rollup.cost - g.rollup.invoice * g.target, render: (g) => { const v = g.rollup.cost - g.rollup.invoice * g.target; return <span className={v > 0 ? 'bad' : 'ok'}>{money(v)}</span> } },
     { key: 'hrs', header: 'Hours', value: (g) => g.rollup.hours, render: (g) => hours(g.rollup.hours) },
     { key: 'otp', header: 'OT %', value: (g) => g.rollup.otPct, render: (g) => pct(g.rollup.otPct) },
     { key: 'prior', header: 'Prior month', value: (g) => g.rollup.priorLaborPct, render: (g) => <span className="neutral">{pct(g.rollup.priorLaborPct)}</span> },
@@ -82,19 +82,19 @@ export function Analytics() {
   ]
   const siteCols: Column<Site>[] = [
     { key: 'acct', header: 'Account', left: true, value: (s) => s.accountName },
-    { key: 'grp', header: scope === OTHER ? 'Account group' : 'Segment', left: true, value: (s) => s.groupName, className: 'nm' },
+    { key: 'grp', header: scope === OTHER ? 'Account group' : segmentLabel(scopeAccount), left: true, value: (s) => s.groupName, className: 'nm' },
     { key: 'job', header: 'Job', left: true, value: (s) => s.job_number },
     { key: 'name', header: 'Site', left: true, value: (s) => s.site_name, className: 'nm' },
     { key: 'co', header: 'Company', left: true, value: (s) => s.company, render: (s) => <span className="neutral">{s.company}</span> },
-    { key: 'inv', header: 'Invoice', value: (s) => s.invoice, render: (s) => money(s.invoice) },
-    { key: 'lab', header: 'Labor $', value: (s) => s.labor, render: (s) => money(s.labor) },
-    { key: 'ven', header: 'Vendor $', value: (s) => s.sub_week, render: (s) => money(s.sub_week) },
-    { key: 'm', header: 'Labor / cost %', value: (s) => s.measurePct, render: (s) => <span className={toneOf(s.status)}>{pct(s.measurePct)}</span> },
+    { key: 'inv', header: 'Invoicing', value: (s) => s.invoice, render: (s) => money(s.invoice) },
+    { key: 'lab', header: 'Direct labor', value: (s) => s.labor, render: (s) => money(s.labor) },
+    { key: 'ven', header: 'Agency / sub', value: (s) => s.sub_week, render: (s) => money(s.sub_week) },
+    { key: 'm', header: 'Labor %', value: (s) => s.measurePct, render: (s) => <span className={toneOf(s.status)}>{pct(s.measurePct)}</span> },
     { key: 'prior', header: 'Prior month', value: (s) => s.priorLaborPct, render: (s) => <span className="neutral">{pct(s.priorLaborPct)}</span> },
     { key: 'hrs', header: 'Hours', value: (s) => s.hours, render: (s) => hours1(s.hours) },
     { key: 'oth', header: 'OT hrs', value: (s) => s.ot_hours, render: (s) => hours1(s.ot_hours) },
-    { key: 'over', header: 'Hrs over', value: (s) => s.overHours, render: (s) => (s.overHours > 0.5 ? <span className="bad">{hours1(s.overHours)}</span> : '–') },
-    { key: 'basis', header: 'Labor basis', left: true, value: (s) => (s.labor_basis === 'pay_report' ? 'Pay report' : 'Estimated'), render: (s) => <span className="neutral">{s.labor_basis === 'pay_report' ? 'Pay report' : 'Estimated'}</span> },
+    { key: 'over', header: 'Hrs to cut', value: (s) => s.overHours, render: (s) => (s.overHours > 0.5 ? <span className="bad">{hours1(s.overHours)}</span> : '–') },
+    { key: 'basis', header: 'Labor source', left: true, value: (s) => (s.labor_basis === 'pay_report' ? 'Pay report' : 'Estimated'), render: (s) => <span className="neutral">{s.labor_basis === 'pay_report' ? 'Pay report' : 'Estimated'}</span> },
     { key: 'st', header: 'Status', value: (s) => s.measurePct, render: roleBadge, csv: (s) => (s.role === 'site' ? s.status : s.role) },
   ]
   const subtitle = [weekStart ? weekLabel(weekStart) : null, updatedLine(config.data)].filter(Boolean).join('. ')
@@ -108,8 +108,8 @@ export function Analytics() {
           onRowClick={(g) => set({ account: g.key, segment: undefined })} rowLabel={(g) => `Drill into ${g.name}`} rowClass={(g) => (g.key === scope ? 'tot' : '')} />
       </div>
       {scope && <div className="card">
-        <div className="ct"><span>{scope === OTHER ? 'Other by account group' : `${scopeAccount?.name} by segment`}</span>{route.segment && <button type="button" className="linkbtn" onClick={() => set({ segment: undefined })}>All {scope === OTHER ? 'groups' : 'segments'}</button>}</div>
-        <SortTable caption="Groups" rows={level2} columns={groupCols(scope === OTHER ? 'Account group' : 'Segment')} defaultSort={{ key: 'inv', dir: -1 }} csvName={`${scope}-groups`}
+        <div className="ct"><span>{scope === OTHER ? 'Other by account group' : `${scopeAccount?.name} by ${segmentLabel(scopeAccount)}`}</span>{route.segment && <button type="button" className="linkbtn" onClick={() => set({ segment: undefined })}>All {scope === OTHER ? 'groups' : `${segmentLabel(scopeAccount)}s`}</button>}</div>
+        <SortTable caption="Groups" rows={level2} columns={groupCols(scope === OTHER ? 'Account group' : segmentLabel(scopeAccount))} defaultSort={{ key: 'inv', dir: -1 }} csvName={`${scope}-groups`}
           onRowClick={(g) => set({ segment: g.key })} rowLabel={(g) => `Show sites in ${g.name}`} rowClass={(g) => (g.key === route.segment ? 'tot' : '')} />
       </div>}
       <div className="card">

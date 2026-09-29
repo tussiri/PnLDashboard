@@ -5,7 +5,6 @@ import 'leaflet.markercluster/dist/MarkerCluster.Default.css'
 import { useEffect, useRef, useState } from 'react'
 import type { LeadershipAccount, LeadershipRow } from '../../services/apiTypes'
 import { statusColor, useTokens } from '../charts'
-import { measureLabel } from '../data'
 import { money, pct } from '../format'
 import type { AccountSummary as Summary, SiteMetrics as Metrics } from '../metrics'
 import { useLeadership } from '../state'
@@ -30,7 +29,6 @@ export default function SiteMap({ account, summary }: { account: LeadershipAccou
   const [failed, setFailed] = useState(false)
   const sites = summary.sites.filter(located)
   const missing = summary.sites.filter((r) => !located(r))
-  const m = measureLabel(account)
 
   useEffect(() => {
     if (!box.current || !sites.length) return
@@ -45,7 +43,7 @@ export default function SiteMap({ account, summary }: { account: LeadershipAccou
         const color = r.role === 'site' ? statusColor(t, toneOf(r.status)) : t.muted
         const marker = L.circleMarker([r.latitude, r.longitude], { radius: 7, color: t.bg, weight: 2, fillColor: color, fillOpacity: 1 })
         const status = r.role === 'site' ? STATUS_LABEL[r.status] : r.role === 'catch_all' ? 'Catch-all' : 'Non-billed'
-        marker.bindTooltip(`<b>${escapeHtml(`${r.job_number} ${r.site_name}`)}</b><br>${m} ${pct(r.measurePct)} (${status})<br>Invoice ${money(r.invoice)}, labor ${money(r.labor)}`, { direction: 'top' })
+        marker.bindTooltip(`<b>${escapeHtml(`${r.job_number} ${r.site_name}`)}</b><br>Labor % ${pct(r.measurePct)} (${status})<br>Invoicing ${money(r.invoice)}, total labor ${money(r.cost)}`, { direction: 'top' })
         marker.on('click', () => navigate({ site: { company: r.company ?? '', job: r.job_number } }))
         group.addLayer(marker)
       }

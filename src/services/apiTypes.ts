@@ -1229,6 +1229,10 @@ export interface LeadershipAccount {
   revenue_allocation: 'none' | 'budget_hours'
   /** labor: labor % (the reference); labor_plus_vendor: cost % = (labor + vendor) / invoice. */
   cost_basis: 'labor' | 'labor_plus_vendor'
+  /** What the account's groups are called ("BU" for Amazon, "Segment" by default). */
+  segment_label: string
+  /** What the non-payroll labor cost is called ("Agency sub", "Subcontractor", "Vendor"). */
+  vendor_label: string
   segments: LeadershipSegment[]
   sites: number
   needs_review: number
@@ -1418,5 +1422,5 @@ export interface LeadershipAccountJob {
   is_active: boolean | null
 }
 
-export type LeadershipAccountPatch = Partial<Pick<LeadershipAccount, 'name' | 'featured' | 'sort' | 'target_labor_pct' | 'watch_band' | 'revenue_method' | 'revenue_divisor' | 'budget_reliability_ratio' | 'source_parent_accounts' | 'segment_source' | 'fallback_segment' | 'revenue_allocation' | 'cost_basis'>>
+export type LeadershipAccountPatch = Partial<Pick<LeadershipAccount, 'name' | 'featured' | 'sort' | 'target_labor_pct' | 'watch_band' | 'revenue_method' | 'revenue_divisor' | 'budget_reliability_ratio' | 'source_parent_accounts' | 'segment_source' | 'fallback_segment' | 'revenue_allocation' | 'cost_basis' | 'segment_label' | 'vendor_label'>>
 export interface LeadershipJobMapping { account_slug: string | null; segment?: string | null; role?: LeadershipRole; companycam_project_id?: string | null }

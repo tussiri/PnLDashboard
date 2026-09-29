@@ -414,6 +414,8 @@ class AccountPatch(BaseModel):
     source_parent_accounts: list[str] | None = None
     segment_source: str | None = None
     fallback_segment: str | None = None
+    segment_label: str | None = Field(None, min_length=1, max_length=30)
+    vendor_label: str | None = Field(None, min_length=1, max_length=30)
 
 
 class SegmentIn(BaseModel):

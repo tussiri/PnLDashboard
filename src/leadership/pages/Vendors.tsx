@@ -1,6 +1,7 @@
 import { useApiQuery } from '../../hooks/useApiQuery'
 import type { LeadershipAccount, LeadershipVendorsResponse } from '../../services/apiTypes'
 import { queryKey } from '../../services/queryClient'
+import { inSentence, vendorLabel } from '../data'
 import { money } from '../format'
 import { monthLabel } from '../routes'
 import { useLeadership } from '../state'
@@ -18,7 +19,7 @@ export function Vendors({ account }: { account: LeadershipAccount }) {
   if (q.error) return <LoadError error={q.error} onRetry={q.refetch} />
   if (!q.data) return <Skeleton height={320} />
   const d = q.data
-  if (!d.lines.length) return <Empty>No vendor invoices since {monthLabel(d.since)}.</Empty>
+  if (!d.lines.length) return <Empty>No {inSentence(vendorLabel(account))} invoices since {monthLabel(d.since)}.</Empty>
   const vendorCols: Column<Vendor>[] = [
     { key: 'name', header: 'Vendor', left: true, value: (r) => r.vendor_name, className: 'nm' },
     { key: 'no', header: 'Vendor #', value: (r) => r.vendor_number },
@@ -44,16 +45,16 @@ export function Vendors({ account }: { account: LeadershipAccount }) {
   const months = d.by_month
   return <>
     <div className="kpi-lg">
-      <Kpi label="Vendor invoices" value={money(d.total)} sub={`Since ${monthLabel(d.since)}`} />
+      <Kpi label={`${vendorLabel(account)} invoices`} value={money(d.total)} sub={`Since ${monthLabel(d.since)}`} />
       <Kpi label="Latest month" value={months.length ? money(months[months.length - 1].amount) : '–'} sub={months.length ? monthLabel(months[months.length - 1].month) : ''} />
       <Kpi label="Vendors" value={d.by_vendor.length} />
       <Kpi label="Sites" value={d.by_site.length} sub={`of ${account.sites}`} />
     </div>
     <div className="charts2">
-      <div className="card"><div className="ct"><span>By vendor</span></div><SortTable caption="Vendor invoices by vendor" rows={d.by_vendor} columns={vendorCols} defaultSort={{ key: 'amt', dir: -1 }} /></div>
-      <div className="card"><div className="ct"><span>By site</span></div><SortTable caption="Vendor invoices by site" rows={d.by_site} columns={siteCols} defaultSort={{ key: 'amt', dir: -1 }}
+      <div className="card"><div className="ct"><span>By vendor</span></div><SortTable caption={`${vendorLabel(account)} invoices by vendor`} rows={d.by_vendor} columns={vendorCols} defaultSort={{ key: 'amt', dir: -1 }} /></div>
+      <div className="card"><div className="ct"><span>By site</span></div><SortTable caption={`${vendorLabel(account)} invoices by site`} rows={d.by_site} columns={siteCols} defaultSort={{ key: 'amt', dir: -1 }}
         onRowClick={(r) => navigate({ site: { company: r.company, job: r.job_number } })} rowLabel={(r) => `Open ${r.site_name}`} /></div>
     </div>
-    <div className="card"><div className="ct"><span>Invoices</span></div><SortTable caption="Vendor invoices" rows={d.lines} columns={lineCols} defaultSort={{ key: 'date', dir: -1 }} csvName={`${account.slug}-vendor-invoices`} /></div>
+    <div className="card"><div className="ct"><span>Invoices</span></div><SortTable caption={`${vendorLabel(account)} invoices`} rows={d.lines} columns={lineCols} defaultSort={{ key: 'date', dir: -1 }} csvName={`${account.slug}-vendor-invoices`} /></div>
   </>
 }

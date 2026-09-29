@@ -4,7 +4,7 @@ import { downloadCsv, toCsv } from '../services/csv'
 import type { LaborStatus } from './metrics'
 
 export const toneOf = (status: LaborStatus) => ({ on_target: 'ok', watch: 'warn', over: 'bad', no_billing: 'neutral' } as const)[status]
-export const STATUS_LABEL: Record<LaborStatus, string> = { on_target: 'On target', watch: 'Watch', over: 'Over', no_billing: 'No billing' }
+export const STATUS_LABEL: Record<LaborStatus, string> = { on_target: 'On track', watch: 'Watch', over: 'High', no_billing: 'No billing' }
 const BADGE_CLASS: Record<LaborStatus, string> = { on_target: 'bok', watch: 'bwarn', over: 'bbad', no_billing: 'bnone' }
 
 export function Badge({ status, label }: { status: LaborStatus | 'none'; label?: string }) {

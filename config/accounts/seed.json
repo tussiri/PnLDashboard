@@ -37,7 +37,9 @@
    ],
    "jobs": [],
    "revenue_allocation": "none",
-   "cost_basis": "labor_plus_vendor"
+   "cost_basis": "labor_plus_vendor",
+   "segment_label": "BU",
+   "vendor_label": "Agency sub"
   },
   {
    "slug": "fedex",
@@ -70,7 +72,8 @@
    ],
    "jobs": [],
    "revenue_allocation": "none",
-   "cost_basis": "labor_plus_vendor"
+   "cost_basis": "labor_plus_vendor",
+   "vendor_label": "Subcontractor"
   },
   {
    "slug": "plano-isd",
@@ -1228,7 +1231,8 @@
    ],
    "jobs": [],
    "revenue_allocation": "none",
-   "cost_basis": "labor_plus_vendor"
+   "cost_basis": "labor_plus_vendor",
+   "vendor_label": "Subcontractor"
   },
   {
    "slug": "apple-retail",

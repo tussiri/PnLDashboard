@@ -7,7 +7,7 @@ React 18 + TypeScript + Vite, Chart.js (react-chartjs-2) and Leaflet. The app li
 
 | Path | Role |
 |---|---|
-| `leadership/metrics.ts` | Every derived metric (invoice, labor/cost %, base rate, $ and hours over target, OT premium, prior-month %, status, rollups, notes). Pure; tested against the Plano reference week. |
+| `leadership/metrics.ts` | Every derived metric (invoicing, labor %, base rate, $ Var and hours to cut with its worked / OT premium / sub split, OT premium, prior-month %, status, rollups, notes), named as in the weekly reports. Pure; tested against the Plano reference week. |
 | `leadership/routes.ts` | Hash routes; account, week (week-ending date), target, open site and Analytics filters in the URL. |
 | `leadership/state.tsx` | Live/demo mode, config query, route state, theme, per-account metric options. |
 | `leadership/Shell.tsx` | Top nav, page header controls (account, week, target), freshness line. |
