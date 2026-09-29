@@ -63,6 +63,7 @@ import httpx
 from .config import RESOURCE_NAMES, Settings, settings
 from .tenants import PRIMARY, Tenant
 from .db import connection
+from .schedule import sync_mode
 
 logger = logging.getLogger("winteam")
 INTEGRATION = "winteam"
@@ -648,8 +649,7 @@ class WinTeamIngestion:
             "base_url_host": self.config.winteam_base_url_host,
             "normalize_enabled": self.config.winteam_normalize,
             "resources": resources,
-            "poll_seconds": None,
-            "sync": "on_demand",
+            **sync_mode(self.config.winteam_enabled and self.config.winteam_configured),
         }
 
     def test_connection(self) -> dict[str, Any]:
@@ -674,7 +674,8 @@ class WinTeamIngestion:
     ) -> dict[str, Any]:
         """Pull one resource into raw, then (optionally) promote it into core. Never raises for pull failures.
 
-        Nothing calls this on a schedule: every sync is started by an administrator. A resource in
+        Called by the Admin routes, the nightly sync and the light interval sync (app/schedule.py, which
+        never forces). A resource in
         DAILY_RESOURCES that succeeded within DAILY_MIN_AGE is skipped unless force=True, so
         pressing sync twice does not re-read slow-moving masters. deep=True widens the re-read of
         date-windowed resources to WINTEAM_DEEP_LOOKBACK_DAYS.

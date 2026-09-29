@@ -58,7 +58,8 @@ tenant's companies, the namespaced 'Crane:<number>' row for a job-number collisi
 functions api_window / effective_rows / effective_ar_rows / resolve_api_job below mirror the views.
 
 After mart.portfolio_month the weekly executive mart mart.job_week is rebuilt in the same
-transaction (app.weekly.rebuild; rules in docs/executive-pl.md). Then the forecast engine
+transaction (app.weekly.rebuild; rules in docs/executive-pl.md), and its PhotoValidation staffing demand
+(requested / pending headcount, app.staffing) is filled from core.fact_staffing_request. Then the forecast engine
 (app.forecasting.build_forecasts) is invoked; if it is absent the result carries forecast = None.
 """
 from __future__ import annotations
@@ -69,7 +70,7 @@ from typing import Any
 
 import psycopg
 
-from . import accounts, leadership, weekly
+from . import accounts, leadership, staffing, weekly
 from .config import settings
 from .db import connection
 
@@ -553,6 +554,7 @@ def rebuild_tables() -> tuple[int, int, int]:
                 cursor.execute(PORTFOLIO_MONTH_SQL)
                 portfolio_rows = cursor.rowcount
                 job_week_rows = weekly.rebuild(cursor)
+                staffing.refresh(cursor)
                 accounts.sync_accounts(cursor)
                 leadership.rebuild(cursor, (sub_low, sub_high))
         except psycopg.errors.LockNotAvailable as exc:

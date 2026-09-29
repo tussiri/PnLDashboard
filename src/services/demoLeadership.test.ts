@@ -27,4 +27,15 @@ describe('demo leadership adapter', () => {
     expect(site.invoices.total).toBe(14132)
     await expect(api.leadershipUpload(new File(['x'], 'x.csv'))).rejects.toThrow(/demo mode/)
   })
+
+  it('serves staffing requests whose headcounts match their lines', async () => {
+    const staffing = await api.staffingJob('Crane Southwest', '853', { week: '2026-09-20' })
+    expect(staffing.week).toBe('2026-09-14')
+    expect(staffing.lines.length).toBeGreaterThan(0)
+    const sum = (statuses: string[]) => staffing.lines.filter((l) => statuses.includes(l.status)).reduce((a, l) => a + l.headcount_needed, 0)
+    expect(staffing.requested_headcount).toBe(sum(['approved', 'posted']))
+    expect(staffing.pending_requested_headcount).toBe(sum(['submitted']))
+    expect(staffing.lines.every((l) => l.pay_rate != null && l.days_open != null)).toBe(true)
+    await expect(api.syncPhotoValidation()).rejects.toThrow(/demo mode/)
+  })
 })

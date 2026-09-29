@@ -1,16 +1,19 @@
-"""Background worker: the nightly sync, and a mart rebuild when the marts are empty.
+"""Background worker: the nightly sync, the interval schedules, and a mart rebuild when the marts are empty.
 
-WinTeam is called on a schedule once a day only, by app.nightly (approved 2026-09-23): an
-incremental sync off hours (ops.app_setting `nightly_sync`, default 02:30 America/Chicago) that
-also loads the export files in the import inbox and rebuilds the marts once. Administrators can
-still sync on demand from the Admin view or POST /api/v1/integrations/winteam/sync. Nothing polls
-WinTeam more often than that.
+* app.nightly (approved 2026-09-23): the full incremental sync off hours (ops.app_setting
+  `nightly_sync`, default 02:30 America/Chicago) that also loads the import inbox and rebuilds the marts.
+* app.schedule (approved 2026-09-29): a light WinTeam timekeeping sync every
+  WINTEAM_SYNC_INTERVAL_MINUTES (default 30, 0 = off) under the on-demand sync's throttles, and the
+  PhotoValidation staffing-request pull every PV_SYNC_INTERVAL_MINUTES (default 15, 0 = off).
+Administrators can still sync on demand from the Admin view or POST /api/v1/integrations/winteam/sync;
+every WinTeam sync holds one advisory lock, so none of them overlap.
 
 The worker also reads the records mailbox for report exports (app/mail_inbox.py), every
 `every_minutes` of ops.app_setting 'mail_inbox' (default 30): that reads Microsoft Graph, not WinTeam.
 
 On startup the worker also rebuilds the marts if core facts exist but mart.job_month is empty (for
-example after a fresh mart migration), then checks both schedules once a minute until SIGTERM/SIGINT.
+example after a fresh mart migration), then checks the schedules once a minute until SIGTERM/SIGINT.
+Each check is isolated: a failure is logged and the worker carries on.
 """
 from __future__ import annotations
 
@@ -18,7 +21,7 @@ import logging
 import signal
 import time
 
-from . import mail_inbox, marts, nightly
+from . import mail_inbox, marts, nightly, schedule
 from .config import settings
 
 logging.basicConfig(level=settings.log_level, format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -42,20 +45,21 @@ def rebuild_on_startup() -> None:
 
 
 def tick() -> None:
-    try:
-        nightly.check_and_run()
-    except Exception:  # noqa: BLE001 - a failed check must not stop the worker
-        logger.exception("Nightly schedule check failed")
-    try:
-        mail_inbox.check_and_poll()
-    except Exception:  # noqa: BLE001
-        logger.exception("Records mailbox check failed")
+    for name, check in (("Nightly", nightly.check_and_run), ("WinTeam interval", schedule.run_winteam_light),
+                        ("PhotoValidation interval", schedule.run_photovalidation),
+                        ("Records mailbox", mail_inbox.check_and_poll)):
+        try:
+            check()
+        except Exception:  # noqa: BLE001 - a failed check must not stop the worker
+            logger.exception("%s schedule check failed", name)
 
 
 def run() -> None:
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
-    logger.info("Worker started; WinTeam syncs nightly (ops.app_setting nightly_sync) and on demand")
+    logger.info("Worker started; WinTeam syncs nightly (ops.app_setting nightly_sync), every %s min (timekeeping; 0 = off) "
+                "and on demand; PhotoValidation every %s min (%s)", settings.winteam_sync_interval_minutes,
+                settings.pv_sync_interval_minutes, "configured" if settings.photovalidation_configured else "not configured")
     rebuild_on_startup()
     last_check = 0.0
     while running:

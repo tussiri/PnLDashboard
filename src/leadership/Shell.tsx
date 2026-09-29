@@ -26,13 +26,16 @@ export function updatedLine(config: Config): string {
   return config.status.rebuilt_at ? `Updated ${stamp(config.status.rebuilt_at)}` : 'Not built'
 }
 
-/** Admin status line: last rebuild, pay report coverage and the last Relay sync. */
+/** Admin status line: last rebuild, pay report coverage and the last Relay and PhotoValidation syncs. */
 export function freshnessLine(config: Config): string {
   if (!config) return ''
   const through = config.status.pay_report_through
-  const relay = config.status.syncs.find((s) => s.integration_name === 'relay')
+  const synced = (name: string, label: string) => {
+    const run = config.status.syncs.find((s) => s.integration_name === name)
+    return run?.completed_at ? `${label} ${stamp(run.completed_at)}` : null
+  }
   return [updatedLine(config), through.length ? `Pay report through ${through.map((p) => p.through).sort().at(-1)}` : 'No pay report',
-    relay?.completed_at ? `Relay ${stamp(relay.completed_at)}` : null].filter(Boolean).join('. ')
+    synced('relay', 'Relay'), synced('photovalidation', 'PhotoValidation')].filter(Boolean).join('. ')
 }
 
 export function Shell({ children }: { children: ReactNode }) {

@@ -19,7 +19,7 @@ modules stay free of session logic:
 - `/health/*` and `/auth/*` are public.
 - `platform_access`: `/system/status` and `/dimensions` for any signed-in role (the shell needs them);
   other platform GET routes need analyst or admin.
-- `require_role("analyst", "admin")` on reporting, labor and forecast; `require_role("executive",
+- `require_role("analyst", "admin")` on reporting, labor, forecast and staffing (request lines carry pay rates); `require_role("executive",
   "analyst", "admin")` on executive.
 - Mutating requests (POST/PUT/PATCH/DELETE) accept **either** a valid `X-Admin-Token` **or** an
   admin-role session. `require_admin` on the individual write routes applies the same rule, so

@@ -14,7 +14,8 @@ Schedule: ops.app_setting `nightly_sync` = {"enabled", "hour", "minute", "timezo
 "import_inbox", "winteam", "sarus"}. A run starts only inside the window after the run time, so a
 worker that was down overnight skips that night rather than syncing during the working day. The worker checks `due` once a minute; a run is recorded in
 ops.integration_sync_run (integration 'nightly'), which is how a day's run is not repeated after a
-restart. Nothing else calls WinTeam on a schedule, and nothing here runs more than once a day.
+restart. Nothing here runs more than once a day. The light interval sync (app/schedule.py) and the
+Admin routes share its advisory lock: while one of them runs, the nightly run waits for the next tick.
 """
 from __future__ import annotations
 
@@ -147,4 +148,10 @@ def check_and_run() -> dict[str, Any] | None:
         last = last_run_local_date(cursor, schedule)
     if not due(schedule, last):
         return None
-    return run_nightly(schedule)
+    from .schedule import WINTEAM_SYNC_LOCK, advisory_lock
+
+    with advisory_lock(WINTEAM_SYNC_LOCK) as got:
+        if not got:
+            logger.info("Nightly sync waiting: another WinTeam sync is running")
+            return None
+        return run_nightly(schedule)

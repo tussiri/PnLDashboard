@@ -17,8 +17,9 @@ share the same core/mart tables, combined by explicit precedence rules (`docs/wi
   that file): jobs (643, exact coordinates), vendors, timekeeping (rolling window, ~8k punches a
   week), AP invoices and AR invoices with applied cash. Job schedules and AP payments answer 403
   (subscription not entitled) and are skipped; GL budgets answer 400/404 for jobs without a budget.
-  Syncs run once a night (app/nightly.py, 02:30 America/Chicago, setting `nightly_sync`) and on
-  demand (Administration page or the admin routes), then normalize and rebuild marts and forecasts. Inside the
+  Syncs run once a night (app/nightly.py, 02:30 America/Chicago, setting `nightly_sync`), as a light
+  timekeeping sync every `WINTEAM_SYNC_INTERVAL_MINUTES` (app/schedule.py, default 30, 0 = off) and on
+  demand (Administration page or the admin routes; one advisory lock keeps them from overlapping), then normalize and rebuild marts and forecasts. Inside the
   API's date window API rows are the truth for the companies the tenant serves (Crane IFS, Crane
   West, Crane Southwest); exports fill everything else (Sarus, and all history before the window).
 - **relay** (integration_mapper, FedEx only): the read-only export of Relay, pulled nightly into `core.relay_*`
@@ -26,6 +27,11 @@ share the same core/mart tables, combined by explicit precedence rules (`docs/wi
   FedEx AR with supersession applied, self-perform stations and contract amounts; the weekly mart prefers it
   for FedEx vendor cost and billing. Configure `RELAY_BASE_URL` and `RELAY_EXPORT_TOKEN` (one of Relay's
   `DASHBOARD_EXPORT_TOKENS`). The export itself is on Relay branch `feature/dashboard-export`.
+- **photovalidation** (staffing requests): PhotoValidation's request feed (Contract B, PhotoValidation
+  `docs/specs/staffing-intake.md`) pulled every `PV_SYNC_INTERVAL_MINUTES` into `core.fact_staffing_request`
+  (migration 041, `app/sources/photovalidation.py`); `mart.job_week` carries `requested_headcount` and
+  `pending_requested_headcount` (demand open at each week's end, `app/staffing.py`) and the site drawer lists
+  the lines (analyst and admin). Configure `PHOTOVALIDATION_API_URL` and `PHOTOVALIDATION_API_TOKEN`.
 - **finance_reference**: the WinTeam report exports restored from the Finance_Dashboard PostgreSQL
   dump (`finance_reference` database, read-only). It is the only source of the Job Cost Analysis
   P&L (revenue, direct labor, subcontract cost by site and month), daily labor budgets, and the AR/AP
@@ -143,6 +149,10 @@ documented WinTeam GET endpoints (WinTeamAPI.txt)
 - `src/leadership/pages/SiteMap.tsx`: Leaflet map (cluster plugin loaded after the global `L`)
 - `services/api/app/{accounts,imports,leadership,nightly}.py`, `routers/leadership.py`: account
   configuration, export imports, the weekly leadership mart, the nightly schedule, the routes
+- `services/api/app/schedule.py`: the interval schedules (light WinTeam sync, PhotoValidation pull) and
+  the WinTeam sync lock
+- `services/api/app/sources/photovalidation.py`, `app/staffing.py`, `routers/staffing.py`: the staffing
+  request feed, its weekly demand rule and the per-site route
 
 ## Company view and allocations
 
@@ -244,7 +254,10 @@ runs. Equivalent routes: `POST /api/v1/integrations/winteam/{test,sync,sync/{res
 `POST /api/v1/marts/rebuild`, `POST /api/v1/forecasts/rebuild` with header `X-Admin-Token`.
 The worker runs one sync a night (`app/nightly.py`): import inbox (`IMPORT_INBOX_DIR`, mounted from
 `./imports`), WinTeam primary and Sarus incrementally, one mart rebuild. It runs only inside
-`window_hours` after the configured time, so a missed night is skipped. A normal sync re-reads 3 days before the last one (`WINTEAM_LOOKBACK_DAYS`);
+`window_hours` after the configured time, so a missed night is skipped. Between nights it syncs
+timekeeping (and jobs, at most once per 20 hours) for both databases every `WINTEAM_SYNC_INTERVAL_MINUTES`
+and rebuilds the marts, and pulls PhotoValidation every `PV_SYNC_INTERVAL_MINUTES` (`app/schedule.py`).
+Every WinTeam sync holds one Postgres advisory lock: the Admin sync routes answer 409 while another runs. A normal sync re-reads 3 days before the last one (`WINTEAM_LOOKBACK_DAYS`);
 `deep=true` re-reads 35 (`WINTEAM_DEEP_LOOKBACK_DAYS`); jobs, vendors, budgets and AR are re-read at
 most once per 20 hours unless `force=true`; AP invoices WinTeam cannot serve are not asked for again for
 7 days (`ops.winteam_unretrievable`). Sarus: `POST /api/v1/integrations/winteam/sarus/sync`.
