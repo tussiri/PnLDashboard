@@ -538,3 +538,25 @@ StaffingRequestLine = { line_id, request_id, request_code, site_name, role, shif
 Pulls are recorded in `ops.integration_sync_run` as integration `photovalidation`, so `GET /leadership/config`
 `status.syncs` reports them.
 
+## Company view and corporate allocations, added 2026-09-29
+
+Migration 040, app/allocations.py. Rows of `GET /leadership/rows` and a site's weeks add
+`alloc_management`, `alloc_burden`, `alloc_overhead` (weekly dollars): management wages (Job Cost
+Analysis GL 40200-40399 on the job, revenue month ÷ 4.33), payroll burden (the week's labor × the
+revenue month's burden rate: payroll taxes + workers comp ÷ wages of the company Trend Income
+Statement, or a manual rate; a month not loaded uses the latest earlier one), overhead (the company
+statement's G&A lines or a manual monthly amount ÷ 4.33, spread by the job's share of the week's
+company revenue, labor or hours). Allocations never enter labor %; the views show margin = invoice −
+labor − vendor (100%) − allocations.
+
+| Route | Response |
+|---|---|
+| `GET /leadership/company?months=14` | Every account, so `403` for a user limited to accounts. `{months: [{month, closed, revenue, direct_labor, management_wages, subcontractors, payroll_taxes, gross_profit, timekeeping_labor, by_company: {name: money}, by_account: {slug or other: money}, statement: {line: amount}, allocations: {management_wages, burden, overhead, burden_rate, burden_source, overhead_source}, flags: [sub_spike, labor_spike]}], accounts: [{slug, name, featured, target_labor_pct}]}`. A month is closed when job cost labor is at least 70% of timekeeping labor; a closed month is flagged when its subcontractor or labor share of revenue is over 2.5× the median of the other closed months and at least 10 points above it. |
+| `GET /leadership/allocations` | Admin. `{settings: {management_wages: {enabled}, burden: {enabled, lines}, overhead: {enabled, lines, basis}}, months: [{month, burden_rate, burden_source, overhead_pool, overhead_source, management_wages, manual_burden_rate, manual_overhead_pool, statement_loaded}]}` for the last 12 months. |
+| `PUT /leadership/allocations` | Admin. Any of the settings; `422` for an unknown basis or bad lines. |
+| `PUT /leadership/allocations/months/{YYYY-MM}` | Admin. `{burden_rate, overhead_pool}` (fraction, dollars); both null clears the month. |
+
+Imports: an income statement row with Account `Company` (or All, Total, Crane IFS, Consolidated) loads
+into `core.fact_company_income_statement_month`; a Job Cost Analysis by GL line stores GL 40200-40399
+as `management_wages` (still inside `direct_labor`).
+

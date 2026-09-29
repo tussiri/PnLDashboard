@@ -191,3 +191,52 @@ export function MarginChart({ labels, values, tones, details }: { labels: string
     plugins: { ...o.plugins, tooltip: { ...o.plugins!.tooltip, callbacks: { label: (c) => details[c.dataIndex] ?? money(c.parsed.x) } } } }
   return <Bar data={data} options={options} aria-label="Margin by site, worst first" role="img" />
 }
+
+/** Revenue by month (closed months solid, open months muted) with gross margin % on its own axis. */
+export function RevenueMarginChart({ labels, revenue, marginPct, closed }: { labels: string[]; revenue: number[]; marginPct: (number | null)[]; closed: boolean[] }) {
+  const t = useTokens()
+  const o = base(t) as unknown as ChartOptions<'bar'>
+  const data = { labels, datasets: [
+    { type: 'bar' as const, label: 'Revenue', data: revenue, backgroundColor: closed.map((c) => (c ? t.accent : t.muted)), yAxisID: 'y', order: 2, ...bar },
+    { type: 'line' as const, label: 'Gross margin %', data: marginPct.map((v) => (v == null ? null : v * 100)), borderColor: t.ok, backgroundColor: t.ok, borderWidth: 2, pointRadius: 3, yAxisID: 'y1', order: 1, spanGaps: false },
+  ] } as unknown as ChartData<'bar'>
+  const options = { ...o, interaction: { mode: 'index', intersect: false },
+    scales: { x: { ...o.scales!.x, grid: { display: false } }, y: { ...o.scales!.y, beginAtZero: true, ticks: { color: t.text2, callback: (v: number | string) => `$${(Number(v) / 1e6).toFixed(1)}M` } },
+      y1: { position: 'right', grid: { display: false }, ticks: { color: t.text2, callback: (v: number | string) => `${v}%` } } },
+    plugins: { ...o.plugins, tooltip: { ...o.plugins!.tooltip, callbacks: { label: (c: { dataset: { label?: string; yAxisID?: string }; parsed: { y: number | null } }) =>
+      c.dataset.yAxisID === 'y1' ? `${c.dataset.label}: ${c.parsed.y == null ? '–' : `${c.parsed.y.toFixed(1)}%`}` : `${c.dataset.label}: ${money(c.parsed.y)}` } } } } as unknown as ChartOptions<'bar'>
+  return <Chart type="bar" data={data} options={options} aria-label="Revenue and gross margin by month" role="img" />
+}
+
+/** Stacked dollar bars by month, one series per group (business unit). */
+export function StackedMoneyChart({ labels, series }: { labels: string[]; series: { label: string; data: number[]; color: string }[] }) {
+  const t = useTokens()
+  const o = base(t)
+  const data = { labels, datasets: series.map((s) => ({ label: s.label, data: s.data, backgroundColor: s.color, stack: 'a', ...bar, borderRadius: 0 })) }
+  const options: ChartOptions<'bar'> = { ...o, interaction: { mode: 'index', intersect: false },
+    scales: { x: { ...o.scales!.x, stacked: true, grid: { display: false } }, y: { ...o.scales!.y, stacked: true, ticks: { color: t.text2, callback: (v) => `$${(Number(v) / 1e6).toFixed(1)}M` } } },
+    plugins: { ...o.plugins, tooltip: { ...o.plugins!.tooltip, callbacks: { label: (c) => `${c.dataset.label}: ${money(c.parsed.y)}` } } } }
+  return <Bar data={data} options={options} aria-label={`${series.map((s) => s.label).join(', ')} by month`} role="img" />
+}
+
+/** A categorical color per series index, from the theme tokens. */
+export const seriesColor = (t: Tokens, i: number) => [t.accent, t.accent2, t.ok, t.warn, t.text3, t.bad][i % 6]
+
+/** Several percentage series by week (one line per group) against a dashed target. Values above CAP are
+ * drawn at the top edge so one bad week does not flatten the rest; the tooltip gives the real value. */
+const CAP = 150
+export function TrendLinesChart({ labels, series, target }: { labels: string[]; series: { label: string; color: string; data: (number | null)[] }[]; target: number }) {
+  const t = useTokens()
+  const o = base(t) as unknown as ChartOptions<'line'>
+  const data = { labels, datasets: [
+    ...series.map((s) => ({ label: s.label, data: s.data.map((v) => (v == null ? null : Math.min(CAP, v * 100))), borderColor: s.color, backgroundColor: s.color, borderWidth: 2, pointRadius: 2, pointHoverRadius: 4, spanGaps: false, tension: 0 })),
+    { label: 'Target', data: labels.map(() => target * 100), borderColor: t.text, borderDash: [5, 4], borderWidth: 1.5, pointRadius: 0, pointHitRadius: 0 },
+  ] }
+  const options: ChartOptions<'line'> = { ...o, interaction: { mode: 'index', intersect: false },
+    scales: { x: { ...o.scales!.x, grid: { display: false } }, y: { ...o.scales!.y, beginAtZero: true, suggestedMax: 100, max: CAP, ticks: { color: t.text2, callback: (v) => `${v}%` } } },
+    plugins: { ...o.plugins, tooltip: { ...o.plugins!.tooltip, callbacks: { label: (c) => {
+      const raw = c.datasetIndex < series.length ? series[c.datasetIndex].data[c.dataIndex] : target
+      return `${c.dataset.label}: ${raw == null ? '–' : `${(raw * 100).toFixed(1)}%`}`
+    } } } } }
+  return <Line data={data} options={options} aria-label={`Labor % by week for ${series.map((s) => s.label).join(', ')}`} role="img" />
+}

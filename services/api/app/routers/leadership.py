@@ -9,6 +9,7 @@ recalculates instantly. Writes (account configuration, job mapping, file imports
 """
 from __future__ import annotations
 
+import json
 import logging
 import re
 from datetime import date, timedelta
@@ -17,7 +18,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from pydantic import BaseModel, Field
 
-from .. import accounts, companycam, imports, marts
+from .. import allocations, accounts, companycam, imports, marts
 from ..common import allowed_accounts, current_user, jsonable, require_account, require_admin, source_block
 from ..db import connection
 
@@ -42,12 +43,14 @@ SELECT w.week_start, w.week_end, w.company, w.job_number, w.site_name, w.parent_
        j.latitude, j.longitude, j.city, j.state_province, j.parent_job_number,
        coalesce(jw.dt_hours, 0) AS dt_hours,
        rr.revenue_run_rate, rr.variable_run_rate, vm.revenue_variable AS revenue_month_variable,
-       a.revenue_allocation AS _allocation, w.revenue_month_budget_hours AS _rm_budget_hours, w.revenue_month_hours AS _rm_hours
+       a.revenue_allocation AS _allocation, w.revenue_month_budget_hours AS _rm_budget_hours, w.revenue_month_hours AS _rm_hours,
+       mw.management_wages AS _mgmt_month
 FROM mart.leadership_week w
 LEFT JOIN ops.account_job aj ON aj.company = w.company AND aj.job_number = w.job_number
 LEFT JOIN ops.account a ON a.slug = aj.account_slug
 LEFT JOIN core.dim_job j ON j.job_key = w.job_key
 LEFT JOIN mart.job_week jw ON jw.job_key = w.job_key AND jw.week_start = w.week_start
+LEFT JOIN mart.v_job_cost_month_effective mw ON mw.job_number = w.job_number AND mw.month = w.revenue_month
 LEFT JOIN core.fact_job_cost_month vm ON vm.source = 'export_import' AND vm.company = w.company AND vm.job_number = w.job_number
                                      AND vm.month = w.revenue_month
 -- The 3-month run rate (the FedEx report's invoice basis): the revenue month and the two before it,
@@ -250,7 +253,7 @@ def leadership_rows(
             sql += " AND aj.account_slug = %(account)s"
             params["account"] = account
         cursor.execute(sql + " ORDER BY w.week_start, aj.account_slug NULLS LAST, w.job_number", params)
-        rows = allocate_parent_billing([jsonable(dict(r)) for r in cursor.fetchall()])
+        rows = allocations.apply(cursor, allocate_parent_billing([jsonable(dict(r)) for r in cursor.fetchall()]))
     week_list = [(first + timedelta(weeks=i)).isoformat() for i in range(weeks)]
     return {"source": source_block(), "week": anchor.isoformat(), "weeks": week_list, "account": account, "rows": rows}
 
@@ -340,6 +343,167 @@ def leadership_monthly(account: str = Query(..., description="An account slug"),
     return {"account": account, "months": month_list, "jobs": list(jobs.values()), "income_statement": statement}
 
 
+COMPANY_SQL = """
+WITH months AS (SELECT g.m::date AS month FROM generate_series(%(first)s::date, %(last)s::date, interval '1 month') AS g(m)),
+jc AS (
+  SELECT jc.month, coalesce(j.company, jc.company) AS company, jc.job_number,
+         CASE WHEN a.featured THEN aj.account_slug ELSE 'other' END AS account,
+         jc.revenue, jc.direct_labor, coalesce(jc.management_wages, 0) AS management_wages, jc.subcontractors,
+         jc.payroll_taxes_insurance, jc.gross_profit
+  FROM mart.v_job_cost_month_effective jc
+  JOIN months USING (month)
+  LEFT JOIN core.dim_job j ON j.job_number = jc.job_number AND j.company = jc.company AND j.valid_to IS NULL
+  LEFT JOIN ops.account_job aj ON aj.company = coalesce(j.company, jc.company) AND aj.job_number = jc.job_number
+  LEFT JOIN ops.account a ON a.slug = aj.account_slug
+),
+tk AS (
+  SELECT date_trunc('month', week_start + 3)::date AS month, sum(labor) AS labor
+  FROM mart.leadership_week WHERE week_start + 3 BETWEEN %(first)s::date AND (%(last)s::date + interval '1 month - 1 day')
+  GROUP BY 1
+)
+SELECT months.month, jc.company, jc.account, sum(jc.revenue) AS revenue, sum(jc.direct_labor) AS direct_labor,
+       sum(jc.management_wages) AS management_wages, sum(jc.subcontractors) AS subcontractors,
+       sum(jc.payroll_taxes_insurance) AS payroll_taxes, sum(jc.gross_profit) AS gross_profit, max(tk.labor) AS timekeeping_labor
+FROM months LEFT JOIN jc USING (month) LEFT JOIN tk USING (month)
+GROUP BY months.month, jc.company, jc.account
+ORDER BY months.month
+"""
+MONEY = ("revenue", "direct_labor", "management_wages", "subcontractors", "payroll_taxes", "gross_profit")
+
+
+@router.get("/company")
+def leadership_company(request: Request, months: int = Query(14, ge=1, le=36)) -> dict[str, Any]:
+    """Company health by month: job cost totals by business unit and by account, whether each month is
+    closed (job cost labor at least 70% of timekeeping labor), the company income statement, and the
+    month's allocations. Every account, so a user limited to accounts is refused."""
+    if allowed_accounts(request) is not None:
+        raise HTTPException(status_code=403, detail="The company view covers every account; your access is limited to some")
+    with connection() as conn, conn.cursor() as cursor:
+        cursor.execute("SELECT max(month) AS last FROM mart.v_job_cost_month_effective WHERE revenue > 0")
+        last = cursor.fetchone()["last"]
+        if last is None:
+            return {"months": [], "accounts": []}
+        first = date(last.year + (last.month - months) // 12, (last.month - months) % 12 + 1, 1)
+        cursor.execute(COMPANY_SQL, {"first": first, "last": last})
+        by_month: dict[date, dict[str, Any]] = {}
+        for r in cursor.fetchall():
+            m = by_month.setdefault(r["month"], {"month": r["month"].isoformat(), **{k: 0.0 for k in MONEY},
+                                                 "timekeeping_labor": float(r["timekeeping_labor"] or 0), "by_company": {}, "by_account": {}})
+            if r["company"] is None and r["account"] is None and not r["revenue"]:
+                continue
+            values = {k: float(r[k] or 0) for k in MONEY}
+            for k, v in values.items():
+                m[k] += v
+            for key, group in ((r["company"] or "Unassigned", "by_company"), (r["account"] or "other", "by_account")):
+                slot = m[group].setdefault(key, {k: 0.0 for k in MONEY})
+                for k, v in values.items():
+                    slot[k] += v
+        month_keys = sorted(by_month)
+        figures = {row["month"]: row for row in allocations.overview(cursor, month_keys)}
+        lines = allocations.statement(cursor)
+        cfg = allocations.settings_of(cursor)
+        out = []
+        for key in month_keys:
+            m = by_month[key]
+            fig = figures[key.isoformat()]
+            m["closed"] = bool(m["revenue"] > 0 and (m["timekeeping_labor"] == 0 or m["direct_labor"] >= 0.7 * m["timekeeping_labor"]))
+            m["statement"] = lines.get(key, {})
+            m["allocations"] = {
+                "management_wages": m["management_wages"] if cfg["management_wages"]["enabled"] else 0.0,
+                "burden": (m["direct_labor"] - m["management_wages"]) * fig["burden_rate"] if cfg["burden"]["enabled"] and fig["burden_rate"] else 0.0,
+                "overhead": (fig["overhead_pool"] or 0.0) if cfg["overhead"]["enabled"] else 0.0,
+                "burden_rate": fig["burden_rate"], "burden_source": fig["burden_source"],
+                "overhead_source": fig["overhead_source"],
+            }
+            out.append(m)
+        cursor.execute("SELECT slug, name, featured, target_labor_pct FROM ops.account ORDER BY sort, name")
+        accounts_out = [jsonable(dict(r)) for r in cursor.fetchall()]
+    flag_spikes(out)
+    return {"months": out, "accounts": accounts_out}
+
+
+SPIKE = 2.5
+SPIKE_POINTS = 0.10
+
+
+def flag_spikes(months: list[dict[str, Any]]) -> None:
+    """Mark a month whose subcontractor or direct labor share of revenue is more than SPIKE times the
+    median share of the other closed months and at least SPIKE_POINTS above it (flags: sub_spike,
+    labor_spike), so a bad load reads as suspect rather than as a result. Shares, not dollars, so a
+    growing business is not flagged."""
+    def share(m: dict[str, Any], field: str) -> float | None:
+        return m[field] / m["revenue"] if m["revenue"] > 0 else None
+    for m in months:
+        m["flags"] = []
+        if not m["revenue"] or not m["closed"]:  # an open month is already marked not closed
+            continue
+        for field, flag in (("subcontractors", "sub_spike"), ("direct_labor", "labor_spike")):
+            others = sorted(v for x in months if x is not m and x["closed"] for v in [share(x, field)] if v is not None)
+            mine = share(m, field)
+            if len(others) >= 3 and mine is not None:
+                median = others[len(others) // 2]
+                if mine > SPIKE * median and mine - median >= SPIKE_POINTS:
+                    m["flags"].append(flag)
+
+
+class AllocationSettingsIn(BaseModel):
+    management_wages: dict[str, Any] | None = None
+    burden: dict[str, Any] | None = None
+    overhead: dict[str, Any] | None = None
+
+
+class AllocationMonthIn(BaseModel):
+    burden_rate: float | None = Field(None, ge=0, lt=1)
+    overhead_pool: float | None = Field(None, ge=0)
+
+
+def _last_months(cursor: Any, count: int) -> list[date]:
+    cursor.execute("SELECT greatest((SELECT max(month) FROM mart.v_job_cost_month_effective WHERE revenue > 0), "
+                   "(SELECT max(month) FROM core.fact_company_income_statement_month)) AS last")
+    last = cursor.fetchone()["last"] or date.today().replace(day=1)
+    return [date(last.year + (last.month - 1 - i) // 12, (last.month - 1 - i) % 12 + 1, 1) for i in reversed(range(count))]
+
+
+@router.get("/allocations", dependencies=[Depends(require_admin)])
+def allocation_status() -> dict[str, Any]:
+    """Allocation settings and, for the last 12 months, the burden rate and overhead pool in use (with
+    their source), manual overrides, whether the company statement is loaded, and management wages."""
+    with connection() as conn, conn.cursor() as cursor:
+        return {"settings": allocations.settings_of(cursor), "months": jsonable(allocations.overview(cursor, _last_months(cursor, 12)))}
+
+
+@router.put("/allocations", dependencies=[Depends(require_admin)])
+def update_allocation_settings(body: AllocationSettingsIn, request: Request) -> dict[str, Any]:
+    with connection() as conn, conn.cursor() as cursor:
+        current = allocations.settings_of(cursor)
+        try:
+            merged = allocations.validate_settings({k: {**current[k], **(getattr(body, k) or {})} for k in current})
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        cursor.execute(
+            """
+            INSERT INTO ops.app_setting (key, value, description, updated_by) VALUES ('allocations', %s, 'Corporate allocations', %s)
+            ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now(), updated_by = EXCLUDED.updated_by
+            """,
+            (json.dumps(merged), _actor(request)),
+        )
+        conn.commit()
+        return {"settings": merged}
+
+
+@router.put("/allocations/months/{month}", dependencies=[Depends(require_admin)])
+def update_allocation_month(month: str, body: AllocationMonthIn, request: Request) -> dict[str, Any]:
+    """Manual burden rate and / or overhead pool for a month (both null clears the month)."""
+    try:
+        first = date.fromisoformat(f"{month[:7]}-01")
+    except ValueError:
+        raise HTTPException(status_code=422, detail="month must be YYYY-MM") from None
+    with connection() as conn, conn.cursor() as cursor:
+        allocations.set_month(cursor, first, body.burden_rate, body.overhead_pool, _actor(request))
+        conn.commit()
+        return {"months": jsonable(allocations.overview(cursor, _last_months(cursor, 12)))}
+
+
 @router.get("/sites/{company}/{job_number}")
 def leadership_site(company: str, job_number: str, weeks: int = Query(13, ge=1, le=MAX_WEEKS),
                     week: str | None = Query(None), invoice_months: int = Query(6, ge=1, le=24), request: Request = None) -> dict[str, Any]:  # type: ignore[assignment]
@@ -371,7 +535,7 @@ def leadership_site(company: str, job_number: str, weeks: int = Query(13, ge=1, 
         else:
             cursor.execute(ROW_SQL + " AND w.job_key = %(job_key)s ORDER BY w.week_start",
                            {"first": first, "last": anchor, "job_key": site["job_key"]})
-        rows = [r for r in allocate_parent_billing([jsonable(dict(r)) for r in cursor.fetchall()])
+        rows = [r for r in allocations.apply(cursor, allocate_parent_billing([jsonable(dict(r)) for r in cursor.fetchall()]))
                 if r["company"] == company and r["job_number"] == job_number]
         invoices = subcontractor_invoices(cursor, site["job_key"], invoice_months)
     photos: dict[str, Any] = {"configured": companycam.configured(), "project_id": site["companycam_project_id"], "items": None, "error": None}

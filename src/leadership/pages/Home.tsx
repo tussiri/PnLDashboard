@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import type { LeadershipAccount, LeadershipRow } from '../../services/apiTypes'
 import { dataFlags, rowsOfWeek, segmentOrder, useRows } from '../data'
-import { hours, hours1, pct } from '../format'
+import { hours, hours1, money, moneyK, pct } from '../format'
 import { accountSummary, statusOf } from '../metrics'
 import { Overview } from '../Overview'
 import { addDays, weekLabel } from '../routes'
@@ -10,29 +10,49 @@ import { useLeadership } from '../state'
 import { Badge, Empty, LoadError, Skeleton, toneOf, VocabContext } from '../ui'
 import { vocabOf, weekChange, wordsFor } from '../vocab'
 
-function StripCard({ account, rows, prior, selected, onSelect, optionsFor }: {
-  account: LeadershipAccount; rows: LeadershipRow[]; prior: LeadershipRow[]; selected: boolean; onSelect: () => void; optionsFor: ReturnType<typeof useLeadership>['optionsFor']
+/** The chosen account at a glance: labor % against target, then the week's money and hours. */
+function AccountSnapshot({ account, rows, prior, optionsFor, weekStart }: {
+  account: LeadershipAccount; rows: LeadershipRow[]; prior: LeadershipRow[]; optionsFor: ReturnType<typeof useLeadership>['optionsFor']; weekStart: string | undefined
 }) {
   const options = optionsFor(account)
   const s = rows.length ? accountSummary(rows, options, segmentOrder(account)) : null
   const p = prior.length ? accountSummary(prior, options, segmentOrder(account)) : null
-  const measure = s?.account.measurePct ?? null
-  const status = statusOf(measure, options.target, options.watchBand)
-  const change = measure != null && p?.account.measurePct != null ? measure - p.account.measurePct : null
-  if (!s) return <div className="acct acct--none" aria-label={`${account.name}: no sites mapped`}><div className="acct__hdr"><span className="acct__name">{account.name}</span><Badge status="none" label="No sites" /></div></div>
   const vocab = vocabOf(account)
-  return <VocabContext.Provider value={vocab}><button type="button" className="acct" aria-pressed={selected} onClick={onSelect}>
-    <div className="acct__hdr"><span className="acct__name">{account.name}</span><Badge status={status} /></div>
-    <div className="acct__grid">
-      <div><div className="kl">Labor %</div><b className={toneOf(status)}>{pct(measure)}</b><small>{weekChange(change, vocab)}</small></div>
-      <div><div className="kl">{wordsFor(vocab).hoursOverCol}</div><b>{hours(s.headerOverHours)}</b><small>{hours1(s.headerOverHours / 7)}/day, {s.billed.over} sites over</small></div>
-      <div><div className="kl">OT %</div><b className={s.account.otPct > 0.15 ? 'bad' : s.account.otPct > 0.1 ? 'warn' : ''}>{pct(s.account.otPct)}</b><small>{Math.round(s.account.otHours).toLocaleString('en-US')} hrs</small></div>
+  const w = wordsFor(vocab)
+  if (!s) return <div className="snap snap--none"><div className="snap__hdr"><h2 className="snap__name">{account.name}</h2><Badge status="none" label="No sites" /></div></div>
+  const a = s.account
+  const lp = a.measurePct
+  const status = statusOf(lp, options.target, options.watchBand)
+  const change = lp != null && p?.account.measurePct != null ? lp - p.account.measurePct : null
+  const scale = Math.max(options.target * 1.5, lp ?? 0, 0.01)
+  const over = s.headerOverHours
+  return <VocabContext.Provider value={vocab}><section className="snap" aria-label={`${account.name} this week`}>
+    <div className="snap__top">
+      <div className="snap__id">
+        <div className="snap__hdr"><h2 className="snap__name">{account.name}</h2><Badge status={status} /></div>
+        <div className="snap__meta">{weekStart ? weekLabel(weekStart) : ''}; {s.billed.count} sites, {s.billed.over} over target</div>
+      </div>
+      <div className="snap__lp">
+        <div className="snap__lpv"><span className="kl">Labor %</span><b className={toneOf(status)}>{pct(lp)}</b><span className="ks">{weekChange(change, vocab)}</span></div>
+        <div className="gauge" role="img" aria-label={`Labor % ${pct(lp)} against a ${pct(options.target)} target`}>
+          <span className={`gauge__fill ${toneOf(status)}`} style={{ width: `${Math.min(100, ((lp ?? 0) / scale) * 100)}%` }} />
+          <span className="gauge__mark" style={{ left: `${(options.target / scale) * 100}%` }}><small>{pct(options.target)}</small></span>
+        </div>
+      </div>
     </div>
-  </button></VocabContext.Provider>
+    <div className="snap__grid">
+      <div><span className="kl">{w.invoice}</span><b>{money(a.invoice)}</b></div>
+      <div><span className="kl">{w.labor}</span><b>{money(a.cost)}</b></div>
+      <div><span className="kl">Margin</span><b className={a.margin < 0 ? 'bad' : ''}>{money(a.margin)}</b><span className="ks">{pct(a.marginPct)}{a.allocation > 0 ? `, after ${moneyK(a.allocation)} alloc.` : ''}</span></div>
+      <div><span className="kl">{w.hoursOver}</span><b className={over > 0 ? 'bad' : 'ok'}>{hours1(over / 7)}<span className="of">/day</span></b><span className="ks">{hours(over)}h this week</span></div>
+      <div><span className="kl">OT %</span><b className={a.otPct > 0.15 ? 'bad' : a.otPct > 0.1 ? 'warn' : ''}>{pct(a.otPct)}</b><span className="ks">{hours(a.otHours)} hrs</span></div>
+      <div><span className="kl">{w.hours}</span><b>{hours(a.hours)}</b></div>
+    </div>
+  </section></VocabContext.Provider>
 }
 
 export function Home() {
-  const { featured, selectedAccount, weekStart, navigate, optionsFor, config } = useLeadership()
+  const { selectedAccount, weekStart, optionsFor, config } = useLeadership()
   const rowsQuery = useRows('featured', 2)
   const all = rowsQuery.data?.rows
   const current = useMemo(() => rowsOfWeek(all, weekStart), [all, weekStart])
@@ -45,16 +65,13 @@ export function Home() {
   if (config.error) return <><PageHeader title="Leadership P&L" /><LoadError error={config.error} onRetry={config.refetch} /></>
   return <>
     <PageHeader title={selectedAccount ? `${selectedAccount.name} Labor P&L` : 'Leadership P&L'} subtitle={subtitle} />
-    <h2 className="sr-only">Featured accounts</h2>
     {rowsQuery.error ? <LoadError error={rowsQuery.error} onRetry={rowsQuery.refetch} />
-      : !all ? <div className="strip"><Skeleton height={96} /></div>
-        : <div className="strip">{featured.filter((a) => a.slug === selectedAccount?.slug).map((a) => <StripCard key={a.slug} account={a} optionsFor={optionsFor} selected={a.slug === selectedAccount?.slug}
-          rows={current.filter((r) => r.account_slug === a.slug)} prior={prior.filter((r) => r.account_slug === a.slug)}
-          onSelect={() => navigate({ account: a.slug }, { replace: true })} />)}</div>}
-    <h2 className="sr-only">{selectedAccount?.name} overview</h2>
+      : !all ? <Skeleton height={150} />
+        : selectedAccount && <AccountSnapshot account={selectedAccount} optionsFor={optionsFor} weekStart={weekStart}
+          rows={current.filter((r) => r.account_slug === selectedAccount.slug)} prior={prior.filter((r) => r.account_slug === selectedAccount.slug)} />}
     {!all ? <Skeleton height={320} />
       : !selectedAccount || !summary ? <Empty>No data for this week.</Empty>
-        : <VocabContext.Provider value={vocabOf(selectedAccount)}><Overview account={selectedAccount} rows={selectedRows} summary={summary} options={options} flags={flags} /></VocabContext.Provider>}
+        : <VocabContext.Provider value={vocabOf(selectedAccount)}><Overview account={selectedAccount} rows={selectedRows} summary={summary} options={options} flags={flags} headline={false} /></VocabContext.Provider>}
     {selectedAccount && summary && <p className="foot"><a href={`#/account/${selectedAccount.slug}${weekStart ? `?week=${addDays(weekStart, 6)}` : ''}`}>All {selectedAccount.name} sites</a></p>}
   </>
 }

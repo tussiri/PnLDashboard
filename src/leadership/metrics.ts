@@ -51,6 +51,10 @@ export interface WeekRow {
   revenue_run_rate?: number | null
   /** Average monthly variable (OS, pallet) revenue over the same months. */
   variable_run_rate?: number | null
+  /** Corporate allocations for the week: management wages, payroll burden, overhead. */
+  alloc_management?: number
+  alloc_burden?: number
+  alloc_overhead?: number
   /** Rolled-in pallet job(s): their labor, hours and OT hours (already inside labor / hours / ot_hours). */
   pallet_labor?: number
   pallet_hours?: number
@@ -110,6 +114,10 @@ export interface Derived {
   /** The target this row is judged against. */
   target: number
   status: LaborStatus
+  /** Corporate allocations for the week (management wages + payroll burden + overhead). */
+  allocation: number
+  /** Invoice − labor − the full vendor cost − allocations (vendor at 100%, not the labor % factor). */
+  margin: number
 }
 
 /** A row with its derived metrics; keeps every field of the row type it was computed from. */
@@ -137,6 +145,12 @@ export interface Rollup {
   priorRevenue: number
   priorCost: number
   priorLaborPct: number | null
+  allocation: number
+  management: number
+  burden: number
+  overhead: number
+  margin: number
+  marginPct: number | null
 }
 
 const PROJECTED_VENDOR_BASES = new Set(['prior_month_prorated', 'trailing_3mo_projection', 'relay_contract'])
@@ -199,8 +213,12 @@ export function siteMetrics<R extends WeekRow>(row: R, opts: MetricOptions): Sit
     priorLaborPct: ratio(row.prior_labor + row.prior_sub, row.prior_revenue),
     target,
     status: statusOf(measurePct, target, opts.watchBand),
+    allocation: allocationOf(row),
+    margin: invoice - row.labor - (row.sub_week ?? 0) - allocationOf(row),
   }
 }
+
+export const allocationOf = (row: WeekRow) => (row.alloc_management ?? 0) + (row.alloc_burden ?? 0) + (row.alloc_overhead ?? 0)
 
 export function rollup(rows: SiteMetrics[], target: number, costBasis: CostBasis = 'labor'): Rollup {
   const s = rows.reduce(
@@ -209,10 +227,13 @@ export function rollup(rows: SiteMetrics[], target: number, costBasis: CostBasis
       a.otDollars += r.ot_dollars; a.budgetHours += r.budget_hours; a.budgetDollars += r.budget_dollars
       a.overHours += r.overHours; a.overDollars += r.overDollars
       a.priorRevenue += r.prior_revenue; a.priorCost += r.prior_labor + r.prior_sub
+      a.allocation += r.allocation; a.margin += r.margin
+      a.management += r.alloc_management ?? 0; a.burden += r.alloc_burden ?? 0; a.overhead += r.alloc_overhead ?? 0
       if (r.measurePct != null && r.measurePct > (r.target ?? target)) a.over += 1
       return a
     },
-    { invoice: 0, labor: 0, vendor: 0, cost: 0, hours: 0, otHours: 0, otDollars: 0, budgetHours: 0, budgetDollars: 0, overHours: 0, overDollars: 0, over: 0, priorRevenue: 0, priorCost: 0 },
+    { invoice: 0, labor: 0, vendor: 0, cost: 0, hours: 0, otHours: 0, otDollars: 0, budgetHours: 0, budgetDollars: 0, overHours: 0, overDollars: 0, over: 0, priorRevenue: 0, priorCost: 0,
+      allocation: 0, management: 0, burden: 0, overhead: 0, margin: 0 },
   )
   return {
     ...s,
@@ -222,6 +243,7 @@ export function rollup(rows: SiteMetrics[], target: number, costBasis: CostBasis
     measurePct: ratio(costBasis === 'labor_plus_vendor' ? s.cost : s.labor, s.invoice),
     otPct: s.hours > 0 ? s.otHours / s.hours : 0,
     priorLaborPct: ratio(s.priorCost, s.priorRevenue),
+    marginPct: ratio(s.margin, s.invoice),
   }
 }
 

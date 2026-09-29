@@ -29,6 +29,8 @@ JOB_COST_GL_MAP: dict[str, list[Any]] = {
     "revenue": [[30000, 39999]],
     "revenue_variable": [34000],
     "direct_labor": [[40000, 40999]],
+    # Salaried management and supervision: a subset of direct labor, kept for the allocations view.
+    "management_wages": [[40200, 40399]],
     "payroll_taxes_insurance": [[41000, 42999]],
     "other_direct_costs": [[43000, 43999], [48000, 49999]],
     "subcontractors": [[44000, 44999]],
@@ -175,7 +177,8 @@ def job_cost_gl(rows: list[dict[str, Any]], aliases: dict[str, str], numbers: di
             "company": company, "job_number": job, "job_name": clean_text(r.get("JobDescription", "Jobdescription")), "period": month_start,
             **{k: Decimal(0) for k in ("revenue", "direct_labor", "payroll_taxes_insurance", "subcontractors", "materials",
                                         "equipment_supplies", "other_direct_costs")},
-            "revenue_variable": None, "actual_hours": None, "overtime_hours": None, "total_direct_costs": None, "gross_profit": None})
+            "revenue_variable": None, "management_wages": None, "actual_hours": None, "overtime_hours": None,
+            "total_direct_costs": None, "gross_profit": None})
         placed = False
         for column in ("revenue", "direct_labor", "payroll_taxes_insurance", "subcontractors", "materials", "equipment_supplies", "other_direct_costs"):
             if _in(account, gl_map.get(column, [])):
@@ -187,6 +190,8 @@ def job_cost_gl(rows: list[dict[str, Any]], aliases: dict[str, str], numbers: di
             continue
         if _in(account, gl_map.get("revenue_variable", [])):
             rec["revenue_variable"] = (rec["revenue_variable"] or Decimal(0)) + amount
+        if _in(account, gl_map.get("management_wages", [])) and _in(account, gl_map.get("direct_labor", [])):
+            rec["management_wages"] = (rec["management_wages"] or Decimal(0)) + amount
         if _in(account, gl_map.get("direct_labor", [])):
             for field, name in (("actual_hours", "ActualHours"), ("overtime_hours", "ActualOvertimeHours")):
                 value = parse_number(r.get(name))

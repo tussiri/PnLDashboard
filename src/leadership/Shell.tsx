@@ -3,7 +3,9 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { formatRoute, weekEndOf, weekLabel, type View } from './routes'
 import { useLeadership, type Theme } from './state'
 
-const NAV: { view: View; label: string; admin?: boolean }[] = [
+/** admin: administrators only; company: users who see every account (not those limited to some). */
+const NAV: { view: View; label: string; admin?: boolean; company?: boolean }[] = [
+  { view: 'company', label: 'Company', company: true },
   { view: 'home', label: 'Home' },
   { view: 'account', label: 'Account' },
   { view: 'analytics', label: 'Analytics', admin: true },
@@ -48,7 +50,7 @@ export function Shell({ children }: { children: ReactNode }) {
       <div className="topbar__in">
         <span className="brand">Crane IFS</span>
         <nav className="nav" aria-label="Main">
-          {NAV.filter((n) => !n.admin || user.role === 'admin').map((n) => <a key={n.view} href={hrefFor(n.view)} aria-current={route.view === n.view ? 'page' : undefined}>{n.label}</a>)}
+          {NAV.filter((n) => (!n.admin || user.role === 'admin') && (!n.company || user.role === 'admin' || !user.accounts?.length)).map((n) => <a key={n.view} href={hrefFor(n.view)} aria-current={route.view === n.view ? 'page' : undefined}>{n.label}</a>)}
         </nav>
         <div className="topbar__end">
           <span className="user">{user.username}</span>

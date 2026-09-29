@@ -1351,12 +1351,49 @@ export interface LeadershipRow {
   /** Average monthly variable (OS, pallet) revenue over the same months, when the Job Cost Analysis carries it. */
   variable_run_rate?: number | null
   revenue_month_variable?: number | null
+  /** Corporate allocations for the week (app/allocations.py): management wages, payroll burden, overhead. */
+  alloc_management?: number
+  alloc_burden?: number
+  alloc_overhead?: number
   /** Set in the browser (data.ts prepareRows): pallet jobs rolled into this site and their share. */
   kids?: string[]
   pallet_labor?: number
   pallet_hours?: number
   pallet_ot_hours?: number
 }
+
+/** GET /leadership/company: company health by month. */
+export interface CompanyMoney { revenue: number; direct_labor: number; management_wages: number; subcontractors: number; payroll_taxes: number; gross_profit: number }
+export interface CompanyMonth extends CompanyMoney {
+  month: string
+  closed: boolean
+  timekeeping_labor: number
+  by_company: Record<string, CompanyMoney>
+  by_account: Record<string, CompanyMoney>
+  statement: Record<string, number>
+  allocations: { management_wages: number; burden: number; overhead: number; burden_rate: number | null; burden_source: string | null; overhead_source: string | null }
+  flags: ('sub_spike' | 'labor_spike')[]
+}
+export interface CompanyResponse { months: CompanyMonth[]; accounts: { slug: string; name: string; featured: boolean; target_labor_pct: number }[] }
+
+/** Admin > Allocations. */
+export interface AllocationSettings {
+  management_wages: { enabled: boolean }
+  burden: { enabled: boolean; lines: string[] }
+  overhead: { enabled: boolean; lines: string[]; basis: 'revenue' | 'labor' | 'hours' }
+}
+export interface AllocationMonth {
+  month: string
+  burden_rate: number | null
+  burden_source: string | null
+  overhead_pool: number | null
+  overhead_source: string | null
+  management_wages: number | null
+  manual_burden_rate: number | null
+  manual_overhead_pool: number | null
+  statement_loaded: boolean
+}
+export interface AllocationStatus { settings: AllocationSettings; months: AllocationMonth[] }
 
 /** One job-month for GET /leadership/monthly. */
 export interface LeadershipMonth {

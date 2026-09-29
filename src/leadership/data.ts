@@ -24,7 +24,7 @@ export const isSubcontracted = (r: LeadershipRow) => r.delivery_model === 'subco
 export const PALLET_GROUPS = ['Pallet sites', 'Janitorial only'] as const
 
 const ADDITIVE = ['labor', 'hours', 'ot_hours', 'ot_dollars', 'budget_hours', 'budget_dollars', 'revenue_month_amount', 'prior_revenue',
-  'prior_labor', 'prior_sub', 'sub_week', 'revenue_allocated'] as const
+  'prior_labor', 'prior_sub', 'sub_week', 'revenue_allocated', 'alloc_management', 'alloc_burden', 'alloc_overhead'] as const
 
 /**
  * The weekly reports' site shape, per account:
