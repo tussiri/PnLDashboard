@@ -53,12 +53,16 @@ services:
           name: crane-ifs-db
           property: connectionString
       - fromGroup: crane-ifs-settings
-      # Sign-in: only the users in APP_USERS_JSON (docs/auth-rbac.md). The API refuses to start
-      # without them and a session secret.
+      # Sign-in (docs/auth-rbac.md). The API refuses to start without a session secret.
       - key: APP_AUTH_MODE
         value: required
       - key: APP_SESSION_SECRET
         generateValue: true
+      # The first administrator is created on the sign-in page with this code (Render > crane-ifs-api >
+      # Environment); after that, users are managed in Admin > Users.
+      - key: APP_SETUP_TOKEN
+        generateValue: true
+      # Optional environment users (a way back in); leave empty.
       - key: APP_USERS_JSON
         sync: false
       - key: INGESTION_ADMIN_TOKEN

@@ -8,7 +8,7 @@ from fastapi import Depends, FastAPI, HTTPException
 from .common import platform_access, require_role
 from .config import settings
 from .db import database_ready
-from .routers import auth, executive, forecast, labor, leadership, platform, reporting
+from .routers import auth, executive, forecast, labor, leadership, platform, reporting, users
 
 logging.basicConfig(level=settings.log_level, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 
@@ -50,6 +50,7 @@ API_PREFIX = "/api/v1"
 #   leadership             any signed-in role (writes: admin)
 analyst_or_admin = require_role("analyst", "admin")
 app.include_router(auth.router, prefix=API_PREFIX, tags=["auth"])
+app.include_router(users.router, prefix=API_PREFIX, tags=["users"])
 app.include_router(platform.router, prefix=API_PREFIX, tags=["platform"], dependencies=[Depends(platform_access)])
 app.include_router(reporting.router, prefix=API_PREFIX, tags=["reporting"], dependencies=[Depends(analyst_or_admin)])
 app.include_router(labor.router, prefix=API_PREFIX, tags=["labor"], dependencies=[Depends(analyst_or_admin)])

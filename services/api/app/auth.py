@@ -5,15 +5,18 @@ Roles
     analyst    every view except Administration
     admin      everything
 
-Users come from APP_USERS_JSON: a JSON list of {"username", "role", "password_hash"} where the
-hash is ``pbkdf2_sha256$<iterations>$<salt_b64>$<hash_b64>`` (generate one with
-``python -m app.auth hash '<password>'``). APP_SESSION_SECRET is the HMAC key for session cookies.
+Users are created in Admin > Users and stored in the database (app/users.py). APP_USERS_JSON adds
+environment-defined users, a JSON list of {"username", "role", "password_hash"} where the hash is
+``pbkdf2_sha256$<iterations>$<salt_b64>$<hash_b64>`` (``python -m app.auth hash '<password>'``);
+they win on a name clash and are a way back in if every database administrator is locked out.
+APP_SESSION_SECRET is the HMAC key for session cookies. APP_SETUP_TOKEN (at least 24 characters)
+opens the one-time page that creates the first administrator while no user exists.
 
 APP_AUTH_MODE
     dev        adds three fixed development users (executive / analyst / admin, password
                ``dev-<username>``) and falls back to a fixed development session secret.
-    required   refuses to start unless APP_USERS_JSON and APP_SESSION_SECRET are set.
-    unset      ``required`` when either variable is present, otherwise ``dev`` (logged).
+    required   refuses to start without an APP_SESSION_SECRET of at least 32 characters.
+    unset      ``required`` when a secret or users are configured, otherwise ``dev`` (logged).
 
 A session is ``base64url(username|role|expiry) . hex(HMAC-SHA256(secret, payload))`` valid for
 twelve hours. Comparisons use hmac.compare_digest. Hashes are never logged or returned.
@@ -22,6 +25,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import functools
 import hashlib
 import hmac
 import json
@@ -44,6 +48,7 @@ SESSION_TTL_SECONDS = 12 * 60 * 60
 HASH_SCHEME = "pbkdf2_sha256"
 DEFAULT_ITERATIONS = 600_000
 MODES: tuple[str, ...] = ("dev", "required")
+MIN_SETUP_TOKEN_LENGTH = 24
 DEV_USERNAMES: tuple[str, ...] = ROLES
 DEV_PASSWORD_PREFIX = "dev-"
 _DEV_SESSION_SECRET = "crane-ifs-development-session-secret-not-for-production"
@@ -138,9 +143,14 @@ def parse_users_json(raw: str) -> dict[str, UserRecord]:
     return users
 
 
+@functools.lru_cache(maxsize=None)
+def _dev_hash(name: str) -> str:
+    return hash_password(f"{DEV_PASSWORD_PREFIX}{name}", iterations=10_000, salt=b"crane-ifs-dev-salt")
+
+
 def dev_users() -> dict[str, UserRecord]:
     """The three fixed development accounts (password ``dev-<username>``)."""
-    return {name: UserRecord(name, name, hash_password(f"{DEV_PASSWORD_PREFIX}{name}", iterations=10_000, salt=b"crane-ifs-dev-salt")) for name in DEV_USERNAMES}
+    return {name: UserRecord(name, name, _dev_hash(name)) for name in DEV_USERNAMES}
 
 
 # ── session cookie ───────────────────────────────────────────────────────────
@@ -170,6 +180,12 @@ def sign_session(user: User, secret: str, now: float | None = None, ttl_seconds:
 
 def verify_session(token: str | None, secret: str, now: float | None = None) -> User | None:
     """The user behind a cookie value, or None when it is missing, tampered with, malformed or expired."""
+    claims = session_claims(token, secret, now)
+    return claims[0] if claims else None
+
+
+def session_claims(token: str | None, secret: str, now: float | None = None) -> tuple[User, float] | None:
+    """(user, issued-at epoch seconds) for a valid cookie value, else None."""
     if not token or not secret or "." not in token:
         return None
     encoded, _, signature = token.rpartition(".")
@@ -185,7 +201,7 @@ def verify_session(token: str | None, secret: str, now: float | None = None) -> 
         return None
     if expiry <= (time.time() if now is None else now):
         return None
-    return User(username, role)
+    return User(username, role), float(expiry - SESSION_TTL_SECONDS)
 
 
 # ── settings ─────────────────────────────────────────────────────────────────
@@ -194,6 +210,7 @@ class AuthSettings:
     mode: str
     session_secret: str
     users: dict[str, UserRecord]
+    setup_token: str = ""
 
     @property
     def dev_mode(self) -> bool:
@@ -205,6 +222,9 @@ class AuthSettings:
         mode = (env.get("APP_AUTH_MODE") or "").strip().lower()
         secret = (env.get("APP_SESSION_SECRET") or "").strip()
         users_raw = (env.get("APP_USERS_JSON") or "").strip()
+        setup_token = (env.get("APP_SETUP_TOKEN") or "").strip()
+        if setup_token and len(setup_token) < MIN_SETUP_TOKEN_LENGTH:
+            raise ConfigurationError(f"APP_SETUP_TOKEN must be at least {MIN_SETUP_TOKEN_LENGTH} characters")
         if not mode:
             mode = "required" if (secret or users_raw not in ("", "[]")) else "dev"
             log.warning("APP_AUTH_MODE is not set; using %s mode", mode)
@@ -212,8 +232,6 @@ class AuthSettings:
             raise ConfigurationError(f"APP_AUTH_MODE must be one of {', '.join(MODES)}, got {mode!r}")
         users = parse_users_json(users_raw)
         if mode == "required":
-            if not users:
-                raise ConfigurationError("APP_AUTH_MODE=required needs APP_USERS_JSON with at least one user")
             if len(secret) < 32:
                 raise ConfigurationError("APP_AUTH_MODE=required needs APP_SESSION_SECRET of at least 32 characters")
         else:
@@ -221,7 +239,7 @@ class AuthSettings:
             merged = dev_users()
             merged.update(users)  # configured accounts win over the fixed development ones
             users = merged
-        return cls(mode=mode, session_secret=secret, users=users)
+        return cls(mode=mode, session_secret=secret, users=users, setup_token=setup_token)
 
     def authenticate(self, username: str, password: str) -> User | None:
         """User for valid credentials, else None. Unknown users still pay for one hash check."""
@@ -233,9 +251,16 @@ class AuthSettings:
             return None
         return User(record.username, record.role)
 
+    def is_dev_user(self, record: UserRecord) -> bool:
+        return self.dev_mode and record.username in DEV_USERNAMES and record.password_hash == _dev_hash(record.username)
+
+    def configured_users(self) -> list[UserRecord]:
+        """APP_USERS_JSON users (the fixed development accounts excluded)."""
+        return [u for u in self.users.values() if not self.is_dev_user(u)]
+
     def listing(self) -> list[dict[str, str]]:
         """Usernames and roles only (never hashes)."""
-        return [{"username": u.username, "role": u.role, "source": "dev" if self.dev_mode and u.username in DEV_USERNAMES and u.password_hash == dev_users()[u.username].password_hash else "configured"} for u in self.users.values()]
+        return [{"username": u.username, "role": u.role, "source": "dev" if self.is_dev_user(u) else "configured"} for u in self.users.values()]
 
 
 _DUMMY_HASH = hash_password("dummy-password-for-timing", iterations=10_000, salt=b"crane-ifs-dummy-salt")

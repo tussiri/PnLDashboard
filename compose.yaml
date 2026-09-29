@@ -52,11 +52,12 @@ x-api-environment: &api-environment
   FINANCE_REFERENCE_DATA_DIR: ${FINANCE_REFERENCE_DATA_DIR:-}
   INGESTION_ADMIN_TOKEN: ${INGESTION_ADMIN_TOKEN:-local-development-only}
   # Sign-in. dev = three fixed development users (executive/analyst/admin, password dev-<username>);
-  # required = only the users in APP_USERS_JSON, and the API refuses to start without them and a secret.
+  # required = users from Admin > Users (the first admin via APP_SETUP_TOKEN) plus optional APP_USERS_JSON.
   # See docs/auth-rbac.md. Single-quote APP_USERS_JSON in .env (hashes contain "$").
   APP_AUTH_MODE: ${APP_AUTH_MODE:-dev}
   APP_SESSION_SECRET: ${APP_SESSION_SECRET:-}
   APP_USERS_JSON: '${APP_USERS_JSON:-[]}'
+  APP_SETUP_TOKEN: ${APP_SETUP_TOKEN:-}
   LOG_LEVEL: ${LOG_LEVEL:-INFO}
 
 services:

@@ -440,3 +440,16 @@ Effects on `mart.leadership_week` for the WinTeam jobs Relay covers (never Sarus
 `GET /leadership/sites/{company}/{job}` and `GET /leadership/vendors` invoice lines gain `source`
 (`winteam` | `relay`), and for Relay lines `service_month`, `status`, `in_winteam`, `payment_status`; a Relay payable
 already among the WinTeam lines (same vendor and invoice number) is not repeated.
+
+## Sign-in users, added 2026-09-28
+
+Sign-in itself (`/auth/login`, `/auth/logout`, `/auth/me`, `/auth/mode`) is described in
+`docs/auth-rbac.md`. Users created in the dashboard live in `ops.app_user` (migration 035).
+
+| Route | Response |
+|---|---|
+| `GET /auth/setup` | `{needed}`: true while `APP_SETUP_TOKEN` is set and no database or `APP_USERS_JSON` user exists. Public. |
+| `POST /auth/setup` | Body `{token, username, password}`. Creates the first administrator and sets the session cookie; `201 {user: {username, role}}`. `404` without a setup token, `409` once any user exists, `401` for a wrong code, `422` for an invalid username or a password under 10 characters. Public. |
+| `GET /users` | Admin. `{users: [{username, role, active, source, created_at, created_by, last_login_at}]}`; `source` is `database`, `environment` (`APP_USERS_JSON`, read-only) or `development` (dev mode). Never returns hashes. |
+| `POST /users` | Admin. Body `{username, role, password}`; `201 {user}`. `409` when the name exists (any case) or is an environment user. |
+| `PATCH /users/{username}` | Admin. Body any of `{role, active, password}`; `{user}`. `409` for an environment user or when the change would leave no active administrator; `404` for an unknown user. A password reset refuses every session issued before it (the administrator resetting their own password gets a fresh cookie). |

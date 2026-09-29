@@ -12,7 +12,7 @@ from collections.abc import Callable
 
 from fastapi import Header, HTTPException, Query, Request
 
-from .auth import COOKIE_NAME, ROLE_LABEL, ROLES, User, get_auth_settings, verify_session
+from .auth import COOKIE_NAME, ROLE_LABEL, ROLES, User, get_auth_settings, session_claims
 from .config import settings
 from .db import connection
 
@@ -135,8 +135,20 @@ def admin_token_valid(x_admin_token: str | None) -> bool:
 
 
 def current_user(request: Request) -> User | None:
-    """The signed-in user behind the session cookie, or None."""
-    return verify_session(request.cookies.get(COOKIE_NAME), get_auth_settings().session_secret)
+    """The signed-in user behind the session cookie, or None. An APP_USERS_JSON user keeps the role
+    in the cookie; a database user is re-read (app/users.py), so disabling, a role change or a
+    password reset applies to sessions already issued."""
+    settings_ = get_auth_settings()
+    claims = session_claims(request.cookies.get(COOKIE_NAME), settings_.session_secret)
+    if claims is None:
+        return None
+    user, issued_at = claims
+    record = settings_.users.get(user.username)
+    if record is not None:
+        return User(record.username, record.role)
+    from . import users
+
+    return users.session_user(user, issued_at)
 
 
 def require_admin(request: Request, x_admin_token: str | None = Header(default=None)) -> None:
