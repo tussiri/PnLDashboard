@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import fixture from './fixtures/plano-we-2026-09-20.json'
 import { hours, hours1, money, moneyK, pct, pts, rate } from './format'
-import { accountSummary, baseRateOf, invoiceOf, siteMetrics, statusOf, type MetricOptions, type WeekRow } from './metrics'
+import { accountSummary, baseRateOf, cutRow, cutSummary, invoiceOf, siteMetrics, statusOf, type MetricOptions, type WeekRow } from './metrics'
 
 // Expected values were produced by running the reference dashboard's own script on its embedded data.
 const rows = fixture.rows as WeekRow[]
@@ -167,6 +167,33 @@ describe('cost basis, segment targets and allocation', () => {
   })
 })
 
+describe('hours to cut (the weekly report model)', () => {
+  it('splits hours over target into worked, OT premium and sub hours against the allowance', () => {
+    for (const c of summary.cut.rows) {
+      expect(c.total).toBeCloseTo(c.worked + c.otPremium + c.subHours, 10)
+      if (c.gap > 0) expect(c.gap).toBeCloseTo(c.site.overHours, 6)
+      else expect(c.site.overHours).toBe(0)
+    }
+    const s = cutSummary(summary.cut.rows)
+    expect(s.over).toBe(summary.cut.rows.filter((c) => c.site.overHours > 0).length)
+    expect(s.cut).toBeCloseTo(summary.cut.rows.reduce((a, c) => a + c.site.overHours, 0), 6)
+  })
+
+  it('counts sub coverage in hours, flags OT-only overages and skips sites with no labor hours', () => {
+    const base = { job_number: '1', site_name: 'S', segment: 'A', role: 'site' as const, revenue_month_amount: 4330, labor: 800, hours: 40, ot_hours: 0, ot_dollars: 0, budget_hours: 0, budget_dollars: 0, prior_revenue: 0, prior_labor: 0, prior_sub: 0 }
+    const o: MetricOptions = { target: 0.5, costBasis: 'labor_plus_vendor' }
+    const withSub = cutRow(siteMetrics({ ...base, sub_week: 200 }, o))!
+    expect(withSub.subHours).toBeCloseTo(10, 10) // $200 at a $20 base rate
+    expect(withSub.allowance).toBeCloseTo(25, 10) // $1,000 invoicing x 50% / $20
+    expect(withSub.gap).toBeCloseTo(25, 10)
+    const otOnly = cutRow(siteMetrics({ ...base, labor: 575, hours: 25, ot_hours: 10 }, { target: 0.5 }))!
+    expect(otOnly.baseRate).toBeCloseTo(19.1667, 3)
+    expect(otOnly.gap).toBeCloseTo(30 - 500 / (575 / 30), 6) // 3.9 hours over, less than the 5 OT premium hours
+    expect(otOnly.fixedByOt).toBe(true)
+    expect(cutRow(siteMetrics({ ...base, labor: 0, hours: 0, sub_week: 900 }, o))).toBeNull()
+  })
+})
+
 describe('leadership formats', () => {
   it('matches the reference formatters', () => {
     expect(money(1234.6)).toBe('$1,235')
@@ -178,7 +205,7 @@ describe('leadership formats', () => {
     expect(hours1(140.43)).toBe('140.4')
     expect(pct(0.93275)).toBe('93.3%')
     expect(pct(null)).toBe('–')
-    expect(pts(-0.024)).toBe('−2.4 pts')
+    expect(pts(-0.024)).toBe('−2.4pp')
     expect(rate(16.6)).toBe('$16.60')
   })
 })

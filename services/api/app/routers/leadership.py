@@ -39,12 +39,28 @@ SELECT w.week_start, w.week_end, w.company, w.job_number, w.site_name, w.parent_
        w.revenue_month_basis, w.invoice_week, w.prior_revenue, w.prior_labor, w.prior_labor_basis,
        w.prior_sub, w.prior_sub_basis, w.delivery_model, w.sub_week, w.sub_week_basis,
        w.consumables_cost, w.consumables_basis,
-       j.latitude, j.longitude, j.city, j.state_province,
+       j.latitude, j.longitude, j.city, j.state_province, j.parent_job_number,
+       coalesce(jw.dt_hours, 0) AS dt_hours,
+       rr.revenue_run_rate, rr.variable_run_rate, vm.revenue_variable AS revenue_month_variable,
        a.revenue_allocation AS _allocation, w.revenue_month_budget_hours AS _rm_budget_hours, w.revenue_month_hours AS _rm_hours
 FROM mart.leadership_week w
 LEFT JOIN ops.account_job aj ON aj.company = w.company AND aj.job_number = w.job_number
 LEFT JOIN ops.account a ON a.slug = aj.account_slug
 LEFT JOIN core.dim_job j ON j.job_key = w.job_key
+LEFT JOIN mart.job_week jw ON jw.job_key = w.job_key AND jw.week_start = w.week_start
+LEFT JOIN core.fact_job_cost_month vm ON vm.source = 'export_import' AND vm.company = w.company AND vm.job_number = w.job_number
+                                     AND vm.month = w.revenue_month
+-- The 3-month run rate (the FedEx report's invoice basis): the revenue month and the two before it,
+-- each month from job cost, else Relay AR where the week's revenue comes from Relay.
+LEFT JOIN LATERAL (
+  SELECT avg(coalesce(nullif(jc.revenue, 0), CASE WHEN w.revenue_month_basis LIKE 'relay%%' THEN r.ar_revenue END, 0)) AS revenue_run_rate,
+         avg(ex.revenue_variable) AS variable_run_rate
+  FROM generate_series(w.revenue_month - interval '2 months', w.revenue_month, interval '1 month') AS g(m)
+  LEFT JOIN mart.v_job_cost_month_effective jc ON jc.company = w.company AND jc.job_number = w.job_number AND jc.month = g.m::date
+  LEFT JOIN mart.v_relay_job_month r ON r.job_number = w.job_number AND r.month = g.m::date
+  LEFT JOIN core.fact_job_cost_month ex ON ex.source = 'export_import' AND ex.company = w.company AND ex.job_number = w.job_number
+                                       AND ex.month = g.m::date
+) rr ON w.revenue_month IS NOT NULL
 WHERE w.week_start BETWEEN %(first)s AND %(last)s
 """
 
@@ -220,6 +236,79 @@ def leadership_rows(
         rows = allocate_parent_billing([jsonable(dict(r)) for r in cursor.fetchall()])
     week_list = [(first + timedelta(weeks=i)).isoformat() for i in range(weeks)]
     return {"source": source_block(), "week": anchor.isoformat(), "weeks": week_list, "account": account, "rows": rows}
+
+
+MONTHLY_SQL = """
+WITH jobs AS (
+  SELECT aj.company, aj.job_number, aj.role, j.job_name, j.parent_job_number
+  FROM ops.account_job aj
+  LEFT JOIN core.dim_job j ON j.company = aj.company AND j.job_number = aj.job_number AND j.valid_to IS NULL
+  WHERE aj.account_slug = %(account)s
+),
+delivery AS (
+  SELECT DISTINCT ON (w.company, w.job_number) w.company, w.job_number, w.delivery_model
+  FROM mart.leadership_week w JOIN jobs USING (company, job_number)
+  ORDER BY w.company, w.job_number, w.week_start DESC
+),
+months AS (SELECT g.m::date AS month FROM generate_series(%(first)s::date, %(last)s::date, interval '1 month') AS g(m))
+SELECT jobs.company, jobs.job_number, jobs.job_name, jobs.role, jobs.parent_job_number, d.delivery_model, months.month,
+       coalesce(jc.revenue, 0) AS revenue, ex.revenue_variable, coalesce(jc.direct_labor, 0) AS direct_labor,
+       coalesce(jc.payroll_taxes_insurance, 0) AS payroll_taxes, coalesce(jc.subcontractors, 0) AS subcontractors,
+       coalesce(r.ar_revenue, 0) AS relay_ar, coalesce(r.ap_amount, 0) AS relay_ap
+FROM jobs CROSS JOIN months
+LEFT JOIN delivery d USING (company, job_number)
+LEFT JOIN mart.v_job_cost_month_effective jc ON jc.company = jobs.company AND jc.job_number = jobs.job_number AND jc.month = months.month
+LEFT JOIN core.fact_job_cost_month ex ON ex.source = 'export_import' AND ex.company = jobs.company AND ex.job_number = jobs.job_number
+                                     AND ex.month = months.month
+LEFT JOIN mart.v_relay_job_month r ON r.job_number = jobs.job_number AND r.month = months.month
+ORDER BY jobs.company, jobs.job_number, months.month
+"""
+
+
+@router.get("/monthly")
+def leadership_monthly(account: str = Query(..., description="An account slug"), months: int = Query(3, ge=1, le=12),
+                       through: str | None = Query(None, description="Last month (YYYY-MM); defaults to the latest month with revenue")) -> dict[str, Any]:
+    """Closed months per job of one account: job cost (revenue, variable revenue, direct labor, payroll taxes,
+    subcontractors) and Relay AR / AP, plus the account's income statement lines. Feeds the prior-month
+    columns, the Pallet, Income Statement and Subcontracted Sites views."""
+    with connection() as conn, conn.cursor() as cursor:
+        cursor.execute("SELECT 1 FROM ops.account WHERE slug = %s", (account,))
+        if cursor.fetchone() is None:
+            raise HTTPException(status_code=404, detail=f"Unknown account {account!r}")
+        if through:
+            try:
+                last = date.fromisoformat(f"{through[:7]}-01")
+            except ValueError:
+                raise HTTPException(status_code=422, detail="through must be YYYY-MM") from None
+        else:
+            cursor.execute(
+                """
+                SELECT greatest(
+                  (SELECT max(jc.month) FROM mart.v_job_cost_month_effective jc JOIN ops.account_job aj
+                     ON aj.company = jc.company AND aj.job_number = jc.job_number WHERE aj.account_slug = %(a)s AND jc.revenue > 0),
+                  (SELECT max(r.month) FROM mart.v_relay_job_month r JOIN ops.account_job aj ON aj.job_number = r.job_number
+                     WHERE aj.account_slug = %(a)s AND r.ar_revenue > 0)) AS last
+                """,
+                {"a": account},
+            )
+            last = cursor.fetchone()["last"]
+            if last is None:
+                return {"account": account, "months": [], "jobs": [], "income_statement": {}}
+        first = date(last.year + (last.month - months) // 12, (last.month - months) % 12 + 1, 1)
+        cursor.execute(MONTHLY_SQL, {"account": account, "first": first, "last": last})
+        jobs: dict[tuple[str, str], dict[str, Any]] = {}
+        for r in cursor.fetchall():
+            key = (r["company"], r["job_number"])
+            job = jobs.setdefault(key, {k: r[k] for k in ("company", "job_number", "job_name", "role", "parent_job_number", "delivery_model")} | {"months": {}})
+            job["months"][r["month"].isoformat()] = jsonable({k: r[k] for k in ("revenue", "revenue_variable", "direct_labor", "payroll_taxes",
+                                                                                   "subcontractors", "relay_ar", "relay_ap")})
+        cursor.execute("SELECT month, line, amount FROM core.fact_income_statement_month WHERE account_slug = %s AND month BETWEEN %s AND %s",
+                       (account, first, last))
+        statement: dict[str, dict[str, float]] = {}
+        for r in cursor.fetchall():
+            statement.setdefault(r["month"].isoformat(), {})[r["line"]] = float(r["amount"])
+    month_list = [date(first.year + (first.month - 1 + i) // 12, (first.month - 1 + i) % 12 + 1, 1).isoformat() for i in range(months)]
+    return {"account": account, "months": month_list, "jobs": list(jobs.values()), "income_statement": statement}
 
 
 @router.get("/sites/{company}/{job_number}")
@@ -414,6 +503,13 @@ class AccountPatch(BaseModel):
     source_parent_accounts: list[str] | None = None
     segment_source: str | None = None
     fallback_segment: str | None = None
+    segment_label: str | None = Field(None, min_length=1, max_length=30)
+    vocabulary: str | None = None
+    vendor_factor: float | None = Field(None, ge=0, le=1)
+    invoice_basis: str | None = None
+    group_by: str | None = None
+    split_subcontracted: bool | None = None
+    vendor_label: str | None = Field(None, min_length=1, max_length=30)
 
 
 class SegmentIn(BaseModel):
@@ -442,6 +538,9 @@ def update_account(slug: str, patch: AccountPatch, request: Request) -> dict[str
         raise HTTPException(status_code=422, detail=f"revenue_allocation must be one of {accounts.REVENUE_ALLOCATIONS}")
     if patch.cost_basis is not None and patch.cost_basis not in accounts.COST_BASES:
         raise HTTPException(status_code=422, detail=f"cost_basis must be one of {accounts.COST_BASES}")
+    for key, allowed in (("vocabulary", accounts.VOCABULARIES), ("invoice_basis", accounts.INVOICE_BASES), ("group_by", accounts.GROUP_BYS)):
+        if getattr(patch, key) is not None and getattr(patch, key) not in allowed:
+            raise HTTPException(status_code=422, detail=f"{key} must be one of {allowed}")
     if patch.segment_source is not None and patch.segment_source not in accounts.SEGMENT_SOURCES:
         raise HTTPException(status_code=422, detail=f"segment_source must be one of {accounts.SEGMENT_SOURCES}")
     if not changes:

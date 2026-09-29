@@ -13,7 +13,7 @@
  */
 
 export type View = 'home' | 'account' | 'analytics' | 'admin'
-export const ACCOUNT_TABS = ['overview', 'sites', 'over-target', 'overtime', 'map', 'vendors'] as const
+export const ACCOUNT_TABS = ['overview', 'sites', 'pallet', 'over-target', 'overtime', 'income-statement', 'subcontracted', 'map', 'vendors'] as const
 export type AccountTab = (typeof ACCOUNT_TABS)[number]
 export const ADMIN_TABS = ['accounts', 'jobs', 'imports', 'data', 'users'] as const
 export type AdminTab = (typeof ADMIN_TABS)[number]
@@ -33,6 +33,8 @@ export interface Route {
   segment?: string
   /** Account view: hide subcontracted sites. */
   selfOnly?: boolean
+  /** Invoice basis override (the FedEx report's toggle); the account's own basis when absent. */
+  basis?: 'run_rate_3m' | 'last_month'
 }
 
 const ISO = /^\d{4}-\d{2}-\d{2}$/
@@ -69,6 +71,8 @@ export function parseRoute(hash: string): Route {
     if (value) route[key] = value
   }
   if (route.view === 'account' && params.get('delivery') === 'self') route.selfOnly = true
+  const basis = params.get('basis')
+  if (basis === 'run_rate_3m' || basis === 'last_month') route.basis = basis
   return route
 }
 
@@ -85,6 +89,7 @@ export function formatRoute(route: Route): string {
   if (route.site && route.view !== 'admin') params.set('site', `${route.site.company}${SITE_SEP}${route.site.job}`)
   if (route.view === 'analytics') for (const key of ['q', 'status', 'segment'] as const) if (route[key]) params.set(key, route[key]!)
   if (route.view === 'account' && route.selfOnly) params.set('delivery', 'self')
+  if (route.basis && route.view !== 'admin') params.set('basis', route.basis)
   const query = params.toString()
   return `#/${path}${query ? `?${query}` : ''}`
 }

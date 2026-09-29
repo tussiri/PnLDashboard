@@ -1,6 +1,6 @@
 import type {
   FullSyncResult, LeadershipAccount, LeadershipAccountJob, LeadershipAccountPatch, LeadershipConfig, LeadershipImportFile, LeadershipImportKind,
-  LeadershipJobMapping, LeadershipRowsQuery, LeadershipRowsResponse, LeadershipSegment, LeadershipSiteResponse, LeadershipVendorsResponse,
+  LeadershipJobMapping, LeadershipRowsQuery, LeadershipRowsResponse, LeadershipSegment, LeadershipSiteResponse, LeadershipVendorsResponse, LeadershipMonthlyResponse,
   RebuildResult, SyncOptions, SyncRunsResponse, SystemStatus } from './apiTypes'
 
 /**
@@ -129,6 +129,7 @@ export const api = {
   leadershipSite: (company: string, jobNumber: string, query?: { week?: string; weeks?: number }, signal?: AbortSignal) =>
     request<LeadershipSiteResponse>(`/leadership/sites/${encodeURIComponent(company)}/${encodeURIComponent(jobNumber)}`, { query: { ...query }, signal, rawRatios: true }),
   leadershipVendors: (account: string, months = 6, signal?: AbortSignal) => request<LeadershipVendorsResponse>('/leadership/vendors', { query: { account, months }, signal, rawRatios: true }),
+  leadershipMonthly: (account: string, months = 3, signal?: AbortSignal) => request<LeadershipMonthlyResponse>('/leadership/monthly', { query: { account, months }, signal, rawRatios: true }),
   leadershipUpdateAccount: (slug: string, patch: LeadershipAccountPatch, signal?: AbortSignal) =>
     request<LeadershipAccount>(`/leadership/accounts/${encodeURIComponent(slug)}`, { method: 'PUT', body: patch, admin: true, signal }),
   leadershipReplaceSegments: (slug: string, segments: Pick<LeadershipSegment, 'name' | 'target_labor_pct'>[], signal?: AbortSignal) =>

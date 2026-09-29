@@ -6,7 +6,7 @@ import { useLeadership, type Theme } from './state'
 const NAV: { view: View; label: string; admin?: boolean }[] = [
   { view: 'home', label: 'Home' },
   { view: 'account', label: 'Account' },
-  { view: 'analytics', label: 'Analytics' },
+  { view: 'analytics', label: 'Analytics', admin: true },
   { view: 'admin', label: 'Admin', admin: true },
 ]
 const THEMES: { theme: Theme; label: string; icon: ReactNode }[] = [

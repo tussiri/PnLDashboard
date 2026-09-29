@@ -20,8 +20,8 @@ export const hours1 = (v: number | null | undefined) =>
 /** A fraction as a percentage to one decimal: 0.6455 is "64.6%". */
 export const pct = (v: number | null | undefined) => (v == null || !Number.isFinite(v) ? DASH : `${(v * 100).toFixed(1)}%`)
 
-/** Signed percentage points: +2.4 pts. */
-export const pts = (v: number | null | undefined) => (v == null || !Number.isFinite(v) ? DASH : `${v >= 0 ? '+' : '−'}${Math.abs(v * 100).toFixed(1)} pts`)
+/** Signed percentage points, as the weekly report writes them: +2.4pp. */
+export const pts = (v: number | null | undefined) => (v == null || !Number.isFinite(v) ? DASH : `${v >= 0 ? '+' : '−'}${Math.abs(v * 100).toFixed(1)}pp`)
 
 /** "$18.73" */
 export const rate = (v: number | null | undefined) => (missing(v) ? DASH : `$${v.toFixed(2)}`)

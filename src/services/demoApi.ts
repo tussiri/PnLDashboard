@@ -4,7 +4,7 @@
  * labeled demo. Actions that would change data are not available in demo mode.
  */
 import { ApiError, type LiveApi } from './api'
-import { demoLeadershipConfig, demoLeadershipRows, demoLeadershipSite, demoLeadershipVendors } from './demoLeadership'
+import { demoLeadershipConfig, demoLeadershipMonthly, demoLeadershipRows, demoLeadershipSite, demoLeadershipVendors } from './demoLeadership'
 
 export type DashboardApi = LiveApi
 
@@ -32,6 +32,7 @@ export function createDemoApi(options: DemoApiOptions = {}): DashboardApi {
     leadershipRows: (query, signal) => settle(() => demoLeadershipRows(query), signal),
     leadershipSite: (company, jobNumber, query, signal) => settle(() => demoLeadershipSite(company, jobNumber, query), signal),
     leadershipVendors: (account, _months, signal) => settle(() => demoLeadershipVendors(account), signal),
+    leadershipMonthly: (account, _months, signal) => settle(() => demoLeadershipMonthly(account), signal),
     leadershipUpdateAccount: () => notAvailable('Account update'),
     leadershipReplaceSegments: () => notAvailable('Segment update'),
     leadershipAccountJobs: () => notAvailable('Job mapping'),
