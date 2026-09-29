@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useApiQuery } from '../../hooks/useApiQuery'
-import type { LeadershipAccount, LeadershipAccountJob, LeadershipAccountPatch, LeadershipImportFile, LeadershipImportKind, LeadershipRole, SyncRunsResponse } from '../../services/apiTypes'
+import type { LeadershipAccount, LeadershipAccountJob, LeadershipAccountPatch, LeadershipImportFile, LeadershipImportKind, LeadershipRole, SyncRunsResponse, MailInboxStatus } from '../../services/apiTypes'
 import { queryClient, queryKey } from '../../services/queryClient'
 import { inSentence } from '../data'
 import { ADMIN_TABS, type AdminTab } from '../routes'
@@ -155,6 +155,38 @@ function JobsTab() {
   </>
 }
 
+const MAIL_TONE: Record<string, string> = { loaded: 'ok', failed: 'bad', duplicate: 'neutral', ignored: 'neutral' }
+
+/** The records mailbox: what arrived and what the poller did with each attachment. */
+function MailInbox() {
+  const { adminApi: api, adminKeyPrefix: keyPrefix, decision } = useLeadership()
+  const { busy, run, view } = useAction()
+  const q = useApiQuery<MailInboxStatus>(decision ? queryKey(`${keyPrefix}/integrations/mail`) : null, (signal) => api.mailStatus(signal), [api])
+  const s = q.data
+  type Recent = MailInboxStatus['recent'][number]
+  const cols: Column<Recent>[] = [
+    { key: 'at', header: 'Received', left: true, value: (r) => r.received_at, render: (r) => new Date(r.received_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) },
+    { key: 'from', header: 'From', left: true, value: (r) => r.sender ?? '', className: 'nm' },
+    { key: 'subject', header: 'Subject', left: true, value: (r) => r.subject ?? '', className: 'nm' },
+    { key: 'file', header: 'File', left: true, value: (r) => r.file_name, className: 'nm' },
+    { key: 'status', header: 'Status', left: true, value: (r) => r.status, render: (r) => <span className={MAIL_TONE[r.status]}>{cap(r.status)}{r.kind ? `, ${r.kind === 'pay_report' ? 'labor' : r.kind === 'income_statement' ? 'income statement' : 'job cost'}` : ''}</span> },
+    { key: 'reason', header: 'Detail', left: true, value: (r) => r.reason ?? (r.rows_loaded != null ? `${r.rows_loaded.toLocaleString('en-US')} rows` : ''), className: 'nm' },
+  ]
+  const last = s?.last_run
+  return <div className="card">
+    <div className="ct"><span>Records inbox</span><span className="ks">{s?.mailbox ?? ''}</span></div>
+    {q.error ? <LoadError error={q.error} onRetry={q.refetch} /> : !s ? <Skeleton height={80} /> : !s.configured ? <Empty>Not connected. Set GRAPH_TENANT_ID, GRAPH_CLIENT_ID, GRAPH_CLIENT_SECRET and GRAPH_MAILBOX (docs/mail-inbox.md).</Empty> : <>
+      <div className="ctrl">
+        <button type="button" className="btn" disabled={busy} onClick={() => run('Inbox checked', async () => { const r = await api.mailPoll(); if (r.status === 'failed') throw new Error(r.error ?? 'Mailbox check failed'); q.refetch() })}>Check inbox now</button>
+        <span className="ks">{s.schedule.enabled ? `Every ${s.schedule.every_minutes} min` : 'Automatic checks off'}{last ? `; last ${new Date(last.started_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}, ${last.status}` : '; not checked yet'}</span>
+        {last?.error_message && <span className="bad ks">{last.error_message}</span>}
+      </div>
+      {view}
+      {s.recent.length ? <SortTable caption="Recent attachments" rows={s.recent} columns={cols} defaultSort={{ key: 'at', dir: -1 }} pageSize={25} /> : <Empty>No attachments yet.</Empty>}
+    </>}
+  </div>
+}
+
 function ImportsTab() {
   const { adminApi: api, adminKeyPrefix: keyPrefix, decision } = useLeadership()
   const { busy, run, view } = useAction()
@@ -172,6 +204,7 @@ function ImportsTab() {
     { key: 'err', header: 'Errors', left: true, value: (f) => f.errors.length, render: (f) => (f.errors.length ? <details><summary>{f.errors.length}</summary><ul className="errors">{f.errors.map((e, i) => <li key={i}>{e}</li>)}</ul></details> : '0') },
   ]
   return <>
+    <MailInbox />
     <div className="card">
       <div className="ct"><span>Upload</span></div>
       <form className="form-grid" onSubmit={(e) => { e.preventDefault(); if (file) void run(`Imported ${file.name}`, () => api.leadershipUpload(file, kind || undefined)) }}>

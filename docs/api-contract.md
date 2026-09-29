@@ -481,3 +481,13 @@ labor summary (loaded as kind `pay_report`, one Monday-Sunday week per file) and
 GL line (kind `job_cost`, GL accounts pivoted by the `job_cost_gl_map` ranges; a file replaces the
 imported months it covers).
 
+## Records mailbox, added 2026-09-29
+
+Migration 038, docs/mail-inbox.md. The worker reads the records mailbox through Microsoft Graph
+(read-only) and loads dashboard report exports through the importer (`ops.import_file.origin = 'mail'`).
+
+| Route | Response |
+|---|---|
+| `GET /integrations/mail` | `{configured, mailbox, schedule: {enabled, every_minutes, first_lookback_days}, last_run: {status, started_at, completed_at, records_inserted, error_message} \| null, recent: [{received_at, sender, subject, file_name, status: loaded\|duplicate\|failed\|ignored, reason, kind, rows_loaded}]}`. Never returns the client secret. |
+| `POST /integrations/mail/poll` | Admin. Check now: `{status, loaded, duplicate, failed, ignored, messages, rebuilt}` or `{status: 'failed', error}`. `409` when not configured. |
+

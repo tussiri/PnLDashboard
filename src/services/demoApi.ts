@@ -28,6 +28,8 @@ export function createDemoApi(options: DemoApiOptions = {}): DashboardApi {
     syncSarus: () => notAvailable('Sarus sync'),
     rebuildMarts: () => notAvailable('Mart rebuild'),
     syncRuns: (_limit, signal) => settle(() => ({ runs: [] }), signal),
+    mailStatus: (signal) => settle(() => ({ configured: false, mailbox: null, schedule: { enabled: false, every_minutes: 30, first_lookback_days: 14 }, last_run: null, recent: [] }), signal),
+    mailPoll: () => notAvailable('Mailbox check'),
     leadershipConfig: (signal) => settle(demoLeadershipConfig, signal),
     leadershipRows: (query, signal) => settle(() => demoLeadershipRows(query), signal),
     leadershipSite: (company, jobNumber, query, signal) => settle(() => demoLeadershipSite(company, jobNumber, query), signal),

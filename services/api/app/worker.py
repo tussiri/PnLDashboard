@@ -6,9 +6,11 @@ also loads the export files in the import inbox and rebuilds the marts once. Adm
 still sync on demand from the Admin view or POST /api/v1/integrations/winteam/sync. Nothing polls
 WinTeam more often than that.
 
+The worker also reads the records mailbox for report exports (app/mail_inbox.py), every
+`every_minutes` of ops.app_setting 'mail_inbox' (default 30): that reads Microsoft Graph, not WinTeam.
+
 On startup the worker also rebuilds the marts if core facts exist but mart.job_month is empty (for
-example after a fresh mart migration), then checks the nightly schedule once a minute until
-SIGTERM/SIGINT.
+example after a fresh mart migration), then checks both schedules once a minute until SIGTERM/SIGINT.
 """
 from __future__ import annotations
 
@@ -16,7 +18,7 @@ import logging
 import signal
 import time
 
-from . import marts, nightly
+from . import mail_inbox, marts, nightly
 from .config import settings
 
 logging.basicConfig(level=settings.log_level, format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -44,6 +46,10 @@ def tick() -> None:
         nightly.check_and_run()
     except Exception:  # noqa: BLE001 - a failed check must not stop the worker
         logger.exception("Nightly schedule check failed")
+    try:
+        mail_inbox.check_and_poll()
+    except Exception:  # noqa: BLE001
+        logger.exception("Records mailbox check failed")
 
 
 def run() -> None:

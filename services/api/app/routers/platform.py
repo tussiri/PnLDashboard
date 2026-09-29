@@ -17,7 +17,7 @@ import psycopg
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
-from .. import companycam, marts, relay
+from .. import companycam, mail_inbox, marts, relay
 from ..common import (PRIMARY_SOURCES, configured_key_accounts, month_status_rows, jsonable,
                       require_admin)
 from ..config import settings
@@ -373,6 +373,20 @@ def relay_sync(rebuild: bool = Query(True, description="Rebuild the marts after 
     result = relay.sync()
     loaded = any(r["status"] == "succeeded" for r in result["runs"])
     return jsonable({**result, "marts": marts.rebuild_all(initiated_by="relay-sync") if rebuild and loaded else None})
+
+
+@router.get("/integrations/mail")
+def mail_status() -> dict[str, Any]:
+    """The records mailbox poller: wired or not, schedule, last poll, recent attachments. No secrets."""
+    return jsonable(mail_inbox.status())
+
+
+@router.post("/integrations/mail/poll", dependencies=[Depends(require_admin)])
+def mail_poll() -> dict[str, Any]:
+    """Read the records mailbox now (read-only against Microsoft Graph); rebuilds the marts when a report loaded."""
+    if not mail_inbox.configured():
+        raise HTTPException(status_code=409, detail="The records mailbox is not configured (GRAPH_TENANT_ID, GRAPH_CLIENT_ID, GRAPH_CLIENT_SECRET, GRAPH_MAILBOX)")
+    return jsonable(mail_inbox.run())
 
 
 @router.get("/integrations/companycam")
