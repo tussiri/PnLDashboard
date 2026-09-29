@@ -24,6 +24,8 @@ export interface LeadershipState {
    */
   adminApi: DashboardApi
   adminKeyPrefix: string
+  /** The API's own configuration (accounts) for Admin; the views' `config` is the demo one while demo. */
+  adminConfig: QueryState<LeadershipConfig>
   apiReachable: boolean
   /** Decide live or demo again (after a sync, rebuild or import fills the marts). */
   redetect: () => void
@@ -106,6 +108,9 @@ export function LeadershipProvider({ user, signOut, children, forcedDecision }: 
   const adminKeyPrefix = decision ? (apiReachable ? 'live' : 'demo') : 'pending'
 
   const config = useApiQuery<LeadershipConfig>(decision ? queryKey(`${keyPrefix}/leadership/config`) : null, (signal) => api.leadershipConfig(signal), [api])
+  const liveAdminConfig = useApiQuery<LeadershipConfig>(decision && apiReachable && mode === 'demo' ? queryKey('live/leadership/config') : null,
+    (signal) => adminApi.leadershipConfig(signal), [adminApi])
+  const adminConfig = apiReachable && mode === 'demo' ? liveAdminConfig : config
 
   const navigate = useCallback((next: Partial<Route>, options: { replace?: boolean; reset?: boolean } = {}) => {
     const current = parseRoute(location.hash)
@@ -126,7 +131,7 @@ export function LeadershipProvider({ user, signOut, children, forcedDecision }: 
   const optionsFor = useCallback((account: LeadershipAccount | undefined) => optionsForAccount(account, targetOverride), [targetOverride])
 
   const value: LeadershipState = {
-    user, signOut, decision, api, keyPrefix, adminApi, adminKeyPrefix, apiReachable, redetect, config, route, navigate, featured, accountBySlug, selectedAccount,
+    user, signOut, decision, api, keyPrefix, adminApi, adminKeyPrefix, adminConfig, apiReachable, redetect, config, route, navigate, featured, accountBySlug, selectedAccount,
     weekStart, targetOverride, optionsFor, theme, setTheme: setThemeState,
   }
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
