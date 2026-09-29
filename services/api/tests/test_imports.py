@@ -97,3 +97,44 @@ def test_reads_the_first_sheet_of_a_workbook_below_title_rows():
     assert parsed.records == [{"company_name": "Crane Southwest", "job_number": "801", "period": date(2026, 8, 1),
                                "revenue": Decimal("12642"), "direct_labor": Decimal("8791"), "subcontractors": Decimal("0"),
                                "company": "Crane Southwest"}]
+
+
+def test_income_statement_rows_normalize_lines_and_need_no_company():
+    headers = ["Account", "Period", "Line", "Amount"]
+    rows = [{"Account": "fedex", "Period": "2026-08", "Line": "Total Revenue", "Amount": "$1,467,246.84"},
+            {"Account": "FedEx", "Period": "08/2026", "Line": "Payroll Taxes", "Amount": "46,139.28"},
+            {"Account": "fedex", "Period": "2026-08", "Line": "Indstrl, Mnftng, Wrhs - Subcontracted", "Amount": "474472.50"},
+            {"Account": "fedex", "Period": "2026-08", "Line": "Janitorial Bonus", "Amount": ""}]
+    assert detect_kind("export.csv", headers) == "income_statement"
+    assert detect_kind("income_statement_fedex_202608.csv", []) == "income_statement"
+    parsed = normalize_rows("income_statement", headers, rows, {})
+    assert [(r["line"], r["amount"]) for r in parsed.records] == [
+        ("revenue", Decimal("1467246.84")), ("payroll_taxes", Decimal("46139.28")), ("revenue_subcontracted_gl", Decimal("474472.50"))]
+    assert all(r["period"] == date(2026, 8, 1) for r in parsed.records)
+    assert parsed.errors == ["line 5: amount is empty"]
+
+
+def test_job_cost_reads_the_fixed_and_variable_revenue_split():
+    headers = ["CompanyNumber", "JobNumber", "Period", "Revenue", "Fixed Revenue", "OS Revenue", "DirectLabor"]
+    rows = [{"CompanyNumber": "2", "JobNumber": "39", "Period": "2026-08", "Revenue": "78952.73", "Fixed Revenue": "45000",
+             "OS Revenue": "33952.73", "DirectLabor": "20100"}]
+    record = normalize_rows("job_cost", headers, rows, COMPANIES).records[0]
+    assert (record["revenue_fixed"], record["revenue_variable"]) == (Decimal("45000"), Decimal("33952.73"))
+
+
+def test_job_cost_merge_accepts_overtime_hours():
+    """overtime_hours is both a pay report column and an optional job cost column; merging must not add to None."""
+    from app.imports import _load_job_cost
+
+    class Cursor:
+        def __init__(self):
+            self.params = []
+        def execute(self, sql, params=None):
+            self.params.append(params)
+
+    cursor = Cursor()
+    record = {"company": "Crane West", "job_number": "39", "period": date(2026, 7, 1), "job_name": "FedEx", "revenue": Decimal(100),
+              "direct_labor": Decimal(40), "overtime_hours": Decimal("3.5"), "actual_hours": Decimal(20)}
+    _load_job_cost(cursor, 1, [record, {**record, "revenue": Decimal(50), "overtime_hours": Decimal("1.5")}])
+    inserted = cursor.params[-1]
+    assert inserted[4] == Decimal(150) and inserted[14] == Decimal(5)

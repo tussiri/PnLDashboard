@@ -6,7 +6,7 @@
  */
 import fixture from '../leadership/fixtures/plano-we-2026-09-20.json'
 import type {
-  LeadershipAccount, LeadershipRole, LeadershipConfig, LeadershipRow, LeadershipRowsQuery, LeadershipRowsResponse, LeadershipSiteResponse, LeadershipVendorsResponse, LeadershipWeek, SourceBlock,
+  LeadershipAccount, LeadershipRole, LeadershipConfig, LeadershipRow, LeadershipRowsQuery, LeadershipRowsResponse, LeadershipSiteResponse, LeadershipVendorsResponse, LeadershipWeek, SourceBlock, LeadershipMonthlyResponse,
   StaffingJobResponse, StaffingRequestLine,
 } from './apiTypes'
 
@@ -90,7 +90,10 @@ function demoAccounts(): LeadershipAccount[] {
   return SPECS.map((s) => ({
     slug: s.slug, name: s.name, featured: true, sort: s.sort, target_labor_pct: s.target ?? 0.645, watch_band: 0.1,
     revenue_method: 'monthly_div', revenue_divisor: 4.33, budget_reliability_ratio: 0.8, source_parent_accounts: [s.name],
-    segment_source: 'explicit', fallback_segment: s.fallback, revenue_allocation: 'none', cost_basis: ['amazon', 'fedex', 'whole-foods'].includes(s.slug) ? 'labor_plus_vendor' : 'labor', segments: s.segments.map((name, i) => ({ name, sort: i + 1, target_labor_pct: null })),
+    segment_source: 'explicit', fallback_segment: s.fallback, revenue_allocation: 'none', cost_basis: ['amazon', 'fedex', 'whole-foods'].includes(s.slug) ? 'labor_plus_vendor' : 'labor',
+    vocabulary: s.slug === 'fedex' ? 'fedex' : 'amazon', vendor_factor: ['amazon', 'fedex'].includes(s.slug) ? 0.7 : 1,
+    invoice_basis: s.slug === 'fedex' ? 'run_rate_3m' : 'last_month', group_by: 'segment', split_subcontracted: s.slug === 'fedex',
+    segment_label: s.slug === 'amazon' ? 'BU' : 'Segment', vendor_label: s.slug === 'amazon' ? 'Agency sub' : ['fedex', 'whole-foods'].includes(s.slug) ? 'Subcontractor' : 'Vendor', segments: s.segments.map((name, i) => ({ name, sort: i + 1, target_labor_pct: null })),
     sites: rows.filter((r) => r.account_slug === s.slug).length, needs_review: 0, updated_at: '2026-09-21T06:00:00Z', updated_by: 'demo',
   }))
 }
@@ -161,4 +164,9 @@ export function demoStaffingJob(company: string, jobNumber: string, query: { wee
   if (Number(jobNumber.replace(/\D/g, '') || 0) % 3 === 0) lines.unshift(line(2, 'submitted', 'day', 'Porter', 1, addDays(week, 2), 15.5))
   const sum = (status: string) => lines.filter((l) => l.status === status).reduce((a, l) => a + l.headcount_needed, 0)
   return { source, configured: true, as_of: '2026-09-21T06:00:00Z', week, requested_headcount: sum('posted'), pending_requested_headcount: sum('submitted'), lines }
+}
+
+/** Demo months: none. The monthly views show their empty state on demo data. */
+export function demoLeadershipMonthly(account: string): LeadershipMonthlyResponse {
+  return { account, months: [], jobs: [], income_statement: {} }
 }

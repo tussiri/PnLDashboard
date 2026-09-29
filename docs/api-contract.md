@@ -388,7 +388,7 @@ are Monday-based; the views label them by the week-ending Sunday. Any date in a 
 ```
 LeadershipAccount = { slug, name, featured, sort, target_labor_pct, watch_band, revenue_method: 'monthly_div'|'weekly_billing'|'per_visit',
   revenue_divisor, budget_reliability_ratio, source_parent_accounts: [], segment_source: 'explicit'|'sub_account'|'company'|'fallback',
-  fallback_segment, revenue_allocation: 'none'|'budget_hours', cost_basis: 'labor'|'labor_plus_vendor',
+  fallback_segment, revenue_allocation: 'none'|'budget_hours', cost_basis: 'labor'|'labor_plus_vendor', segment_label, vendor_label,
   segments: [{name, sort, target_labor_pct|null}], sites, needs_review, updated_at, updated_by }
 LeadershipRow = { week_start, week_end, company, job_number, site_name, parent_account, account_slug|null (Other), segment, role: 'site'|'catch_all'|'non_billed',
   needs_review, hours, ot_hours, labor, labor_basis: 'pay_report'|'trailing_rate_estimate', ot_dollars (full 1.5x pay), budget_hours, budget_dollars,
@@ -415,7 +415,7 @@ do (White Settlement ISD on job 112, Crowley ISD on job 910), that revenue is sp
 present in the week by revenue-month budget hours, else revenue-month actual hours (migration 033,
 computed at read time): `revenue_month_amount` and `prior_revenue` include it and
 `revenue_allocated` shows the amount moved onto (+) or off (-) the row, `allocation_weight` the weight used
-(`budget_hours` | `actual_hours` | `week_hours`, null when nothing moved). `PUT /leadership/accounts/{slug}` also accepts `revenue_allocation` and `cost_basis`.
+(`budget_hours` | `actual_hours` | `week_hours`, null when nothing moved). `PUT /leadership/accounts/{slug}` also accepts `revenue_allocation`, `cost_basis`, `segment_label` and `vendor_label` (1 to 30 characters; migration 036). The views use the weekly reports' vocabulary: Invoicing, Direct labor, the account's `vendor_label` (Agency sub, Subcontractor), Total labor, Labor % = total labor ÷ invoicing, On track / Watch / High, pp WoW, Budget and $ Var, and Hours to cut (worked + OT premium + sub hours against the allowance at target, per day); groups are named by `segment_label` (BU for Amazon).
 
 ## Relay (FedEx) feeds, added 2026-09-24
 
@@ -451,9 +451,49 @@ Sign-in itself (`/auth/login`, `/auth/logout`, `/auth/me`, `/auth/mode`) is desc
 |---|---|
 | `GET /auth/setup` | `{needed}`: true while `APP_SETUP_TOKEN` is set and no database or `APP_USERS_JSON` user exists. Public. |
 | `POST /auth/setup` | Body `{token, username, password}`. Creates the first administrator and sets the session cookie; `201 {user: {username, role}}`. `404` without a setup token, `409` once any user exists, `401` for a wrong code, `422` for an invalid username or a password under 10 characters. Public. |
-| `GET /users` | Admin. `{users: [{username, role, active, source, created_at, created_by, last_login_at}]}`; `source` is `database`, `environment` (`APP_USERS_JSON`, read-only) or `development` (dev mode). Never returns hashes. |
-| `POST /users` | Admin. Body `{username, role, password}`; `201 {user}`. `409` when the name exists (any case) or is an environment user. |
-| `PATCH /users/{username}` | Admin. Body any of `{role, active, password}`; `{user}`. `409` for an environment user or when the change would leave no active administrator; `404` for an unknown user. A password reset refuses every session issued before it (the administrator resetting their own password gets a fresh cookie). |
+| `GET /users` | Admin. `{users: [{username, role, active, source, accounts, created_at, created_by, last_login_at}]}` (`accounts`: slugs the user may see, null = every account); `source` is `database`, `environment` (`APP_USERS_JSON`, read-only) or `development` (dev mode). Never returns hashes. |
+| `POST /users` | Admin. Body `{username, role, password, accounts?}`; `201 {user}`. `409` when the name exists (any case) or is an environment user. |
+| `PATCH /users/{username}` | Admin. Body any of `{role, active, password, accounts}` (`accounts: []` = every account); `{user}`. `409` for an environment user or when the change would leave no active administrator; `404` for an unknown user. A password reset refuses every session issued before it (the administrator resetting their own password gets a fresh cookie). |
+
+## Report parity: FedEx and Amazon weekly reports, added 2026-09-29
+
+Migration 037. Accounts gain `vocabulary` ('amazon' | 'fedex': which weekly report's words the
+account's pages use), `vendor_factor` (share of agency / subcontractor cost counted in labor; 0.70
+for FedEx and Amazon), `invoice_basis` ('last_month' | 'run_rate_3m'), `group_by` ('segment' |
+'pallet': Pallet sites / Janitorial only) and `split_subcontracted` (subcontracted sites leave the
+labor views for the Subcontracted Sites tab). All five are accepted by `PUT /leadership/accounts/{slug}`.
+Job role `pallet`: a WinTeam child job named "... Pallet" whose parent is in the same account; the
+browser adds it into its parent site (`kids`, `pallet_labor`, `pallet_hours`, `pallet_ot_hours`).
+
+`GET /leadership/rows` rows add `parent_job_number`, `dt_hours` (inside `ot_hours`; the OT premium is
+½ × OT + ½ × DT, so DT carries a full-time premium), `revenue_run_rate` (average monthly revenue over
+the revenue month and the two before it: job cost, else Relay AR for Relay-billed weeks),
+`variable_run_rate` and `revenue_month_variable` (from the Job Cost Analysis revenue split).
+
+| Route | Response |
+|---|---|
+| `GET /leadership/monthly?account=&months=3&through=YYYY-MM` | `{account, months: [YYYY-MM-01], jobs: [{company, job_number, job_name, role, parent_job_number, delivery_model, months: {YYYY-MM-01: {revenue, revenue_variable, direct_labor, payroll_taxes, subcontractors, relay_ar, relay_ap}}}], income_statement: {YYYY-MM-01: {line: amount}}}`. `through` defaults to the latest month with revenue. Feeds the prior-month labor % columns, Pallet, Income Statement and Subcontracted Sites. |
+
+Imports: `job_cost` files may carry `FixedRevenue` / `VariableRevenue` (stored on
+`core.fact_job_cost_month`); new kind `income_statement` (Account, Period, Line, Amount) into
+`core.fact_income_statement_month`, one file replacing the months it covers (docs/export-feeds.md).
+`POST /leadership/imports` also recognizes WinTeam's own layouts (app/native_exports.py): the timekeeping
+labor summary (loaded as kind `pay_report`, one Monday-Sunday week per file) and the Job Cost Analysis by
+GL line (kind `job_cost`, GL accounts pivoted by the `job_cost_gl_map` ranges; a file replaces the
+imported months it covers).
+
+## Records mailbox, added 2026-09-29
+
+Migration 038, docs/mail-inbox.md. The worker reads the records mailbox through Microsoft Graph
+(read-only) and loads dashboard report exports through the importer (`ops.import_file.origin = 'mail'`).
+
+| Route | Response |
+|---|---|
+| `GET /integrations/mail` | `{configured, mailbox, schedule: {enabled, every_minutes, first_lookback_days}, last_run: {status, started_at, completed_at, records_inserted, error_message} \| null, recent: [{received_at, sender, subject, file_name, status: loaded\|duplicate\|failed\|ignored, reason, kind, rows_loaded}]}`. Never returns the client secret. |
+| `POST /integrations/mail/poll` | Admin. Check now: `{status, loaded, duplicate, failed, ignored, messages, rebuilt}` or `{status: 'failed', error}`. `409` when not configured. |
+
+`GET /auth/me` returns `{user: {username, role, accounts}}`; `accounts` is null for every account. The leadership routes answer only for the user's accounts (docs/auth-rbac.md, Account access).
+
 
 ## Staffing requests and the sync schedule, added 2026-09-29
 

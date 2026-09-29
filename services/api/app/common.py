@@ -145,7 +145,7 @@ def current_user(request: Request) -> User | None:
     user, issued_at = claims
     record = settings_.users.get(user.username)
     if record is not None:
-        return User(record.username, record.role)
+        return User(record.username, record.role, record.accounts)
     from . import users
 
     return users.session_user(user, issued_at)
@@ -165,10 +165,30 @@ def _roles_label(roles: tuple[str, ...]) -> str:
     return " or ".join(ROLE_LABEL.get(r, r) for r in roles)
 
 
-def require_role(*roles: str) -> Callable[..., User | None]:
+def account_scope(user: User | None) -> frozenset[str] | None:
+    """The accounts a user may see; None = every account (administrators, unlimited users, the admin token)."""
+    if user is None or user.role == "admin" or not user.accounts:
+        return None
+    return frozenset(user.accounts)
+
+
+def allowed_accounts(request: Request) -> frozenset[str] | None:
+    return account_scope(current_user(request))
+
+
+def require_account(request: Request, slug: str | None) -> None:
+    """403 unless the signed-in user may see account `slug` (None = a job in no featured account: Other)."""
+    scope = allowed_accounts(request)
+    if scope is not None and slug not in scope:
+        raise HTTPException(status_code=403, detail="This account is not in your access")
+
+
+def require_role(*roles: str, scoped: bool = False) -> Callable[..., User | None]:
     """Router-level dependency: reads require a session whose role is in ``roles`` (no roles = any
     signed-in role); mutating requests accept a valid X-Admin-Token or an admin session instead, so
-    scripted admin calls keep working without a browser session."""
+    scripted admin calls keep working without a browser session. A user limited to accounts reaches
+    only routers marked ``scoped`` (the leadership routes, which filter by account); every other
+    router covers every account and answers 403."""
     unknown = [r for r in roles if r not in ROLES]
     if unknown:
         raise ValueError(f"unknown role(s): {', '.join(unknown)}")
@@ -189,6 +209,8 @@ def require_role(*roles: str) -> Callable[..., User | None]:
             raise HTTPException(status_code=401, detail="Sign in required")
         if user.role not in allowed:
             raise HTTPException(status_code=403, detail=f"This view requires the {_roles_label(allowed)} role")
+        if not scoped and account_scope(user) is not None:
+            raise HTTPException(status_code=403, detail="This view covers every account; your access is limited to some")
         return user
 
     return dependency

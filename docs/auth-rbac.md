@@ -39,6 +39,21 @@ A database user's session is re-checked against `ops.app_user` (cached for 30 se
 account or changing its role applies to sessions already issued, and a password reset refuses every
 session issued before it.
 
+### Account access
+
+A user can be limited to some accounts (Admin > Users > Accounts; `accounts` in `APP_USERS_JSON`;
+`ops.app_user.account_slugs`, migration 039). Nothing ticked means every account; administrators always
+see every account. A limited user:
+
+- sees only their accounts in the account list, on Home and in the Account pages;
+- gets `403` on the leadership routes for any other account (rows, a site, vendors, monthly), and on
+  `account=other`; `account=featured` and `all` narrow to their accounts;
+- gets `403` on every route that covers all accounts (Analytics, the retired reporting routes), which
+  are not marked `scoped` in `require_role`.
+
+Limits are read from the user record on each request (like roles), so a change applies to sessions
+already signed in within 30 seconds.
+
 ### First administrator
 
 While no user exists, `APP_SETUP_TOKEN` (at least 24 characters; Render generates it) opens a one-time

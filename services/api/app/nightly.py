@@ -1,7 +1,8 @@
 """The nightly sync (approved 2026-09-23): once a day, off hours, incremental.
 
 Steps, each isolated so one failure does not stop the others:
-  1. load every file in the import inbox (Pay Report / Job Cost exports, app/imports.py)
+  1. load every file in the import inbox (Pay Report / Job Cost exports, app/imports.py), then read the
+     records mailbox for report exports (app/mail_inbox.py), which the worker also polls on its own
   2. WinTeam primary database: the same incremental sync as the Admin button (3-day lookback, masters
      and AR skipped when synced within 20 hours, unretrievable records remembered, 403 resources
      skipped) without its own mart rebuild
@@ -32,7 +33,7 @@ from .db import connection
 logger = logging.getLogger("nightly")
 
 DEFAULT_SCHEDULE: dict[str, Any] = {"enabled": True, "hour": 2, "minute": 30, "timezone": "America/Chicago", "window_hours": 3,
-                                    "import_inbox": True, "winteam": True, "sarus": True, "relay": True}
+                                    "import_inbox": True, "mail_inbox": True, "winteam": True, "sarus": True, "relay": True}
 INTEGRATION = "nightly"
 
 
@@ -76,7 +77,7 @@ def _start(run_id: str, started: datetime) -> None:
 
 def run_nightly(schedule: dict[str, Any] | None = None) -> dict[str, Any]:
     """Run every enabled step once; returns a summary. Never raises."""
-    from . import imports, marts, relay
+    from . import imports, mail_inbox, marts, relay
     from .winteam import sarus_ingestion, winteam
 
     if schedule is None:
@@ -106,6 +107,14 @@ def run_nightly(schedule: dict[str, Any] | None = None) -> dict[str, Any]:
             summary["imports"] = [{"file": f.get("file_name"), "status": f.get("status")} for f in files]
             return {}
         step("import_inbox", scan)
+    if schedule.get("mail_inbox") and mail_inbox.configured():
+        def read_mailbox() -> dict[str, Any]:
+            result = mail_inbox.run(rebuild=False)
+            if result["status"] == "failed":
+                raise mail_inbox.MailError(result["error"])
+            summary["mail"] = {k: result.get(k) for k in ("loaded", "duplicate", "failed", "ignored")}
+            return {}
+        step("mail_inbox", read_mailbox)
     if schedule.get("winteam") and settings.winteam_enabled and settings.winteam_configured:
         step("winteam", lambda: winteam.sync_all(rebuild=False))
     if schedule.get("sarus") and settings.winteam_sarus_enabled and settings.winteam_sarus_configured:

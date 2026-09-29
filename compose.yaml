@@ -52,6 +52,12 @@ x-api-environment: &api-environment
   # PhotoValidation staffing-request feed (origin, and an existing PhotoValidation API token). Blank = off.
   PHOTOVALIDATION_API_URL: ${PHOTOVALIDATION_API_URL:-}
   PHOTOVALIDATION_API_TOKEN: ${PHOTOVALIDATION_API_TOKEN:-}
+  # Records mailbox (Microsoft Graph, app registration with Mail.Read limited to this mailbox).
+  GRAPH_TENANT_ID: ${GRAPH_TENANT_ID:-}
+  GRAPH_CLIENT_ID: ${GRAPH_CLIENT_ID:-}
+  GRAPH_CLIENT_SECRET: ${GRAPH_CLIENT_SECRET:-}
+  GRAPH_MAILBOX: ${GRAPH_MAILBOX:-}
+  GRAPH_TIMEOUT_SECONDS: ${GRAPH_TIMEOUT_SECONDS:-60}
   # Second source: the restored Finance_Dashboard dump (read-only database in the same Postgres).
   # Empty = source not configured. The default is the local restored dump.
   FINANCE_REFERENCE_DATABASE_URL: ${FINANCE_REFERENCE_DATABASE_URL:-postgresql://facilities_app:facilities_dev@postgres:5432/finance_reference}

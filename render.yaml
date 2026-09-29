@@ -99,6 +99,16 @@ services:
         sync: false
       - key: COMPANYCAM_API_TOKEN
         sync: false
+      # Records mailbox poller (docs/mail-inbox.md): Microsoft Graph app registration, Mail.Read,
+      # limited to the mailbox. Leave empty until the app registration exists.
+      - key: GRAPH_TENANT_ID
+        sync: false
+      - key: GRAPH_CLIENT_ID
+        sync: false
+      - key: GRAPH_CLIENT_SECRET
+        sync: false
+      - key: GRAPH_MAILBOX
+        value: records@smcraneifs.com
 
   - type: worker
     name: crane-ifs-worker
@@ -170,6 +180,26 @@ services:
           type: pserv
           name: crane-ifs-api
           envVarKey: PHOTOVALIDATION_API_TOKEN
+      - key: GRAPH_TENANT_ID
+        fromService:
+          type: pserv
+          name: crane-ifs-api
+          envVarKey: GRAPH_TENANT_ID
+      - key: GRAPH_CLIENT_ID
+        fromService:
+          type: pserv
+          name: crane-ifs-api
+          envVarKey: GRAPH_CLIENT_ID
+      - key: GRAPH_CLIENT_SECRET
+        fromService:
+          type: pserv
+          name: crane-ifs-api
+          envVarKey: GRAPH_CLIENT_SECRET
+      - key: GRAPH_MAILBOX
+        fromService:
+          type: pserv
+          name: crane-ifs-api
+          envVarKey: GRAPH_MAILBOX
 
   - type: web
     name: crane-ifs-web

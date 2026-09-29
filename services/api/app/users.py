@@ -46,10 +46,16 @@ class StoredUser:
     created_at: datetime | None = None
     created_by: str | None = None
     last_login_at: datetime | None = None
+    #: Accounts the user may see; None = every account.
+    account_slugs: list[str] | None = None
 
     def public(self) -> dict[str, Any]:
-        return {"username": self.username, "role": self.role, "active": self.active, "source": "database",
+        return {"username": self.username, "role": self.role, "active": self.active, "source": "database", "accounts": self.account_slugs,
                 "created_at": _iso(self.created_at), "created_by": self.created_by, "last_login_at": _iso(self.last_login_at)}
+
+    @property
+    def accounts(self) -> tuple[str, ...] | None:
+        return tuple(self.account_slugs) if self.account_slugs else None
 
 
 def _iso(value: datetime | None) -> str | None:
@@ -85,7 +91,7 @@ class UserStore(Protocol):
 
 
 class PostgresUserStore:
-    COLUMNS = "username, role, password_hash, active, sessions_valid_after, created_at, created_by, last_login_at"
+    COLUMNS = "username, role, password_hash, active, sessions_valid_after, created_at, created_by, last_login_at, account_slugs"
 
     def _row(self, row: dict[str, Any] | None) -> StoredUser | None:
         return StoredUser(**row) if row else None
@@ -114,11 +120,11 @@ class PostgresUserStore:
                     return False
             cursor.execute(
                 """
-                INSERT INTO ops.app_user (username, role, password_hash, active, created_by, updated_by)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                INSERT INTO ops.app_user (username, role, password_hash, active, created_by, updated_by, account_slugs)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT DO NOTHING
                 """,
-                (user.username, user.role, user.password_hash, user.active, user.created_by, user.created_by),
+                (user.username, user.role, user.password_hash, user.active, user.created_by, user.created_by, user.account_slugs),
             )
             created = cursor.rowcount == 1
             conn.commit()
@@ -193,7 +199,7 @@ def authenticate(username: str, password: str) -> User | None:
         _store.touch_login(record.username)
     except Exception:  # noqa: BLE001 - a failed timestamp must not refuse a valid sign-in
         logger.exception("Could not record sign-in for %s", record.username)
-    return User(record.username, record.role)
+    return User(record.username, record.role, record.accounts)
 
 
 def session_user(user: User, issued_at: float) -> User | None:
@@ -204,7 +210,7 @@ def session_user(user: User, issued_at: float) -> User | None:
     # Cookies carry whole seconds; allow a little clock skew between the API and the database.
     if issued_at + CLOCK_SKEW_SECONDS < record.sessions_valid_after.timestamp():
         return None
-    return User(record.username, record.role)
+    return User(record.username, record.role, record.accounts)
 
 
 def any_users() -> bool:
@@ -215,17 +221,32 @@ def listing() -> list[dict[str, Any]]:
     return [u.public() for u in _store.all()]
 
 
-def create(username: str, role: str, password: str, actor: str, *, only_if_empty: bool = False) -> StoredUser:
+def normalize_accounts(accounts: list[str] | None, known: set[str] | None = None) -> list[str] | None:
+    """Account slugs, de-duplicated and checked against `known`; an empty list means every account."""
+    if not accounts:
+        return None
+    slugs = sorted({a.strip() for a in accounts if a and a.strip()})
+    unknown = [a for a in slugs if known is not None and a not in known]
+    if unknown:
+        raise UserError(f"Unknown account(s): {', '.join(unknown)}")
+    return slugs or None
+
+
+def create(username: str, role: str, password: str, actor: str, *, only_if_empty: bool = False,
+           accounts: list[str] | None = None) -> StoredUser:
     user = StoredUser(validate_username(username), validate_role(role), hash_password(validate_password(password)), True,
-                      datetime.now(timezone.utc), created_by=actor)
+                      datetime.now(timezone.utc), created_by=actor, account_slugs=accounts or None)
     if not _store.create(user, only_if_empty=only_if_empty):
         raise UserError("Setup is already complete" if only_if_empty else f"{user.username} already exists", status=409)
     clear_cache()
     return _store.get(user.username) or user
 
 
+UNCHANGED: Any = object()
+
+
 def update(username: str, actor: str, *, role: str | None = None, active: bool | None = None, password: str | None = None,
-           environment_admins: int = 0) -> StoredUser:
+           environment_admins: int = 0, accounts: Any = UNCHANGED) -> StoredUser:
     """Change a database user's role, active flag or password. Refuses to leave no active administrator
     (environment administrators from APP_USERS_JSON count)."""
     current = _store.get(username)
@@ -238,6 +259,8 @@ def update(username: str, actor: str, *, role: str | None = None, active: bool |
         changes["active"] = bool(active)
     if password is not None:
         changes["password_hash"] = hash_password(validate_password(password))
+    if accounts is not UNCHANGED:
+        changes["account_slugs"] = accounts or None
     if not changes:
         return current
     still_admin = changes.get("role", current.role) == "admin" and changes.get("active", current.active)

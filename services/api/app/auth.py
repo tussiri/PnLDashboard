@@ -58,6 +58,9 @@ _DEV_SESSION_SECRET = "crane-ifs-development-session-secret-not-for-production"
 class User:
     username: str
     role: str
+    #: Accounts (slugs) the user may see; None = every account. Not carried in the cookie: read from
+    #: the user record on each request (app/common.py current_user).
+    accounts: tuple[str, ...] | None = None
 
     def as_dict(self) -> dict[str, str]:
         return {"username": self.username, "role": self.role}
@@ -68,6 +71,7 @@ class UserRecord:
     username: str
     role: str
     password_hash: str
+    accounts: tuple[str, ...] | None = None
 
 
 # ── password hashing ─────────────────────────────────────────────────────────
@@ -139,7 +143,10 @@ def parse_users_json(raw: str) -> dict[str, UserRecord]:
             raise ConfigurationError(f"APP_USERS_JSON[{index}] ({username}): password_hash must be pbkdf2_sha256$<iterations>$<salt_b64>$<hash_b64>")
         if username in users:
             raise ConfigurationError(f"APP_USERS_JSON lists {username} more than once")
-        users[username] = UserRecord(username, role, password_hash)
+        raw_accounts = item.get("accounts")
+        if raw_accounts is not None and (not isinstance(raw_accounts, list) or not all(isinstance(a, str) for a in raw_accounts)):
+            raise ConfigurationError(f"APP_USERS_JSON[{index}] ({username}): accounts must be a list of account slugs")
+        users[username] = UserRecord(username, role, password_hash, tuple(raw_accounts) if raw_accounts else None)
     return users
 
 
@@ -249,7 +256,7 @@ class AuthSettings:
             return None
         if not verify_password(password, record.password_hash):
             return None
-        return User(record.username, record.role)
+        return User(record.username, record.role, record.accounts)
 
     def is_dev_user(self, record: UserRecord) -> bool:
         return self.dev_mode and record.username in DEV_USERNAMES and record.password_hash == _dev_hash(record.username)

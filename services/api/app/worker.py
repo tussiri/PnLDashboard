@@ -8,6 +8,9 @@
 Administrators can still sync on demand from the Admin view or POST /api/v1/integrations/winteam/sync;
 every WinTeam sync holds one advisory lock, so none of them overlap.
 
+The worker also reads the records mailbox for report exports (app/mail_inbox.py), every
+`every_minutes` of ops.app_setting 'mail_inbox' (default 30): that reads Microsoft Graph, not WinTeam.
+
 On startup the worker also rebuilds the marts if core facts exist but mart.job_month is empty (for
 example after a fresh mart migration), then checks the schedules once a minute until SIGTERM/SIGINT.
 Each check is isolated: a failure is logged and the worker carries on.
@@ -18,7 +21,7 @@ import logging
 import signal
 import time
 
-from . import marts, nightly, schedule
+from . import mail_inbox, marts, nightly, schedule
 from .config import settings
 
 logging.basicConfig(level=settings.log_level, format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -43,7 +46,8 @@ def rebuild_on_startup() -> None:
 
 def tick() -> None:
     for name, check in (("Nightly", nightly.check_and_run), ("WinTeam interval", schedule.run_winteam_light),
-                        ("PhotoValidation interval", schedule.run_photovalidation)):
+                        ("PhotoValidation interval", schedule.run_photovalidation),
+                        ("Records mailbox", mail_inbox.check_and_poll)):
         try:
             check()
         except Exception:  # noqa: BLE001 - a failed check must not stop the worker

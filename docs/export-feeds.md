@@ -39,6 +39,25 @@ on the dashboard.
 
 Personal columns (employee name, SSN, address) are not needed. Leave them out.
 
+### 1a. Timekeeping labor summary (accepted in place of the Pay Report)
+
+WinTeam's labor summary by employee (ExportStartDate, ExportEndDate, Hours1..Hours16, LaborDollars,
+OvtHrs, DTHrs, OvtDollars, DTDollars) is loaded as pay report labor, recognized by its columns.
+
+- **Run it for one Monday-Sunday week** (ExportStartDate = Monday, ExportEndDate = Sunday), each
+  Monday for the week just ended; daily for the current week if the dashboard should show it live.
+  LaborDollars is a total for the window, so a longer window cannot be split into weeks: a row whose
+  Hours1..Hours16 do not add up to TotalHours is refused unless the window sits inside one week.
+- Hours1 is ExportStartDate. A row whose daily hours reconcile is spread over those days (dollars and
+  OT in proportion to hours, to the cent, totals exact).
+- The file covers its window only through the day before ExportRunDate, so days not yet worked keep
+  their estimate. Within that window it replaces the company's pay report labor.
+- Companies are labeled by CompanyName through the `company_aliases` setting first (Sarus and the
+  Crane companies are separate WinTeam databases whose company numbers overlap), then by number.
+- Used: ExportRunDate, ExportStartDate, ExportEndDate, CompanyNumber, CompanyName, JobNum or
+  JobNumber, EmployeeNumber, TotalHours, HoursTypeDescription, Hours1..Hours16, LaborDollars, OvtHrs,
+  DTHrs, OvtDollars, DTDollars. EmployeeName can be left out.
+
 ## 2. Job Cost Analysis (required, monthly)
 
 Revenue, direct labor, subcontract and other direct costs by job and month. It is the source of
@@ -58,8 +77,56 @@ subcontractor cost.
 | Subcontract | yes |
 | Supplies, OtherDirect | yes (consumables later) |
 | GrossProfit | optional (checked against the computed value) |
+| FixedRevenue, VariableRevenue | optional; the contract billing and the variable (OS, pallet) billing that make up Revenue. Needed for the Pallet view (FedEx: the "Indstrl" and "OS" revenue lines). Aliases: ContractRevenue, OSRevenue, ExtraWork. |
 
-## 3. Daily labor budget (optional)
+### 2a. Job Cost Analysis by GL line (WinTeam's own layout, preferred)
+
+The export WinTeam produces (one row per job, fiscal period and GL account: GLAccountNumber,
+ActualDollars, ActualHours, ActualOvertimeHours, PeriodStartDate or FiscalYear / FiscalPeriod) is
+recognized by its columns and pivoted into the job-month columns above by GL account range:
+
+| GL accounts | Column |
+|---|---|
+| 30000-39999 | Revenue (34000 OS Revenue is also the variable revenue, read for pallet-site accounts only) |
+| 40000-40999 | Direct labor (hours from these lines) |
+| 41000-42999 | Payroll taxes and insurance |
+| 44000-44999 | Subcontractors |
+| 45000-45999 | Materials |
+| 46000-47999 | Equipment and supplies |
+| 43000-43999, 48000-49999 | Other direct costs |
+
+Other accounts are reported in the import's errors and not loaded. The ranges are the setting
+`job_cost_gl_map` in ops.app_setting (same shape as `JOB_COST_GL_MAP` in app/native_exports.py).
+A file replaces the imported months it covers for its companies.
+
+- **Do not filter GL accounts.** The 2026-08-02 export carried revenue only on 31800, 31803, 31807
+  and 34000: FedEx's fixed billing and Amazon's billing are booked to accounts it left out.
+- **Run after month-end close**, for the closed month and the two before it. The 2026-08-02 run
+  for July was early: FedEx Bloomington had $8,952 of July labor against about $19,675 once closed.
+- Include payroll taxes, supplies and other direct lines for the loaded labor % and the income
+  statement bridge.
+
+## 3. Trend Income Statement (monthly, per account)
+
+The account's income statement by month, for the Income Statement view and its bridge to the
+dashboard sites (FedEx). Name the file `income_statement_*`; a file replaces the months it covers.
+
+- Grain: one row per account, fiscal period and line.
+- Window: the last three closed periods.
+
+| Column | Required |
+|---|---|
+| Account (slug such as `fedex`, or the account name) | yes |
+| Period (YYYY-MM) | yes |
+| Line (income statement line description) | yes |
+| Amount | yes |
+
+Lines the view reads, matched case- and punctuation-insensitively: Revenue (Total Revenue), the
+GL-only subcontracted revenue line (Indstrl, Mnftng, Wrhs - Subcontracted), Wages (Direct Wages),
+Management Wages, Payroll Taxes, Workers Comp, Subcontractors, Supplies, Vehicle, Travel, Insurance,
+Gross Profit, Admin, Net Profit. Other lines are kept but not shown.
+
+## 4. Daily labor budget (optional)
 
 `GET jobs/{job}/budgets` already supplies budget hours by day of week. Send this feed only if
 Finance prefers the report's budget over the job budget setup.

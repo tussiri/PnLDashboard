@@ -7,7 +7,7 @@ describe('leadership routes', () => {
       { view: 'home', account: 'plano-isd', week: '2026-09-20', target: 64.5 },
       { view: 'account', account: 'plano-isd', tab: 'sites', week: '2026-09-20', site: { company: 'Crane Southwest', job: '801' } },
       { view: 'account', account: 'fedex', tab: 'overview' },
-      { view: 'account', account: 'fedex', tab: 'sites', selfOnly: true },
+      { view: 'account', account: 'fedex', tab: 'sites', selfOnly: true, basis: 'last_month' },
       { view: 'analytics', week: '2026-09-20', account: 'other', status: 'over', q: 'elementary', segment: 'High School' },
       { view: 'admin', adminTab: 'imports' },
     ]

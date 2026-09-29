@@ -241,6 +241,19 @@ export interface SyncRun {
   error_message: string | null
 }
 
+/** GET /integrations/mail: the records mailbox poller. */
+export interface MailInboxStatus {
+  configured: boolean
+  mailbox: string | null
+  schedule: { enabled: boolean; every_minutes: number; first_lookback_days: number }
+  last_run: { status: string; started_at: string; completed_at: string | null; records_inserted: number | null; error_message: string | null } | null
+  recent: {
+    received_at: string; sender: string | null; subject: string | null; file_name: string
+    status: 'loaded' | 'duplicate' | 'failed' | 'ignored'; reason: string | null; kind: string | null; rows_loaded: number | null
+  }[]
+}
+export interface MailPollResult { status: 'succeeded' | 'failed'; error?: string; loaded?: number; duplicate?: number; failed?: number; ignored?: number; messages?: number; rebuilt?: boolean }
+
 export interface SyncRunsResponse {
   runs: SyncRun[]
 }
@@ -1207,7 +1220,8 @@ export interface ExecutiveAccountsResponse {
 // Leadership labor P&L (contract "Leadership labor P&L", added 2026-09-23)
 // Ratios in these payloads stay fractions (target_labor_pct: 0.645); the client does not convert them.
 
-export type LeadershipRole = 'site' | 'catch_all' | 'non_billed'
+/** pallet: a WinTeam child job ("... Pallet") rolled into its parent site. */
+export type LeadershipRole = 'site' | 'catch_all' | 'non_billed' | 'pallet'
 export type LeadershipLaborBasis = 'pay_report' | 'payroll_rate' | 'trailing_rate_estimate'
 export type LeadershipRevenueMethod = 'monthly_div' | 'weekly_billing' | 'per_visit'
 export type LeadershipSegmentSource = 'explicit' | 'sub_account' | 'company' | 'fallback'
@@ -1236,6 +1250,20 @@ export interface LeadershipAccount {
   revenue_allocation: 'none' | 'budget_hours'
   /** labor: labor % (the reference); labor_plus_vendor: cost % = (labor + vendor) / invoice. */
   cost_basis: 'labor' | 'labor_plus_vendor'
+  /** What the account's groups are called ("BU" for Amazon, "Segment" by default). */
+  segment_label: string
+  /** What the non-payroll labor cost is called ("Agency sub", "Subcontractor", "Vendor"). */
+  vendor_label: string
+  /** Which weekly report's words the account's pages use. */
+  vocabulary: 'amazon' | 'fedex'
+  /** Share of agency or subcontractor cost counted in labor (both weekly reports: 0.70). */
+  vendor_factor: number
+  /** Weekly invoice from the last closed month, or the 3-month run rate. */
+  invoice_basis: 'last_month' | 'run_rate_3m'
+  /** Groups by segment, or Pallet sites vs Janitorial only. */
+  group_by: 'segment' | 'pallet'
+  /** Subcontracted sites leave the labor views for the Subcontracted Sites tab. */
+  split_subcontracted: boolean
   segments: LeadershipSegment[]
   sites: number
   needs_review: number
@@ -1315,6 +1343,51 @@ export interface LeadershipRow {
   longitude: number | null
   city: string | null
   state_province: string | null
+  parent_job_number?: string | null
+  /** Double-time hours; already inside ot_hours. */
+  dt_hours?: number
+  /** Average monthly revenue over the revenue month and the two before it. */
+  revenue_run_rate?: number | null
+  /** Average monthly variable (OS, pallet) revenue over the same months, when the Job Cost Analysis carries it. */
+  variable_run_rate?: number | null
+  revenue_month_variable?: number | null
+  /** Set in the browser (data.ts prepareRows): pallet jobs rolled into this site and their share. */
+  kids?: string[]
+  pallet_labor?: number
+  pallet_hours?: number
+  pallet_ot_hours?: number
+}
+
+/** One job-month for GET /leadership/monthly. */
+export interface LeadershipMonth {
+  revenue: number
+  revenue_variable: number | null
+  direct_labor: number
+  payroll_taxes: number
+  subcontractors: number
+  relay_ar: number
+  relay_ap: number
+  /** Weekly timekeeping labor in the month (weeks by their Thursday). */
+  timekeeping_labor: number
+}
+
+export interface LeadershipMonthlyJob {
+  company: string
+  job_number: string
+  job_name: string | null
+  role: LeadershipRole
+  parent_job_number: string | null
+  delivery_model: 'self_perform' | 'subcontracted' | null
+  /** Keyed by the first of the month (YYYY-MM-01). */
+  months: Record<string, LeadershipMonth>
+}
+
+export interface LeadershipMonthlyResponse {
+  account: string
+  months: string[]
+  jobs: LeadershipMonthlyJob[]
+  /** Trend Income Statement lines per month (revenue, revenue_subcontracted_gl, wages, payroll_taxes, subcontractors, supplies, vehicle, travel, insurance, gross_profit, ...). */
+  income_statement: Record<string, Record<string, number>>
 }
 
 export interface LeadershipRowsQuery {
@@ -1393,7 +1466,7 @@ export interface LeadershipVendorsResponse {
   lines: (LeadershipInvoiceLine & { company: string; job_number: string; site_name: string })[]
 }
 
-export type LeadershipImportKind = 'pay_report' | 'job_cost'
+export type LeadershipImportKind = 'pay_report' | 'job_cost' | 'income_statement'
 
 export interface LeadershipImportFile {
   import_file_id: number
@@ -1425,7 +1498,7 @@ export interface LeadershipAccountJob {
   is_active: boolean | null
 }
 
-export type LeadershipAccountPatch = Partial<Pick<LeadershipAccount, 'name' | 'featured' | 'sort' | 'target_labor_pct' | 'watch_band' | 'revenue_method' | 'revenue_divisor' | 'budget_reliability_ratio' | 'source_parent_accounts' | 'segment_source' | 'fallback_segment' | 'revenue_allocation' | 'cost_basis'>>
+export type LeadershipAccountPatch = Partial<Pick<LeadershipAccount, 'name' | 'featured' | 'sort' | 'target_labor_pct' | 'watch_band' | 'revenue_method' | 'revenue_divisor' | 'budget_reliability_ratio' | 'source_parent_accounts' | 'segment_source' | 'fallback_segment' | 'revenue_allocation' | 'cost_basis' | 'segment_label' | 'vendor_label' | 'vocabulary' | 'vendor_factor' | 'invoice_basis' | 'group_by' | 'split_subcontracted'>>
 export interface LeadershipJobMapping { account_slug: string | null; segment?: string | null; role?: LeadershipRole; companycam_project_id?: string | null }
 
 // Staffing requests (PhotoValidation Contract B), added 2026-09-29

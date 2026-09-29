@@ -4,12 +4,13 @@ import { useApiQuery } from '../../hooks/useApiQuery'
 import type { LeadershipSiteResponse, StaffingJobResponse, StaffingRequestLine } from '../../services/apiTypes'
 import { queryKey } from '../../services/queryClient'
 import { TrendChart } from '../charts'
-import { measureLabel } from '../data'
-import { hours, hours1, money, pct, rate } from '../format'
+import { includesVendor, inSentence, vendorLabel } from '../data'
+import { hours, hours1, money, pct, pts, rate } from '../format'
 import { siteMetrics } from '../metrics'
 import { monthLabel, weekLabel, weekTick } from '../routes'
 import { useLeadership } from '../state'
-import { Badge, ChartCard, Empty, Kpi, LoadError, Skeleton, Swatch, toneOf } from '../ui'
+import { Badge, ChartCard, Empty, Kpi, LoadError, Skeleton, Swatch, toneOf, VocabContext } from '../ui'
+import { vocabOf } from '../vocab'
 import { useTokens } from '../charts'
 
 const cap = (s: string | null) => (s ? s.charAt(0).toUpperCase() + s.slice(1).replace(/_/g, ' ') : '–')
@@ -63,9 +64,9 @@ export function SiteDrawer({ company, job }: { company: string; job: string }) {
   const weeks = useMemo(() => (q.data?.weeks ?? []).map((r) => siteMetrics(r, options)), [q.data, options])
   const current = weeks.find((r) => r.week_start === weekStart)
   const site = q.data?.site
-  const m = measureLabel(account)
+  const m = 'Labor %'
 
-  return <>
+  return <VocabContext.Provider value={vocabOf(account)}>
     <button type="button" className="scrim" aria-label="Close site detail" onClick={close} />
     <div className="drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title" ref={panel} tabIndex={-1}>
       <div className="drawer__hdr">
@@ -75,25 +76,25 @@ export function SiteDrawer({ company, job }: { company: string; job: string }) {
       </div>
       {q.error ? <LoadError error={q.error} onRetry={q.refetch} /> : !q.data ? <Skeleton height={400} /> : <>
         {current ? <div className="kpi-lg">
-          <Kpi label="Weekly invoice" value={money(current.invoice)} sub={current.revenue_allocated ? `Incl. ${money(current.revenue_allocated / (options.divisor ?? 4.33))} spread from parent` : `${monthLabel(current.revenue_month)} revenue`} />
-          <Kpi label="Labor $" value={money(current.labor)} sub={current.labor_basis === 'pay_report' ? 'Pay report' : 'Estimated'} tone={current.labor_basis === 'pay_report' ? '' : 'warn'} />
-          <Kpi label={m} value={pct(current.measurePct)} tone={toneOf(current.status)} sub={`Target ${pct(current.target)}; ${monthLabel(current.revenue_month)} ${pct(current.priorLaborPct)}`} />
+          <Kpi label="Invoicing" value={money(current.invoice)} sub={current.revenue_allocated ? `Incl. ${money(current.revenue_allocated / (options.divisor ?? 4.33))} spread from parent` : `${monthLabel(current.revenue_month)} revenue`} />
+          <Kpi label="Direct labor" value={money(current.labor)} sub={current.labor_basis === 'pay_report' ? 'Pay report' : 'Estimated'} tone={current.labor_basis === 'pay_report' ? '' : 'warn'} />
+          <Kpi label={m} value={pct(current.measurePct)} tone={toneOf(current.status)} sub={`${current.measurePct == null ? '' : `${pts(current.measurePct - current.target)} vs ${pct(current.target)} target; `}${monthLabel(current.revenue_month)} ${pct(current.priorLaborPct)}`} />
           <Kpi label="Hours" value={hours1(current.hours)} sub={`${hours1(current.ot_hours)} OT (${pct(current.otPct)})`} />
-          <Kpi label="Hours over target" value={hours1(current.overHours)} tone={current.overHours > 0.5 ? 'bad' : 'ok'} sub={`Base rate ${rate(current.baseRate)}`} />
-          <Kpi label="Vendor $" value={money(current.sub_week)} />
+          <Kpi label="Hours to cut" value={<>{hours1(current.overHours / 7)}<span className="of">/day</span></>} tone={current.overHours > 0.5 ? 'bad' : 'ok'} sub={`${hours1(current.overHours)}h this week; base rate ${rate(current.baseRate)}`} />
+          {(includesVendor(account) || (current.sub_week ?? 0) > 0) && <Kpi label={vendorLabel(account)} value={money(current.sub_week)} sub={includesVendor(account) ? `Total labor ${money(current.cost)}` : undefined} />}
         </div> : <Empty>No data for this week.</Empty>}
         {weeks.length > 1 && <ChartCard title={`${m} by week`} height={200}
           legend={<><Swatch color={t.accent} label={m} /><Swatch line label={`Target ${pct(options.target)}`} /></>}
           chart={<TrendChart labels={weeks.map((r) => weekTick(r.week_start))} values={weeks.map((r) => r.measurePct)} target={current?.target ?? options.target} label={m} />}
-          table={<table><thead><tr><th className="nosort l">Week ending</th><th className="nosort">Invoice</th><th className="nosort">Labor $</th><th className="nosort">{m}</th><th className="nosort">Hours</th><th className="nosort">OT hrs</th></tr></thead>
+          table={<table><thead><tr><th className="nosort l">Week ending</th><th className="nosort">Invoicing</th><th className="nosort">Direct labor</th><th className="nosort">{m}</th><th className="nosort">Hours</th><th className="nosort">OT hrs</th></tr></thead>
             <tbody>{weeks.map((r) => <tr key={r.week_start}><td className="l">{weekTick(r.week_start)}</td><td>{money(r.invoice)}</td><td>{money(r.labor)}</td><td>{pct(r.measurePct)}</td><td>{hours1(r.hours)}</td><td>{hours1(r.ot_hours)}</td></tr>)}</tbody></table>} />}
         {user.role !== 'executive' && <StaffingCard company={company} job={job} />}
         <div className="card">
-          <div className="ct"><span>Vendor invoices since {monthLabel(q.data.invoices.since)}</span><span>{money(q.data.invoices.total)}</span></div>
-          {q.data.invoices.lines.length ? <div className="tw"><table><caption className="sr-only">Vendor invoices</caption>
+          <div className="ct"><span>{vendorLabel(account)} invoices since {monthLabel(q.data.invoices.since)}</span><span>{money(q.data.invoices.total)}</span></div>
+          {q.data.invoices.lines.length ? <div className="tw"><table><caption className="sr-only">{vendorLabel(account)} invoices</caption>
             <thead><tr><th className="nosort l">Date</th><th className="nosort l">Vendor</th><th className="nosort l">Invoice</th><th className="nosort l">Source</th><th className="nosort">GL</th><th className="nosort">Amount</th></tr></thead>
             <tbody>{q.data.invoices.lines.map((l, i) => <tr key={`${l.invoice_number}-${i}`}><td className="l">{l.invoice_date}</td><td className="l nm">{l.vendor_name}</td><td className="l">{l.invoice_number}</td><td className="l neutral">{l.source === 'relay' ? 'Relay' : 'WinTeam'}</td><td>{l.gl_account_number ?? '–'}</td><td>{money(l.amount)}</td></tr>)}</tbody>
-          </table></div> : <Empty>No vendor invoices.</Empty>}
+          </table></div> : <Empty>No {inSentence(vendorLabel(account))} invoices.</Empty>}
         </div>
         <div className="card">
           <div className="ct"><span>Photos</span></div>
@@ -113,5 +114,5 @@ export function SiteDrawer({ company, job }: { company: string; job: string }) {
           </dl></div>}
       </>}
     </div>
-  </>
+  </VocabContext.Provider>
 }

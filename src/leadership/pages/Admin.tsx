@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useApiQuery } from '../../hooks/useApiQuery'
-import type { LeadershipAccount, LeadershipAccountJob, LeadershipAccountPatch, LeadershipImportFile, LeadershipImportKind, LeadershipRole, SyncRunsResponse } from '../../services/apiTypes'
+import type { LeadershipAccount, LeadershipAccountJob, LeadershipAccountPatch, LeadershipImportFile, LeadershipImportKind, LeadershipRole, SyncRunsResponse, MailInboxStatus } from '../../services/apiTypes'
 import { queryClient, queryKey } from '../../services/queryClient'
+import { inSentence } from '../data'
 import { ADMIN_TABS, type AdminTab } from '../routes'
 import { freshnessLine, PageHeader } from '../Shell'
 import { useLeadership } from '../state'
@@ -9,7 +10,7 @@ import { Empty, LoadError, Pills, Skeleton, SortTable, type Column } from '../ui
 import { UsersTab } from './Users'
 
 const TAB_LABEL: Record<AdminTab, string> = { accounts: 'Accounts', jobs: 'Job mapping', imports: 'Imports', data: 'Data and sync', users: 'Users' }
-const ROLE_LABEL: Record<LeadershipRole, string> = { site: 'Site', catch_all: 'Catch-all', non_billed: 'Non-billed' }
+const ROLE_LABEL: Record<LeadershipRole, string> = { site: 'Site', catch_all: 'Catch-all', non_billed: 'Non-billed', pallet: 'Pallet' }
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e))
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
@@ -32,7 +33,7 @@ function useAction() {
 }
 
 function AccountEditor({ account }: { account: LeadershipAccount }) {
-  const { api } = useLeadership()
+  const { adminApi: api } = useLeadership()
   const { busy, run, view } = useAction()
   const [draft, setDraft] = useState(account)
   const [segments, setSegments] = useState(account.segments.map((s) => ({ name: s.name, target: s.target_labor_pct == null ? '' : String(s.target_labor_pct * 100) })))
@@ -43,10 +44,12 @@ function AccountEditor({ account }: { account: LeadershipAccount }) {
       name: draft.name, featured: draft.featured, sort: draft.sort, target_labor_pct: draft.target_labor_pct, watch_band: draft.watch_band,
       revenue_method: draft.revenue_method, revenue_divisor: draft.revenue_divisor, budget_reliability_ratio: draft.budget_reliability_ratio,
       cost_basis: draft.cost_basis, revenue_allocation: draft.revenue_allocation, fallback_segment: draft.fallback_segment,
+      segment_label: draft.segment_label.trim() || 'Segment', vendor_label: draft.vendor_label.trim() || 'Vendor',
+      vocabulary: draft.vocabulary, vendor_factor: draft.vendor_factor, invoice_basis: draft.invoice_basis, group_by: draft.group_by, split_subcontracted: draft.split_subcontracted,
     }
     void run(`Saved ${draft.name}`, () => api.leadershipUpdateAccount(account.slug, patch))
   }
-  const saveSegments = () => void run(`Saved ${account.name} segments`, () => api.leadershipReplaceSegments(account.slug,
+  const saveSegments = () => void run(`Saved ${account.name} ${inSentence(account.segment_label)}s`, () => api.leadershipReplaceSegments(account.slug,
     segments.filter((s) => s.name.trim()).map((s) => ({ name: s.name.trim(), target_labor_pct: s.target ? Number(s.target) / 100 : null }))))
   const num = (v: string) => Number(v)
   return <div className="card">
@@ -55,35 +58,46 @@ function AccountEditor({ account }: { account: LeadershipAccount }) {
       <label className="field"><span>Name</span><input type="text" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} /></label>
       <label className="field"><span>Target %</span><input type="number" step="0.5" value={(draft.target_labor_pct * 100).toFixed(1)} onChange={(e) => setDraft({ ...draft, target_labor_pct: num(e.target.value) / 100 })} /></label>
       <label className="field"><span>Watch band (pts)</span><input type="number" step="0.5" value={(draft.watch_band * 100).toFixed(1)} onChange={(e) => setDraft({ ...draft, watch_band: num(e.target.value) / 100 })} /></label>
-      <label className="field"><span>Measure</span><select value={draft.cost_basis} onChange={(e) => setDraft({ ...draft, cost_basis: e.target.value as LeadershipAccount['cost_basis'] })}>
-        <option value="labor">Labor %</option><option value="labor_plus_vendor">Cost % (labor + vendor)</option></select></label>
+      <label className="field"><span>Labor %</span><select value={draft.cost_basis} onChange={(e) => setDraft({ ...draft, cost_basis: e.target.value as LeadershipAccount['cost_basis'] })}>
+        <option value="labor">Direct labor</option><option value="labor_plus_vendor">Direct labor + {inSentence(draft.vendor_label)}</option></select></label>
+      <label className="field"><span>Group name</span><input type="text" maxLength={30} value={draft.segment_label} onChange={(e) => setDraft({ ...draft, segment_label: e.target.value })} /></label>
+      <label className="field"><span>Non-payroll labor name</span><input type="text" maxLength={30} value={draft.vendor_label} onChange={(e) => setDraft({ ...draft, vendor_label: e.target.value })} /></label>
+      <label className="field"><span>{draft.vendor_label} counted (%)</span><input type="number" step="5" min="0" max="100" value={Math.round(draft.vendor_factor * 100)} onChange={(e) => setDraft({ ...draft, vendor_factor: num(e.target.value) / 100 })} /></label>
+      <label className="field"><span>Report wording</span><select value={draft.vocabulary} onChange={(e) => setDraft({ ...draft, vocabulary: e.target.value as LeadershipAccount['vocabulary'] })}>
+        <option value="amazon">Amazon report</option><option value="fedex">FedEx report</option></select></label>
+      <label className="field"><span>Invoice basis</span><select value={draft.invoice_basis} onChange={(e) => setDraft({ ...draft, invoice_basis: e.target.value as LeadershipAccount['invoice_basis'] })}>
+        <option value="last_month">Last closed month</option><option value="run_rate_3m">3-month run rate</option></select></label>
+      <label className="field"><span>Groups</span><select value={draft.group_by} onChange={(e) => setDraft({ ...draft, group_by: e.target.value as LeadershipAccount['group_by'] })}>
+        <option value="segment">{draft.segment_label}s</option><option value="pallet">Pallet sites / Janitorial only</option></select></label>
+      <label className="field"><span>Subcontracted sites</span><select value={draft.split_subcontracted ? 'split' : 'in'} onChange={(e) => setDraft({ ...draft, split_subcontracted: e.target.value === 'split' })}>
+        <option value="in">In the labor views</option><option value="split">Own tab (AR vs AP)</option></select></label>
       <label className="field"><span>Revenue method</span><select value={draft.revenue_method} onChange={(e) => setDraft({ ...draft, revenue_method: e.target.value as LeadershipAccount['revenue_method'] })}>
-        <option value="monthly_div">Monthly revenue ÷ divisor</option><option value="weekly_billing">Weekly billing</option><option value="per_visit">Per visit</option></select></label>
+        <option value="monthly_div">Monthly invoicing ÷ divisor</option><option value="weekly_billing">Weekly billing</option><option value="per_visit">Per visit</option></select></label>
       <label className="field"><span>Divisor</span><input type="number" step="0.01" value={draft.revenue_divisor} onChange={(e) => setDraft({ ...draft, revenue_divisor: num(e.target.value) })} /></label>
       <label className="field"><span>Parent billing</span><select value={draft.revenue_allocation} onChange={(e) => setDraft({ ...draft, revenue_allocation: e.target.value as LeadershipAccount['revenue_allocation'] })}>
         <option value="none">Keep on parent</option><option value="budget_hours">Spread by budget hours</option></select></label>
       <label className="field"><span>Budget reliability ratio</span><input type="number" step="0.05" value={draft.budget_reliability_ratio} onChange={(e) => setDraft({ ...draft, budget_reliability_ratio: num(e.target.value) })} /></label>
-      <label className="field"><span>Fallback segment</span><select value={draft.fallback_segment} onChange={(e) => setDraft({ ...draft, fallback_segment: e.target.value })}>
+      <label className="field"><span>Fallback {inSentence(account.segment_label)}</span><select value={draft.fallback_segment} onChange={(e) => setDraft({ ...draft, fallback_segment: e.target.value })}>
         {account.segments.map((s) => <option key={s.name}>{s.name}</option>)}</select></label>
       <label className="field"><span>Sort</span><input type="number" value={draft.sort} onChange={(e) => setDraft({ ...draft, sort: num(e.target.value) })} /></label>
       <label className="field"><span>Featured</span><select value={draft.featured ? 'yes' : 'no'} onChange={(e) => setDraft({ ...draft, featured: e.target.value === 'yes' })}><option value="yes">Yes</option><option value="no">No</option></select></label>
       <div className="field"><button type="submit" className="btn primary" disabled={busy}>Save account</button></div>
     </form>
-    <div className="ct" style={{ marginTop: 14 }}><span>Segments</span></div>
+    <div className="ct" style={{ marginTop: 14 }}><span>{account.segment_label}s</span></div>
     <div className="tw"><table><caption className="sr-only">{account.name} segments</caption>
-      <thead><tr><th className="nosort l">Segment</th><th className="nosort">Target %</th><th className="nosort"></th></tr></thead>
+      <thead><tr><th className="nosort l">{account.segment_label}</th><th className="nosort">Target %</th><th className="nosort"></th></tr></thead>
       <tbody>{segments.map((s, i) => <tr key={i}>
         <td className="l"><label className="sr-only" htmlFor={`seg-${account.slug}-${i}`}>Segment name</label><input id={`seg-${account.slug}-${i}`} type="text" value={s.name} onChange={(e) => setSegments(segments.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))} /></td>
         <td><label className="sr-only" htmlFor={`segt-${account.slug}-${i}`}>Target override</label><input id={`segt-${account.slug}-${i}`} type="number" step="0.5" placeholder="Account" value={s.target} onChange={(e) => setSegments(segments.map((x, j) => (j === i ? { ...x, target: e.target.value } : x)))} /></td>
         <td><button type="button" className="btn sm" onClick={() => setSegments(segments.filter((_, j) => j !== i))} disabled={s.name === account.fallback_segment}>Remove</button></td>
       </tr>)}</tbody></table></div>
-    <div className="ctrl" style={{ marginTop: 8 }}><button type="button" className="btn sm" onClick={() => setSegments([...segments, { name: '', target: '' }])}>Add segment</button><button type="button" className="btn sm primary" onClick={saveSegments} disabled={busy}>Save segments</button></div>
+    <div className="ctrl" style={{ marginTop: 8 }}><button type="button" className="btn sm" onClick={() => setSegments([...segments, { name: '', target: '' }])}>Add {inSentence(account.segment_label)}</button><button type="button" className="btn sm primary" onClick={saveSegments} disabled={busy}>Save {inSentence(account.segment_label)}s</button></div>
     {view}
   </div>
 }
 
 function AccountsTab() {
-  const { config, api } = useLeadership()
+  const { adminConfig: config, adminApi: api } = useLeadership()
   const { busy, run, view } = useAction()
   const accounts = config.data?.accounts ?? []
   return <>
@@ -93,7 +107,7 @@ function AccountsTab() {
 }
 
 function JobRow({ job, accounts, onSaved }: { job: LeadershipAccountJob; accounts: LeadershipAccount[]; onSaved: () => void }) {
-  const { api } = useLeadership()
+  const { adminApi: api } = useLeadership()
   const [slug, setSlug] = useState(job.account_slug ?? '')
   const [segment, setSegment] = useState(job.segment ?? '')
   const [role, setRole] = useState<LeadershipRole>(job.role ?? 'site')
@@ -118,7 +132,7 @@ function JobRow({ job, accounts, onSaved }: { job: LeadershipAccountJob; account
 }
 
 function JobsTab() {
-  const { api, config, keyPrefix, decision } = useLeadership()
+  const { adminApi: api, adminConfig: config, adminKeyPrefix: keyPrefix, decision } = useLeadership()
   const [view, setView] = useState<'review' | 'mapped' | 'unmapped'>('review')
   const [account, setAccount] = useState('')
   const [filter, setFilter] = useState('')
@@ -141,6 +155,38 @@ function JobsTab() {
   </>
 }
 
+const MAIL_TONE: Record<string, string> = { loaded: 'ok', failed: 'bad', duplicate: 'neutral', ignored: 'neutral' }
+
+/** The records mailbox: what arrived and what the poller did with each attachment. */
+function MailInbox() {
+  const { adminApi: api, adminKeyPrefix: keyPrefix, decision } = useLeadership()
+  const { busy, run, view } = useAction()
+  const q = useApiQuery<MailInboxStatus>(decision ? queryKey(`${keyPrefix}/integrations/mail`) : null, (signal) => api.mailStatus(signal), [api])
+  const s = q.data
+  type Recent = MailInboxStatus['recent'][number]
+  const cols: Column<Recent>[] = [
+    { key: 'at', header: 'Received', left: true, value: (r) => r.received_at, render: (r) => new Date(r.received_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) },
+    { key: 'from', header: 'From', left: true, value: (r) => r.sender ?? '', className: 'nm' },
+    { key: 'subject', header: 'Subject', left: true, value: (r) => r.subject ?? '', className: 'nm' },
+    { key: 'file', header: 'File', left: true, value: (r) => r.file_name, className: 'nm' },
+    { key: 'status', header: 'Status', left: true, value: (r) => r.status, render: (r) => <span className={MAIL_TONE[r.status]}>{cap(r.status)}{r.kind ? `, ${r.kind === 'pay_report' ? 'labor' : r.kind === 'income_statement' ? 'income statement' : 'job cost'}` : ''}</span> },
+    { key: 'reason', header: 'Detail', left: true, value: (r) => r.reason ?? (r.rows_loaded != null ? `${r.rows_loaded.toLocaleString('en-US')} rows` : ''), className: 'nm' },
+  ]
+  const last = s?.last_run
+  return <div className="card">
+    <div className="ct"><span>Records inbox</span><span className="ks">{s?.mailbox ?? ''}</span></div>
+    {q.error ? <LoadError error={q.error} onRetry={q.refetch} /> : !s ? <Skeleton height={80} /> : !s.configured ? <Empty>Not connected. Set GRAPH_TENANT_ID, GRAPH_CLIENT_ID, GRAPH_CLIENT_SECRET and GRAPH_MAILBOX (docs/mail-inbox.md).</Empty> : <>
+      <div className="ctrl">
+        <button type="button" className="btn" disabled={busy} onClick={() => run('Inbox checked', async () => { const r = await api.mailPoll(); if (r.status === 'failed') throw new Error(r.error ?? 'Mailbox check failed'); q.refetch() })}>Check inbox now</button>
+        <span className="ks">{s.schedule.enabled ? `Every ${s.schedule.every_minutes} min` : 'Automatic checks off'}{last ? `; last ${new Date(last.started_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}, ${last.status}` : '; not checked yet'}</span>
+        {last?.error_message && <span className="bad ks">{last.error_message}</span>}
+      </div>
+      {view}
+      {s.recent.length ? <SortTable caption="Recent attachments" rows={s.recent} columns={cols} defaultSort={{ key: 'at', dir: -1 }} pageSize={25} /> : <Empty>No attachments yet.</Empty>}
+    </>}
+  </div>
+}
+
 function ImportsTab() {
   const { adminApi: api, adminKeyPrefix: keyPrefix, decision } = useLeadership()
   const { busy, run, view } = useAction()
@@ -149,7 +195,7 @@ function ImportsTab() {
   const q = useApiQuery(decision ? queryKey(`${keyPrefix}/leadership/imports`) : null, (signal) => api.leadershipImports(50, signal), [api])
   const cols: Column<LeadershipImportFile>[] = [
     { key: 'at', header: 'Loaded', left: true, value: (f) => f.loaded_at, render: (f) => new Date(f.loaded_at).toLocaleString('en-US') },
-    { key: 'kind', header: 'Feed', left: true, value: (f) => (f.kind === 'pay_report' ? 'Pay report' : 'Job cost') },
+    { key: 'kind', header: 'Feed', left: true, value: (f) => (f.kind === 'pay_report' ? 'Pay report' : f.kind === 'income_statement' ? 'Income statement' : 'Job cost') },
     { key: 'file', header: 'File', left: true, value: (f) => f.file_name, className: 'nm' },
     { key: 'status', header: 'Status', left: true, value: (f) => f.status, render: (f) => <span className={f.status === 'loaded' ? 'ok' : f.status === 'failed' ? 'bad' : 'neutral'}>{cap(f.status)}</span> },
     { key: 'rows', header: 'Rows', value: (f) => f.rows_loaded, render: (f) => `${f.rows_loaded.toLocaleString('en-US')} of ${f.rows_read.toLocaleString('en-US')}` },
@@ -158,11 +204,12 @@ function ImportsTab() {
     { key: 'err', header: 'Errors', left: true, value: (f) => f.errors.length, render: (f) => (f.errors.length ? <details><summary>{f.errors.length}</summary><ul className="errors">{f.errors.map((e, i) => <li key={i}>{e}</li>)}</ul></details> : '0') },
   ]
   return <>
+    <MailInbox />
     <div className="card">
       <div className="ct"><span>Upload</span></div>
       <form className="form-grid" onSubmit={(e) => { e.preventDefault(); if (file) void run(`Imported ${file.name}`, () => api.leadershipUpload(file, kind || undefined)) }}>
         <label className="field"><span>File (CSV or XLSX)</span><input type="file" accept=".csv,.xlsx,.xlsm" onChange={(e) => setFile(e.target.files?.[0] ?? null)} /></label>
-        <label className="field"><span>Feed</span><select value={kind} onChange={(e) => setKind(e.target.value as '' | LeadershipImportKind)}><option value="">Auto-detect</option><option value="pay_report">Pay Report Timekeeping</option><option value="job_cost">Job Cost Analysis</option></select></label>
+        <label className="field"><span>Feed</span><select value={kind} onChange={(e) => setKind(e.target.value as '' | LeadershipImportKind)}><option value="">Auto-detect</option><option value="pay_report">Timekeeping labor (Pay Report or labor summary)</option><option value="job_cost">Job Cost Analysis</option><option value="income_statement">Trend Income Statement</option></select></label>
         <div className="field"><button type="submit" className="btn primary" disabled={!file || busy}>{busy ? 'Importing' : 'Import'}</button></div>
       </form>
       {view}

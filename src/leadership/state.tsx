@@ -4,7 +4,7 @@ import type { LeadershipAccount, LeadershipConfig } from '../services/apiTypes'
 import { apiFor, detectMode, type DashboardApi, type ModeDecision } from '../services/dataSource'
 import { queryKey } from '../services/queryClient'
 import type { AuthUser } from '../auth/roles'
-import type { MetricOptions } from './metrics'
+import type { InvoiceBasis, MetricOptions } from './metrics'
 import { formatRoute, parseRoute, weekEndOf, weekStartOf, type Route } from './routes'
 
 export type Theme = 'system' | 'light' | 'dark'
@@ -24,6 +24,8 @@ export interface LeadershipState {
    */
   adminApi: DashboardApi
   adminKeyPrefix: string
+  /** The API's own configuration (accounts) for Admin; the views' `config` is the demo one while demo. */
+  adminConfig: QueryState<LeadershipConfig>
   apiReachable: boolean
   /** Decide live or demo again (after a sync, rebuild or import fills the marts). */
   redetect: () => void
@@ -56,7 +58,7 @@ function readTheme(): Theme {
 }
 
 /** Metric options for an account: its target (or the URL override, which also drops segment targets), method, divisor and cost basis. */
-export function optionsForAccount(account: LeadershipAccount | undefined, override: number | null): MetricOptions {
+export function optionsForAccount(account: LeadershipAccount | undefined, override: number | null, basis?: InvoiceBasis): MetricOptions {
   if (!account) return { target: override ?? 0.645 }
   const segmentTargets = override != null ? undefined
     : Object.fromEntries(account.segments.filter((s) => s.target_labor_pct != null).map((s) => [s.name, s.target_labor_pct as number]))
@@ -68,6 +70,9 @@ export function optionsForAccount(account: LeadershipAccount | undefined, overri
     budgetReliabilityRatio: account.budget_reliability_ratio,
     costBasis: account.cost_basis,
     segmentTargets,
+    vendorFactor: account.vendor_factor ?? 1,
+    invoiceBasis: basis ?? account.invoice_basis ?? 'last_month',
+    palletSplit: account.group_by === 'pallet',
   }
 }
 
@@ -106,6 +111,9 @@ export function LeadershipProvider({ user, signOut, children, forcedDecision }: 
   const adminKeyPrefix = decision ? (apiReachable ? 'live' : 'demo') : 'pending'
 
   const config = useApiQuery<LeadershipConfig>(decision ? queryKey(`${keyPrefix}/leadership/config`) : null, (signal) => api.leadershipConfig(signal), [api])
+  const liveAdminConfig = useApiQuery<LeadershipConfig>(decision && apiReachable && mode === 'demo' ? queryKey('live/leadership/config') : null,
+    (signal) => adminApi.leadershipConfig(signal), [adminApi])
+  const adminConfig = apiReachable && mode === 'demo' ? liveAdminConfig : config
 
   const navigate = useCallback((next: Partial<Route>, options: { replace?: boolean; reset?: boolean } = {}) => {
     const current = parseRoute(location.hash)
@@ -123,10 +131,10 @@ export function LeadershipProvider({ user, signOut, children, forcedDecision }: 
   const defaultWeek = config.data?.default_week ?? undefined
   const weekStart = route.week ? weekStartOf(route.week) : defaultWeek
   const targetOverride = route.target != null ? route.target / 100 : null
-  const optionsFor = useCallback((account: LeadershipAccount | undefined) => optionsForAccount(account, targetOverride), [targetOverride])
+  const optionsFor = useCallback((account: LeadershipAccount | undefined) => optionsForAccount(account, targetOverride, route.basis), [targetOverride, route.basis])
 
   const value: LeadershipState = {
-    user, signOut, decision, api, keyPrefix, adminApi, adminKeyPrefix, apiReachable, redetect, config, route, navigate, featured, accountBySlug, selectedAccount,
+    user, signOut, decision, api, keyPrefix, adminApi, adminKeyPrefix, adminConfig, apiReachable, redetect, config, route, navigate, featured, accountBySlug, selectedAccount,
     weekStart, targetOverride, optionsFor, theme, setTheme: setThemeState,
   }
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>

@@ -1,19 +1,64 @@
 import { useMemo } from 'react'
 import { useApiQuery } from '../hooks/useApiQuery'
-import type { LeadershipAccount, LeadershipConfig, LeadershipRow, LeadershipRowsResponse } from '../services/apiTypes'
+import type { LeadershipAccount, LeadershipConfig, LeadershipMonth, LeadershipMonthlyJob, LeadershipMonthlyResponse, LeadershipRow, LeadershipRowsResponse } from '../services/apiTypes'
 import { queryKey } from '../services/queryClient'
 import { accountSummary, type AccountSummary, type MetricOptions } from './metrics'
 import { addDays } from './routes'
 import { useLeadership } from './state'
 
-/** Rows for `weeks` weeks ending at the selected week, for an account slug or a scope. */
+/**
+ * Rows for `weeks` weeks ending at the selected week, for an account slug or a scope, shaped per
+ * account (prepareRows): pallet jobs inside their site, report groups, subcontracted sites split out.
+ */
 export function useRows(account: string | undefined, weeks = 1) {
-  const { api, keyPrefix, weekStart, decision } = useLeadership()
+  const { api, keyPrefix, weekStart, decision, accountBySlug } = useLeadership()
   const key = decision && account && weekStart ? queryKey(`${keyPrefix}/leadership/rows`, { account, week: weekStart, weeks }) : null
-  return useApiQuery<LeadershipRowsResponse>(key, (signal) => api.leadershipRows({ account, week: weekStart, weeks }, signal), [api, account, weekStart, weeks])
+  const q = useApiQuery<LeadershipRowsResponse>(key, (signal) => api.leadershipRows({ account, week: weekStart, weeks }, signal), [api, account, weekStart, weeks])
+  const data = useMemo(() => (q.data ? { ...q.data, rows: prepareRows(q.data.rows, accountBySlug) } : q.data), [q.data, accountBySlug])
+  return { ...q, data }
 }
 
-export const segmentOrder = (account: LeadershipAccount | undefined) => (account?.segments ?? []).slice().sort((a, b) => a.sort - b.sort).map((s) => s.name)
+/** Subcontracted: marked so, or no delivery model recorded and only vendor cost (no hours) this week. */
+export const isSubcontracted = (r: LeadershipRow) => r.delivery_model === 'subcontracted' || (r.delivery_model == null && !r.hours && (r.sub_week ?? 0) > 0)
+
+export const PALLET_GROUPS = ['Pallet sites', 'Janitorial only'] as const
+
+const ADDITIVE = ['labor', 'hours', 'ot_hours', 'ot_dollars', 'budget_hours', 'budget_dollars', 'revenue_month_amount', 'prior_revenue',
+  'prior_labor', 'prior_sub', 'sub_week', 'revenue_allocated'] as const
+
+/**
+ * The weekly reports' site shape, per account:
+ * - a pallet job (role 'pallet') is added into its parent site for the same week, keeping its labor,
+ *   hours and OT hours as the pallet share (an orphan pallet job stays a site of its own);
+ * - group_by 'pallet' names each site's group Pallet sites or Janitorial only;
+ * - split_subcontracted drops subcontracted sites (they have their own tab).
+ */
+export function prepareRows(rows: LeadershipRow[], accountBySlug: (slug: string | undefined) => LeadershipAccount | undefined): LeadershipRow[] {
+  const key = (r: LeadershipRow, job: string) => `${r.week_start}|${r.company}|${job}`
+  const byKey = new Map(rows.filter((r) => r.role !== 'pallet').map((r) => [key(r, r.job_number), { ...r, kids: [r.job_number], pallet_labor: 0, pallet_hours: 0, pallet_ot_hours: 0 } as LeadershipRow]))
+  const out: LeadershipRow[] = [...byKey.values()]
+  for (const r of rows.filter((x) => x.role === 'pallet')) {
+    const parent = r.parent_job_number ? byKey.get(key(r, r.parent_job_number)) : undefined
+    if (!parent) { out.push({ ...r, role: 'site', kids: [r.job_number] }); continue }
+    for (const f of ADDITIVE) (parent as unknown as Record<string, number>)[f] = ((parent[f] as number) ?? 0) + ((r[f] as number) ?? 0)
+    parent.dt_hours = (parent.dt_hours ?? 0) + (r.dt_hours ?? 0)
+    parent.revenue_run_rate = (parent.revenue_run_rate ?? 0) + (r.revenue_run_rate ?? 0)
+    if (r.variable_run_rate != null) parent.variable_run_rate = (parent.variable_run_rate ?? 0) + r.variable_run_rate
+    parent.pallet_labor = (parent.pallet_labor ?? 0) + r.labor
+    parent.pallet_hours = (parent.pallet_hours ?? 0) + r.hours
+    parent.pallet_ot_hours = (parent.pallet_ot_hours ?? 0) + r.ot_hours
+    parent.kids = [...(parent.kids ?? []), r.job_number]
+  }
+  return out.filter((r) => {
+    const account = accountBySlug(r.account_slug ?? undefined)
+    if (account?.split_subcontracted && isSubcontracted(r)) return false
+    if (account?.group_by === 'pallet' && r.role === 'site') r.segment = (r.kids?.length ?? 1) > 1 ? PALLET_GROUPS[0] : PALLET_GROUPS[1]
+    return true
+  })
+}
+
+export const segmentOrder = (account: LeadershipAccount | undefined) => (account?.group_by === 'pallet' ? [...PALLET_GROUPS]
+  : (account?.segments ?? []).slice().sort((a, b) => a.sort - b.sort).map((s) => s.name))
 
 /** Rows of one week. */
 export const rowsOfWeek = (rows: LeadershipRow[] | undefined, weekStart: string | undefined) => (rows ?? []).filter((r) => r.week_start === weekStart)
@@ -23,9 +68,19 @@ export function useSummary(rows: LeadershipRow[] | undefined, account: Leadershi
   return useMemo(() => (rows ? accountSummary(rows, options, segmentOrder(account)) : null), [rows, account, options])
 }
 
-/** Measure label: "Labor %" or "Cost %" per the account's cost basis. */
-export const measureLabel = (account: LeadershipAccount | undefined) => (account?.cost_basis === 'labor_plus_vendor' ? 'Cost %' : 'Labor %')
-export const costLabel = (account: LeadershipAccount | undefined) => (account?.cost_basis === 'labor_plus_vendor' ? 'Labor + vendor $' : 'Labor $')
+/**
+ * The weekly reports' vocabulary. Labor % is total labor ÷ invoicing; total labor is direct labor plus,
+ * for accounts measured with it (cost basis labor_plus_vendor), agency or subcontractor cost.
+ */
+export const measureLabel = (_account?: LeadershipAccount) => 'Labor %'
+export const costLabel = (_account?: LeadershipAccount) => 'Total labor'
+export const includesVendor = (account: LeadershipAccount | undefined) => account?.cost_basis === 'labor_plus_vendor'
+/** What the account's groups are called: "BU" for Amazon, "Segment" by default. */
+export const segmentLabel = (account: LeadershipAccount | undefined) => account?.segment_label || 'Segment'
+/** What its non-payroll labor cost is called: "Agency sub", "Subcontractor", "Vendor". */
+export const vendorLabel = (account: LeadershipAccount | undefined) => account?.vendor_label || 'Vendor'
+/** A label inside a sentence: lower case, except an acronym such as BU. */
+export const inSentence = (label: string) => (/^[A-Z]{2,}$/.test(label) ? label : label.toLowerCase())
 
 /** Per-week measure series for a trend chart. */
 export function weeklySeries(rows: LeadershipRow[], weeks: string[], account: LeadershipAccount | undefined, options: MetricOptions) {
@@ -57,7 +112,54 @@ export function dataFlags(config: LeadershipConfig | undefined, weekStart: strin
   return {
     estimated: rows.some((r) => r.labor_basis !== 'pay_report' && r.labor > 0),
     revenueLag: revenueMonth && expected && revenueMonth < expected ? { revenueMonth, expectedMonth: expected } : null,
-    failedSyncs: (config?.status.syncs ?? []).filter((s) => s.status === 'failed' && (s.integration_name.startsWith('winteam') || s.integration_name === 'nightly' || s.integration_name === 'relay')).map((s) => ({ integration: s.integration_name, at: s.completed_at ?? s.started_at })),
+    failedSyncs: (config?.status.syncs ?? []).filter((s) => s.status === 'failed' && (s.integration_name.startsWith('winteam') || ['nightly', 'relay', 'mail_inbox'].includes(s.integration_name))).map((s) => ({ integration: s.integration_name, at: s.completed_at ?? s.started_at })),
     weekInProgress: Boolean(week?.in_progress),
   }
+}
+
+/** Closed months of one account (job cost and Relay AR / AP per job, and its income statement). */
+export function useMonthly(account: string | undefined, months = 3) {
+  const { api, keyPrefix, decision } = useLeadership()
+  const key = decision && account ? queryKey(`${keyPrefix}/leadership/monthly`, { account, months }) : null
+  return useApiQuery<LeadershipMonthlyResponse>(key, (signal) => api.leadershipMonthly(account!, months, signal), [api, account, months])
+}
+
+/** A month's billing for a job: job cost revenue, else Relay AR (FedEx months before job cost closes). */
+export const monthRevenue = (m: LeadershipMonth | undefined) => (m ? (m.revenue > 0 ? m.revenue : m.relay_ar) : 0)
+
+/** The jobs of a site (itself and any rolled-in pallet job) in the monthly response. */
+export function siteMonths(jobs: LeadershipMonthlyJob[], company: string | null, kids: string[] | undefined, job: string) {
+  const wanted = new Set(kids ?? [job])
+  return jobs.filter((j) => j.company === company && wanted.has(j.job_number))
+}
+
+/** A site's labor % for a closed month: (direct labor + sub x factor) ÷ billing, over its jobs. */
+export function monthLaborPct(jobs: LeadershipMonthlyJob[], month: string, vendorFactor: number): number | null {
+  let revenue = 0, labor = 0
+  for (const j of jobs) {
+    const m = j.months[month]
+    revenue += monthRevenue(m)
+    labor += (m?.direct_labor ?? 0) + (m?.subcontractors ?? 0) * vendorFactor
+  }
+  return revenue > 0 ? labor / revenue : null
+}
+
+/**
+ * Months whose job cost is closed: on the self-performed jobs, job cost revenue covers at least half
+ * of the month's billing, and job cost direct labor reaches 70% of the month's timekeeping labor. A
+ * month whose revenue is in but whose labor is still posting (or carried by Relay billing) is left out,
+ * so "actual" labor % is never read off a half-loaded month. Subcontracted jobs are ignored: from July
+ * 2026 their revenue is booked to a GL line with no job.
+ */
+export function closedMonths(data: LeadershipMonthlyResponse | undefined): string[] {
+  if (!data) return []
+  return data.months.filter((m) => {
+    let jobCost = 0, billing = 0, labor = 0, timekeeping = 0
+    for (const j of data.jobs) {
+      const x = j.months[m]
+      if (!x || j.delivery_model === 'subcontracted') continue
+      jobCost += x.revenue; billing += monthRevenue(x); labor += x.direct_labor; timekeeping += x.timekeeping_labor ?? 0
+    }
+    return billing > 0 && jobCost >= 0.5 * billing && (timekeeping === 0 || labor >= 0.7 * timekeeping)
+  })
 }

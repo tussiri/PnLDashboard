@@ -185,6 +185,11 @@ class Settings:
     # PhotoValidation staffing-request feed (app/sources/photovalidation.py). Server-side only.
     photovalidation_api_url: str
     photovalidation_api_token: str
+    graph_tenant_id: str
+    graph_client_id: str
+    graph_client_secret: str
+    graph_mailbox: str
+    graph_timeout_seconds: int
     companycam_match_rule: str
     ingestion_idle_in_transaction_timeout_seconds: int
     mart_rebuild_lock_timeout_seconds: int
@@ -270,6 +275,11 @@ class Settings:
             pv_sync_interval_minutes=_integer(env, "PV_SYNC_INTERVAL_MINUTES", 15, minimum=0, maximum=1440),
             photovalidation_api_url=_text(env, "PHOTOVALIDATION_API_URL").rstrip("/"),
             photovalidation_api_token=_text(env, "PHOTOVALIDATION_API_TOKEN"),
+            graph_tenant_id=_text(env, "GRAPH_TENANT_ID"),
+            graph_client_id=_text(env, "GRAPH_CLIENT_ID"),
+            graph_client_secret=_text(env, "GRAPH_CLIENT_SECRET"),
+            graph_mailbox=_text(env, "GRAPH_MAILBOX"),
+            graph_timeout_seconds=_integer(env, "GRAPH_TIMEOUT_SECONDS", 60, maximum=600),
             # How a CompanyCam project is matched to a WinTeam job. Unset until the production data
             # has been probed: job_number_in_name | address | project_map.
             companycam_match_rule=_text(env, "COMPANYCAM_MATCH_RULE"),

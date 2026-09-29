@@ -66,6 +66,11 @@ header.page p{font-size:12px;color:var(--text3);margin-top:2px}
 .ctrl label,.field>span{font-size:12px;color:var(--text3)}
 .ctrl label.check{display:inline-flex;align-items:center;gap:6px;color:var(--text2);cursor:pointer;min-height:32px}
 .check input{accent-color:var(--text);width:14px;height:14px;margin:0}
+.picker{border:none;display:flex;flex-wrap:wrap;gap:4px 14px;padding:0;margin:0 0 6px}
+.picker .check,.field .picker .check{font-size:12px;color:var(--text2);display:inline-flex;align-items:center;gap:6px;cursor:pointer}
+.field.wide{grid-column:1/-1}
+.picker .check{white-space:nowrap}
+.field .picker input[type=checkbox],.picker input[type=checkbox]{width:14px;min-height:0;flex:none}
 select,input[type=number],input[type=text],input[type=password],input[type=search],input[type=file]{font-size:13px;padding:6px 10px;border:0.5px solid var(--border2);border-radius:var(--r);background:var(--bg);color:var(--text);outline:none;min-height:32px}
 input[type=number]{width:78px}
 input[type=search]{min-width:200px}
@@ -158,9 +163,36 @@ tr.dim td{color:var(--text3)}
 .bar{display:inline-block;height:6px;border-radius:3px;background:var(--bad);vertical-align:middle;margin-left:6px}
 .table-tools{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap}
 .table-tools .count{font-size:12px;color:var(--text3)}
+.pager{display:flex;justify-content:flex-end;align-items:center;gap:8px;margin-top:8px}
+.pager .count{font-size:12px;color:var(--text3);font-variant-numeric:tabular-nums}
 .rowbtn{all:unset;cursor:pointer;color:inherit}
 .rowbtn:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:2px}
 .rowbtn:hover{text-decoration:underline}
+
+/* Hours to cut: one row per site, a bar of worked / OT premium / sub hours against the allowance mark */
+.kv .of{font-size:13px;font-weight:400;color:var(--text3)}
+.card.cut{padding:4px 16px}
+.cut-grp+.cut-grp{border-top:0.5px solid var(--border2)}
+.cut-grp-h{display:flex;flex-wrap:wrap;gap:6px 16px;align-items:baseline;padding:12px 0 4px;font-size:12px;color:var(--text2)}
+.cut-grp-h>b:first-child{font-size:13px;color:var(--text);margin-right:4px}
+.cut-row{padding:10px 0;border-top:0.5px solid var(--border)}
+.cut-grp-h+.cut-row{border-top:none}
+.cut-head{all:unset;box-sizing:border-box;display:flex;justify-content:space-between;align-items:flex-start;gap:12px;width:100%;cursor:pointer}
+.cut-head:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:2px}
+.cut-site{font-size:13px;font-weight:600;display:flex;flex-wrap:wrap;align-items:center;gap:6px;min-width:0}
+.cut-bu{font-size:11px;font-weight:500;color:var(--text3)}
+.cut-flag{font-size:11px;font-weight:600;color:var(--warn);background:var(--warn-bg);border-radius:20px;padding:1px 8px}
+.cut-num{font-size:13px;font-weight:600;text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+.cut-num small{display:block;font-size:11px;font-weight:400;color:var(--text3)}
+.cut-bar{position:relative;display:flex;height:10px;margin:8px 0 18px;background:var(--bg2);border-radius:3px}
+.cut-bar .seg{height:100%}
+.cut-bar .seg:first-child{border-radius:3px 0 0 3px}
+.cut-bar .worked{background:var(--accent2)}.cut-bar .premium{background:var(--warn)}.cut-bar .sub{background:var(--muted)}
+.cut-bar .mark{position:absolute;top:-3px;bottom:-3px;width:0;border-left:1.5px dashed var(--text)}
+.cut-bar .mark small{position:absolute;top:15px;left:0;transform:translateX(-50%);font-size:10.5px;color:var(--text3);white-space:nowrap}
+.cut-meta{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:11.5px;color:var(--text2);font-variant-numeric:tabular-nums}
+.cut-meta b{color:var(--text);font-weight:600}
+.cut-detail{margin-top:10px;background:var(--bg2);border-radius:var(--r);padding:10px 12px}
 
 /* Drawer */
 .scrim{position:fixed;inset:0;background:rgba(0,0,0,.28);z-index:40;border:none}

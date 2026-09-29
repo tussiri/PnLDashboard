@@ -40,9 +40,9 @@ share the same core/mart tables, combined by explicit precedence rules (`docs/wi
 Views (rebuilt 2026-09-23, plan in `docs/leadership-rebuild-plan.md`): a leadership labor P&L modeled
 on the Plano ISD reference dashboard, dynamic by account.
 
-- **Home**: portfolio strip across the featured accounts (labor or cost %, $ over target, OT %,
+- **Home**: portfolio strip across the featured accounts (Labor % with pp WoW, hours to cut per day, OT %,
   change vs prior week) and the reference Overview for the selected account.
-- **Account**: tabs Overview, Sites, Over Target, Overtime, Map, Vendors; a site row opens a drawer
+- **Account**: one layout for every account, in its weekly report's words (`vocabulary`): Overview, Sites, Pallet (accounts with pallet jobs), Hours to cut / Over Target, Overtime, Income Statement (loaded or split accounts), Subcontracted Sites (accounts with subcontracted sites; AR vs AP), Map and the vendor invoice tab; a site row opens a drawer
   with the site's weekly P&L, a 13-week trend, subcontractor invoices and CompanyCam photos.
 - **Analytics**: every account including Other, drilled account -> segment (Other: account group)
   -> site, with filters, sorting and CSV.
@@ -153,6 +153,11 @@ documented WinTeam GET endpoints (WinTeamAPI.txt)
   the WinTeam sync lock
 - `services/api/app/sources/photovalidation.py`, `app/staffing.py`, `routers/staffing.py`: the staffing
   request feed, its weekly demand rule and the per-site route
+
+## Report exports by email
+
+The worker reads records@smcraneifs.com through Microsoft Graph (read-only) and loads the dashboard's
+report exports; other mail is ignored. Setup and scoping: `docs/mail-inbox.md`.
 
 ## Hosted deployment
 

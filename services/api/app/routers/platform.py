@@ -17,7 +17,7 @@ import psycopg
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
-from .. import companycam, marts, relay, schedule
+from .. import companycam, mail_inbox, marts, relay, schedule
 from ..common import (PRIMARY_SOURCES, configured_key_accounts, month_status_rows, jsonable,
                       require_admin)
 from ..config import settings
@@ -395,6 +395,18 @@ def photovalidation_sync() -> dict[str, Any]:
         if not got:
             raise HTTPException(status_code=409, detail="A PhotoValidation pull is already running; try again when it finishes")
         return jsonable(photovalidation.sync())
+@router.get("/integrations/mail")
+def mail_status() -> dict[str, Any]:
+    """The records mailbox poller: wired or not, schedule, last poll, recent attachments. No secrets."""
+    return jsonable(mail_inbox.status())
+
+
+@router.post("/integrations/mail/poll", dependencies=[Depends(require_admin)])
+def mail_poll() -> dict[str, Any]:
+    """Read the records mailbox now (read-only against Microsoft Graph); rebuilds the marts when a report loaded."""
+    if not mail_inbox.configured():
+        raise HTTPException(status_code=409, detail="The records mailbox is not configured (GRAPH_TENANT_ID, GRAPH_CLIENT_ID, GRAPH_CLIENT_SECRET, GRAPH_MAILBOX)")
+    return jsonable(mail_inbox.run())
 
 
 @router.get("/integrations/companycam")

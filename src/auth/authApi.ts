@@ -10,11 +10,13 @@ export interface AppUser {
   active: boolean
   /** database: managed here; environment: APP_USERS_JSON (read-only); development: dev mode only. */
   source: 'database' | 'environment' | 'development'
+  /** Account slugs the user may see; null = every account. */
+  accounts: string[] | null
   created_at: string | null
   created_by: string | null
   last_login_at: string | null
 }
-export interface AppUserPatch { role?: Role; active?: boolean; password?: string }
+export interface AppUserPatch { role?: Role; active?: boolean; password?: string; accounts?: string[] }
 
 /** Session routes are same-origin and cookie-based; the browser never sees the session value. */
 export const authApi = {
@@ -30,6 +32,6 @@ export const authApi = {
 /** Admin > Users (administrator session required). */
 export const usersApi = {
   list: (signal?: AbortSignal) => request<{ users: AppUser[] }>('/users', { signal, rawRatios: true }),
-  create: (username: string, role: Role, password: string) => request<{ user: AppUser }>('/users', { method: 'POST', body: { username, role, password }, rawRatios: true }),
+  create: (username: string, role: Role, password: string, accounts: string[] = []) => request<{ user: AppUser }>('/users', { method: 'POST', body: { username, role, password, accounts }, rawRatios: true }),
   update: (username: string, patch: AppUserPatch) => request<{ user: AppUser }>(`/users/${encodeURIComponent(username)}`, { method: 'PATCH', body: patch, rawRatios: true }),
 }

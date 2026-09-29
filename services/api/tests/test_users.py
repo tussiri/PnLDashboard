@@ -5,7 +5,7 @@ from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 
 import pytest
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.testclient import TestClient
 
 from app import users
@@ -171,3 +171,56 @@ def test_a_cookie_for_an_unknown_user_is_refused(store):
     c = client()
     c.cookies.set(COOKIE_NAME, sign_session(User("ghost", "admin"), SECRET))
     assert c.get("/api/v1/view").status_code == 401
+
+
+def test_a_user_limited_to_an_account_sees_only_it(store, monkeypatch):
+    from app.common import require_account
+    from app.routers.leadership import scope_clause
+
+    monkeypatch.setattr(users_router, "known_accounts", lambda: {"plano-isd", "fedex", "amazon"})
+    settings(APP_SETUP_TOKEN=SETUP)
+    c = client()
+    c.post("/api/v1/auth/setup", json={"token": SETUP, "username": "boss", "password": PASSWORD})
+    assert c.post("/api/v1/users", json={"username": "pat", "role": "executive", "password": PASSWORD, "accounts": ["nowhere"]}).status_code == 422
+    made = c.post("/api/v1/users", json={"username": "pat", "role": "executive", "password": PASSWORD, "accounts": ["plano-isd"]})
+    assert made.status_code == 201 and made.json()["user"]["accounts"] == ["plano-isd"]
+
+    app = c.app
+
+    def fedex_route(request: Request):
+        require_account(request, "fedex")
+        return {"ok": True}
+
+    def plano_route(request: Request):
+        require_account(request, "plano-isd")
+        return {"ok": True}
+    app.add_api_route("/api/v1/scoped", fedex_route, methods=["GET"], dependencies=[Depends(require_role("executive", "admin", scoped=True))])
+    app.add_api_route("/api/v1/scoped-plano", plano_route, methods=["GET"], dependencies=[Depends(require_role("executive", "admin", scoped=True))])
+    pat = TestClient(app)
+    assert signin(pat, "pat") == 200
+    assert pat.get("/api/v1/auth/me").json()["user"]["accounts"] == ["plano-isd"]
+    assert pat.get("/api/v1/view").status_code == 403  # an every-account view
+    assert pat.get("/api/v1/scoped").status_code == 403  # another account
+    assert pat.get("/api/v1/scoped-plano").status_code == 200
+    assert c.get("/api/v1/scoped").status_code == 200  # administrators see everything
+
+    c.patch("/api/v1/users/pat", json={"accounts": []})  # every account again
+    users.clear_cache()
+    assert pat.get("/api/v1/view").status_code == 200 and pat.get("/api/v1/auth/me").json()["user"]["accounts"] is None
+
+    assert scope_clause("featured", None) == ("", {})
+    assert scope_clause("featured", frozenset({"plano-isd"}))[1] == {"scope": ["plano-isd"]}
+    for account in ("other", "fedex"):
+        with pytest.raises(HTTPException) as refused:
+            scope_clause(account, frozenset({"plano-isd"}))
+        assert refused.value.status_code == 403
+
+    # Routes that take `request: Request = None` still receive the request from FastAPI.
+    seen = []
+
+    def probe(q: str = Query("a"), request: Request = None):
+        seen.append(request is not None)
+        return {}
+    app.add_api_route("/api/v1/probe2", probe, methods=["GET"])
+    TestClient(app).get("/api/v1/probe2")
+    assert seen == [True]
