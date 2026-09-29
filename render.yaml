@@ -3,7 +3,8 @@
 # Three services and one database, mirroring compose.yaml without Metabase:
 #   crane-ifs-web     nginx: the built front end, and /api/ proxied to the private API
 #   crane-ifs-api     FastAPI, private (no public URL); migrations run before each deploy
-#   crane-ifs-worker  the 60-second tick that runs the nightly sync (02:30 America/Chicago)
+#   crane-ifs-worker  the 60-second tick: nightly sync (02:30 America/Chicago), WinTeam timekeeping every
+#                     30 minutes, PhotoValidation staffing requests every 15
 #   crane-ifs-db      PostgreSQL 16, reachable only from these services
 #
 # Secrets are `sync: false` on the API, so Render asks for each one once when the blueprint is
@@ -31,6 +32,11 @@ envVarGroups:
         value: jobs,vendors,timekeeping,job_budgets,ap_invoices,ap_invoice_details,ar_invoices
       - key: WINTEAM_SARUS_ENABLED
         value: "true"
+      # Worker intervals in minutes (0 = off).
+      - key: WINTEAM_SYNC_INTERVAL_MINUTES
+        value: "30"
+      - key: PV_SYNC_INTERVAL_MINUTES
+        value: "15"
       - key: LOG_LEVEL
         value: INFO
 
@@ -86,6 +92,10 @@ services:
       - key: RELAY_BASE_URL
         sync: false
       - key: RELAY_EXPORT_TOKEN
+        sync: false
+      - key: PHOTOVALIDATION_API_URL
+        sync: false
+      - key: PHOTOVALIDATION_API_TOKEN
         sync: false
       - key: COMPANYCAM_API_TOKEN
         sync: false
@@ -150,6 +160,16 @@ services:
           type: pserv
           name: crane-ifs-api
           envVarKey: RELAY_EXPORT_TOKEN
+      - key: PHOTOVALIDATION_API_URL
+        fromService:
+          type: pserv
+          name: crane-ifs-api
+          envVarKey: PHOTOVALIDATION_API_URL
+      - key: PHOTOVALIDATION_API_TOKEN
+        fromService:
+          type: pserv
+          name: crane-ifs-api
+          envVarKey: PHOTOVALIDATION_API_TOKEN
 
   - type: web
     name: crane-ifs-web

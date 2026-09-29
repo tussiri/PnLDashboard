@@ -179,6 +179,12 @@ class Settings:
     relay_base_url: str
     relay_export_token: str
     relay_timeout_seconds: int
+    # Worker intervals in minutes (0 = off): the light WinTeam timekeeping sync and the PhotoValidation pull.
+    winteam_sync_interval_minutes: int
+    pv_sync_interval_minutes: int
+    # PhotoValidation staffing-request feed (app/sources/photovalidation.py). Server-side only.
+    photovalidation_api_url: str
+    photovalidation_api_token: str
     companycam_match_rule: str
     ingestion_idle_in_transaction_timeout_seconds: int
     mart_rebuild_lock_timeout_seconds: int
@@ -222,7 +228,7 @@ class Settings:
             winteam_page_size=_integer(env, "WINTEAM_PAGE_SIZE", 100, maximum=10_000),
             winteam_backfill_months=_integer(env, "WINTEAM_BACKFILL_MONTHS", 18, maximum=120),
             winteam_window_days=_integer(env, "WINTEAM_WINDOW_DAYS", 16, maximum=366),
-            # Syncs run on demand only. A normal sync re-reads this many days before the last one (late
+            # A normal sync (nightly, scheduled or on demand) re-reads this many days before the last one (late
             # punches, approvals); a deep sync re-reads WINTEAM_DEEP_LOOKBACK_DAYS for edits made later.
             winteam_lookback_days=_integer(env, "WINTEAM_LOOKBACK_DAYS", 3, minimum=0, maximum=366),
             winteam_deep_lookback_days=_integer(env, "WINTEAM_DEEP_LOOKBACK_DAYS", 35, minimum=0, maximum=366),
@@ -257,6 +263,13 @@ class Settings:
             relay_base_url=_text(env, "RELAY_BASE_URL").rstrip("/"),
             relay_export_token=_text(env, "RELAY_EXPORT_TOKEN"),
             relay_timeout_seconds=_integer(env, "RELAY_TIMEOUT_SECONDS", 60, maximum=600),
+            # The worker's light WinTeam sync (timekeeping; jobs at most once per 20 hours) and the
+            # PhotoValidation pull run every this many minutes. 0 turns the schedule off; the nightly
+            # sync and the Admin buttons are unaffected.
+            winteam_sync_interval_minutes=_integer(env, "WINTEAM_SYNC_INTERVAL_MINUTES", 30, minimum=0, maximum=1440),
+            pv_sync_interval_minutes=_integer(env, "PV_SYNC_INTERVAL_MINUTES", 15, minimum=0, maximum=1440),
+            photovalidation_api_url=_text(env, "PHOTOVALIDATION_API_URL").rstrip("/"),
+            photovalidation_api_token=_text(env, "PHOTOVALIDATION_API_TOKEN"),
             # How a CompanyCam project is matched to a WinTeam job. Unset until the production data
             # has been probed: job_number_in_name | address | project_map.
             companycam_match_rule=_text(env, "COMPANYCAM_MATCH_RULE"),
@@ -294,6 +307,10 @@ class Settings:
             return None
         parsed = urlparse(self.finance_reference_database_url)
         return parsed.hostname or None
+
+    @property
+    def photovalidation_configured(self) -> bool:
+        return bool(self.photovalidation_api_url and self.photovalidation_api_token)
 
     @property
     def winteam_sarus_configured(self) -> bool:
@@ -338,6 +355,10 @@ class Settings:
             parsed = urlparse(self.finance_reference_database_url)
             if parsed.scheme not in {"postgresql", "postgres"} or not parsed.hostname:
                 raise ConfigurationError("FINANCE_REFERENCE_DATABASE_URL must be a postgresql:// URL (empty = source not configured)")
+        if self.photovalidation_api_url:
+            parsed = urlparse(self.photovalidation_api_url)
+            if parsed.scheme not in {"http", "https"} or not parsed.netloc or parsed.username or parsed.password:
+                raise ConfigurationError("PHOTOVALIDATION_API_URL must be an http(s) origin without credentials")
         if self.winteam_subscription_key and not self.winteam_subscription_key_header:
             raise ConfigurationError("WINTEAM_SUBSCRIPTION_KEY_HEADER must not be empty")
         if self.winteam_base_url:

@@ -46,6 +46,12 @@ x-api-environment: &api-environment
   RELAY_BASE_URL: ${RELAY_BASE_URL:-}
   RELAY_EXPORT_TOKEN: ${RELAY_EXPORT_TOKEN:-}
   RELAY_TIMEOUT_SECONDS: ${RELAY_TIMEOUT_SECONDS:-60}
+  # Worker intervals in minutes (0 = off): light WinTeam timekeeping sync, PhotoValidation pull.
+  WINTEAM_SYNC_INTERVAL_MINUTES: ${WINTEAM_SYNC_INTERVAL_MINUTES:-30}
+  PV_SYNC_INTERVAL_MINUTES: ${PV_SYNC_INTERVAL_MINUTES:-15}
+  # PhotoValidation staffing-request feed (origin, and an existing PhotoValidation API token). Blank = off.
+  PHOTOVALIDATION_API_URL: ${PHOTOVALIDATION_API_URL:-}
+  PHOTOVALIDATION_API_TOKEN: ${PHOTOVALIDATION_API_TOKEN:-}
   # Second source: the restored Finance_Dashboard dump (read-only database in the same Postgres).
   # Empty = source not configured. The default is the local restored dump.
   FINANCE_REFERENCE_DATABASE_URL: ${FINANCE_REFERENCE_DATABASE_URL:-postgresql://facilities_app:facilities_dev@postgres:5432/finance_reference}
