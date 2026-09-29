@@ -17,12 +17,13 @@ const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 const refreshAll = () => queryClient.invalidate()
 
 function useAction() {
+  const { decision, redetect } = useLeadership()
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null)
   /** `done` is the success message; a failure shows the error. */
   const run = async (done: string, fn: () => Promise<unknown>) => {
     setBusy(true); setMessage(null)
-    try { await fn(); setMessage({ ok: true, text: done }); refreshAll() }
+    try { await fn(); setMessage({ ok: true, text: done }); refreshAll(); if (decision?.mode === 'demo') redetect() }
     catch (e) { setMessage({ ok: false, text: errorText(e) }) }
     finally { setBusy(false) }
   }
@@ -141,7 +142,7 @@ function JobsTab() {
 }
 
 function ImportsTab() {
-  const { api, keyPrefix, decision } = useLeadership()
+  const { adminApi: api, adminKeyPrefix: keyPrefix, decision } = useLeadership()
   const { busy, run, view } = useAction()
   const [file, setFile] = useState<File | null>(null)
   const [kind, setKind] = useState<'' | LeadershipImportKind>('')
@@ -172,7 +173,7 @@ function ImportsTab() {
 }
 
 function DataTab() {
-  const { api, keyPrefix, decision, config } = useLeadership()
+  const { adminApi: api, adminKeyPrefix: keyPrefix, decision, config, apiReachable } = useLeadership()
   const { busy, run, view } = useAction()
   const q = useApiQuery<SyncRunsResponse>(decision ? queryKey(`${keyPrefix}/integrations/runs`) : null, (signal) => api.syncRuns(40, signal), [api])
   type Run = SyncRunsResponse['runs'][number]
@@ -186,7 +187,7 @@ function DataTab() {
   ]
   return <>
     <div className="card">
-      <div className="ct"><span>Status</span><span className="ks">{freshnessLine(config.data)}</span></div>
+      <div className="ct"><span>Status</span><span className="ks">{decision?.mode === 'live' ? freshnessLine(config.data) : apiReachable ? 'No data loaded' : ''}</span></div>
       <div className="ctrl">
         <button type="button" className="btn" disabled={busy} onClick={() => run('WinTeam synced', () => api.syncAll())}>Sync WinTeam</button>
         <button type="button" className="btn" disabled={busy} onClick={() => run('Sarus synced', () => api.syncSarus())}>Sync Sarus</button>

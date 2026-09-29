@@ -17,6 +17,16 @@ export interface LeadershipState {
   api: DashboardApi
   /** Prefix for cache keys so live and demo data never mix. */
   keyPrefix: string
+  /**
+   * Admin data actions (sync, rebuild, imports, users): the live API whenever it is reachable, even
+   * while the views show demo data because the marts are still empty, so an empty database can be
+   * filled from the dashboard. The demo stand-in only when no API answers.
+   */
+  adminApi: DashboardApi
+  adminKeyPrefix: string
+  apiReachable: boolean
+  /** Decide live or demo again (after a sync, rebuild or import fills the marts). */
+  redetect: () => void
   config: QueryState<LeadershipConfig>
   route: Route
   navigate: (next: Partial<Route>, options?: { replace?: boolean; reset?: boolean }) => void
@@ -66,12 +76,14 @@ export function LeadershipProvider({ user, signOut, children, forcedDecision }: 
   const [route, setRoute] = useState<Route>(() => parseRoute(location.hash))
   const [theme, setThemeState] = useState<Theme>(readTheme)
 
+  const [detection, setDetection] = useState(0)
   useEffect(() => {
     if (forcedDecision) return
     const controller = new AbortController()
     detectMode(controller.signal).then(setDecision).catch(() => { /* aborted */ })
     return () => controller.abort()
-  }, [forcedDecision])
+  }, [forcedDecision, detection])
+  const redetect = useCallback(() => setDetection((n) => n + 1), [])
 
   useEffect(() => {
     const sync = () => setRoute(parseRoute(location.hash))
@@ -89,6 +101,9 @@ export function LeadershipProvider({ user, signOut, children, forcedDecision }: 
   const mode = decision?.mode ?? 'demo'
   const api = useMemo(() => apiFor(mode), [mode])
   const keyPrefix = decision ? mode : 'pending'
+  const apiReachable = Boolean(decision && decision.reason !== 'unreachable')
+  const adminApi = useMemo(() => (apiReachable ? apiFor('live') : api), [apiReachable, api])
+  const adminKeyPrefix = decision ? (apiReachable ? 'live' : 'demo') : 'pending'
 
   const config = useApiQuery<LeadershipConfig>(decision ? queryKey(`${keyPrefix}/leadership/config`) : null, (signal) => api.leadershipConfig(signal), [api])
 
@@ -111,7 +126,7 @@ export function LeadershipProvider({ user, signOut, children, forcedDecision }: 
   const optionsFor = useCallback((account: LeadershipAccount | undefined) => optionsForAccount(account, targetOverride), [targetOverride])
 
   const value: LeadershipState = {
-    user, signOut, decision, api, keyPrefix, config, route, navigate, featured, accountBySlug, selectedAccount,
+    user, signOut, decision, api, keyPrefix, adminApi, adminKeyPrefix, apiReachable, redetect, config, route, navigate, featured, accountBySlug, selectedAccount,
     weekStart, targetOverride, optionsFor, theme, setTheme: setThemeState,
   }
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>

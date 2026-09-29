@@ -71,7 +71,7 @@ function UserRow({ user, self, onChanged }: { user: AppUser; self: boolean; onCh
 
 /** Admin > Users: sign-in users created in the dashboard, plus read-only APP_USERS_JSON entries. */
 export function UsersTab() {
-  const { decision, user: me } = useLeadership()
+  const { apiReachable, user: me } = useLeadership()
   const [users, setUsers] = useState<AppUser[] | null>(null)
   const [error, setError] = useState<unknown>(null)
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null)
@@ -79,8 +79,8 @@ export function UsersTab() {
     setError(null)
     usersApi.list().then((r) => setUsers(r.users)).catch(setError)
   }, [])
-  useEffect(() => { if (decision?.mode === 'live') load() }, [decision, load])
-  if (decision?.mode !== 'live') return <Empty>Users are managed on the live API only.</Empty>
+  useEffect(() => { if (apiReachable) load() }, [apiReachable, load])
+  if (!apiReachable) return <Empty>API unreachable.</Empty>
   if (error) return <LoadError error={error} onRetry={load} />
   if (!users) return <Skeleton height={240} />
   const changed = (m: { ok: boolean; text: string }) => { setMessage(m); load() }
