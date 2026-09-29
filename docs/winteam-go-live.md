@@ -43,7 +43,8 @@ and UI; only the gateway differs.
    will compare against (receivables are not date-filterable, so they arrive in full; months with
    invoices but no timekeeping backfill would otherwise read as abnormally high margin). Forecasting
    needs ≥ 4 closed months and gets meaningfully better at 12+. Then `docker compose up -d api worker`.
-8. Sync on demand from the Administration page (nothing polls WinTeam). `GET /api/v1/data/freshness`
+8. Sync on demand from the Administration page; the worker then syncs nightly and every
+   `WINTEAM_SYNC_INTERVAL_MINUTES` (timekeeping, default 30; 0 = off). `GET /api/v1/data/freshness`
    shows each resource's age since its last sync; the Data dictionary page shows the same table.
 
 ## 3. What to reconcile before the numbers are called production
