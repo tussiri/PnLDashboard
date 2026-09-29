@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { useApiQuery } from '../hooks/useApiQuery'
-import type { LeadershipAccount, LeadershipConfig, LeadershipMonth, LeadershipMonthlyJob, LeadershipMonthlyResponse, LeadershipRow, LeadershipRowsResponse } from '../services/apiTypes'
+import type { LeadershipAccount, LeadershipConfig, LeadershipMonth, LeadershipMonthlyJob, LeadershipMonthlyResponse, LeadershipMonthResponse, LeadershipRow, LeadershipRowsResponse } from '../services/apiTypes'
 import { queryKey } from '../services/queryClient'
 import { accountSummary, type AccountSummary, type MetricOptions } from './metrics'
 import { addDays } from './routes'
@@ -18,6 +18,27 @@ export function useRows(account: string | undefined, weeks = 1) {
   return { ...q, data }
 }
 
+/**
+ * The month-end rollup of one account (or scope): every site, subcontracted ones included (at month end
+ * they are invoiced and their subcontractors have billed), shaped like the weekly rows.
+ */
+export function useMonthRows(account: string | undefined, month: string | undefined) {
+  const { api, keyPrefix, decision, accountBySlug } = useLeadership()
+  const key = decision && account && month ? queryKey(`${keyPrefix}/leadership/month`, { account, month }) : null
+  const q = useApiQuery<LeadershipMonthResponse>(key, (signal) => api.leadershipMonth(account!, month!, signal), [api, account, month])
+  const data = useMemo(() => (q.data ? { ...q.data, rows: prepareRows(q.data.rows, accountBySlug, { keepSubcontracted: true }) } : q.data), [q.data, accountBySlug])
+  return { ...q, data }
+}
+
+/** The month before YYYY-MM. */
+export const priorMonth = (month: string) => {
+  const [y, m] = month.split('-').map(Number)
+  return m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, '0')}`
+}
+
+/** Days in a month (YYYY-MM), for per-day figures in the month rollup. */
+export const daysInMonth = (month: string) => { const [y, m] = month.split('-').map(Number); return new Date(Date.UTC(y, m, 0)).getUTCDate() }
+
 /** Subcontracted: marked so, or no delivery model recorded and only vendor cost (no hours) this week. */
 export const isSubcontracted = (r: LeadershipRow) => r.delivery_model === 'subcontracted' || (r.delivery_model == null && !r.hours && (r.sub_week ?? 0) > 0)
 
@@ -33,7 +54,8 @@ const ADDITIVE = ['labor', 'hours', 'ot_hours', 'ot_dollars', 'budget_hours', 'b
  * - group_by 'pallet' names each site's group Pallet sites or Janitorial only;
  * - split_subcontracted drops subcontracted sites (they have their own tab).
  */
-export function prepareRows(rows: LeadershipRow[], accountBySlug: (slug: string | undefined) => LeadershipAccount | undefined): LeadershipRow[] {
+export function prepareRows(rows: LeadershipRow[], accountBySlug: (slug: string | undefined) => LeadershipAccount | undefined,
+  { keepSubcontracted = false }: { keepSubcontracted?: boolean } = {}): LeadershipRow[] {
   const key = (r: LeadershipRow, job: string) => `${r.week_start}|${r.company}|${job}`
   const byKey = new Map(rows.filter((r) => r.role !== 'pallet').map((r) => [key(r, r.job_number), { ...r, kids: [r.job_number], pallet_labor: 0, pallet_hours: 0, pallet_ot_hours: 0 } as LeadershipRow]))
   const out: LeadershipRow[] = [...byKey.values()]
@@ -51,7 +73,7 @@ export function prepareRows(rows: LeadershipRow[], accountBySlug: (slug: string 
   }
   return out.filter((r) => {
     const account = accountBySlug(r.account_slug ?? undefined)
-    if (account?.split_subcontracted && isSubcontracted(r)) return false
+    if (account?.split_subcontracted && !keepSubcontracted && isSubcontracted(r)) return false
     if (account?.group_by === 'pallet' && r.role === 'site') r.segment = (r.kids?.length ?? 1) > 1 ? PALLET_GROUPS[0] : PALLET_GROUPS[1]
     return true
   })
@@ -99,6 +121,26 @@ export interface DataFlags {
   /** The last run of each WinTeam integration that failed. */
   failedSyncs: { integration: string; at: string | null }[]
   weekInProgress: boolean
+  /** The month-end rollup: subcontractor invoices received of expected, and sites with no billing yet. */
+  month?: { subsExpected: number; subsReceived: number; notInvoiced: number; inProgress: boolean }
+}
+
+/** Flags for a month rollup: estimated labor, sub invoices in, sites not yet invoiced, month in progress. */
+export function monthFlags(config: LeadershipConfig | undefined, month: string, rows: LeadershipRow[]): DataFlags {
+  const sites = rows.filter((r) => r.role === 'site')
+  const expected = sites.filter((r) => r.sub_expected)
+  const today = new Date().toISOString().slice(0, 10)
+  return {
+    estimated: rows.some((r) => r.labor_basis !== 'pay_report' && r.labor > 0),
+    revenueLag: null,
+    failedSyncs: dataFlags(config, undefined, []).failedSyncs,
+    weekInProgress: false,
+    month: {
+      subsExpected: expected.length, subsReceived: expected.filter((r) => r.sub_received).length,
+      notInvoiced: sites.filter((r) => r.revenue_month_basis !== 'job_cost' && r.revenue_month_basis !== 'relay_ar' && r.hours > 0).length,
+      inProgress: `${month}-${String(daysInMonth(month)).padStart(2, '0')}` >= today,
+    },
+  }
 }
 
 /** Freshness and completeness facts about the selected week, for the notes panel. */

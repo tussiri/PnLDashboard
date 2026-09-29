@@ -2,7 +2,7 @@ import { lazy, Suspense, useMemo } from 'react'
 import type { LeadershipAccount, LeadershipRow } from '../../services/apiTypes'
 import { ChartCard, Swatch } from '../ui'
 import { OtHoursChart, useTokens } from '../charts'
-import { dataFlags, isSubcontracted, rowsOfWeek, segmentLabel, segmentOrder, useMonthly, useRows, vendorLabel } from '../data'
+import { dataFlags, daysInMonth, isSubcontracted, monthFlags, rowsOfWeek, segmentLabel, segmentOrder, useMonthly, useMonthRows, useRows, vendorLabel } from '../data'
 import { hours, hours1, money, pct } from '../format'
 import { accountSummary, type AccountSummary as Summary, type SiteMetrics as Metrics } from '../metrics'
 import { Overview } from '../Overview'
@@ -34,6 +34,7 @@ function useSiteOpener() {
 function OvertimeTab({ account, summary }: { account: LeadershipAccount; summary: AccountSummary }) {
   const t = useTokens()
   const open = useSiteOpener()
+  const { monthMode } = useLeadership()
   const o = summary.overtime
   const withOt = summary.sites.filter((r) => r.ot_hours > 0)
   const top = [...summary.sites].sort((a, b) => b.ot_hours - a.ot_hours).filter((r) => r.ot_hours > 0).slice(0, 15)
@@ -62,30 +63,34 @@ function OvertimeTab({ account, summary }: { account: LeadershipAccount; summary
       chart={<OtHoursChart labels={top.map((r) => shortName(r.site_name))} values={top.map((r) => r.ot_hours)} tones={top.map((r) => (r.role !== 'site' ? 'muted' : r.otPct > 0.25 ? 'bad' : 'warn'))}
         details={top.map((r) => `${r.ot_hours.toFixed(1)} OT hrs, ${pct(r.otPct)} of hours, ${money(r.ot_dollars)}`)} />}
       table={<table><thead><tr><th className="nosort l">Site</th><th className="nosort">OT hrs</th><th className="nosort">OT %</th><th className="nosort">OT cost</th></tr></thead><tbody>{top.map((r) => <tr key={r.job_number}><td className="l">{r.site_name}</td><td>{hours1(r.ot_hours)}</td><td>{pct(r.otPct)}</td><td>{money(r.ot_dollars)}</td></tr>)}</tbody></table>} />
-      : <Empty>No overtime this week.</Empty>}
+      : <Empty>No overtime this {monthMode ? 'month' : 'week'}.</Empty>}
     {withOt.length > 0 && <div className="card"><SortTable caption="Sites with overtime" rows={withOt} columns={cols} defaultSort={{ key: 'oth', dir: -1 }} rowClass={(r) => (r.role !== 'site' ? 'dim' : '')} onRowClick={open} rowLabel={(r) => `Open ${r.site_name}`} csvName={`${account.slug}-overtime`} /></div>}
   </>
 }
 
 export function Account() {
-  const { selectedAccount: account, route, navigate, weekStart, optionsFor, config } = useLeadership()
+  const { selectedAccount: account, route, navigate, weekStart, optionsFor, config, monthMode, month } = useLeadership()
   const tab = route.tab ?? 'overview'
-  const rowsQuery = useRows(account?.slug, 1)
-  const weekRows = useMemo(() => rowsOfWeek(rowsQuery.data?.rows, weekStart), [rowsQuery.data, weekStart])
+  const weekQuery = useRows(monthMode ? undefined : account?.slug, 1)
+  const monthQuery = useMonthRows(monthMode ? account?.slug : undefined, monthMode ? month : undefined)
+  const rowsQuery = monthMode ? monthQuery : weekQuery
+  const weekRows = useMemo(() => (monthMode ? monthQuery.data?.rows ?? [] : rowsOfWeek(weekQuery.data?.rows, weekStart)), [monthMode, monthQuery.data, weekQuery.data, weekStart])
   const subcontracted = weekRows.filter(isSubcontracted).length
   const selfOnly = Boolean(route.selfOnly) && subcontracted > 0
   const rows = useMemo(() => (selfOnly ? weekRows.filter((r) => !isSubcontracted(r)) : weekRows), [weekRows, selfOnly])
-  const options = useMemo(() => optionsFor(account), [optionsFor, account])
+  const options = useMemo(() => (monthMode && month
+    ? { ...optionsFor(account), revenueMethod: 'weekly_billing' as const, period: 'month' as const, periodDays: daysInMonth(month) }
+    : optionsFor(account)), [optionsFor, account, monthMode, month])
   const summary = useMemo(() => (account && rows.length ? accountSummary(rows, options, segmentOrder(account)) : null), [account, rows, options])
-  const flags = useMemo(() => dataFlags(config.data, weekStart, rows), [config.data, weekStart, rows])
-  const subtitle = [weekStart ? weekLabel(weekStart) : null, updatedLine(config.data)].filter(Boolean).join('. ')
+  const flags = useMemo(() => (monthMode && month ? monthFlags(config.data, month, rows) : dataFlags(config.data, weekStart, rows)), [config.data, weekStart, rows, monthMode, month])
+  const subtitle = [monthMode && month ? monthLabel(`${month}-01`) : weekStart ? weekLabel(weekStart) : null, updatedLine(config.data)].filter(Boolean).join('. ')
   const setTab = (next: AccountTab) => navigate({ view: 'account', account: account?.slug, tab: next })
   const monthly = useMonthly(account?.slug)
   const tabs = tabsFor(account, ACCOUNT_TABS, {
     pallet: rows.some((r) => (r.kids?.length ?? 1) > 1),
     subcontracted: Boolean(account?.split_subcontracted) || subcontracted > 0 || Boolean(monthly.data?.jobs.some((j) => j.delivery_model === 'subcontracted' && j.role === 'site')),
     incomeStatement: Boolean(account?.split_subcontracted) || Object.keys(monthly.data?.income_statement ?? {}).length > 0,
-  })
+  }).filter((t) => !monthMode || t !== 'over-target')
   const vocab = vocabOf(account)
   let body
   if (rowsQuery.error) body = <LoadError error={rowsQuery.error} onRetry={rowsQuery.refetch} />
@@ -93,7 +98,7 @@ export function Account() {
   else if (tab === 'vendors') body = <Vendors account={account} />
   else if (tab === 'subcontracted' && tabs.includes(tab)) body = <SubcontractedTab account={account} />
   else if (tab === 'income-statement' && tabs.includes(tab)) body = <IncomeStatementTab account={account} options={options} />
-  else if (!summary) body = <Empty>No data for this week.</Empty>
+  else if (!summary) body = <Empty>No data for this {monthMode ? 'month' : 'week'}.</Empty>
   else if (tab === 'pallet' && tabs.includes(tab)) body = <PalletTab account={account} summary={summary} options={options} />
   else if (tab === 'overview' || !tabs.includes(tab)) body = <Overview account={account} rows={rows} summary={summary} options={options} flags={flags} />
   else if (tab === 'sites') body = <Sites account={account} summary={summary} options={options} selfOnly={selfOnly} />
@@ -101,14 +106,14 @@ export function Account() {
   else if (tab === 'overtime') body = <OvertimeTab account={account} summary={summary} />
   else body = <Suspense fallback={<Skeleton height={520} />}><SiteMap account={account} summary={summary} /></Suspense>
   const basis = options.invoiceBasis ?? 'last_month'
-  const basisControl = account?.revenue_method !== 'weekly_billing' && tab !== 'vendors' && tab !== 'subcontracted' && tab !== 'income-statement' && <>
+  const basisControl = !monthMode && account?.revenue_method !== 'weekly_billing' && tab !== 'vendors' && tab !== 'subcontracted' && tab !== 'income-statement' && <>
     <label htmlFor="basis">Invoice basis</label>
     <select id="basis" value={basis} onChange={(e) => navigate({ basis: e.target.value === account?.invoice_basis ? undefined : e.target.value as 'run_rate_3m' | 'last_month' }, { replace: true })}>
       <option value="run_rate_3m">3-month run rate</option><option value="last_month">{monthLabel(rows.find((r) => r.revenue_month)?.revenue_month ?? null)} actual</option>
     </select></>
   const current = tabs.includes(tab) ? tab : 'overview'
   return <VocabContext.Provider value={vocab}>
-    <PageHeader title={account ? `${account.name} Labor P&L` : 'Account'} subtitle={subtitle} account={false}
+    <PageHeader title={account ? `${account.name} Labor P&L` : 'Account'} subtitle={subtitle} account={false} period
       extra={<>{basisControl}{subcontracted > 0 && tab !== 'vendors' && <label className="check"><input type="checkbox" checked={selfOnly}
         onChange={(e) => navigate({ selfOnly: e.target.checked || undefined }, { replace: true })} />Hide {subcontracted} subcontracted</label>}</>} />
     <nav className="tabs" role="tablist" aria-label="Account views">

@@ -2,11 +2,12 @@ import { useMemo, type ReactNode } from 'react'
 import type { LeadershipAccount, LeadershipMonthlyJob, LeadershipRow } from '../services/apiTypes'
 import { Badge, ChartCard, Kpi, Swatch, toneOf, useVocab } from './ui'
 import { LaborMixChart, MonthWeekTrendChart, SiteLpChart, useTokens } from './charts'
-import { closedMonths, includesVendor, inSentence, monthLaborPct, monthRevenue, rowsOfWeek, segmentLabel, segmentOrder, siteMonths, useMonthly, useRows, vendorLabel, type DataFlags } from './data'
+import { closedMonths, includesVendor, inSentence, monthLaborPct, monthRevenue, priorMonth, rowsOfWeek, segmentLabel, segmentOrder, siteMonths, useMonthly, useMonthRows, useRows, vendorLabel, type DataFlags } from './data'
 import { hours, hours1, money, moneyK, pct } from './format'
 import { accountSummary, statusOf, type AccountNote, type AccountSummary, type MetricOptions, type SiteMetrics } from './metrics'
 import { monthLabel, monthShort, weekTick } from './routes'
-import { weekChange, wordsFor } from './vocab'
+import { useLeadership } from './state'
+import { billingSources, invoiceLabel, weekChange, wordsFor } from './vocab'
 
 const siteWord = (n: number) => `${n} site${n === 1 ? '' : 's'}`
 const SYNC_NAME: Record<string, string> = { winteam_sarus: 'Sarus', nightly: 'Nightly', relay: 'Relay', mail_inbox: 'Records inbox' }
@@ -28,10 +29,13 @@ export function Notes({ summary, account, flags, options, revenueMonth }: { summ
   if (flags.revenueLag) add('bad', 'lag', 'Invoicing month', `${monthLabel(flags.revenueLag.revenueMonth)}; ${monthLabel(flags.revenueLag.expectedMonth)} job cost not loaded`)
   for (const s of flags.failedSyncs) add('bad', `s${s.integration}`, `${SYNC_NAME[s.integration] ?? 'WinTeam'} sync failed`, s.at ? s.at.slice(0, 10) : '')
   if (flags.weekInProgress) add('warn', 'prog', 'Week in progress', 'Partial hours and labor')
+  if (flags.month?.inProgress) add('warn', 'mprog', 'Month in progress', 'Partial hours and labor')
+  if (flags.month?.subsExpected) add(flags.month.subsReceived < flags.month.subsExpected ? 'warn' : '', 'subs', 'Sub invoices', `${flags.month.subsReceived} of ${flags.month.subsExpected} received`)
+  if (flags.month?.notInvoiced) add('warn', 'noinv', 'Not yet invoiced', `${siteWord(flags.month.notInvoiced)}; contract or prior month`)
   const w = wordsFor(account.vocabulary ?? 'amazon')
   const factor = account.vendor_factor ?? 1
   const vendorPart = includesVendor(account) ? ` + ${inSentence(vendorLabel(account))}${factor < 1 ? ` at ${Math.round(factor * 100)}%` : ''}` : ''
-  add('', 'lp', 'Labor %', `(${w.direct} labor${summary.sites.some((r) => (r.pallet_labor ?? 0) > 0) ? ' + pallet' : ''}${vendorPart}) ÷ ${w.invoice.toLowerCase()}`)
+  add('', 'lp', 'Labor %', `(${w.direct} labor${summary.sites.some((r) => (r.pallet_labor ?? 0) > 0) ? ' + pallet' : ''}${vendorPart}) ÷ ${invoiceLabel(w, account.vocabulary ?? 'amazon', options.period).toLowerCase()}`)
   if (options.segmentTargets && Object.keys(options.segmentTargets).length) add('', 'segt', `${segmentLabel(account)} targets`, Object.entries(options.segmentTargets).map(([s, t]) => `${s} ${pct(t)}`).join(', '))
   if (!items.length) return null
   return <dl className="notes">{items.map((i) => <div key={i.key}><dt className={i.tone}>{i.label}</dt><dd>{i.body}</dd></div>)}</dl>
@@ -64,7 +68,13 @@ export function Overview({ account, rows, summary, options, flags, headline = tr
   const w = wordsFor(vocab)
   const target = options.target
   const factor = options.vendorFactor ?? 1
+  const { optionsFor, monthMode, month } = useLeadership()
+  const period = options.period ?? 'week'
+  const perDay = options.periodDays ?? 7
+  // The trend is always weekly; the change is against the prior week, or the prior month in the rollup.
+  const weekOptions = monthMode ? optionsFor(account) : options
   const history = useRows(account.slug, 8)
+  const priorMonthQuery = useMonthRows(monthMode ? account.slug : undefined, month ? priorMonth(month) : undefined)
   const monthly = useMonthly(account.slug)
   const revenueMonth = rows.find((r) => r.revenue_month)?.revenue_month ?? null
   const a = summary.account
@@ -82,18 +92,21 @@ export function Overview({ account, rows, summary, options, flags, headline = tr
 
   const weeks = useMemo(() => (history.data?.weeks ?? []).map((wk) => {
     const wr = rowsOfWeek(history.data?.rows, wk)
-    return { week: wk, s: wr.length ? accountSummary(wr, options, segmentOrder(account)).account : null }
-  }), [history.data, options, account])
-  const prev = weeks.length > 1 ? weeks[weeks.length - 2].s : null
+    return { week: wk, s: wr.length ? accountSummary(wr, weekOptions, segmentOrder(account)).account : null }
+  }), [history.data, weekOptions, account])
+  const prevMonthRows = priorMonthQuery.data?.rows
+  const prev = monthMode
+    ? (prevMonthRows?.length ? accountSummary(prevMonthRows, options, segmentOrder(account)).account : null)
+    : weeks.length > 1 ? weeks[weeks.length - 2].s : null
   const closed = closedMonths(monthly.data)
   const lastClosed = closed.at(-1)
   const scopeJobs = useMemo(() => (monthly.data ? laborJobs(account, monthly.data.jobs) : []), [monthly.data, account])
   const actual = lastClosed ? monthLaborPct(scopeJobs, lastClosed, factor) : null
   const change = (cur: number | null, before: number | null | undefined, format: (v: number) => string) =>
-    cur == null || before == null ? null : `${cur - before >= 0 ? '+' : '−'}${format(Math.abs(cur - before))} ${vocab === 'fedex' ? 'vs prior wk' : 'WoW'}`
+    cur == null || before == null ? null : `${cur - before >= 0 ? '+' : '−'}${format(Math.abs(cur - before))} ${period === 'month' ? (vocab === 'fedex' ? 'vs prior month' : 'MoM') : vocab === 'fedex' ? 'vs prior wk' : 'WoW'}`
   const join = (...parts: (string | null | undefined | false)[]) => parts.filter(Boolean).join('; ')
 
-  const basis = account.revenue_method === 'weekly_billing' ? null : options.invoiceBasis === 'run_rate_3m'
+  const basis = period === 'month' ? billingSources(summary.sites) : account.revenue_method === 'weekly_billing' ? null : options.invoiceBasis === 'run_rate_3m'
     ? (variable != null ? `Fixed ${moneyK(summary.all.invoice - variable)} + variable ${moneyK(variable)} run rate ÷ ${account.revenue_divisor}` : `3-month run rate ÷ ${account.revenue_divisor}`)
     : `${monthLabel(revenueMonth)} revenue ÷ ${account.revenue_divisor}`
   const laborParts = [palD > 0 ? `${w.direct} ${moneyK(a.labor - palD)} + pallet ${moneyK(palD)}` : null, a.vendor > 0 ? `${inSentence(vendorLabel(account))} ~${moneyK(a.vendor)}` : null,
@@ -120,16 +133,16 @@ export function Overview({ account, rows, summary, options, flags, headline = tr
 
   return <>
     {headline && <div className="kpi-lg">
-      <Kpi label={w.invoice} value={money(summary.all.invoice)} sub={basis ?? undefined} />
+      <Kpi label={invoiceLabel(w, vocab, period)} value={money(summary.all.invoice)} sub={basis || undefined} />
       <Kpi label={w.labor} value={money(a.cost)} sub={join(laborParts, change(a.cost, prev?.cost, money)) || undefined} />
       <Kpi label={w.accountLaborPct} value={pct(a.measurePct)} tone={toneOf(accountStatus)}
         sub={join(`Target ${pct(target)}`, lastClosed ? `${monthLabel(lastClosed)} actual ${pct(actual)}` : null,
-          a.measurePct != null && prev?.measurePct != null ? weekChange(a.measurePct - prev.measurePct, vocab) : null, catchJobs.length ? `sites only ${pct(summary.billed.measurePct)}` : null)} />
+          a.measurePct != null && prev?.measurePct != null ? weekChange(a.measurePct - prev.measurePct, vocab, period) : null, catchJobs.length ? `sites only ${pct(summary.billed.measurePct)}` : null)} />
       <Kpi label={w.hours} value={hours(a.hours)} sub={join(`${hours(a.otHours)} OT/DT (${pct(a.otPct)})`, palHrs ? `pallet ${hours(palHrs)}` : null, change(a.hours, prev?.hours, hours))} />
       <Kpi label="Margin" value={money(a.margin)} tone={a.margin < 0 ? 'bad' : ''}
         sub={join(pct(a.marginPct), a.allocation > 0 ? `after ${moneyK(a.allocation)} alloc.` : null)} />
       <Kpi label={w.hoursOver} value={hours(over)} tone={over > 0 ? 'bad' : 'ok'}
-        sub={join(`${hours1(over / 7)}/day`, w.over(summary.billed.over, billed.length), catchJobs.length ? `${hours(summary.catchAllOverHours)} catch-all` : null, unbilled.length ? `${hours(unbilledHours)} unbilled` : null)} />
+        sub={join(`${hours1(over / perDay)}/day`, w.over(summary.billed.over, billed.length), catchJobs.length ? `${hours(summary.catchAllOverHours)} catch-all` : null, unbilled.length ? `${hours(unbilledHours)} unbilled` : null)} />
     </div>}
     <Notes summary={summary} account={account} flags={flags} options={options} revenueMonth={revenueMonth} />
     <div className="seg-grid">
@@ -153,16 +166,16 @@ export function Overview({ account, rows, summary, options, flags, headline = tr
       table={<table><thead><tr><th className="nosort l">Period</th><th className="nosort">{w.invoiceCol}</th><th className="nosort">{w.laborCol}</th><th className="nosort">Labor %</th></tr></thead>
         <tbody>{trend.map((x) => <tr key={x.label}><td className="l">{x.label}</td><td>{money(x.invoice)}</td><td>{money(x.labor)}</td><td>{pct(x.lp)}</td></tr>)}</tbody></table>} />}
     {billed.length > 0 && <div className="charts2">
-      <ChartCard title="Labor % by site this week" height={Math.max(200, sorted.length * 16 + 60)}
+      <ChartCard title={`Labor % by site this ${period}`} height={Math.max(200, sorted.length * 16 + 60)}
         legend={<><Swatch color={t.ok} label={vocab === 'fedex' ? 'On target' : 'On track'} /><Swatch color={t.warn} label="Watch" /><Swatch color={t.bad} label={vocab === 'fedex' ? 'Over' : 'High'} /><Swatch line label={`Target ${pct(target)}`} /></>}
         chart={<SiteLpChart labels={sorted.map((r) => short(r.site_name))} values={sorted.map((r) => r.measurePct)} tones={sorted.map((r) => toneOf(r.status))} target={target}
           details={sorted.map((r) => `${pct(r.measurePct)} (${money(r.cost)} / ${money(r.invoice)})`)} />}
         table={<table><thead><tr><th className="nosort l">Site</th><th className="nosort">Labor %</th><th className="nosort">{w.laborCol}</th><th className="nosort">{w.invoiceCol}</th></tr></thead>
           <tbody>{sorted.map((r) => <tr key={`${r.company}-${r.job_number}`}><td className="l">{r.site_name}</td><td>{pct(r.measurePct)}</td><td>{money(r.cost)}</td><td>{money(r.invoice)}</td></tr>)}</tbody></table>} />
       <ChartCard title="Where the labor dollars went" height={Math.max(180, mix.length * 44 + 40)}
-        legend={<><Swatch color={t.accent2} label={w.invoice} /><Swatch color={t.accent} label={`${w.direct} labor`} />{palD > 0 && <Swatch color={t.warn} label="Pallet labor" />}{a.vendor > 0 && <Swatch color={t.muted} label={subLabel} />}</>}
+        legend={<><Swatch color={t.accent2} label={invoiceLabel(w, vocab, period)} /><Swatch color={t.accent} label={`${w.direct} labor`} />{palD > 0 && <Swatch color={t.warn} label="Pallet labor" />}{a.vendor > 0 && <Swatch color={t.muted} label={subLabel} />}</>}
         chart={<LaborMixChart labels={mix.map((x) => x.name)} invoice={mix.map((x) => sum(x.list, (r) => r.invoice))} core={mix.map((x) => sum(x.list, directOf))}
-          pallet={mix.map((x) => sum(x.list, palletOf))} sub={mix.map((x) => sum(x.list, (r) => r.vendor))} subLabel={subLabel} directLabel={`${w.direct} labor`} invoiceLabel={w.invoice} />}
+          pallet={mix.map((x) => sum(x.list, palletOf))} sub={mix.map((x) => sum(x.list, (r) => r.vendor))} subLabel={subLabel} directLabel={`${w.direct} labor`} invoiceLabel={invoiceLabel(w, vocab, period)} />}
         table={<table><thead><tr><th className="nosort l">{segmentLabel(account)}</th><th className="nosort">{w.invoiceCol}</th><th className="nosort">{w.direct}</th><th className="nosort">Pallet</th><th className="nosort">{subLabel}</th></tr></thead>
           <tbody>{mix.map((x) => <tr key={x.name}><td className="l">{x.name}</td><td>{money(sum(x.list, (r) => r.invoice))}</td><td>{money(sum(x.list, directOf))}</td><td>{money(sum(x.list, palletOf))}</td><td>{money(sum(x.list, (r) => r.vendor))}</td></tr>)}</tbody></table>} />
     </div>}

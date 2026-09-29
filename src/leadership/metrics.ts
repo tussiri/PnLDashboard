@@ -81,6 +81,9 @@ export interface MetricOptions {
   invoiceBasis?: InvoiceBasis
   /** Read the fixed / variable (OS) revenue split: accounts grouped by pallet sites only. */
   palletSplit?: boolean
+  /** The month-end rollup (rows are months, invoice is the month's billing) or a week; days per period for per-day figures. */
+  period?: 'week' | 'month'
+  periodDays?: number
 }
 
 /** Derived values added to a row. */
