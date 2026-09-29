@@ -88,11 +88,14 @@ export interface IntegrationStatus {
   configured: boolean
   base_url_host: string | null
   resources: IntegrationResource[]
-  /** Always null: WinTeam is synced on demand only, never on a schedule. */
+  /** The worker's light timekeeping sync interval in seconds (WINTEAM_SYNC_INTERVAL_MINUTES); null when it is off. */
   poll_seconds: number | null
-  sync?: 'on_demand'
+  /** 'scheduled' while the light interval sync is on, else 'on_demand' (nightly and Admin syncs run either way). */
+  sync?: SyncMode
   normalize_enabled?: boolean
 }
+
+export type SyncMode = 'on_demand' | 'scheduled'
 
 /** GET /integrations/winteam/sarus - the second WinTeam database. Never carries the tenant id or key. */
 export interface SarusStatus {
@@ -101,7 +104,7 @@ export interface SarusStatus {
   base_url_host: string | null
   has_subscription_key: boolean
   ingestion: boolean
-  sync?: 'on_demand'
+  sync?: SyncMode
   resources: IntegrationResource[]
   precedence: {
     sarus_timekeeping_from: string | null
@@ -260,12 +263,12 @@ export interface FreshnessResource {
 }
 
 export interface IngestionHealth {
-  /** False when the finance_reference export is stale. WinTeam is synced on demand, so nothing is overdue. */
+  /** False when the finance_reference export is stale. A failed WinTeam sync is recorded as failed, so nothing is overdue. */
   healthy: boolean
   overdue_resources: string[]
   overdue_after_seconds: number | null
   poll_seconds: number | null
-  sync?: 'on_demand'
+  sync?: SyncMode
   /** The hand-loaded job-cost export is behind; the newest P&L months carry labor without revenue. */
   reference_stale?: boolean
   reference_stale_after_seconds?: number
@@ -1095,6 +1098,10 @@ export interface ExecutiveLaborRow {
   total_dollars: number
   labor_cost_basis: LaborCostBasis
   days_with_labor: number
+  /** PhotoValidation headcount approved or posted at the end of the week; null before the feed loads. */
+  requested_headcount?: number | null
+  /** PhotoValidation headcount awaiting a decision at the end of the week; null before the feed loads. */
+  pending_requested_headcount?: number | null
 }
 
 export interface ExecutiveLaborPl {
@@ -1420,3 +1427,79 @@ export interface LeadershipAccountJob {
 
 export type LeadershipAccountPatch = Partial<Pick<LeadershipAccount, 'name' | 'featured' | 'sort' | 'target_labor_pct' | 'watch_band' | 'revenue_method' | 'revenue_divisor' | 'budget_reliability_ratio' | 'source_parent_accounts' | 'segment_source' | 'fallback_segment' | 'revenue_allocation' | 'cost_basis'>>
 export interface LeadershipJobMapping { account_slug: string | null; segment?: string | null; role?: LeadershipRole; companycam_project_id?: string | null }
+
+// Staffing requests (PhotoValidation Contract B), added 2026-09-29
+export type StaffingShift = 'day' | 'swing' | 'night' | 'weekend' | 'other'
+export type StaffingStatus = 'submitted' | 'approved' | 'posted' | 'filled' | 'rejected' | 'cancelled'
+
+/** One PhotoValidation request line held in core.fact_staffing_request. */
+export interface StaffingRequestLine {
+  line_id: string
+  request_id: string
+  request_code: string | null
+  site_name: string | null
+  role: string | null
+  shift: StaffingShift | string | null
+  shift_start: string | null
+  shift_end: string | null
+  headcount_needed: number
+  current_filled: number | null
+  reason: string | null
+  employment_type: 'full_time' | 'part_time' | string | null
+  hours_per_week: number | null
+  /** Requested hourly rate, USD. */
+  pay_rate: number | null
+  needed_by: string | null
+  status: StaffingStatus | string
+  hire_job_id: string | null
+  reported_headcount: number | null
+  submitted_at: string | null
+  decided_at: string | null
+  posted_at: string | null
+  filled_at: string | null
+  closed_at: string | null
+  updated_at: string
+  /** Whole days from submission to fill or close; to now while open. */
+  days_open: number | null
+}
+
+/** GET /staffing/jobs/{company}/{job_number}?week= (analyst and admin). */
+export interface StaffingJobResponse {
+  source?: SourceBlock
+  /** PHOTOVALIDATION_API_URL and PHOTOVALIDATION_API_TOKEN are set. */
+  configured: boolean
+  /** Completion time of the last successful pull. */
+  as_of: string | null
+  /** Monday of the week the headcounts are read for. */
+  week: string
+  /** Approved or posted at the end of the week (now for the week in progress); null before the feed loads. */
+  requested_headcount: number | null
+  /** Submitted and undecided at the same moment; null before the feed loads. */
+  pending_requested_headcount: number | null
+  lines: StaffingRequestLine[]
+}
+
+/** GET /integrations/photovalidation */
+export interface PhotoValidationStatus {
+  configured: boolean
+  base_url_host: string | null
+  interval_minutes: number | null
+  watermark: string | null
+  lines: number
+  mapped_lines: number
+  open_lines: number
+  last_run: { status: string; started_at: string; completed_at: string | null; records_fetched: number; records_inserted: number; error_message: string | null } | null
+}
+
+/** POST /integrations/photovalidation/sync (admin) */
+export interface PhotoValidationSyncResult {
+  run_id: string
+  status: 'succeeded' | 'failed'
+  since: string | null
+  fetched: number
+  loaded: number
+  rejected: number
+  job_keys_changed?: number
+  job_week_rows_changed?: number
+  error?: string
+}

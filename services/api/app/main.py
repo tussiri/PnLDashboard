@@ -8,7 +8,7 @@ from fastapi import Depends, FastAPI, HTTPException
 from .common import platform_access, require_role
 from .config import settings
 from .db import database_ready
-from .routers import auth, executive, forecast, labor, leadership, platform, reporting, users
+from .routers import auth, executive, forecast, labor, leadership, platform, reporting, staffing, users
 
 logging.basicConfig(level=settings.log_level, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 
@@ -48,6 +48,7 @@ API_PREFIX = "/api/v1"
 #   reporting/labor/forecast  analyst or admin
 #   executive              any signed-in role
 #   leadership             any signed-in role (writes: admin)
+#   staffing               analyst or admin (request lines carry pay rates)
 analyst_or_admin = require_role("analyst", "admin")
 app.include_router(auth.router, prefix=API_PREFIX, tags=["auth"])
 app.include_router(users.router, prefix=API_PREFIX, tags=["users"])
@@ -55,5 +56,6 @@ app.include_router(platform.router, prefix=API_PREFIX, tags=["platform"], depend
 app.include_router(reporting.router, prefix=API_PREFIX, tags=["reporting"], dependencies=[Depends(analyst_or_admin)])
 app.include_router(labor.router, prefix=API_PREFIX, tags=["labor"], dependencies=[Depends(analyst_or_admin)])
 app.include_router(forecast.router, prefix=API_PREFIX, tags=["forecast"], dependencies=[Depends(analyst_or_admin)])
+app.include_router(staffing.router, prefix=API_PREFIX, tags=["staffing"], dependencies=[Depends(analyst_or_admin)])
 app.include_router(executive.router, prefix=API_PREFIX, tags=["executive"], dependencies=[Depends(require_role("executive", "analyst", "admin"))])
 app.include_router(leadership.router, prefix=API_PREFIX, tags=["leadership"], dependencies=[Depends(require_role("executive", "analyst", "admin"))])

@@ -4,7 +4,7 @@
  * labeled demo. Actions that would change data are not available in demo mode.
  */
 import { ApiError, type LiveApi } from './api'
-import { demoLeadershipConfig, demoLeadershipRows, demoLeadershipSite, demoLeadershipVendors } from './demoLeadership'
+import { demoLeadershipConfig, demoLeadershipRows, demoLeadershipSite, demoLeadershipVendors, demoStaffingJob } from './demoLeadership'
 
 export type DashboardApi = LiveApi
 
@@ -26,11 +26,13 @@ export function createDemoApi(options: DemoApiOptions = {}): DashboardApi {
     systemStatus: (signal) => settle(() => ({ database: 'demo', winteam: { enabled: false, configured: false, base_url_host: null, resources: [], poll_seconds: null, sync: 'on_demand' as const }, marts: { latest_month: null, rebuilt_at: null, job_month_rows: 0 }, forecast: null }), signal),
     syncAll: () => notAvailable('WinTeam sync'),
     syncSarus: () => notAvailable('Sarus sync'),
+    syncPhotoValidation: () => notAvailable('PhotoValidation sync'),
     rebuildMarts: () => notAvailable('Mart rebuild'),
     syncRuns: (_limit, signal) => settle(() => ({ runs: [] }), signal),
     leadershipConfig: (signal) => settle(demoLeadershipConfig, signal),
     leadershipRows: (query, signal) => settle(() => demoLeadershipRows(query), signal),
     leadershipSite: (company, jobNumber, query, signal) => settle(() => demoLeadershipSite(company, jobNumber, query), signal),
+    staffingJob: (company, jobNumber, query, signal) => settle(() => demoStaffingJob(company, jobNumber, query), signal),
     leadershipVendors: (account, _months, signal) => settle(() => demoLeadershipVendors(account), signal),
     leadershipUpdateAccount: () => notAvailable('Account update'),
     leadershipReplaceSegments: () => notAvailable('Segment update'),

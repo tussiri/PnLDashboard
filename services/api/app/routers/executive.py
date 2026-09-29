@@ -68,7 +68,8 @@ FALLBACK_COLORS = ("#6B7280", "#DC2626", "#0891B2", "#65A30D", "#DB2777")
 ROW_COLUMNS = """
   week_start, company, site_code, job_number, site_name, parent_account, sub_account, delivery_model,
   invoicing, invoicing_basis, invoicing_estimated, carry_forward_source, hours, ot_hours, dt_hours, budget_hours, budget_dollars, budget_basis,
-  direct_dollars, ot_dollars, sub_dollars, sub_estimated, sub_basis, total_dollars, labor_cost_basis, days_with_labor, month_shares
+  direct_dollars, ot_dollars, sub_dollars, sub_estimated, sub_basis, total_dollars, labor_cost_basis, days_with_labor, month_shares,
+  requested_headcount, pending_requested_headcount
 """
 
 DEFAULT_SUBCONTRACTOR_VENDOR_TYPES: list[str] = ["subcontract", "sub contract", "janitorial", "labor", "staffing", "agency"]
@@ -201,6 +202,9 @@ def _row(r: dict[str, Any]) -> dict[str, Any]:
         "total_dollars": _f(r["total_dollars"]),
         "labor_cost_basis": r["labor_cost_basis"] or "trailing_job_rate",
         "days_with_labor": int(r["days_with_labor"] or 0),
+        # PhotoValidation demand open at the end of the week (migration 041); null before the feed loads.
+        "requested_headcount": r.get("requested_headcount"),
+        "pending_requested_headcount": r.get("pending_requested_headcount"),
     }
 
 

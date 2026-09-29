@@ -17,13 +17,13 @@ import psycopg
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
-from .. import companycam, marts, relay
+from .. import companycam, marts, relay, schedule
 from ..common import (PRIMARY_SOURCES, configured_key_accounts, month_status_rows, jsonable,
                       require_admin)
 from ..config import settings
 from ..db import connection, database_ready
 from .. import reconcile
-from ..sources import finance_reference
+from ..sources import finance_reference, photovalidation
 from ..winteam import RESOURCES, WinTeamError, parse_paged, sarus_ingestion, winteam
 
 logger = logging.getLogger("platform")
@@ -168,8 +168,9 @@ def integration_sync(
         raise HTTPException(status_code=404, detail=f"Unknown resource {resource}; valid names: {', '.join(RESOURCES)}")
     try:
         # Naming one resource is an explicit request for it: the daily skip does not apply.
-        result = winteam.sync(resource, normalize=normalize, force=True, deep=deep)
-    except WinTeamError as exc:
+        with schedule.winteam_sync_guard():
+            result = winteam.sync(resource, normalize=normalize, force=True, deep=deep)
+    except (WinTeamError, schedule.SyncBusy) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     if result.get("status") != "succeeded":
         # A resource the tenant is not entitled to is a tenant fact, not a gateway failure.
@@ -205,8 +206,9 @@ def integration_sync_all(
 ) -> dict[str, Any]:
     selected = [name.strip() for name in resources.split(",") if name.strip()] if resources else None
     try:
-        return jsonable(winteam.sync_all(normalize=normalize, resources=selected, force=force, deep=deep))
-    except WinTeamError as exc:
+        with schedule.winteam_sync_guard():
+            return jsonable(winteam.sync_all(normalize=normalize, resources=selected, force=force, deep=deep))
+    except (WinTeamError, schedule.SyncBusy) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
@@ -237,8 +239,9 @@ def integration_runs(limit: int = Query(25, ge=1, le=200)) -> dict[str, Any]:
     return {"runs": runs}
 
 
-# WinTeam is synced on demand only (worker.py never calls it), so no resource is behind a schedule:
-# freshness reports each resource's age since its last completed sync and never calls it overdue.
+# WinTeam is synced nightly, on the light interval (timekeeping, app/schedule.py) and on demand. Freshness
+# reports each resource's age since its last completed sync and never calls it overdue: a sync that fails
+# is already recorded as failed, and the interval can be switched off.
 # finance_reference is the PRIMARY source of the job-cost P&L (revenue, direct labor, subcontract
 # cost by site and month) and is loaded by hand from a restored dump - nothing polls it. Left
 # unreloaded it does not go blank, it goes SHORT: timekeeping keeps arriving from the live API
@@ -265,7 +268,7 @@ def _sarus_identity() -> dict[str, Any]:
         "base_url_host": urlparse(settings.winteam_sarus_base_url).hostname if settings.winteam_sarus_base_url else None,
         "has_subscription_key": bool(settings.winteam_sarus_subscription_key),
         "ingestion": settings.winteam_sarus_enabled and settings.winteam_sarus_configured,
-        "sync": "on_demand",
+        "sync": schedule.sync_mode(settings.winteam_sarus_enabled and settings.winteam_sarus_configured)["sync"],
     }
 
 
@@ -297,12 +300,13 @@ def winteam_sarus_sync(
     force: bool = Query(False, description="true = also re-read jobs, vendors, budgets and AR synced within the last 20 hours"),
     deep: bool = Query(False, description="true = re-read WINTEAM_DEEP_LOOKBACK_DAYS (35) of timekeeping and AP instead of WINTEAM_LOOKBACK_DAYS (3)"),
 ) -> dict[str, Any]:
-    """Sync the Sarus database now (GET-only, as the primary). Requires WINTEAM_SARUS_ENABLED; nothing
-    syncs it on a schedule."""
+    """Sync the Sarus database now (GET-only, as the primary). Requires WINTEAM_SARUS_ENABLED. The worker
+    also syncs it nightly and on the light interval (app/schedule.py)."""
     selected = [name.strip() for name in resources.split(",") if name.strip()] if resources else None
     try:
-        return jsonable(sarus_ingestion().sync_all(normalize=normalize, resources=selected, force=force, deep=deep))
-    except WinTeamError as exc:
+        with schedule.winteam_sync_guard():
+            return jsonable(sarus_ingestion().sync_all(normalize=normalize, resources=selected, force=force, deep=deep))
+    except (WinTeamError, schedule.SyncBusy) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
@@ -373,6 +377,24 @@ def relay_sync(rebuild: bool = Query(True, description="Rebuild the marts after 
     result = relay.sync()
     loaded = any(r["status"] == "succeeded" for r in result["runs"])
     return jsonable({**result, "marts": marts.rebuild_all(initiated_by="relay-sync") if rebuild and loaded else None})
+
+
+@router.get("/integrations/photovalidation")
+def photovalidation_status() -> dict[str, Any]:
+    """PhotoValidation staffing-request feed: wired or not, last pull, watermark and line counts."""
+    return jsonable(photovalidation.status())
+
+
+@router.post("/integrations/photovalidation/sync", dependencies=[Depends(require_admin)])
+def photovalidation_sync() -> dict[str, Any]:
+    """Pull the staffing requests updated since the last pull (GET only against PhotoValidation), then
+    refresh mart.job_week's requested headcount. No mart rebuild is needed."""
+    if not photovalidation.configured():
+        raise HTTPException(status_code=409, detail="PhotoValidation is not configured (PHOTOVALIDATION_API_URL and PHOTOVALIDATION_API_TOKEN)")
+    with schedule.advisory_lock(schedule.PV_SYNC_LOCK) as got:
+        if not got:
+            raise HTTPException(status_code=409, detail="A PhotoValidation pull is already running; try again when it finishes")
+        return jsonable(photovalidation.sync())
 
 
 @router.get("/integrations/companycam")
@@ -454,8 +476,7 @@ def data_freshness() -> dict[str, Any]:
             "healthy": not reference_stale,
             "overdue_resources": [],
             "overdue_after_seconds": None,
-            "poll_seconds": None,
-            "sync": "on_demand",
+            **schedule.sync_mode(settings.winteam_enabled and settings.winteam_configured),
             "reference_stale": reference_stale,
             "reference_stale_after_seconds": REFERENCE_STALE_AFTER_SECONDS,
         },
