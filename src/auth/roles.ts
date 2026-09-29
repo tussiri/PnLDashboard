@@ -1,7 +1,8 @@
 export type Role = 'executive' | 'analyst' | 'admin'
 export const ROLES: readonly Role[] = ['executive', 'analyst', 'admin']
 
-export interface AuthUser { username: string; role: Role }
+/** accounts: the account slugs the user may see; null or absent = every account. */
+export interface AuthUser { username: string; role: Role; accounts?: string[] | null }
 
 export const roleLabel: Record<Role, string> = { executive: 'Executive access', analyst: 'Analyst access', admin: 'Administrator access' }
 

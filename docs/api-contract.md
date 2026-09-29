@@ -450,9 +450,9 @@ Sign-in itself (`/auth/login`, `/auth/logout`, `/auth/me`, `/auth/mode`) is desc
 |---|---|
 | `GET /auth/setup` | `{needed}`: true while `APP_SETUP_TOKEN` is set and no database or `APP_USERS_JSON` user exists. Public. |
 | `POST /auth/setup` | Body `{token, username, password}`. Creates the first administrator and sets the session cookie; `201 {user: {username, role}}`. `404` without a setup token, `409` once any user exists, `401` for a wrong code, `422` for an invalid username or a password under 10 characters. Public. |
-| `GET /users` | Admin. `{users: [{username, role, active, source, created_at, created_by, last_login_at}]}`; `source` is `database`, `environment` (`APP_USERS_JSON`, read-only) or `development` (dev mode). Never returns hashes. |
-| `POST /users` | Admin. Body `{username, role, password}`; `201 {user}`. `409` when the name exists (any case) or is an environment user. |
-| `PATCH /users/{username}` | Admin. Body any of `{role, active, password}`; `{user}`. `409` for an environment user or when the change would leave no active administrator; `404` for an unknown user. A password reset refuses every session issued before it (the administrator resetting their own password gets a fresh cookie). |
+| `GET /users` | Admin. `{users: [{username, role, active, source, accounts, created_at, created_by, last_login_at}]}` (`accounts`: slugs the user may see, null = every account); `source` is `database`, `environment` (`APP_USERS_JSON`, read-only) or `development` (dev mode). Never returns hashes. |
+| `POST /users` | Admin. Body `{username, role, password, accounts?}`; `201 {user}`. `409` when the name exists (any case) or is an environment user. |
+| `PATCH /users/{username}` | Admin. Body any of `{role, active, password, accounts}` (`accounts: []` = every account); `{user}`. `409` for an environment user or when the change would leave no active administrator; `404` for an unknown user. A password reset refuses every session issued before it (the administrator resetting their own password gets a fresh cookie). |
 
 ## Report parity: FedEx and Amazon weekly reports, added 2026-09-29
 
@@ -491,3 +491,4 @@ Migration 038, docs/mail-inbox.md. The worker reads the records mailbox through 
 | `GET /integrations/mail` | `{configured, mailbox, schedule: {enabled, every_minutes, first_lookback_days}, last_run: {status, started_at, completed_at, records_inserted, error_message} \| null, recent: [{received_at, sender, subject, file_name, status: loaded\|duplicate\|failed\|ignored, reason, kind, rows_loaded}]}`. Never returns the client secret. |
 | `POST /integrations/mail/poll` | Admin. Check now: `{status, loaded, duplicate, failed, ignored, messages, rebuilt}` or `{status: 'failed', error}`. `409` when not configured. |
 
+`GET /auth/me` returns `{user: {username, role, accounts}}`; `accounts` is null for every account. The leadership routes answer only for the user's accounts (docs/auth-rbac.md, Account access).

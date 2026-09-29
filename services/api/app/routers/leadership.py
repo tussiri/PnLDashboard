@@ -18,7 +18,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Reques
 from pydantic import BaseModel, Field
 
 from .. import accounts, companycam, imports, marts
-from ..common import current_user, jsonable, require_admin, source_block
+from ..common import allowed_accounts, current_user, jsonable, require_account, require_admin, source_block
 from ..db import connection
 
 logger = logging.getLogger(__name__)
@@ -63,6 +63,17 @@ LEFT JOIN LATERAL (
 ) rr ON w.revenue_month IS NOT NULL
 WHERE w.week_start BETWEEN %(first)s AND %(last)s
 """
+
+
+def scope_clause(account: str, scope: frozenset[str] | None) -> tuple[str, dict[str, Any]]:
+    """The rows filter for a user limited to `scope` accounts ('' and no params when unlimited)."""
+    if scope is None:
+        return "", {}
+    if account == "other":
+        raise HTTPException(status_code=403, detail="Other covers accounts outside your access")
+    if account not in ("featured", "all") and account not in scope:
+        raise HTTPException(status_code=403, detail="This account is not in your access")
+    return " AND aj.account_slug = ANY(%(scope)s)", {"scope": sorted(scope)}
 
 
 def allocate_parent_billing(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -197,11 +208,12 @@ def status_block(cursor: Any) -> dict[str, Any]:
 
 
 @router.get("/config")
-def leadership_config() -> dict[str, Any]:
-    """Accounts, segments, available weeks, the default week and data freshness."""
+def leadership_config(request: Request) -> dict[str, Any]:
+    """Accounts (only those the user may see), segments, available weeks, the default week and data freshness."""
+    scope = allowed_accounts(request)
     with connection() as conn, conn.cursor() as cursor:
         weeks = week_rows(cursor)
-        payload = {"accounts": account_rows(cursor), "weeks": weeks, "default_week": default_week(weeks), "status": status_block(cursor)}
+        payload = {"accounts": [a for a in account_rows(cursor) if scope is None or a["slug"] in scope], "weeks": weeks, "default_week": default_week(weeks), "status": status_block(cursor)}
     return {"source": source_block(), **payload}
 
 
@@ -210,8 +222,10 @@ def leadership_rows(
     week: str | None = Query(None, description="Any date in the week; defaults to the latest complete week"),
     weeks: int = Query(1, ge=1, le=MAX_WEEKS, description="Number of weeks ending at `week`"),
     account: str = Query("featured", description="An account slug, or featured | other | all"),
+    request: Request = None,  # type: ignore[assignment]
 ) -> dict[str, Any]:
-    """Job-week rows for `weeks` weeks ending at `week`, for one account or a scope."""
+    """Job-week rows for `weeks` weeks ending at `week`, for one account or a scope. A user limited to
+    accounts gets only theirs: featured and all narrow to them, other is refused."""
     with connection() as conn, conn.cursor() as cursor:
         anchor = parse_week(week)
         if anchor is None:
@@ -222,6 +236,9 @@ def leadership_rows(
         first = anchor - timedelta(weeks=weeks - 1)
         sql = ROW_SQL
         params: dict[str, Any] = {"first": first, "last": anchor}
+        suffix, scope_params = scope_clause(account, allowed_accounts(request) if request is not None else None)
+        sql += suffix
+        params.update(scope_params)
         if account == "featured":
             sql += " AND a.featured"
         elif account == "other":
@@ -276,10 +293,13 @@ ORDER BY jobs.company, jobs.job_number, months.month
 
 @router.get("/monthly")
 def leadership_monthly(account: str = Query(..., description="An account slug"), months: int = Query(3, ge=1, le=12),
-                       through: str | None = Query(None, description="Last month (YYYY-MM); defaults to the latest month with revenue")) -> dict[str, Any]:
+                       through: str | None = Query(None, description="Last month (YYYY-MM); defaults to the latest month with revenue"),
+                       request: Request = None) -> dict[str, Any]:  # type: ignore[assignment]
     """Closed months per job of one account: job cost (revenue, variable revenue, direct labor, payroll taxes,
     subcontractors) and Relay AR / AP, plus the account's income statement lines. Feeds the prior-month
     columns, the Pallet, Income Statement and Subcontracted Sites views."""
+    if request is not None:
+        require_account(request, account)
     with connection() as conn, conn.cursor() as cursor:
         cursor.execute("SELECT 1 FROM ops.account WHERE slug = %s", (account,))
         if cursor.fetchone() is None:
@@ -322,7 +342,7 @@ def leadership_monthly(account: str = Query(..., description="An account slug"),
 
 @router.get("/sites/{company}/{job_number}")
 def leadership_site(company: str, job_number: str, weeks: int = Query(13, ge=1, le=MAX_WEEKS),
-                    week: str | None = Query(None), invoice_months: int = Query(6, ge=1, le=24)) -> dict[str, Any]:
+                    week: str | None = Query(None), invoice_months: int = Query(6, ge=1, le=24), request: Request = None) -> dict[str, Any]:  # type: ignore[assignment]
     """One site: identity and mapping, weekly rows, subcontractor invoices coded to it, and photos."""
     with connection() as conn, conn.cursor() as cursor:
         cursor.execute(
@@ -340,6 +360,8 @@ def leadership_site(company: str, job_number: str, weeks: int = Query(13, ge=1, 
         site = cursor.fetchone()
         if site is None:
             raise HTTPException(status_code=404, detail=f"Unknown job {job_number} ({company})")
+        if request is not None:
+            require_account(request, site["account_slug"])
         anchor = parse_week(week) or monday(date.today())
         first = anchor - timedelta(weeks=weeks - 1)
         # A parent-billed account's split needs the whole account's rows; others need only the job's.
@@ -450,10 +472,13 @@ def subcontractor_invoices(cursor: Any, job_key: int, months: int) -> dict[str, 
 
 
 @router.get("/vendors")
-def leadership_vendors(account: str = Query(..., description="An account slug"), months: int = Query(6, ge=1, le=24)) -> dict[str, Any]:
+def leadership_vendors(account: str = Query(..., description="An account slug"), months: int = Query(6, ge=1, le=24),
+                       request: Request = None) -> dict[str, Any]:  # type: ignore[assignment]
     """Subcontractor invoice lines coded to the account's sites: WinTeam AP GL distributions from
     subcontractor vendors plus, for FedEx, Relay's payables not yet among them (`source`), with totals
     by vendor, by site and by month."""
+    if request is not None:
+        require_account(request, account)
     with connection() as conn, conn.cursor() as cursor:
         cursor.execute("SELECT 1 FROM ops.account WHERE slug = %s", (account,))
         if cursor.fetchone() is None:

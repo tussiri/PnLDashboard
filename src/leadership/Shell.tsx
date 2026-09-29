@@ -74,7 +74,7 @@ export function PageHeader({ title, subtitle, account = true, week = true, targe
   return <header className="page">
     <div><h1>{title}</h1>{subtitle && <p>{subtitle}</p>}</div>
     <div className="ctrl">
-      {account && route.view !== 'analytics' && <><label htmlFor="acct">Account</label>
+      {account && route.view !== 'analytics' && featured.length > 1 && <><label htmlFor="acct">Account</label>
         <select id="acct" value={selectedAccount?.slug ?? ''} onChange={(e) => navigate({ account: e.target.value, site: undefined })}>
           {featured.map((a) => <option key={a.slug} value={a.slug}>{a.name}</option>)}
         </select></>}

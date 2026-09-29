@@ -66,6 +66,11 @@ header.page p{font-size:12px;color:var(--text3);margin-top:2px}
 .ctrl label,.field>span{font-size:12px;color:var(--text3)}
 .ctrl label.check{display:inline-flex;align-items:center;gap:6px;color:var(--text2);cursor:pointer;min-height:32px}
 .check input{accent-color:var(--text);width:14px;height:14px;margin:0}
+.picker{border:none;display:flex;flex-wrap:wrap;gap:4px 14px;padding:0;margin:0 0 6px}
+.picker .check,.field .picker .check{font-size:12px;color:var(--text2);display:inline-flex;align-items:center;gap:6px;cursor:pointer}
+.field.wide{grid-column:1/-1}
+.picker .check{white-space:nowrap}
+.field .picker input[type=checkbox],.picker input[type=checkbox]{width:14px;min-height:0;flex:none}
 select,input[type=number],input[type=text],input[type=password],input[type=search],input[type=file]{font-size:13px;padding:6px 10px;border:0.5px solid var(--border2);border-radius:var(--r);background:var(--bg);color:var(--text);outline:none;min-height:32px}
 input[type=number]{width:78px}
 input[type=search]{min-width:200px}

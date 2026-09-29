@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hmac
 import time
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel, Field
@@ -105,8 +106,9 @@ def logout(request: Request, response: Response) -> dict[str, bool]:
 
 
 @router.get("/auth/me")
-def me(request: Request) -> dict[str, dict[str, str]]:
+def me(request: Request) -> dict[str, Any]:
+    """The signed-in user, with `accounts` (the slugs they may see; null = every account)."""
     user = current_user(request)
     if user is None:
         raise HTTPException(status_code=401, detail="Sign in required")
-    return {"user": user.as_dict()}
+    return {"user": {**user.as_dict(), "accounts": list(user.accounts) if user.accounts and user.role != "admin" else None}}

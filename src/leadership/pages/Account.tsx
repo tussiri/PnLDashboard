@@ -108,7 +108,7 @@ export function Account() {
     </select></>
   const current = tabs.includes(tab) ? tab : 'overview'
   return <VocabContext.Provider value={vocab}>
-    <PageHeader title={account ? `${account.name} Labor P&L` : 'Account'} subtitle={subtitle}
+    <PageHeader title={account ? `${account.name} Labor P&L` : 'Account'} subtitle={subtitle} account={false}
       extra={<>{basisControl}{subcontracted > 0 && tab !== 'vendors' && <label className="check"><input type="checkbox" checked={selfOnly}
         onChange={(e) => navigate({ selfOnly: e.target.checked || undefined }, { replace: true })} />Hide {subcontracted} subcontracted</label>}</>} />
     <nav className="tabs" role="tablist" aria-label="Account views">
