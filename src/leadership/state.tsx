@@ -72,6 +72,7 @@ export function optionsForAccount(account: LeadershipAccount | undefined, overri
     segmentTargets,
     vendorFactor: account.vendor_factor ?? 1,
     invoiceBasis: basis ?? account.invoice_basis ?? 'last_month',
+    palletSplit: account.group_by === 'pallet',
   }
 }
 

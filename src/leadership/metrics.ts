@@ -75,6 +75,8 @@ export interface MetricOptions {
   /** Share of vendor (agency / subcontractor) cost counted in labor; both weekly reports use 0.70. */
   vendorFactor?: number
   invoiceBasis?: InvoiceBasis
+  /** Read the fixed / variable (OS) revenue split: accounts grouped by pallet sites only. */
+  palletSplit?: boolean
 }
 
 /** Derived values added to a row. */

@@ -32,6 +32,8 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Iterable
 
+from . import native_exports
+
 logger = logging.getLogger(__name__)
 
 KINDS = ("pay_report", "job_cost", "income_statement")
@@ -318,8 +320,11 @@ def coverage_windows(records: list[dict[str, Any]]) -> dict[str, tuple[date, dat
     return windows
 
 
-def _load_pay_report(cursor: Any, file_id: int, records: list[dict[str, Any]]) -> None:
-    for company, (lo, hi) in coverage_windows(records).items():
+def _load_pay_report(cursor: Any, file_id: int, records: list[dict[str, Any]],
+                     windows: dict[str, tuple[date, date]] | None = None) -> None:
+    """Replace each company's pay report rows over its window: the file's work dates, or the export
+    window a native labor summary states (days nobody worked are covered too)."""
+    for company, (lo, hi) in (windows or coverage_windows(records)).items():
         cursor.execute("DELETE FROM core.fact_pay_report WHERE company = %s AND work_date BETWEEN %s AND %s", (company, lo, hi))
         cursor.execute("INSERT INTO core.pay_report_coverage (company, date_from, date_to, import_file_id) VALUES (%s, %s, %s, %s)",
                        (company, lo, hi, file_id))
@@ -331,16 +336,22 @@ def _load_pay_report(cursor: Any, file_id: int, records: list[dict[str, Any]]) -
     )
 
 
-def _load_job_cost(cursor: Any, file_id: int, records: list[dict[str, Any]]) -> None:
+def _load_job_cost(cursor: Any, file_id: int, records: list[dict[str, Any]], replace_months: bool = False) -> None:
+    """Upsert job-months. With replace_months (a full Job Cost Analysis by GL line), the imported rows of
+    each company and month in the file are cleared first, so a job that left the report leaves the data."""
+    if replace_months:
+        for company, month in {(r["company"], r["period"]) for r in records}:
+            cursor.execute("DELETE FROM core.fact_job_cost_month WHERE source = 'export_import' AND company = %s AND month = %s", (company, month))
     merged: dict[tuple[str, date], dict[str, Any]] = {}
     for r in records:  # a file may split one job-month over several rows
         key = (r["job_number"], r["period"])
         acc = merged.setdefault(key, {**{k: Decimal(0) for k in ZERO_DEFAULT}, "job_name": r.get("job_name"), "company": r["company"],
                                       "actual_hours": None, "overtime_hours": None, "revenue_fixed": None, "revenue_variable": None})
+        nullable = ("actual_hours", "overtime_hours", "revenue_fixed", "revenue_variable")
         for k in ZERO_DEFAULT:
-            if k in r and r[k] is not None:
+            if k in r and r[k] is not None and k not in nullable:
                 acc[k] += r[k]
-        for k in ("actual_hours", "overtime_hours", "revenue_fixed", "revenue_variable"):
+        for k in nullable:
             if r.get(k) is not None:
                 acc[k] = (acc[k] or Decimal(0)) + r[k]
     for (job_number, month), r in merged.items():
@@ -393,6 +404,19 @@ def _load_income_statement(cursor: Any, file_id: int, records: list[dict[str, An
     )
 
 
+def _company_aliases(cursor: Any) -> dict[str, str]:
+    cursor.execute("SELECT value FROM ops.app_setting WHERE key = 'company_aliases'")
+    row = cursor.fetchone()
+    value = row["value"] if row else None
+    return {str(k): str(v) for k, v in value.items()} if isinstance(value, dict) else {}
+
+
+def _gl_map(cursor: Any) -> dict[str, list[Any]] | None:
+    cursor.execute("SELECT value FROM ops.app_setting WHERE key = 'job_cost_gl_map'")
+    row = cursor.fetchone()
+    return row["value"] if row and isinstance(row["value"], dict) else None
+
+
 def _company_numbers(cursor: Any) -> dict[str, str]:
     cursor.execute("SELECT value FROM ops.app_setting WHERE key = 'company_numbers'")
     row = cursor.fetchone()
@@ -412,14 +436,25 @@ def load_file(conn: Any, file_name: str, content: bytes, *, kind: str | None = N
             read_error = f"could not read the file: {exc.__class__.__name__}"
         else:
             read_error = None
-        kind = kind or detect_kind(file_name, headers)
+        layout = native_exports.native_layout(headers)
+        if layout and kind not in (None, native_exports.LAYOUT_KIND[layout]):
+            layout = None
+        kind = native_exports.LAYOUT_KIND[layout] if layout else (kind or detect_kind(file_name, headers))
         if kind not in KINDS:
             errors = [read_error or "unknown feed: name the file pay_report_*, job_cost_* or income_statement_*, or use the documented column names"]
             return _log(cursor, conn, kind or "pay_report", file_name, digest, origin, "failed", len(rows), 0, [], None, None, errors, uploaded_by)
         cursor.execute("SELECT import_file_id FROM ops.import_file WHERE kind = %s AND sha256 = %s AND status = 'loaded'", (kind, digest))
         if cursor.fetchone():
             return _log(cursor, conn, kind, file_name, digest, origin, "duplicate", len(rows), 0, [], None, None, [], uploaded_by)
-        parsed = normalize_rows(kind, headers, rows, _company_numbers(cursor))
+        windows = None
+        if layout:
+            parsed = Parsed(kind=kind, rows_read=len(rows))
+            if layout == "labor_summary":
+                windows = native_exports.labor_summary(rows, _company_aliases(cursor), _company_numbers(cursor), parsed)
+            else:
+                native_exports.job_cost_gl(rows, _company_aliases(cursor), _company_numbers(cursor), parsed, _gl_map(cursor))
+        else:
+            parsed = normalize_rows(kind, headers, rows, _company_numbers(cursor))
         if kind == "income_statement":
             slugs, known = _account_slugs(cursor), []
             for r in parsed.records:
@@ -439,11 +474,11 @@ def load_file(conn: Any, file_name: str, content: bytes, *, kind: str | None = N
         result = _log(cursor, None, kind, file_name, digest, origin, "loaded", parsed.rows_read, len(parsed.records), companies,
                       min(dates), max(dates), parsed.errors, uploaded_by)
         if kind == "pay_report":
-            _load_pay_report(cursor, result["import_file_id"], parsed.records)
+            _load_pay_report(cursor, result["import_file_id"], parsed.records, windows)
         elif kind == "income_statement":
             _load_income_statement(cursor, result["import_file_id"], parsed.records)
         else:
-            _load_job_cost(cursor, result["import_file_id"], parsed.records)
+            _load_job_cost(cursor, result["import_file_id"], parsed.records, replace_months=layout == "job_cost_gl")
     conn.commit()
     logger.info("Imported %s %s: %s of %s rows", kind, file_name, result["rows_loaded"], result["rows_read"])
     return result

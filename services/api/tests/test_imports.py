@@ -120,3 +120,21 @@ def test_job_cost_reads_the_fixed_and_variable_revenue_split():
              "OS Revenue": "33952.73", "DirectLabor": "20100"}]
     record = normalize_rows("job_cost", headers, rows, COMPANIES).records[0]
     assert (record["revenue_fixed"], record["revenue_variable"]) == (Decimal("45000"), Decimal("33952.73"))
+
+
+def test_job_cost_merge_accepts_overtime_hours():
+    """overtime_hours is both a pay report column and an optional job cost column; merging must not add to None."""
+    from app.imports import _load_job_cost
+
+    class Cursor:
+        def __init__(self):
+            self.params = []
+        def execute(self, sql, params=None):
+            self.params.append(params)
+
+    cursor = Cursor()
+    record = {"company": "Crane West", "job_number": "39", "period": date(2026, 7, 1), "job_name": "FedEx", "revenue": Decimal(100),
+              "direct_labor": Decimal(40), "overtime_hours": Decimal("3.5"), "actual_hours": Decimal(20)}
+    _load_job_cost(cursor, 1, [record, {**record, "revenue": Decimal(50), "overtime_hours": Decimal("1.5")}])
+    inserted = cursor.params[-1]
+    assert inserted[4] == Decimal(150) and inserted[14] == Decimal(5)

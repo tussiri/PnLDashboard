@@ -41,8 +41,13 @@ type Row = SiteMetrics<LeadershipRow>
 
 export const palletOf = (r: Row) => r.pallet_labor ?? 0
 export const directOf = (r: Row) => r.labor - palletOf(r)
-/** The week's variable (OS, pallet) invoice, when the Job Cost Analysis carries the revenue split. */
+/**
+ * The week's variable (OS, pallet) invoice, when the Job Cost Analysis carries the revenue split. Only
+ * accounts grouped by pallet sites read it: other accounts book ordinary billing to the same OS line
+ * (the school districts bill everything there), so the split means nothing for them.
+ */
 export function variableWk(r: LeadershipRow, o: MetricOptions): number | null {
+  if (!o.palletSplit) return null
   const monthly = o.invoiceBasis === 'run_rate_3m' ? r.variable_run_rate : r.revenue_month_variable
   return monthly == null ? null : monthly / (o.divisor ?? 4.33)
 }
