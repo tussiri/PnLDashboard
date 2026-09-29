@@ -29,7 +29,28 @@ Responses: `401` when no valid session exists, `403` when the role is not allowe
 
 ## Users and passwords
 
-Users come from `APP_USERS_JSON`, a JSON list:
+Users are created and changed in **Admin > Users** and stored in `ops.app_user` (migration 035,
+`app/users.py`): add a user with a role and password, change a role, reset a password, disable or
+re-enable an account. Passwords need at least 10 characters and are stored as PBKDF2 hashes only.
+Usernames are 2 to 100 letters, digits, `.`, `-`, `_` or `@`, unique regardless of case. The last
+active administrator cannot be demoted or disabled.
+
+A database user's session is re-checked against `ops.app_user` (cached for 30 seconds): disabling an
+account or changing its role applies to sessions already issued, and a password reset refuses every
+session issued before it.
+
+### First administrator
+
+While no user exists, `APP_SETUP_TOKEN` (at least 24 characters; Render generates it) opens a one-time
+**Create administrator** form on the sign-in page. It asks for that setup code, a username and a
+password, creates an administrator and signs them in. Once any user exists the form is gone and
+`POST /api/v1/auth/setup` answers `409`; without a setup token it answers `404`.
+
+### Environment users (optional)
+
+`APP_USERS_JSON` adds users defined in the environment. They are listed read-only in Admin > Users,
+win on a name clash with a database user, and are the way back in if every database administrator is
+locked out. It is a JSON list:
 
 ```json
 [
@@ -77,7 +98,7 @@ returns to the login page.
 | `APP_AUTH_MODE` | Behaviour                                                                                                  |
 |-----------------|------------------------------------------------------------------------------------------------------------|
 | `dev`           | Adds the fixed development users below and falls back to a fixed development session secret. Compose default for the local stack. |
-| `required`      | Only `APP_USERS_JSON` users; the API refuses to start unless `APP_USERS_JSON` has at least one user and `APP_SESSION_SECRET` is at least 32 characters. |
+| `required`      | Database users and `APP_USERS_JSON` users; the API refuses to start unless `APP_SESSION_SECRET` is at least 32 characters. |
 | unset           | `required` when `APP_SESSION_SECRET` or `APP_USERS_JSON` is present, otherwise `dev` (a warning is logged). |
 
 Development users (dev mode only; configured users with the same username take precedence):
@@ -99,7 +120,8 @@ Add to `.env` (see `.env.example`):
 ```sh
 APP_AUTH_MODE=required
 APP_SESSION_SECRET=<openssl rand -hex 32>
-APP_USERS_JSON='[{"username":"jane","role":"admin","password_hash":"pbkdf2_sha256$600000$..."}]'
+APP_SETUP_TOKEN=<openssl rand -hex 24>        # first administrator; unused once any user exists
+APP_USERS_JSON='[]'                            # optional environment users
 ```
 
 Keep `APP_USERS_JSON` single-quoted in `.env`: the hashes contain `$`, which Compose would otherwise

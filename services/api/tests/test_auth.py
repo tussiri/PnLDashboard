@@ -117,8 +117,10 @@ def test_dev_mode_configured_users_override_dev_users() -> None:
 def test_required_mode_refuses_incomplete_configuration() -> None:
     good = hash_password("pw", iterations=1000)
     users = f'[{{"username":"jane","role":"admin","password_hash":"{good}"}}]'
-    with pytest.raises(ConfigurationError, match="APP_USERS_JSON"):
-        AuthSettings.load({"APP_AUTH_MODE": "required", "APP_SESSION_SECRET": SECRET})
+    # Users can come from the database, so a secret alone is enough to start.
+    assert AuthSettings.load({"APP_AUTH_MODE": "required", "APP_SESSION_SECRET": SECRET}).users == {}
+    with pytest.raises(ConfigurationError, match="APP_SETUP_TOKEN"):
+        AuthSettings.load({"APP_AUTH_MODE": "required", "APP_SESSION_SECRET": SECRET, "APP_SETUP_TOKEN": "short"})
     with pytest.raises(ConfigurationError, match="APP_SESSION_SECRET"):
         AuthSettings.load({"APP_AUTH_MODE": "required", "APP_USERS_JSON": users})
     with pytest.raises(ConfigurationError, match="APP_SESSION_SECRET"):
@@ -133,8 +135,7 @@ def test_required_mode_refuses_incomplete_configuration() -> None:
 
 def test_unset_mode_defaults() -> None:
     assert AuthSettings.load({}).mode == "dev"
-    with pytest.raises(ConfigurationError):
-        AuthSettings.load({"APP_SESSION_SECRET": SECRET})  # presence of production variables implies required
+    assert AuthSettings.load({"APP_SESSION_SECRET": SECRET}).mode == "required"  # presence of production variables implies required
 
 
 # ── role dependency matrix ───────────────────────────────────────────────────

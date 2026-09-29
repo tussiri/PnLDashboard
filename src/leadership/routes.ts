@@ -15,7 +15,7 @@
 export type View = 'home' | 'account' | 'analytics' | 'admin'
 export const ACCOUNT_TABS = ['overview', 'sites', 'over-target', 'overtime', 'map', 'vendors'] as const
 export type AccountTab = (typeof ACCOUNT_TABS)[number]
-export const ADMIN_TABS = ['accounts', 'jobs', 'imports', 'data'] as const
+export const ADMIN_TABS = ['accounts', 'jobs', 'imports', 'data', 'users'] as const
 export type AdminTab = (typeof ADMIN_TABS)[number]
 
 export interface Route {

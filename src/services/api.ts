@@ -60,7 +60,7 @@ export function buildQuery(params?: QueryParams): string {
 }
 
 export interface RequestOptions {
-  method?: 'GET' | 'POST' | 'PUT'
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH'
   query?: QueryParams
   body?: unknown
   admin?: boolean
