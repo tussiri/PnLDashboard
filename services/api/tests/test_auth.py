@@ -179,7 +179,7 @@ def test_login_logout_me_and_cookie_flags() -> None:
     login(client, "analyst")
     set_cookie = client.post("/api/v1/auth/login", json={"username": "analyst", "password": "dev-analyst"}).headers["set-cookie"].lower()
     assert "httponly" in set_cookie and "samesite=lax" in set_cookie and "secure" not in set_cookie and f"max-age={SESSION_TTL_SECONDS}" in set_cookie
-    assert client.get("/api/v1/auth/me").json() == {"user": {"username": "analyst", "role": "analyst"}}
+    assert client.get("/api/v1/auth/me").json() == {"user": {"username": "analyst", "role": "analyst", "accounts": None}}
     assert client.post("/api/v1/auth/logout").json() == {"ok": True}
     client.cookies.clear()
     assert client.get("/api/v1/auth/me").status_code == 401

@@ -56,4 +56,4 @@ app.include_router(reporting.router, prefix=API_PREFIX, tags=["reporting"], depe
 app.include_router(labor.router, prefix=API_PREFIX, tags=["labor"], dependencies=[Depends(analyst_or_admin)])
 app.include_router(forecast.router, prefix=API_PREFIX, tags=["forecast"], dependencies=[Depends(analyst_or_admin)])
 app.include_router(executive.router, prefix=API_PREFIX, tags=["executive"], dependencies=[Depends(require_role("executive", "analyst", "admin"))])
-app.include_router(leadership.router, prefix=API_PREFIX, tags=["leadership"], dependencies=[Depends(require_role("executive", "analyst", "admin"))])
+app.include_router(leadership.router, prefix=API_PREFIX, tags=["leadership"], dependencies=[Depends(require_role("executive", "analyst", "admin", scoped=True))])

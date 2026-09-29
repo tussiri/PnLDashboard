@@ -47,8 +47,8 @@ export function Home() {
     <PageHeader title={selectedAccount ? `${selectedAccount.name} Labor P&L` : 'Leadership P&L'} subtitle={subtitle} />
     <h2 className="sr-only">Featured accounts</h2>
     {rowsQuery.error ? <LoadError error={rowsQuery.error} onRetry={rowsQuery.refetch} />
-      : !all ? <div className="strip">{featured.map((a) => <Skeleton key={a.slug} height={96} />)}</div>
-        : <div className="strip">{featured.map((a) => <StripCard key={a.slug} account={a} optionsFor={optionsFor} selected={a.slug === selectedAccount?.slug}
+      : !all ? <div className="strip"><Skeleton height={96} /></div>
+        : <div className="strip">{featured.filter((a) => a.slug === selectedAccount?.slug).map((a) => <StripCard key={a.slug} account={a} optionsFor={optionsFor} selected={a.slug === selectedAccount?.slug}
           rows={current.filter((r) => r.account_slug === a.slug)} prior={prior.filter((r) => r.account_slug === a.slug)}
           onSelect={() => navigate({ account: a.slug }, { replace: true })} />)}</div>}
     <h2 className="sr-only">{selectedAccount?.name} overview</h2>
