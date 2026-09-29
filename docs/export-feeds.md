@@ -58,8 +58,29 @@ subcontractor cost.
 | Subcontract | yes |
 | Supplies, OtherDirect | yes (consumables later) |
 | GrossProfit | optional (checked against the computed value) |
+| FixedRevenue, VariableRevenue | optional; the contract billing and the variable (OS, pallet) billing that make up Revenue. Needed for the Pallet view (FedEx: the "Indstrl" and "OS" revenue lines). Aliases: ContractRevenue, OSRevenue, ExtraWork. |
 
-## 3. Daily labor budget (optional)
+## 3. Trend Income Statement (monthly, per account)
+
+The account's income statement by month, for the Income Statement view and its bridge to the
+dashboard sites (FedEx). Name the file `income_statement_*`; a file replaces the months it covers.
+
+- Grain: one row per account, fiscal period and line.
+- Window: the last three closed periods.
+
+| Column | Required |
+|---|---|
+| Account (slug such as `fedex`, or the account name) | yes |
+| Period (YYYY-MM) | yes |
+| Line (income statement line description) | yes |
+| Amount | yes |
+
+Lines the view reads, matched case- and punctuation-insensitively: Revenue (Total Revenue), the
+GL-only subcontracted revenue line (Indstrl, Mnftng, Wrhs - Subcontracted), Wages (Direct Wages),
+Management Wages, Payroll Taxes, Workers Comp, Subcontractors, Supplies, Vehicle, Travel, Insurance,
+Gross Profit, Admin, Net Profit. Other lines are kept but not shown.
+
+## 4. Daily labor budget (optional)
 
 `GET jobs/{job}/budgets` already supplies budget hours by day of week. Send this feed only if
 Finance prefers the report's budget over the job budget setup.

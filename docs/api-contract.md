@@ -453,3 +453,27 @@ Sign-in itself (`/auth/login`, `/auth/logout`, `/auth/me`, `/auth/mode`) is desc
 | `GET /users` | Admin. `{users: [{username, role, active, source, created_at, created_by, last_login_at}]}`; `source` is `database`, `environment` (`APP_USERS_JSON`, read-only) or `development` (dev mode). Never returns hashes. |
 | `POST /users` | Admin. Body `{username, role, password}`; `201 {user}`. `409` when the name exists (any case) or is an environment user. |
 | `PATCH /users/{username}` | Admin. Body any of `{role, active, password}`; `{user}`. `409` for an environment user or when the change would leave no active administrator; `404` for an unknown user. A password reset refuses every session issued before it (the administrator resetting their own password gets a fresh cookie). |
+
+## Report parity: FedEx and Amazon weekly reports, added 2026-09-29
+
+Migration 037. Accounts gain `vocabulary` ('amazon' | 'fedex': which weekly report's words the
+account's pages use), `vendor_factor` (share of agency / subcontractor cost counted in labor; 0.70
+for FedEx and Amazon), `invoice_basis` ('last_month' | 'run_rate_3m'), `group_by` ('segment' |
+'pallet': Pallet sites / Janitorial only) and `split_subcontracted` (subcontracted sites leave the
+labor views for the Subcontracted Sites tab). All five are accepted by `PUT /leadership/accounts/{slug}`.
+Job role `pallet`: a WinTeam child job named "... Pallet" whose parent is in the same account; the
+browser adds it into its parent site (`kids`, `pallet_labor`, `pallet_hours`, `pallet_ot_hours`).
+
+`GET /leadership/rows` rows add `parent_job_number`, `dt_hours` (inside `ot_hours`; the OT premium is
+½ × OT + ½ × DT, so DT carries a full-time premium), `revenue_run_rate` (average monthly revenue over
+the revenue month and the two before it: job cost, else Relay AR for Relay-billed weeks),
+`variable_run_rate` and `revenue_month_variable` (from the Job Cost Analysis revenue split).
+
+| Route | Response |
+|---|---|
+| `GET /leadership/monthly?account=&months=3&through=YYYY-MM` | `{account, months: [YYYY-MM-01], jobs: [{company, job_number, job_name, role, parent_job_number, delivery_model, months: {YYYY-MM-01: {revenue, revenue_variable, direct_labor, payroll_taxes, subcontractors, relay_ar, relay_ap}}}], income_statement: {YYYY-MM-01: {line: amount}}}`. `through` defaults to the latest month with revenue. Feeds the prior-month labor % columns, Pallet, Income Statement and Subcontracted Sites. |
+
+Imports: `job_cost` files may carry `FixedRevenue` / `VariableRevenue` (stored on
+`core.fact_job_cost_month`); new kind `income_statement` (Account, Period, Line, Amount) into
+`core.fact_income_statement_month`, one file replacing the months it covers (docs/export-feeds.md).
+

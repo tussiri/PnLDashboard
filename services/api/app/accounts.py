@@ -16,7 +16,12 @@ import os
 from pathlib import Path
 from typing import Any
 
-ROLES = ("site", "catch_all", "non_billed")
+ROLES = ("site", "catch_all", "non_billed", "pallet")
+VOCABULARIES = ("amazon", "fedex")
+INVOICE_BASES = ("last_month", "run_rate_3m")
+GROUP_BYS = ("segment", "pallet")
+# A WinTeam child job named "... Pallet" rolls into its parent site (migration 037).
+PALLET_NAME = r"pallet\s*$"
 SEGMENT_SOURCES = ("explicit", "sub_account", "company", "fallback")
 REVENUE_METHODS = ("monthly_div", "weekly_billing", "per_visit")
 REVENUE_ALLOCATIONS = ("none", "budget_hours")
@@ -93,16 +98,19 @@ def apply_seed(cursor: Any, data: dict[str, Any]) -> dict[str, int]:
             """
             INSERT INTO ops.account (slug, name, featured, sort, target_labor_pct, watch_band, revenue_method,
                                      revenue_divisor, budget_reliability_ratio, source_parent_accounts,
-                                     segment_source, fallback_segment, revenue_allocation, cost_basis, segment_label, vendor_label, updated_by)
+                                     segment_source, fallback_segment, revenue_allocation, cost_basis, segment_label, vendor_label, vocabulary,
+                                     vendor_factor, invoice_basis, group_by, split_subcontracted, updated_by)
             VALUES (%(slug)s, %(name)s, %(featured)s, %(sort)s, %(target_labor_pct)s, %(watch_band)s, %(revenue_method)s,
                     %(revenue_divisor)s, %(budget_reliability_ratio)s, %(source_parent_accounts)s,
-                    %(segment_source)s, %(fallback_segment)s, %(revenue_allocation)s, %(cost_basis)s, %(segment_label)s, %(vendor_label)s, 'seed')
+                    %(segment_source)s, %(fallback_segment)s, %(revenue_allocation)s, %(cost_basis)s, %(segment_label)s, %(vendor_label)s,
+                    %(vocabulary)s, %(vendor_factor)s, %(invoice_basis)s, %(group_by)s, %(split_subcontracted)s, 'seed')
             ON CONFLICT (slug) DO NOTHING
             """,
             {
                 "featured": True, "sort": 100, "target_labor_pct": 0.645, "watch_band": 0.10, "revenue_method": "monthly_div",
                 "revenue_divisor": 4.33, "budget_reliability_ratio": 0.80, "source_parent_accounts": [],
-                "segment_source": "explicit", "revenue_allocation": "none", "cost_basis": "labor", "segment_label": "Segment", "vendor_label": "Vendor", **{k: v for k, v in account.items() if k not in ("segments", "jobs")},
+                "segment_source": "explicit", "revenue_allocation": "none", "cost_basis": "labor", "segment_label": "Segment", "vendor_label": "Vendor", "vocabulary": "amazon", "vendor_factor": 1,
+                "invoice_basis": "last_month", "group_by": "segment", "split_subcontracted": False, **{k: v for k, v in account.items() if k not in ("segments", "jobs")},
             },
         )
         counts["accounts"] += cursor.rowcount
@@ -145,20 +153,21 @@ WITH unmapped AS (
 matches AS (
   -- 1: the job's parent job is mapped (a family stays in one account; a parent's billing may be
   --    allocated over its children)
-  SELECT j.job_key, j.company, j.job_number, a.slug, a.segment_source, a.fallback_segment, 0 AS rank, a.sort
+  SELECT j.job_key, j.company, j.job_number, a.slug, a.segment_source, a.fallback_segment, 0 AS rank, a.sort,
+         j.job_name ~* %(pallet)s AS pallet
   FROM unmapped j
   JOIN ops.account_job pj ON pj.company = j.company AND pj.job_number = j.parent_job_number
   JOIN ops.account a ON a.slug = pj.account_slug
   UNION ALL
   -- 2: the job's current parent-account label feeds a featured account
-  SELECT j.job_key, j.company, j.job_number, a.slug, a.segment_source, a.fallback_segment, 1 AS rank, a.sort
+  SELECT j.job_key, j.company, j.job_number, a.slug, a.segment_source, a.fallback_segment, 1 AS rank, a.sort, false AS pallet
   FROM unmapped j
   JOIN core.dim_parent_account pa ON pa.parent_account_key = j.parent_account_key
   JOIN ops.account a ON pa.account_name = ANY (a.source_parent_accounts)
 ),
 candidates AS (
   SELECT DISTINCT ON (m.company, m.job_number)
-         m.company, m.job_number, m.slug, m.segment_source, m.fallback_segment,
+         m.company, m.job_number, m.slug, m.segment_source, m.fallback_segment, m.pallet,
          (SELECT jm.sub_account FROM mart.job_month jm WHERE jm.job_key = m.job_key AND jm.sub_account IS NOT NULL
            ORDER BY jm.month DESC LIMIT 1) AS sub_account
   FROM matches m
@@ -171,7 +180,7 @@ FROM candidates c
 
 def auto_assign(cursor: Any) -> int:
     """Map unmapped jobs of the featured accounts' source parent accounts; returns rows added."""
-    cursor.execute(AUTO_ASSIGN_SQL)
+    cursor.execute(AUTO_ASSIGN_SQL, {"pallet": PALLET_NAME})
     added = 0
     for row in cursor.fetchall():
         segment = resolve_segment(row["segment_source"], company=row["company"], sub_account=row["sub_account"],
@@ -179,9 +188,9 @@ def auto_assign(cursor: Any) -> int:
         cursor.execute(
             """
             INSERT INTO ops.account_job (company, job_number, account_slug, segment, role, assigned_by, needs_review)
-            VALUES (%s, %s, %s, %s, 'site', 'auto', true) ON CONFLICT (company, job_number) DO NOTHING
+            VALUES (%s, %s, %s, %s, %s, 'auto', true) ON CONFLICT (company, job_number) DO NOTHING
             """,
-            (row["company"], row["job_number"], row["slug"], segment),
+            (row["company"], row["job_number"], row["slug"], None if row["pallet"] else segment, "pallet" if row["pallet"] else "site"),
         )
         added += cursor.rowcount
     return added

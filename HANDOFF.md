@@ -36,7 +36,7 @@ on the Plano ISD reference dashboard, dynamic by account.
 
 - **Home**: portfolio strip across the featured accounts (Labor % with pp WoW, hours to cut per day, OT %,
   change vs prior week) and the reference Overview for the selected account.
-- **Account**: tabs Overview, Sites, Hours to cut, Overtime, Map, and the account's vendor label (Agency sub, Subcontractor); a site row opens a drawer
+- **Account**: tabs per account and in its weekly report's words (`vocabulary`). Amazon style: Overview, Sites, Hours to cut, Overtime, Map, Agency sub. FedEx style: Account Overview, Sites, Pallet, Over Target (the Hours to cut view), Overtime, Income Statement, Subcontracted Sites (AR vs AP), Map, Sub invoices; a site row opens a drawer
   with the site's weekly P&L, a 13-week trend, subcontractor invoices and CompanyCam photos.
 - **Analytics**: every account including Other, drilled account -> segment (Other: account group)
   -> site, with filters, sorting and CSV.

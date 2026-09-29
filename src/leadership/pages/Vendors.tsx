@@ -51,10 +51,10 @@ export function Vendors({ account }: { account: LeadershipAccount }) {
       <Kpi label="Sites" value={d.by_site.length} sub={`of ${account.sites}`} />
     </div>
     <div className="charts2">
-      <div className="card"><div className="ct"><span>By vendor</span></div><SortTable caption={`${vendorLabel(account)} invoices by vendor`} rows={d.by_vendor} columns={vendorCols} defaultSort={{ key: 'amt', dir: -1 }} /></div>
-      <div className="card"><div className="ct"><span>By site</span></div><SortTable caption={`${vendorLabel(account)} invoices by site`} rows={d.by_site} columns={siteCols} defaultSort={{ key: 'amt', dir: -1 }}
+      <div className="card"><div className="ct"><span>By vendor</span></div><SortTable caption={`${vendorLabel(account)} invoices by vendor`} rows={d.by_vendor} columns={vendorCols} defaultSort={{ key: 'amt', dir: -1 }} pageSize={25} /></div>
+      <div className="card"><div className="ct"><span>By site</span></div><SortTable caption={`${vendorLabel(account)} invoices by site`} rows={d.by_site} columns={siteCols} defaultSort={{ key: 'amt', dir: -1 }} pageSize={25}
         onRowClick={(r) => navigate({ site: { company: r.company, job: r.job_number } })} rowLabel={(r) => `Open ${r.site_name}`} /></div>
     </div>
-    <div className="card"><div className="ct"><span>Invoices</span></div><SortTable caption={`${vendorLabel(account)} invoices`} rows={d.lines} columns={lineCols} defaultSort={{ key: 'date', dir: -1 }} csvName={`${account.slug}-vendor-invoices`} /></div>
+    <div className="card"><div className="ct"><span>Invoices</span></div><SortTable caption={`${vendorLabel(account)} invoices`} rows={d.lines} columns={lineCols} defaultSort={{ key: 'date', dir: -1 }} csvName={`${account.slug}-vendor-invoices`} pageSize={50} /></div>
   </>
 }

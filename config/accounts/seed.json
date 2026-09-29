@@ -39,7 +39,8 @@
    "revenue_allocation": "none",
    "cost_basis": "labor_plus_vendor",
    "segment_label": "BU",
-   "vendor_label": "Agency sub"
+   "vendor_label": "Agency sub",
+   "vendor_factor": 0.7
   },
   {
    "slug": "fedex",
@@ -73,7 +74,12 @@
    "jobs": [],
    "revenue_allocation": "none",
    "cost_basis": "labor_plus_vendor",
-   "vendor_label": "Subcontractor"
+   "vendor_label": "Subcontractor",
+   "vocabulary": "fedex",
+   "vendor_factor": 0.7,
+   "invoice_basis": "run_rate_3m",
+   "group_by": "pallet",
+   "split_subcontracted": true
   },
   {
    "slug": "plano-isd",

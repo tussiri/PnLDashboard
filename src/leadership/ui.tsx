@@ -1,15 +1,29 @@
-import { ChevronDown, ChevronUp, Download } from 'lucide-react'
-import { useMemo, useState, type ReactNode } from 'react'
+import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Download } from 'lucide-react'
+import { createContext, useContext, useMemo, useState, type ReactNode } from 'react'
 import { downloadCsv, toCsv } from '../services/csv'
 import type { LaborStatus } from './metrics'
 
 export const toneOf = (status: LaborStatus) => ({ on_target: 'ok', watch: 'warn', over: 'bad', no_billing: 'neutral' } as const)[status]
-export const STATUS_LABEL: Record<LaborStatus, string> = { on_target: 'On track', watch: 'Watch', over: 'High', no_billing: 'No billing' }
+/**
+ * Each account's pages use the words of its own weekly report: 'amazon' (On track / Watch / High,
+ * Invoicing, Hours to cut) or 'fedex' (On target / Watch / Over, Weekly invoice, Over Target).
+ */
+export type Vocabulary = 'amazon' | 'fedex'
+export const VocabContext = createContext<Vocabulary>('amazon')
+export const useVocab = () => useContext(VocabContext)
+const STATUS_WORDS: Record<Vocabulary, Record<LaborStatus, string>> = {
+  amazon: { on_target: 'On track', watch: 'Watch', over: 'High', no_billing: 'No billing' },
+  fedex: { on_target: 'On target', watch: 'Watch', over: 'Over', no_billing: 'No billing' },
+}
+export const statusLabel = (status: LaborStatus, vocab: Vocabulary = 'amazon') => STATUS_WORDS[vocab][status]
+/** The Amazon wording; views inside an account use statusLabel with the account's vocabulary. */
+export const STATUS_LABEL = STATUS_WORDS.amazon
 const BADGE_CLASS: Record<LaborStatus, string> = { on_target: 'bok', watch: 'bwarn', over: 'bbad', no_billing: 'bnone' }
 
 export function Badge({ status, label }: { status: LaborStatus | 'none'; label?: string }) {
+  const vocab = useVocab()
   if (status === 'none') return <span className="badge bnone">{label}</span>
-  return <span className={`badge ${BADGE_CLASS[status]}`}>{label ?? STATUS_LABEL[status]}</span>
+  return <span className={`badge ${BADGE_CLASS[status]}`}>{label ?? statusLabel(status, vocab)}</span>
 }
 
 export function Kpi({ label, value, sub, tone, small }: { label: string; value: ReactNode; sub?: ReactNode; tone?: string; small?: boolean }) {
@@ -55,8 +69,9 @@ interface SortState { key: string; dir: 1 | -1 }
 /**
  * Sortable table. Headers are buttons (Enter and Space sort, aria-sort announces the order); nulls sort
  * last; a text column sorts ascending first and a number column descending first, as in the reference.
+ * With `pageSize`, rows are shown a page at a time (sorting and the CSV cover every row).
  */
-export function SortTable<T>({ rows, columns, defaultSort, total, rowClass, onRowClick, rowLabel, csvName, caption, tools }: {
+export function SortTable<T>({ rows, columns, defaultSort, total, rowClass, onRowClick, rowLabel, csvName, caption, tools, pageSize }: {
   rows: T[]
   columns: Column<T>[]
   defaultSort: SortState
@@ -67,8 +82,10 @@ export function SortTable<T>({ rows, columns, defaultSort, total, rowClass, onRo
   csvName?: string
   caption: string
   tools?: ReactNode
+  pageSize?: number
 }) {
   const [sort, setSort] = useState<SortState>(defaultSort)
+  const [page, setPage] = useState(0)
   const sorted = useMemo(() => {
     const col = columns.find((c) => c.key === sort.key) ?? columns[0]
     return [...rows].sort((a, b) => {
@@ -79,7 +96,10 @@ export function SortTable<T>({ rows, columns, defaultSort, total, rowClass, onRo
       return typeof x === 'string' || typeof y === 'string' ? sort.dir * String(x).localeCompare(String(y)) : sort.dir * (x - y)
     })
   }, [rows, columns, sort])
-  const toggle = (col: Column<T>) => setSort((s) => (s.key === col.key ? { key: col.key, dir: (s.dir * -1) as 1 | -1 } : { key: col.key, dir: col.left ? 1 : -1 }))
+  const toggle = (col: Column<T>) => { setPage(0); setSort((s) => (s.key === col.key ? { key: col.key, dir: (s.dir * -1) as 1 | -1 } : { key: col.key, dir: col.left ? 1 : -1 })) }
+  const pages = pageSize ? Math.max(1, Math.ceil(sorted.length / pageSize)) : 1
+  const current = Math.min(page, pages - 1)
+  const shown = pageSize ? sorted.slice(current * pageSize, (current + 1) * pageSize) : sorted
   const exportCsv = () => csvName && downloadCsv(csvName, toCsv(sorted, columns.map((c) => ({ key: c.key, header: c.header, value: c.csv ?? c.value }))))
   return <>
     {(csvName || tools) && <div className="table-tools">
@@ -97,7 +117,7 @@ export function SortTable<T>({ rows, columns, defaultSort, total, rowClass, onRo
           </th>
         })}</tr></thead>
         <tbody>
-          {sorted.map((row, i) => <tr key={i} className={`${rowClass?.(row) ?? ''}${onRowClick ? ' click' : ''}`} onClick={onRowClick ? () => onRowClick(row) : undefined}>
+          {shown.map((row, i) => <tr key={i} className={`${rowClass?.(row) ?? ''}${onRowClick ? ' click' : ''}`} onClick={onRowClick ? () => onRowClick(row) : undefined}>
             {columns.map((c, j) => <td key={c.key} className={`${c.left ? 'l ' : ''}${c.className ?? ''}`}>
               {j === 1 && onRowClick
                 ? <button type="button" className="rowbtn" onClick={(e) => { e.stopPropagation(); onRowClick(row) }} aria-label={rowLabel?.(row)}>{c.render ? c.render(row) : c.value(row)}</button>
@@ -108,6 +128,12 @@ export function SortTable<T>({ rows, columns, defaultSort, total, rowClass, onRo
         </tbody>
       </table>
     </div>
+    {pages > 1 && <div className="pager" role="navigation" aria-label={`${caption} pages`}>
+      <span className="count">{(current * pageSize! + 1).toLocaleString('en-US')}–{Math.min(sorted.length, (current + 1) * pageSize!).toLocaleString('en-US')} of {sorted.length.toLocaleString('en-US')}</span>
+      <button type="button" className="btn sm" onClick={() => setPage(current - 1)} disabled={current === 0} aria-label="Previous page"><ChevronLeft size={13} aria-hidden="true" /></button>
+      <span className="count">Page {current + 1} of {pages}</span>
+      <button type="button" className="btn sm" onClick={() => setPage(current + 1)} disabled={current >= pages - 1} aria-label="Next page"><ChevronRight size={13} aria-hidden="true" /></button>
+    </div>}
   </>
 }
 

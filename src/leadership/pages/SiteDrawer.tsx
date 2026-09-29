@@ -9,7 +9,8 @@ import { hours, hours1, money, pct, pts, rate } from '../format'
 import { siteMetrics } from '../metrics'
 import { monthLabel, weekLabel, weekTick } from '../routes'
 import { useLeadership } from '../state'
-import { Badge, ChartCard, Empty, Kpi, LoadError, Skeleton, Swatch, toneOf } from '../ui'
+import { Badge, ChartCard, Empty, Kpi, LoadError, Skeleton, Swatch, toneOf, VocabContext } from '../ui'
+import { vocabOf } from '../vocab'
 import { useTokens } from '../charts'
 
 /** Site detail drawer: this week's labor P&L, a 13-week trend, subcontractor invoices and CompanyCam photos. */
@@ -37,7 +38,7 @@ export function SiteDrawer({ company, job }: { company: string; job: string }) {
   const site = q.data?.site
   const m = 'Labor %'
 
-  return <>
+  return <VocabContext.Provider value={vocabOf(account)}>
     <button type="button" className="scrim" aria-label="Close site detail" onClick={close} />
     <div className="drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title" ref={panel} tabIndex={-1}>
       <div className="drawer__hdr">
@@ -84,5 +85,5 @@ export function SiteDrawer({ company, job }: { company: string; job: string }) {
           </dl></div>}
       </>}
     </div>
-  </>
+  </VocabContext.Provider>
 }

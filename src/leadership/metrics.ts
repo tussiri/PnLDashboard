@@ -5,8 +5,11 @@
  * method) arrive as data on the rows and options, never as constants here.
  */
 
-export type SiteRole = 'site' | 'catch_all' | 'non_billed'
+/** pallet rows are rolled into their parent site before metrics (data.ts rollupPallets). */
+export type SiteRole = 'site' | 'catch_all' | 'non_billed' | 'pallet'
 export type RevenueMethod = 'monthly_div' | 'weekly_billing'
+/** last_month: the revenue month ÷ divisor; run_rate_3m: the 3-month average ÷ divisor (the FedEx report). */
+export type InvoiceBasis = 'last_month' | 'run_rate_3m'
 export type LaborStatus = 'on_target' | 'watch' | 'over' | 'no_billing'
 export type LaborBasis = 'pay_report' | 'payroll_rate' | 'trailing_rate_estimate'
 /** What an account is measured by: labor % (the reference) or cost % = (labor + vendor) / invoice. */
@@ -42,6 +45,18 @@ export interface WeekRow {
   /** Revenue moved onto (+) or off (-) this row by a parent-job allocation. */
   revenue_allocated?: number
   allocation_weight?: string | null
+  /** Double-time hours, already inside ot_hours; their premium is full time rather than half. */
+  dt_hours?: number
+  /** Average monthly revenue over the revenue month and the two before it. */
+  revenue_run_rate?: number | null
+  /** Average monthly variable (OS, pallet) revenue over the same months. */
+  variable_run_rate?: number | null
+  /** Rolled-in pallet job(s): their labor, hours and OT hours (already inside labor / hours / ot_hours). */
+  pallet_labor?: number
+  pallet_hours?: number
+  pallet_ot_hours?: number
+  /** Job numbers combined into this row (the site first). */
+  kids?: string[]
 }
 
 export interface MetricOptions {
@@ -57,6 +72,9 @@ export interface MetricOptions {
   costBasis?: CostBasis
   /** Per-segment targets that override `target` (e.g. Crane West sites of Amazon). */
   segmentTargets?: Record<string, number>
+  /** Share of vendor (agency / subcontractor) cost counted in labor; both weekly reports use 0.70. */
+  vendorFactor?: number
+  invoiceBasis?: InvoiceBasis
 }
 
 /** Derived values added to a row. */
@@ -135,7 +153,8 @@ export function statusOf(laborPct: number | null, target: number, watchBand = DE
 export function invoiceOf(row: WeekRow, opts: MetricOptions): number {
   const method = opts.revenueMethod ?? DEFAULTS.revenueMethod
   if (method === 'weekly_billing') return row.invoice_week ?? 0
-  return row.revenue_month_amount / (opts.divisor ?? DEFAULTS.divisor)
+  const monthly = opts.invoiceBasis === 'run_rate_3m' && row.revenue_run_rate != null ? row.revenue_run_rate : row.revenue_month_amount
+  return monthly / (opts.divisor ?? DEFAULTS.divisor)
 }
 
 export function baseRateOf(labor: number, hours: number, otHours: number): number {
@@ -148,15 +167,16 @@ export const targetFor = (row: Pick<WeekRow, 'segment'>, opts: MetricOptions) =>
 export function siteMetrics<R extends WeekRow>(row: R, opts: MetricOptions): SiteMetrics<R> {
   const target = targetFor(row, opts)
   const invoice = invoiceOf(row, opts)
-  const vendor = opts.costBasis === 'labor_plus_vendor' ? row.sub_week ?? 0 : 0
+  const vendor = opts.costBasis === 'labor_plus_vendor' ? (row.sub_week ?? 0) * (opts.vendorFactor ?? 1) : 0
   const cost = row.labor + vendor
   const laborPct = ratio(row.labor, invoice)
   const costPct = ratio(cost, invoice)
   const measurePct = opts.costBasis === 'labor_plus_vendor' ? costPct : laborPct
-  const baseRate = baseRateOf(row.labor, row.hours, row.ot_hours)
+  // OT pays half time on top, double time full time; dt_hours sit inside ot_hours.
+  const otPremiumHours = 0.5 * row.ot_hours + 0.5 * (row.dt_hours ?? 0)
+  const baseRate = row.hours > 0 ? row.labor / (row.hours + otPremiumHours) : 0
   const overDollars = invoice > 0 ? Math.max(0, cost - invoice * target) : 0
   const overHours = baseRate > 0 ? overDollars / baseRate : 0
-  const otPremiumHours = 0.5 * row.ot_hours
   const overFromOtPremium = Math.min(otPremiumHours, overHours)
   return {
     ...row,

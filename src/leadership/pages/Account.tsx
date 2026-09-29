@@ -2,15 +2,17 @@ import { lazy, Suspense, useMemo, useState } from 'react'
 import type { LeadershipAccount, LeadershipRow } from '../../services/apiTypes'
 import { ChartCard, Swatch } from '../ui'
 import { OtHoursChart, useTokens } from '../charts'
-import { dataFlags, includesVendor, rowsOfWeek, segmentLabel, segmentOrder, useRows, vendorLabel } from '../data'
+import { dataFlags, includesVendor, isSubcontracted, rowsOfWeek, segmentLabel, segmentOrder, useRows, vendorLabel } from '../data'
 import { hours, hours1, money, pct } from '../format'
 import { accountSummary, type AccountSummary as Summary, type MetricOptions, type SiteMetrics as Metrics } from '../metrics'
 import { Overview } from '../Overview'
-import { ACCOUNT_TABS, monthShort, weekLabel, type AccountTab } from '../routes'
+import { ACCOUNT_TABS, monthLabel, monthShort, weekLabel, type AccountTab } from '../routes'
 import { PageHeader, updatedLine } from '../Shell'
 import { useLeadership } from '../state'
-import { Badge, Empty, Kpi, LoadError, Pills, Skeleton, SortTable, toneOf, type Column } from '../ui'
+import { Badge, Empty, Kpi, LoadError, Pills, Skeleton, SortTable, toneOf, VocabContext, type Column } from '../ui'
 import { HoursToCut } from './HoursToCut'
+import { FedexOverview, FedexSites, IncomeStatementTab, PalletTab, SubcontractedTab } from './FedexViews'
+import { tabLabel, tabsFor, vocabOf } from '../vocab'
 import { SiteDrawer } from './SiteDrawer'
 import { Vendors } from './Vendors'
 
@@ -19,10 +21,7 @@ type SiteMetrics = Metrics<LeadershipRow>
 
 const SiteMap = lazy(() => import('./SiteMap'))
 
-/** Subcontracted: marked so, or no delivery model recorded and only vendor cost (no hours) this week. */
-const isSubcontracted = (r: LeadershipRow) => r.delivery_model === 'subcontracted' || (r.delivery_model == null && !r.hours && (r.sub_week ?? 0) > 0)
 
-const TAB_LABEL: Record<AccountTab, string> = { overview: 'Overview', sites: 'Sites', 'over-target': 'Hours to cut', overtime: 'Overtime', map: 'Map', vendors: 'Vendors' }
 const shortName = (name: string) => name.replace(/^[A-Z][A-Za-z]+ ?- ?/, '').replace(/ (Elementary|Middle|High) School$/, ' $1').replace(' Senior High School', ' Sr High')
 
 export const roleBadge = (r: Metrics) => (r.role === 'catch_all' ? <Badge status="none" label="Catch-all" /> : r.role === 'non_billed' ? <Badge status="none" label="Non-billed" /> : <Badge status={r.status} />)
@@ -127,24 +126,39 @@ export function Account() {
   const priorShort = monthShort(rows.find((r) => r.revenue_month)?.revenue_month)
   const subtitle = [weekStart ? weekLabel(weekStart) : null, updatedLine(config.data)].filter(Boolean).join('. ')
   const setTab = (next: AccountTab) => navigate({ view: 'account', account: account?.slug, tab: next })
+  const tabs = tabsFor(account, ACCOUNT_TABS)
+  const vocab = vocabOf(account)
+  const fedex = vocab === 'fedex'
   let body
   if (rowsQuery.error) body = <LoadError error={rowsQuery.error} onRetry={rowsQuery.refetch} />
   else if (!rowsQuery.data || !account) body = <Skeleton height={360} />
   else if (tab === 'vendors') body = <Vendors account={account} />
+  else if (tab === 'subcontracted' && tabs.includes(tab)) body = <SubcontractedTab account={account} />
+  else if (tab === 'income-statement' && tabs.includes(tab)) body = <IncomeStatementTab account={account} options={options} />
   else if (!summary) body = <Empty>No data for this week.</Empty>
-  else if (tab === 'overview') body = <Overview account={account} rows={rows} summary={summary} options={options} flags={flags} />
+  else if (tab === 'pallet' && tabs.includes(tab)) body = <PalletTab account={account} summary={summary} options={options} />
+  else if (tab === 'overview' && fedex) body = <FedexOverview account={account} rows={rows} summary={summary} options={options} />
+  else if (tab === 'sites' && fedex) body = <FedexSites account={account} summary={summary} options={options} />
+  else if (tab === 'overview' || !tabs.includes(tab)) body = <Overview account={account} rows={rows} summary={summary} options={options} flags={flags} />
   else if (tab === 'sites') body = <SitesTab account={account} summary={summary} priorShort={priorShort} selfOnly={selfOnly} />
   else if (tab === 'over-target') body = <HoursToCut account={account} summary={summary} options={options} />
   else if (tab === 'overtime') body = <OvertimeTab account={account} summary={summary} />
   else body = <Suspense fallback={<Skeleton height={520} />}><SiteMap account={account} summary={summary} /></Suspense>
-  return <>
+  const basis = options.invoiceBasis ?? 'last_month'
+  const basisControl = fedex && tab !== 'vendors' && tab !== 'subcontracted' && tab !== 'income-statement' && <>
+    <label htmlFor="basis">Invoice basis</label>
+    <select id="basis" value={basis} onChange={(e) => navigate({ basis: e.target.value === account?.invoice_basis ? undefined : e.target.value as 'run_rate_3m' | 'last_month' }, { replace: true })}>
+      <option value="run_rate_3m">3-month run rate</option><option value="last_month">{monthLabel(rows.find((r) => r.revenue_month)?.revenue_month ?? null)} actual</option>
+    </select></>
+  const current = tabs.includes(tab) ? tab : 'overview'
+  return <VocabContext.Provider value={vocab}>
     <PageHeader title={account ? `${account.name} Labor P&L` : 'Account'} subtitle={subtitle}
-      extra={subcontracted > 0 && tab !== 'vendors' && <label className="check"><input type="checkbox" checked={selfOnly}
-        onChange={(e) => navigate({ selfOnly: e.target.checked || undefined }, { replace: true })} />Hide {subcontracted} subcontracted</label>} />
+      extra={<>{basisControl}{subcontracted > 0 && tab !== 'vendors' && <label className="check"><input type="checkbox" checked={selfOnly}
+        onChange={(e) => navigate({ selfOnly: e.target.checked || undefined }, { replace: true })} />Hide {subcontracted} subcontracted</label>}</>} />
     <nav className="tabs" role="tablist" aria-label="Account views">
-      {ACCOUNT_TABS.map((t) => <button key={t} type="button" role="tab" className="tab" aria-selected={tab === t} onClick={() => setTab(t)}>{t === 'vendors' ? vendorLabel(account) : TAB_LABEL[t]}</button>)}
+      {tabs.map((t) => <button key={t} type="button" role="tab" className="tab" aria-selected={current === t} onClick={() => setTab(t)}>{tabLabel(t, account, vendorLabel(account))}</button>)}
     </nav>
-    <section role="tabpanel" aria-label={tab === 'vendors' ? vendorLabel(account) : TAB_LABEL[tab]}>{body}</section>
+    <section role="tabpanel" aria-label={tabLabel(current, account, vendorLabel(account))}>{body}</section>
     {route.site && <SiteDrawer company={route.site.company} job={route.site.job} />}
-  </>
+  </VocabContext.Provider>
 }

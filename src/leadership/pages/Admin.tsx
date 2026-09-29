@@ -10,7 +10,7 @@ import { Empty, LoadError, Pills, Skeleton, SortTable, type Column } from '../ui
 import { UsersTab } from './Users'
 
 const TAB_LABEL: Record<AdminTab, string> = { accounts: 'Accounts', jobs: 'Job mapping', imports: 'Imports', data: 'Data and sync', users: 'Users' }
-const ROLE_LABEL: Record<LeadershipRole, string> = { site: 'Site', catch_all: 'Catch-all', non_billed: 'Non-billed' }
+const ROLE_LABEL: Record<LeadershipRole, string> = { site: 'Site', catch_all: 'Catch-all', non_billed: 'Non-billed', pallet: 'Pallet' }
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e))
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
@@ -45,6 +45,7 @@ function AccountEditor({ account }: { account: LeadershipAccount }) {
       revenue_method: draft.revenue_method, revenue_divisor: draft.revenue_divisor, budget_reliability_ratio: draft.budget_reliability_ratio,
       cost_basis: draft.cost_basis, revenue_allocation: draft.revenue_allocation, fallback_segment: draft.fallback_segment,
       segment_label: draft.segment_label.trim() || 'Segment', vendor_label: draft.vendor_label.trim() || 'Vendor',
+      vocabulary: draft.vocabulary, vendor_factor: draft.vendor_factor, invoice_basis: draft.invoice_basis, group_by: draft.group_by, split_subcontracted: draft.split_subcontracted,
     }
     void run(`Saved ${draft.name}`, () => api.leadershipUpdateAccount(account.slug, patch))
   }
@@ -61,6 +62,15 @@ function AccountEditor({ account }: { account: LeadershipAccount }) {
         <option value="labor">Direct labor</option><option value="labor_plus_vendor">Direct labor + {inSentence(draft.vendor_label)}</option></select></label>
       <label className="field"><span>Group name</span><input type="text" maxLength={30} value={draft.segment_label} onChange={(e) => setDraft({ ...draft, segment_label: e.target.value })} /></label>
       <label className="field"><span>Non-payroll labor name</span><input type="text" maxLength={30} value={draft.vendor_label} onChange={(e) => setDraft({ ...draft, vendor_label: e.target.value })} /></label>
+      <label className="field"><span>{draft.vendor_label} counted (%)</span><input type="number" step="5" min="0" max="100" value={Math.round(draft.vendor_factor * 100)} onChange={(e) => setDraft({ ...draft, vendor_factor: num(e.target.value) / 100 })} /></label>
+      <label className="field"><span>Report wording</span><select value={draft.vocabulary} onChange={(e) => setDraft({ ...draft, vocabulary: e.target.value as LeadershipAccount['vocabulary'] })}>
+        <option value="amazon">Amazon report</option><option value="fedex">FedEx report</option></select></label>
+      <label className="field"><span>Invoice basis</span><select value={draft.invoice_basis} onChange={(e) => setDraft({ ...draft, invoice_basis: e.target.value as LeadershipAccount['invoice_basis'] })}>
+        <option value="last_month">Last closed month</option><option value="run_rate_3m">3-month run rate</option></select></label>
+      <label className="field"><span>Groups</span><select value={draft.group_by} onChange={(e) => setDraft({ ...draft, group_by: e.target.value as LeadershipAccount['group_by'] })}>
+        <option value="segment">{draft.segment_label}s</option><option value="pallet">Pallet sites / Janitorial only</option></select></label>
+      <label className="field"><span>Subcontracted sites</span><select value={draft.split_subcontracted ? 'split' : 'in'} onChange={(e) => setDraft({ ...draft, split_subcontracted: e.target.value === 'split' })}>
+        <option value="in">In the labor views</option><option value="split">Own tab (AR vs AP)</option></select></label>
       <label className="field"><span>Revenue method</span><select value={draft.revenue_method} onChange={(e) => setDraft({ ...draft, revenue_method: e.target.value as LeadershipAccount['revenue_method'] })}>
         <option value="monthly_div">Monthly invoicing ÷ divisor</option><option value="weekly_billing">Weekly billing</option><option value="per_visit">Per visit</option></select></label>
       <label className="field"><span>Divisor</span><input type="number" step="0.01" value={draft.revenue_divisor} onChange={(e) => setDraft({ ...draft, revenue_divisor: num(e.target.value) })} /></label>
@@ -153,7 +163,7 @@ function ImportsTab() {
   const q = useApiQuery(decision ? queryKey(`${keyPrefix}/leadership/imports`) : null, (signal) => api.leadershipImports(50, signal), [api])
   const cols: Column<LeadershipImportFile>[] = [
     { key: 'at', header: 'Loaded', left: true, value: (f) => f.loaded_at, render: (f) => new Date(f.loaded_at).toLocaleString('en-US') },
-    { key: 'kind', header: 'Feed', left: true, value: (f) => (f.kind === 'pay_report' ? 'Pay report' : 'Job cost') },
+    { key: 'kind', header: 'Feed', left: true, value: (f) => (f.kind === 'pay_report' ? 'Pay report' : f.kind === 'income_statement' ? 'Income statement' : 'Job cost') },
     { key: 'file', header: 'File', left: true, value: (f) => f.file_name, className: 'nm' },
     { key: 'status', header: 'Status', left: true, value: (f) => f.status, render: (f) => <span className={f.status === 'loaded' ? 'ok' : f.status === 'failed' ? 'bad' : 'neutral'}>{cap(f.status)}</span> },
     { key: 'rows', header: 'Rows', value: (f) => f.rows_loaded, render: (f) => `${f.rows_loaded.toLocaleString('en-US')} of ${f.rows_read.toLocaleString('en-US')}` },
@@ -166,7 +176,7 @@ function ImportsTab() {
       <div className="ct"><span>Upload</span></div>
       <form className="form-grid" onSubmit={(e) => { e.preventDefault(); if (file) void run(`Imported ${file.name}`, () => api.leadershipUpload(file, kind || undefined)) }}>
         <label className="field"><span>File (CSV or XLSX)</span><input type="file" accept=".csv,.xlsx,.xlsm" onChange={(e) => setFile(e.target.files?.[0] ?? null)} /></label>
-        <label className="field"><span>Feed</span><select value={kind} onChange={(e) => setKind(e.target.value as '' | LeadershipImportKind)}><option value="">Auto-detect</option><option value="pay_report">Pay Report Timekeeping</option><option value="job_cost">Job Cost Analysis</option></select></label>
+        <label className="field"><span>Feed</span><select value={kind} onChange={(e) => setKind(e.target.value as '' | LeadershipImportKind)}><option value="">Auto-detect</option><option value="pay_report">Pay Report Timekeeping</option><option value="job_cost">Job Cost Analysis</option><option value="income_statement">Trend Income Statement</option></select></label>
         <div className="field"><button type="submit" className="btn primary" disabled={!file || busy}>{busy ? 'Importing' : 'Import'}</button></div>
       </form>
       {view}
