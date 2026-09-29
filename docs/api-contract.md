@@ -560,3 +560,27 @@ Imports: an income statement row with Account `Company` (or All, Total, Crane IF
 into `core.fact_company_income_statement_month`; a Job Cost Analysis by GL line stores GL 40200-40399
 as `management_wages` (still inside `direct_labor`).
 
+## Month-end rollup, added 2026-09-29
+
+app/month.py. FedEx invoices at month end, when its subcontractors are also due to have invoiced, so
+the Home and account views have a Week / Month switch (`period=month&month=YYYY-MM` on the route).
+The month view includes subcontracted sites (the weekly views leave them out for accounts with
+`split_subcontracted`).
+
+| Route | Response |
+|---|---|
+| `GET /leadership/month?month=YYYY-MM&account=featured` | `{source, month, account, rows}`; `account` is a slug or featured, other, all, limited to the user's accounts (`404` unknown slug, `422` bad month). One row per job, shaped like a `/leadership/rows` row with `week_start`/`week_end` = the month's first and last day and `invoice_week` = the month's revenue (read with revenue method weekly_billing). |
+
+* Labor, hours, OT hours and OT pay: each overlapping week of `mart.leadership_week` × the week's
+  timekeeping hours worked in the month ÷ the week's hours (else days in the month ÷ 7). Budget
+  hours and dollars use the day share.
+* Revenue (`revenue_month_basis`): `job_cost` for the month, else `relay_ar` (Relay AR by service
+  month), else `contract` (Relay contract monthly amount), else `prior_month` (the latest Relay AR or
+  job cost month); parent billing is spread as in the weekly rows.
+* Vendor (`sub_week`, `sub_week_basis`): `relay_ap` for the month (never on a self-performed
+  station), else `job_cost` subcontractors, else `projected` (the weeks' projected vendor cost).
+* `sub_expected`: a subcontracted Relay station with a monthly AP contract; `sub_received`: any of
+  its payables for the month are in; `ar_invoices`: the month's Relay AR invoices.
+* Allocations at monthly amounts: management wages of the month, labor × the month's burden rate,
+  and the overhead pool × the job's share of the month's company revenue.
+

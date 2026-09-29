@@ -39,6 +39,10 @@ export interface Route {
   selfOnly?: boolean
   /** Invoice basis override (the FedEx report's toggle); the account's own basis when absent. */
   basis?: 'run_rate_3m' | 'last_month'
+  /** Home and Account: the month-end rollup instead of a week. */
+  period?: 'month'
+  /** The month shown in the month-end rollup (YYYY-MM); the selected week's month when absent. */
+  month?: string
 }
 
 const ISO = /^\d{4}-\d{2}-\d{2}$/
@@ -80,6 +84,9 @@ export function parseRoute(hash: string): Route {
   if (route.view === 'account' && params.get('delivery') === 'self') route.selfOnly = true
   const basis = params.get('basis')
   if (basis === 'run_rate_3m' || basis === 'last_month') route.basis = basis
+  if (params.get('period') === 'month' && (route.view === 'home' || route.view === 'account')) route.period = 'month'
+  const month = params.get('month')
+  if (route.period && month && /^\d{4}-\d{2}$/.test(month)) route.month = month
   return route
 }
 
@@ -97,6 +104,10 @@ export function formatRoute(route: Route): string {
   if (route.view === 'analytics') for (const key of ['q', 'status', 'segment'] as const) if (route[key]) params.set(key, route[key]!)
   if (route.view === 'account' && route.selfOnly) params.set('delivery', 'self')
   if (route.basis && route.view !== 'admin') params.set('basis', route.basis)
+  if (route.period === 'month' && (route.view === 'home' || route.view === 'account')) {
+    params.set('period', 'month')
+    if (route.month) params.set('month', route.month)
+  }
   const query = params.toString()
   return `#/${path}${query ? `?${query}` : ''}`
 }

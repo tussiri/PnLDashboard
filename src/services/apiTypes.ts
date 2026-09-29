@@ -1351,6 +1351,11 @@ export interface LeadershipRow {
   /** Average monthly variable (OS, pallet) revenue over the same months, when the Job Cost Analysis carries it. */
   variable_run_rate?: number | null
   revenue_month_variable?: number | null
+  /** Month rollup only (GET /leadership/month): a subcontracted station with a contract, whether its
+   * sub invoices for the month are in, and the month's AR invoices. */
+  sub_expected?: boolean
+  sub_received?: boolean
+  ar_invoices?: number
   /** Corporate allocations for the week (app/allocations.py): management wages, payroll burden, overhead. */
   alloc_management?: number
   alloc_burden?: number
@@ -1426,6 +1431,8 @@ export interface LeadershipMonthlyResponse {
   /** Trend Income Statement lines per month (revenue, revenue_subcontracted_gl, wages, payroll_taxes, subcontractors, supplies, vehicle, travel, insurance, gross_profit, ...). */
   income_statement: Record<string, Record<string, number>>
 }
+
+export interface LeadershipMonthResponse { source?: SourceBlock; month: string; account: string; rows: LeadershipRow[] }
 
 export interface LeadershipRowsQuery {
   /** Any date in the week; defaults to the latest complete week. */

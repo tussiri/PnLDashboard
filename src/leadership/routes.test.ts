@@ -12,6 +12,7 @@ describe('leadership routes', () => {
       { view: 'admin', adminTab: 'imports' },
       { view: 'admin', adminTab: 'allocations' },
       { view: 'company', week: '2026-09-20' },
+      { view: 'account', account: 'fedex', tab: 'sites', period: 'month', month: '2026-08' },
       { view: 'analytics', analyticsTab: 'units', week: '2026-09-20' },
     ]
     for (const route of routes) expect(parseRoute(formatRoute(route))).toEqual(route)

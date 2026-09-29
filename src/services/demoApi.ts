@@ -37,6 +37,7 @@ export function createDemoApi(options: DemoApiOptions = {}): DashboardApi {
     staffingJob: (company, jobNumber, query, signal) => settle(() => demoStaffingJob(company, jobNumber, query), signal),
     leadershipVendors: (account, _months, signal) => settle(() => demoLeadershipVendors(account), signal),
     leadershipMonthly: (account, _months, signal) => settle(() => demoLeadershipMonthly(account), signal),
+    leadershipMonth: (account, month, signal) => settle(() => ({ month, account, rows: [] }), signal),
     leadershipCompany: (_months, signal) => settle(() => ({ months: [], accounts: [] }), signal),
     allocationStatus: () => notAvailable('Allocations'),
     updateAllocationSettings: () => notAvailable('Allocations'),

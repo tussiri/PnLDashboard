@@ -19,6 +19,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Reques
 from pydantic import BaseModel, Field
 
 from .. import allocations, accounts, companycam, imports, marts
+from .. import month as month_module
 from ..common import allowed_accounts, current_user, jsonable, require_account, require_admin, source_block
 from ..db import connection
 
@@ -502,6 +503,36 @@ def update_allocation_month(month: str, body: AllocationMonthIn, request: Reques
         allocations.set_month(cursor, first, body.burden_rate, body.overhead_pool, _actor(request))
         conn.commit()
         return {"months": jsonable(allocations.overview(cursor, _last_months(cursor, 12)))}
+
+
+@router.get("/month")
+def leadership_month(request: Request, month: str = Query(..., description="YYYY-MM"),
+                     account: str = Query("featured", description="An account slug, or featured | other | all")) -> dict[str, Any]:
+    """The month-end rollup (app/month.py): every job of the month with its actual billing, labor split
+    from the weeks, actual vendor invoices and monthly allocations, shaped like the weekly rows."""
+    try:
+        month_module.month_bounds(month)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="month must be YYYY-MM") from None
+    scope = allowed_accounts(request)
+    scope_clause(account, scope)  # refuses Other and accounts outside the user's access
+    with connection() as conn, conn.cursor() as cursor:
+        if account not in ("featured", "other", "all"):
+            cursor.execute("SELECT 1 FROM ops.account WHERE slug = %s", (account,))
+            if cursor.fetchone() is None:
+                raise HTTPException(status_code=404, detail=f"Unknown account {account!r}")
+        cursor.execute("SELECT slug FROM ops.account WHERE featured")
+        featured = {r["slug"] for r in cursor.fetchall()}
+        rows = month_module.rows_for(cursor, month, allocate_parent_billing)
+    if account == "featured":
+        rows = [r for r in rows if r["account_slug"] in featured]
+    elif account == "other":
+        rows = [r for r in rows if r["account_slug"] not in featured]
+    elif account != "all":
+        rows = [r for r in rows if r["account_slug"] == account]
+    if scope is not None:
+        rows = [r for r in rows if r["account_slug"] in scope]
+    return {"source": source_block(), "month": month[:7], "account": account, "rows": jsonable(rows)}
 
 
 @router.get("/sites/{company}/{job_number}")

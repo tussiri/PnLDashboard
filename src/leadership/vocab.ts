@@ -23,11 +23,25 @@ export function tabsFor(_account: LeadershipAccount | undefined, all: readonly A
   return all.filter((t) => (t !== 'pallet' || has.pallet) && (t !== 'subcontracted' || has.subcontracted) && (t !== 'income-statement' || has.incomeStatement))
 }
 
-/** Signed percentage points in the account's wording: "+0.7pp WoW" or "+0.7 pts vs prior wk". */
-export function weekChange(change: number | null, vocab: Vocabulary): string {
+/** Signed percentage points in the account's wording: "+0.7pp WoW" or "+0.7 pts vs prior wk" (MoM /
+ * "vs prior month" in the month-end rollup). */
+export function weekChange(change: number | null, vocab: Vocabulary, period: 'week' | 'month' = 'week'): string {
   if (change == null || !Number.isFinite(change)) return '–'
   const n = `${change >= 0 ? '+' : '−'}${Math.abs(change * 100).toFixed(1)}`
+  if (period === 'month') return vocab === 'fedex' ? `${n} pts vs prior month` : `${n}pp MoM`
   return vocab === 'fedex' ? `${n} pts vs prior wk` : `${n}pp WoW`
+}
+
+/** The invoice label for the period: FedEx's "Weekly invoice" reads "Monthly invoice" in the rollup. */
+export const invoiceLabel = (words: Words, vocab: Vocabulary, period: 'week' | 'month' = 'week') =>
+  period === 'month' && vocab === 'fedex' ? 'Monthly invoice' : words.invoice
+
+const SOURCE: Record<string, string> = { job_cost: 'Job cost', relay_ar: 'Relay AR', contract: 'Contract', prior_month: 'Prior month' }
+/** Where a month's billing came from, by site count: "Relay AR 301, contract 27". */
+export function billingSources(rows: { revenue_month_basis: string | null; role: string }[]): string {
+  const counts = new Map<string, number>()
+  for (const r of rows) if (r.role === 'site' && r.revenue_month_basis) counts.set(r.revenue_month_basis, (counts.get(r.revenue_month_basis) ?? 0) + 1)
+  return [...counts].sort((a, b) => b[1] - a[1]).map(([k, n], i) => `${i ? (SOURCE[k] ?? k).toLowerCase() : SOURCE[k] ?? k} ${n}`).join(', ')
 }
 
 /** The labels the shared views print, per report. Views are identical for every account; only these differ. */

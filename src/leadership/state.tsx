@@ -38,6 +38,9 @@ export interface LeadershipState {
   selectedAccount: LeadershipAccount | undefined
   /** Monday of the selected week. */
   weekStart: string | undefined
+  /** The month-end rollup (route period=month) and its month, YYYY-MM. */
+  monthMode: boolean
+  month: string | undefined
   /** Target override from the URL as a fraction; null when the account targets apply. */
   targetOverride: number | null
   optionsFor: (account: LeadershipAccount | undefined) => MetricOptions
@@ -130,12 +133,15 @@ export function LeadershipProvider({ user, signOut, children, forcedDecision }: 
   const selectedAccount = accountBySlug(route.account) ?? featured.find((a) => a.sites > 0) ?? featured[0]
   const defaultWeek = config.data?.default_week ?? undefined
   const weekStart = route.week ? weekStartOf(route.week) : defaultWeek
+  const monthMode = route.period === 'month'
+  // The month defaults to the one the selected week ends in.
+  const month = route.month ?? (weekStart ? weekStart.slice(0, 7) : undefined)
   const targetOverride = route.target != null ? route.target / 100 : null
   const optionsFor = useCallback((account: LeadershipAccount | undefined) => optionsForAccount(account, targetOverride, route.basis), [targetOverride, route.basis])
 
   const value: LeadershipState = {
     user, signOut, decision, api, keyPrefix, adminApi, adminKeyPrefix, adminConfig, apiReachable, redetect, config, route, navigate, featured, accountBySlug, selectedAccount,
-    weekStart, targetOverride, optionsFor, theme, setTheme: setThemeState,
+    weekStart, monthMode, month, targetOverride, optionsFor, theme, setTheme: setThemeState,
   }
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }
