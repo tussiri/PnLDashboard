@@ -144,6 +144,11 @@ documented WinTeam GET endpoints (WinTeamAPI.txt)
 - `services/api/app/{accounts,imports,leadership,nightly}.py`, `routers/leadership.py`: account
   configuration, export imports, the weekly leadership mart, the nightly schedule, the routes
 
+## Report exports by email
+
+The worker reads records@smcraneifs.com through Microsoft Graph (read-only) and loads the dashboard's
+report exports; other mail is ignored. Setup and scoping: `docs/mail-inbox.md`.
+
 ## Hosted deployment
 
 `render.yaml` is the Render blueprint (web, private API, worker, PostgreSQL; deploys `main`). The

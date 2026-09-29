@@ -238,6 +238,19 @@ export interface SyncRun {
   error_message: string | null
 }
 
+/** GET /integrations/mail: the records mailbox poller. */
+export interface MailInboxStatus {
+  configured: boolean
+  mailbox: string | null
+  schedule: { enabled: boolean; every_minutes: number; first_lookback_days: number }
+  last_run: { status: string; started_at: string; completed_at: string | null; records_inserted: number | null; error_message: string | null } | null
+  recent: {
+    received_at: string; sender: string | null; subject: string | null; file_name: string
+    status: 'loaded' | 'duplicate' | 'failed' | 'ignored'; reason: string | null; kind: string | null; rows_loaded: number | null
+  }[]
+}
+export interface MailPollResult { status: 'succeeded' | 'failed'; error?: string; loaded?: number; duplicate?: number; failed?: number; ignored?: number; messages?: number; rebuilt?: boolean }
+
 export interface SyncRunsResponse {
   runs: SyncRun[]
 }

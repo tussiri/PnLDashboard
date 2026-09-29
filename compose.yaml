@@ -46,6 +46,12 @@ x-api-environment: &api-environment
   RELAY_BASE_URL: ${RELAY_BASE_URL:-}
   RELAY_EXPORT_TOKEN: ${RELAY_EXPORT_TOKEN:-}
   RELAY_TIMEOUT_SECONDS: ${RELAY_TIMEOUT_SECONDS:-60}
+  # Records mailbox (Microsoft Graph, app registration with Mail.Read limited to this mailbox).
+  GRAPH_TENANT_ID: ${GRAPH_TENANT_ID:-}
+  GRAPH_CLIENT_ID: ${GRAPH_CLIENT_ID:-}
+  GRAPH_CLIENT_SECRET: ${GRAPH_CLIENT_SECRET:-}
+  GRAPH_MAILBOX: ${GRAPH_MAILBOX:-}
+  GRAPH_TIMEOUT_SECONDS: ${GRAPH_TIMEOUT_SECONDS:-60}
   # Second source: the restored Finance_Dashboard dump (read-only database in the same Postgres).
   # Empty = source not configured. The default is the local restored dump.
   FINANCE_REFERENCE_DATABASE_URL: ${FINANCE_REFERENCE_DATABASE_URL:-postgresql://facilities_app:facilities_dev@postgres:5432/finance_reference}

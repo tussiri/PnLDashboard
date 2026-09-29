@@ -9,7 +9,7 @@ import { monthLabel, monthShort, weekTick } from './routes'
 import { weekChange, wordsFor } from './vocab'
 
 const siteWord = (n: number) => `${n} site${n === 1 ? '' : 's'}`
-const SYNC_NAME: Record<string, string> = { winteam_sarus: 'Sarus', nightly: 'Nightly', relay: 'Relay' }
+const SYNC_NAME: Record<string, string> = { winteam_sarus: 'Sarus', nightly: 'Nightly', relay: 'Relay', mail_inbox: 'Records inbox' }
 
 /** Facts that qualify the week's numbers: catch-all and non-billed jobs, estimates, allocation, stale or failed data. */
 export function Notes({ summary, account, flags, options, revenueMonth }: { summary: AccountSummary<LeadershipRow>; account: LeadershipAccount; flags: DataFlags; options: MetricOptions; revenueMonth: string | null }) {

@@ -1,6 +1,6 @@
 import type {
   FullSyncResult, LeadershipAccount, LeadershipAccountJob, LeadershipAccountPatch, LeadershipConfig, LeadershipImportFile, LeadershipImportKind,
-  LeadershipJobMapping, LeadershipRowsQuery, LeadershipRowsResponse, LeadershipSegment, LeadershipSiteResponse, LeadershipVendorsResponse, LeadershipMonthlyResponse,
+  LeadershipJobMapping, LeadershipRowsQuery, LeadershipRowsResponse, LeadershipSegment, LeadershipSiteResponse, LeadershipVendorsResponse, LeadershipMonthlyResponse, MailInboxStatus, MailPollResult,
   RebuildResult, SyncOptions, SyncRunsResponse, SystemStatus } from './apiTypes'
 
 /**
@@ -123,6 +123,8 @@ export const api = {
   syncSarus: (options?: SyncOptions, signal?: AbortSignal) => request<FullSyncResult>('/integrations/winteam/sarus/sync', { method: 'POST', admin: true, query: syncQuery(options), signal, timeoutMs: 900_000 }),
   rebuildMarts: (signal?: AbortSignal) => request<RebuildResult>('/marts/rebuild', { method: 'POST', admin: true, signal, timeoutMs: 600_000 }),
   syncRuns: (limit = 25, signal?: AbortSignal) => request<SyncRunsResponse>('/integrations/winteam/runs', { query: { limit }, signal }),
+  mailStatus: (signal?: AbortSignal) => request<MailInboxStatus>('/integrations/mail', { signal, rawRatios: true }),
+  mailPoll: (signal?: AbortSignal) => request<MailPollResult>('/integrations/mail/poll', { method: 'POST', admin: true, signal, timeoutMs: 600_000 }),
   // Leadership labor P&L (ratios stay fractions)
   leadershipConfig: (signal?: AbortSignal) => request<LeadershipConfig>('/leadership/config', { signal, rawRatios: true }),
   leadershipRows: (query?: LeadershipRowsQuery, signal?: AbortSignal) => request<LeadershipRowsResponse>('/leadership/rows', { query: { ...query }, signal, rawRatios: true }),

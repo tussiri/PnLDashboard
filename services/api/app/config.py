@@ -179,6 +179,11 @@ class Settings:
     relay_base_url: str
     relay_export_token: str
     relay_timeout_seconds: int
+    graph_tenant_id: str
+    graph_client_id: str
+    graph_client_secret: str
+    graph_mailbox: str
+    graph_timeout_seconds: int
     companycam_match_rule: str
     ingestion_idle_in_transaction_timeout_seconds: int
     mart_rebuild_lock_timeout_seconds: int
@@ -257,6 +262,11 @@ class Settings:
             relay_base_url=_text(env, "RELAY_BASE_URL").rstrip("/"),
             relay_export_token=_text(env, "RELAY_EXPORT_TOKEN"),
             relay_timeout_seconds=_integer(env, "RELAY_TIMEOUT_SECONDS", 60, maximum=600),
+            graph_tenant_id=_text(env, "GRAPH_TENANT_ID"),
+            graph_client_id=_text(env, "GRAPH_CLIENT_ID"),
+            graph_client_secret=_text(env, "GRAPH_CLIENT_SECRET"),
+            graph_mailbox=_text(env, "GRAPH_MAILBOX"),
+            graph_timeout_seconds=_integer(env, "GRAPH_TIMEOUT_SECONDS", 60, maximum=600),
             # How a CompanyCam project is matched to a WinTeam job. Unset until the production data
             # has been probed: job_number_in_name | address | project_map.
             companycam_match_rule=_text(env, "COMPANYCAM_MATCH_RULE"),
