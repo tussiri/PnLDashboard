@@ -146,15 +146,20 @@ export function monthLaborPct(jobs: LeadershipMonthlyJob[], month: string, vendo
 
 /**
  * Months whose job cost is closed: on the self-performed jobs, job cost revenue covers at least half
- * of the month's billing. A month carried by Relay billing while its job cost is still partial (labor
- * half posted) is left out, so "actual" labor % is never read off a half-loaded month. Subcontracted
- * jobs are ignored: from July 2026 their revenue is booked to a GL line with no job.
+ * of the month's billing, and job cost direct labor reaches 70% of the month's timekeeping labor. A
+ * month whose revenue is in but whose labor is still posting (or carried by Relay billing) is left out,
+ * so "actual" labor % is never read off a half-loaded month. Subcontracted jobs are ignored: from July
+ * 2026 their revenue is booked to a GL line with no job.
  */
 export function closedMonths(data: LeadershipMonthlyResponse | undefined): string[] {
   if (!data) return []
   return data.months.filter((m) => {
-    let jobCost = 0, billing = 0
-    for (const j of data.jobs) { const x = j.months[m]; if (x && j.delivery_model !== 'subcontracted') { jobCost += x.revenue; billing += monthRevenue(x) } }
-    return billing > 0 && jobCost >= 0.5 * billing
+    let jobCost = 0, billing = 0, labor = 0, timekeeping = 0
+    for (const j of data.jobs) {
+      const x = j.months[m]
+      if (!x || j.delivery_model === 'subcontracted') continue
+      jobCost += x.revenue; billing += monthRevenue(x); labor += x.direct_labor; timekeeping += x.timekeeping_labor ?? 0
+    }
+    return billing > 0 && jobCost >= 0.5 * billing && (timekeeping === 0 || labor >= 0.7 * timekeeping)
   })
 }

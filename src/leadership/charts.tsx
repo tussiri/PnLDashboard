@@ -148,12 +148,12 @@ export function SiteLpChart({ labels, values, tones, target, details }: { labels
 }
 
 /** Weekly invoice against core, pallet and sub labor by group (the FedEx report's "where the labor dollars went"). */
-export function LaborMixChart({ labels, invoice, core, pallet, sub, subLabel }: { labels: string[]; invoice: number[]; core: number[]; pallet: number[]; sub: number[]; subLabel: string }) {
+export function LaborMixChart({ labels, invoice, core, pallet, sub, subLabel, directLabel = 'Core labor', invoiceLabel = 'Weekly invoice' }: { labels: string[]; invoice: number[]; core: number[]; pallet: number[]; sub: number[]; subLabel: string; directLabel?: string; invoiceLabel?: string }) {
   const t = useTokens()
   const o = base(t)
   const data = { labels, datasets: [
-    { label: 'Weekly invoice', data: invoice, backgroundColor: t.accent2, stack: 'i', ...bar, borderRadius: 0 },
-    { label: 'Core labor', data: core, backgroundColor: t.accent, stack: 'l', ...bar, borderRadius: 0 },
+    { label: invoiceLabel, data: invoice, backgroundColor: t.accent2, stack: 'i', ...bar, borderRadius: 0 },
+    { label: directLabel, data: core, backgroundColor: t.accent, stack: 'l', ...bar, borderRadius: 0 },
     { label: 'Pallet labor', data: pallet, backgroundColor: t.warn, stack: 'l', ...bar, borderRadius: 0 },
     { label: subLabel, data: sub, backgroundColor: t.muted, stack: 'l', ...bar, borderRadius: 0 },
   ] }

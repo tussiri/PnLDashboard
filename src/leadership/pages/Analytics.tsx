@@ -7,7 +7,7 @@ import { weekLabel } from '../routes'
 import { PageHeader, updatedLine } from '../Shell'
 import { useLeadership } from '../state'
 import { Badge, Empty, LoadError, Pills, Skeleton, SortTable, STATUS_LABEL, toneOf, type Column } from '../ui'
-import { roleBadge } from './Account'
+import { roleBadge } from './Sites'
 import { SiteDrawer } from './SiteDrawer'
 
 type Site = Metrics<LeadershipRow> & { accountName: string; groupName: string; measureName: string }
