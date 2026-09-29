@@ -3,12 +3,13 @@ import type { LeadershipAccount, LeadershipRow } from '../../services/apiTypes'
 import { includesVendor, rowsOfWeek, segmentLabel, segmentOrder, useRows, inSentence, vendorLabel } from '../data'
 import { hours, hours1, money, pct } from '../format'
 import { accountSummary, statusOf, type MetricOptions, type Rollup, type SiteMetrics as Metrics } from '../metrics'
-import { weekLabel } from '../routes'
+import { ANALYTICS_TABS, weekLabel } from '../routes'
 import { PageHeader, updatedLine } from '../Shell'
 import { useLeadership } from '../state'
 import { Badge, Empty, LoadError, Pills, Skeleton, SortTable, STATUS_LABEL, toneOf, type Column } from '../ui'
 import { roleBadge } from './Sites'
 import { SiteDrawer } from './SiteDrawer'
+import { AnalyticsUnits } from './AnalyticsUnits'
 
 type Site = Metrics<LeadershipRow> & { accountName: string; groupName: string; measureName: string }
 interface Group { key: string; name: string; rollup: Rollup; target: number; watchBand?: number; sites: number; measureName: string }
@@ -100,7 +101,12 @@ export function Analytics() {
   const subtitle = [weekStart ? weekLabel(weekStart) : null, updatedLine(config.data)].filter(Boolean).join('. ')
   const set = (next: Parameters<typeof navigate>[0]) => navigate(next, { replace: true })
   return <>
-    <PageHeader title="Analytics" subtitle={subtitle} />
+    <PageHeader title="Analytics" subtitle={subtitle} target={route.analyticsTab !== 'units'} />
+    <nav className="tabs" role="tablist" aria-label="Analytics views">
+      {ANALYTICS_TABS.map((tab) => <button key={tab} type="button" role="tab" className="tab" aria-selected={(route.analyticsTab ?? 'accounts') === tab}
+        onClick={() => navigate({ view: 'analytics', analyticsTab: tab === 'units' ? 'units' : undefined })}>{tab === 'units' ? 'Business units' : 'Accounts'}</button>)}
+    </nav>
+    {route.analyticsTab === 'units' ? <AnalyticsUnits /> : <>
     {q.error ? <LoadError error={q.error} onRetry={q.refetch} /> : !q.data ? <Skeleton height={400} /> : !sites.length ? <Empty>No data for this week.</Empty> : <>
       <div className="card">
         <div className="ct"><span>Accounts</span>{scope && <button type="button" className="linkbtn" onClick={() => set({ account: undefined, segment: undefined })}>All accounts</button>}</div>
@@ -121,6 +127,7 @@ export function Analytics() {
           onRowClick={(s) => navigate({ site: { company: s.company ?? '', job: s.job_number } })}
           rowLabel={(s) => `Open ${s.site_name}`} rowClass={(s) => (s.role !== 'site' ? 'dim' : '')} />
       </div>
+    </>}
     </>}
     {route.site && <SiteDrawer company={route.site.company} job={route.site.job} />}
   </>

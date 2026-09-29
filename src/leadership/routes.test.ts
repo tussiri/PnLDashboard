@@ -10,6 +10,9 @@ describe('leadership routes', () => {
       { view: 'account', account: 'fedex', tab: 'sites', selfOnly: true, basis: 'last_month' },
       { view: 'analytics', week: '2026-09-20', account: 'other', status: 'over', q: 'elementary', segment: 'High School' },
       { view: 'admin', adminTab: 'imports' },
+      { view: 'admin', adminTab: 'allocations' },
+      { view: 'company', week: '2026-09-20' },
+      { view: 'analytics', analyticsTab: 'units', week: '2026-09-20' },
     ]
     for (const route of routes) expect(parseRoute(formatRoute(route))).toEqual(route)
   })

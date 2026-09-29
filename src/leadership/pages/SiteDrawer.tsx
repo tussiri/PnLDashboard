@@ -53,6 +53,7 @@ export function SiteDrawer({ company, job }: { company: string; job: string }) {
           <Kpi label={m} value={pct(current.measurePct)} tone={toneOf(current.status)} sub={`${current.measurePct == null ? '' : `${pts(current.measurePct - current.target)} vs ${pct(current.target)} target; `}${monthLabel(current.revenue_month)} ${pct(current.priorLaborPct)}`} />
           <Kpi label="Hours" value={hours1(current.hours)} sub={`${hours1(current.ot_hours)} OT (${pct(current.otPct)})`} />
           <Kpi label="Hours to cut" value={<>{hours1(current.overHours / 7)}<span className="of">/day</span></>} tone={current.overHours > 0.5 ? 'bad' : 'ok'} sub={`${hours1(current.overHours)}h this week; base rate ${rate(current.baseRate)}`} />
+          <Kpi label="Margin" value={money(current.margin)} tone={current.margin < 0 ? 'bad' : ''} sub={current.allocation > 0 ? `After ${money(current.allocation)} alloc.` : undefined} />
           {(includesVendor(account) || (current.sub_week ?? 0) > 0) && <Kpi label={vendorLabel(account)} value={money(current.sub_week)} sub={includesVendor(account) ? `Total labor ${money(current.cost)}` : undefined} />}
         </div> : <Empty>No data for this week.</Empty>}
         {weeks.length > 1 && <ChartCard title={`${m} by week`} height={200}

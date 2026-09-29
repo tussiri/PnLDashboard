@@ -33,6 +33,7 @@ export function Sites({ account, summary, options, selfOnly }: { account: Leader
   const hasVariable = summary.sites.some((r) => variableWk(r, options) != null)
   const hasPallet = summary.sites.some((r) => palletOf(r) > 0 || (r.kids?.length ?? 1) > 1)
   const vendor = includesVendor(account) && !selfOnly
+  const allocated = summary.sites.some((r) => r.allocation > 0)
   const fixed = (r: Row) => r.invoice - (variableWk(r, options) ?? 0)
   const budget = (r: Row) => (r.invoice > 0 ? r.invoice * r.target : null)
   const variance = (r: Row) => (r.invoice > 0 ? r.cost - r.invoice * r.target : null)
@@ -57,6 +58,10 @@ export function Sites({ account, summary, options, selfOnly }: { account: Leader
       : [{ key: 'prior', header: w.prior(monthShort(priorMonth)), value: (r: Row) => r.priorLaborPct, render: (r: Row) => <span className="neutral">{pct(r.priorLaborPct)}</span> }]),
     { key: 'bud', header: 'Budget', value: budget, render: (r) => <span className="neutral">{money(budget(r))}</span> },
     { key: 'var$', header: '$ Var', value: variance, render: (r) => { const v = variance(r); return <span className={v == null ? '' : v > 0 ? 'bad' : 'ok'}>{money(v)}</span> } },
+    ...(allocated ? [
+      { key: 'alloc', header: 'Alloc $', value: (r: Row) => r.allocation, render: (r: Row) => <span className="neutral">{money(r.allocation)}</span> },
+      { key: 'mgn', header: 'Margin', value: (r: Row) => r.margin, render: (r: Row) => <span className={r.margin < 0 ? 'bad' : ''}>{money(r.margin)}</span> },
+    ] : []),
     { key: 'hrs', header: 'Hours', value: (r) => r.hours, render: (r) => hours1(r.hours) },
     { key: 'oth', header: 'OT hrs', value: (r) => r.ot_hours, render: (r) => hours1(r.ot_hours) },
     { key: 'otp', header: 'OT %', value: (r) => r.otPct, render: (r) => <span className={r.otPct > 0.25 ? 'bad' : r.otPct > 0.15 ? 'warn' : ''}>{pct(r.otPct)}</span> },
@@ -72,6 +77,7 @@ export function Sites({ account, summary, options, selfOnly }: { account: Leader
     <td>{money(s.invoice)}</td><td>{money(sum(directOf))}</td>{hasPallet && <td>{money(sum(palletOf))}</td>}{vendor && <td>{money(s.vendor)}</td>}<td>{money(s.cost)}</td>
     <td className={toneOf(statusOf(s.measurePct, options.target, options.watchBand))}>{pct(s.measurePct)}</td>{Array.from({ length: priorCols }, (_, i) => <td key={i} />)}
     <td className="neutral">{money(sum(budget))}</td><td className={totalVar > 0 ? 'bad' : 'ok'}>{money(totalVar)}</td>
+    {allocated && <><td className="neutral">{money(s.allocation)}</td><td className={s.margin < 0 ? 'bad' : ''}>{money(s.margin)}</td></>}
     <td>{hours1(s.hours)}</td><td>{hours1(s.otHours)}</td><td>{pct(s.otPct)}</td><td>{hours1(sum((r) => r.overHours))}</td><td></td></tr>
   return <>
     <Pills label="Filter sites" options={groups.map((o) => ({ value: o, label: o }))} value={filter} onChange={setFilter} />

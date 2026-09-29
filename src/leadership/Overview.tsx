@@ -58,7 +58,7 @@ export const laborJobs = (account: LeadershipAccount, jobs: LeadershipMonthlyJob
   jobs.filter((j) => j.role !== 'non_billed' && !(account.split_subcontracted && j.delivery_model === 'subcontracted'))
 
 /** Every account's overview: headline figures, notes, one card per group, the trend, labor % by site and where the labor dollars went. */
-export function Overview({ account, rows, summary, options, flags }: { account: LeadershipAccount; rows: LeadershipRow[]; summary: AccountSummary<LeadershipRow>; options: MetricOptions; flags: DataFlags }) {
+export function Overview({ account, rows, summary, options, flags, headline = true }: { account: LeadershipAccount; rows: LeadershipRow[]; summary: AccountSummary<LeadershipRow>; options: MetricOptions; flags: DataFlags; headline?: boolean }) {
   const t = useTokens()
   const vocab = useVocab()
   const w = wordsFor(vocab)
@@ -119,17 +119,18 @@ export function Overview({ account, rows, summary, options, flags }: { account: 
   const subLabel = w.subCol(vendorLabel(account))
 
   return <>
-    <div className="kpi-lg">
+    {headline && <div className="kpi-lg">
       <Kpi label={w.invoice} value={money(summary.all.invoice)} sub={basis ?? undefined} />
       <Kpi label={w.labor} value={money(a.cost)} sub={join(laborParts, change(a.cost, prev?.cost, money)) || undefined} />
       <Kpi label={w.accountLaborPct} value={pct(a.measurePct)} tone={toneOf(accountStatus)}
         sub={join(`Target ${pct(target)}`, lastClosed ? `${monthLabel(lastClosed)} actual ${pct(actual)}` : null,
           a.measurePct != null && prev?.measurePct != null ? weekChange(a.measurePct - prev.measurePct, vocab) : null, catchJobs.length ? `sites only ${pct(summary.billed.measurePct)}` : null)} />
       <Kpi label={w.hours} value={hours(a.hours)} sub={join(`${hours(a.otHours)} OT/DT (${pct(a.otPct)})`, palHrs ? `pallet ${hours(palHrs)}` : null, change(a.hours, prev?.hours, hours))} />
-      <Kpi label="OT cost" value={money(a.otDollars)} sub={`Premium ${money(a.otDollars / 3)}`} />
+      <Kpi label="Margin" value={money(a.margin)} tone={a.margin < 0 ? 'bad' : ''}
+        sub={join(pct(a.marginPct), a.allocation > 0 ? `after ${moneyK(a.allocation)} alloc.` : null)} />
       <Kpi label={w.hoursOver} value={hours(over)} tone={over > 0 ? 'bad' : 'ok'}
         sub={join(`${hours1(over / 7)}/day`, w.over(summary.billed.over, billed.length), catchJobs.length ? `${hours(summary.catchAllOverHours)} catch-all` : null, unbilled.length ? `${hours(unbilledHours)} unbilled` : null)} />
-    </div>
+    </div>}
     <Notes summary={summary} account={account} flags={flags} options={options} revenueMonth={revenueMonth} />
     <div className="seg-grid">
       {groups.map((g) => {

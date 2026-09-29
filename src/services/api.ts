@@ -1,6 +1,6 @@
 import type {
   FullSyncResult, LeadershipAccount, LeadershipAccountJob, LeadershipAccountPatch, LeadershipConfig, LeadershipImportFile, LeadershipImportKind,
-  LeadershipJobMapping, LeadershipRowsQuery, LeadershipRowsResponse, LeadershipSegment, LeadershipSiteResponse, LeadershipVendorsResponse, LeadershipMonthlyResponse, MailInboxStatus, MailPollResult,
+  LeadershipJobMapping, LeadershipRowsQuery, LeadershipRowsResponse, LeadershipSegment, LeadershipSiteResponse, LeadershipVendorsResponse, LeadershipMonthlyResponse, MailInboxStatus, MailPollResult, CompanyResponse, AllocationStatus, AllocationSettings, AllocationMonth,
   RebuildResult, SyncOptions, SyncRunsResponse, SystemStatus } from './apiTypes'
 
 /**
@@ -132,6 +132,11 @@ export const api = {
     request<LeadershipSiteResponse>(`/leadership/sites/${encodeURIComponent(company)}/${encodeURIComponent(jobNumber)}`, { query: { ...query }, signal, rawRatios: true }),
   leadershipVendors: (account: string, months = 6, signal?: AbortSignal) => request<LeadershipVendorsResponse>('/leadership/vendors', { query: { account, months }, signal, rawRatios: true }),
   leadershipMonthly: (account: string, months = 3, signal?: AbortSignal) => request<LeadershipMonthlyResponse>('/leadership/monthly', { query: { account, months }, signal, rawRatios: true }),
+  leadershipCompany: (months = 14, signal?: AbortSignal) => request<CompanyResponse>('/leadership/company', { query: { months }, signal, rawRatios: true }),
+  allocationStatus: (signal?: AbortSignal) => request<AllocationStatus>('/leadership/allocations', { admin: true, signal, rawRatios: true }),
+  updateAllocationSettings: (settings: Partial<AllocationSettings>, signal?: AbortSignal) => request<{ settings: AllocationSettings }>('/leadership/allocations', { method: 'PUT', body: settings, admin: true, signal, rawRatios: true }),
+  updateAllocationMonth: (month: string, values: { burden_rate: number | null; overhead_pool: number | null }, signal?: AbortSignal) =>
+    request<{ months: AllocationMonth[] }>(`/leadership/allocations/months/${month.slice(0, 7)}`, { method: 'PUT', body: values, admin: true, signal, rawRatios: true }),
   leadershipUpdateAccount: (slug: string, patch: LeadershipAccountPatch, signal?: AbortSignal) =>
     request<LeadershipAccount>(`/leadership/accounts/${encodeURIComponent(slug)}`, { method: 'PUT', body: patch, admin: true, signal }),
   leadershipReplaceSegments: (slug: string, segments: Pick<LeadershipSegment, 'name' | 'target_labor_pct'>[], signal?: AbortSignal) =>

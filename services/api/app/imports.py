@@ -10,7 +10,8 @@ Two feeds, CSV (UTF-8, header row) or XLSX (first sheet):
   revenue_fixed / revenue_variable columns split revenue into contract billing and variable (OS,
   pallet) billing for the Pallet view.
 * `income_statement` - Trend Income Statement lines by account and month (account, period, line,
-  amount). A file replaces its accounts' months. Lines are normalized to IS_LINES keys.
+  amount). A file replaces its accounts' months. Lines are normalized to IS_LINES keys. Account
+  "Company" (or All, Total, Crane IFS) is the company-wide statement behind the allocations.
 
 Headers are matched case- and punctuation-insensitively against the WinTeam column names in
 FIELD_ALIASES, so "TotalLaborDollars", "Total Labor Dollars" and "total_labor_dollars" are the same
@@ -37,6 +38,9 @@ from . import native_exports
 logger = logging.getLogger(__name__)
 
 KINDS = ("pay_report", "job_cost", "income_statement")
+# Income statement Account values that mean the company-wide statement (allocations, Company view).
+COMPANY_SCOPE = "__company__"
+COMPANY_WORDS = {"company", "all", "total", "crane ifs", "all companies", "consolidated"}
 
 FIELD_ALIASES: dict[str, dict[str, tuple[str, ...]]] = {
     "pay_report": {
@@ -346,8 +350,9 @@ def _load_job_cost(cursor: Any, file_id: int, records: list[dict[str, Any]], rep
     for r in records:  # a file may split one job-month over several rows
         key = (r["job_number"], r["period"])
         acc = merged.setdefault(key, {**{k: Decimal(0) for k in ZERO_DEFAULT}, "job_name": r.get("job_name"), "company": r["company"],
-                                      "actual_hours": None, "overtime_hours": None, "revenue_fixed": None, "revenue_variable": None})
-        nullable = ("actual_hours", "overtime_hours", "revenue_fixed", "revenue_variable")
+                                      "actual_hours": None, "overtime_hours": None, "revenue_fixed": None, "revenue_variable": None,
+                                      "management_wages": None})
+        nullable = ("actual_hours", "overtime_hours", "revenue_fixed", "revenue_variable", "management_wages")
         for k in ZERO_DEFAULT:
             if k in r and r[k] is not None and k not in nullable:
                 acc[k] += r[k]
@@ -362,8 +367,8 @@ def _load_job_cost(cursor: Any, file_id: int, records: list[dict[str, Any]], rep
             """
             INSERT INTO core.fact_job_cost_month (source, job_number, month, job_name, company, revenue, direct_labor,
               payroll_taxes_insurance, materials, subcontractors, equipment_supplies, other_direct_costs, total_direct_costs,
-              gross_profit, actual_hours, overtime_hours, revenue_fixed, revenue_variable, lineage, warehouse_loaded_at)
-            VALUES ('export_import', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, now())
+              gross_profit, actual_hours, overtime_hours, revenue_fixed, revenue_variable, management_wages, lineage, warehouse_loaded_at)
+            VALUES ('export_import', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, now())
             ON CONFLICT (source, job_number, month) DO UPDATE SET
               job_name = EXCLUDED.job_name, company = EXCLUDED.company, revenue = EXCLUDED.revenue,
               direct_labor = EXCLUDED.direct_labor, payroll_taxes_insurance = EXCLUDED.payroll_taxes_insurance,
@@ -372,11 +377,12 @@ def _load_job_cost(cursor: Any, file_id: int, records: list[dict[str, Any]], rep
               total_direct_costs = EXCLUDED.total_direct_costs, gross_profit = EXCLUDED.gross_profit,
               actual_hours = EXCLUDED.actual_hours, overtime_hours = EXCLUDED.overtime_hours,
               revenue_fixed = EXCLUDED.revenue_fixed, revenue_variable = EXCLUDED.revenue_variable,
-              lineage = EXCLUDED.lineage, warehouse_loaded_at = now()
+              management_wages = EXCLUDED.management_wages, lineage = EXCLUDED.lineage, warehouse_loaded_at = now()
             """,
             (job_number, month, r["job_name"], r["company"], r["revenue"], r["direct_labor"], r["payroll_taxes_insurance"],
              r["materials"], r["subcontractors"], r["equipment_supplies"], r["other_direct_costs"], direct, gross,
-             r["actual_hours"], r["overtime_hours"], r["revenue_fixed"], r["revenue_variable"], json.dumps({"import_file_id": file_id})),
+             r["actual_hours"], r["overtime_hours"], r["revenue_fixed"], r["revenue_variable"], r["management_wages"],
+             json.dumps({"import_file_id": file_id})),
         )
 
 
@@ -397,10 +403,17 @@ def _load_income_statement(cursor: Any, file_id: int, records: list[dict[str, An
         key = (r["account"], r["period"], r["line"])
         totals[key] = totals.get(key, Decimal(0)) + r["amount"]
     for slug, month in {(k[0], k[1]) for k in totals}:
-        cursor.execute("DELETE FROM core.fact_income_statement_month WHERE account_slug = %s AND month = %s", (slug, month))
+        if slug == COMPANY_SCOPE:
+            cursor.execute("DELETE FROM core.fact_company_income_statement_month WHERE month = %s", (month,))
+        else:
+            cursor.execute("DELETE FROM core.fact_income_statement_month WHERE account_slug = %s AND month = %s", (slug, month))
     cursor.executemany(
         "INSERT INTO core.fact_income_statement_month (account_slug, month, line, amount, import_file_id) VALUES (%s, %s, %s, %s, %s)",
-        [(slug, month, line, amount, file_id) for (slug, month, line), amount in totals.items()],
+        [(slug, month, line, amount, file_id) for (slug, month, line), amount in totals.items() if slug != COMPANY_SCOPE],
+    )
+    cursor.executemany(
+        "INSERT INTO core.fact_company_income_statement_month (month, line, amount, import_file_id) VALUES (%s, %s, %s, %s)",
+        [(month, line, amount, file_id) for (slug, month, line), amount in totals.items() if slug == COMPANY_SCOPE],
     )
 
 
@@ -458,7 +471,8 @@ def load_file(conn: Any, file_name: str, content: bytes, *, kind: str | None = N
         if kind == "income_statement":
             slugs, known = _account_slugs(cursor), []
             for r in parsed.records:
-                slug = slugs.get(str(r["account"]).strip().lower())
+                label = str(r["account"]).strip().lower()
+                slug = COMPANY_SCOPE if label in COMPANY_WORDS else slugs.get(label)
                 if slug is None:
                     parsed.error(f"unknown account {r['account']!r}: use an account slug or name")
                 else:

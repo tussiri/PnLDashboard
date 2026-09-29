@@ -121,6 +121,10 @@ dashboard sites (FedEx). Name the file `income_statement_*`; a file replaces the
 | Line (income statement line description) | yes |
 | Amount | yes |
 
+For the company view and the allocations, send the company-wide statement with Account = `Company`
+(also accepted: All, Total, Crane IFS, Consolidated). Payroll burden reads payroll taxes and workers comp
+against wages; overhead reads the G&A (admin) lines.
+
 Lines the view reads, matched case- and punctuation-insensitively: Revenue (Total Revenue), the
 GL-only subcontracted revenue line (Indstrl, Mnftng, Wrhs - Subcontracted), Wages (Direct Wages),
 Management Wages, Payroll Taxes, Workers Comp, Subcontractors, Supplies, Vehicle, Travel, Insurance,

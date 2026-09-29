@@ -144,6 +144,16 @@ documented WinTeam GET endpoints (WinTeamAPI.txt)
 - `services/api/app/{accounts,imports,leadership,nightly}.py`, `routers/leadership.py`: account
   configuration, export imports, the weekly leadership mart, the nightly schedule, the routes
 
+## Company view and allocations
+
+- **Company** (everyone who sees every account): revenue, gross profit and labor % year to date from
+  closed job cost months, the month trend, business units and every account this week. Suspect months
+  (a subcontractor or labor share far above the rest) are flagged.
+- **Corporate allocations** (`app/allocations.py`, Admin > Allocations): management wages (GL 40200),
+  payroll burden and G&A overhead, from the Job Cost Analysis and the company Trend Income Statement,
+  with manual monthly overrides. They show as margin after allocations, never inside labor %.
+- **Analytics > Business units** (admin): the old Executive Overview on the weekly data.
+
 ## Report exports by email
 
 The worker reads records@smcraneifs.com through Microsoft Graph (read-only) and loads the dashboard's

@@ -12,10 +12,12 @@
  * `target` is a percentage (64.5) and overrides the account target while present.
  */
 
-export type View = 'home' | 'account' | 'analytics' | 'admin'
+export type View = 'home' | 'company' | 'account' | 'analytics' | 'admin'
 export const ACCOUNT_TABS = ['overview', 'sites', 'pallet', 'over-target', 'overtime', 'income-statement', 'subcontracted', 'map', 'vendors'] as const
 export type AccountTab = (typeof ACCOUNT_TABS)[number]
-export const ADMIN_TABS = ['accounts', 'jobs', 'imports', 'data', 'users'] as const
+export const ADMIN_TABS = ['accounts', 'jobs', 'allocations', 'imports', 'data', 'users'] as const
+export const ANALYTICS_TABS = ['accounts', 'units'] as const
+export type AnalyticsTab = (typeof ANALYTICS_TABS)[number]
 export type AdminTab = (typeof ADMIN_TABS)[number]
 
 export interface Route {
@@ -23,6 +25,8 @@ export interface Route {
   account?: string
   tab?: AccountTab
   adminTab?: AdminTab
+  /** Analytics: the drill-down (accounts) or the business units overview (units). */
+  analyticsTab?: AnalyticsTab
   week?: string
   target?: number
   /** Site drawer: company and job number. */
@@ -50,7 +54,10 @@ export function parseRoute(hash: string): Route {
     route.view = 'account'
     if (second) route.account = second
     route.tab = (ACCOUNT_TABS as readonly string[]).includes(third ?? '') ? (third as AccountTab) : 'overview'
-  } else if (first === 'analytics') route.view = 'analytics'
+  } else if (first === 'analytics') {
+    route.view = 'analytics'
+    if (second === 'units') route.analyticsTab = 'units'
+  } else if (first === 'company') route.view = 'company'
   else if (first === 'admin') {
     route.view = 'admin'
     route.adminTab = (ADMIN_TABS as readonly string[]).includes(second ?? '') ? (second as AdminTab) : 'accounts'
@@ -81,7 +88,7 @@ export function formatRoute(route: Route): string {
     ? `account/${encodeURIComponent(route.account ?? '')}${route.tab && route.tab !== 'overview' ? `/${route.tab}` : ''}`
     : route.view === 'admin'
       ? `admin${route.adminTab && route.adminTab !== 'accounts' ? `/${route.adminTab}` : ''}`
-      : route.view
+      : route.view === 'analytics' && route.analyticsTab === 'units' ? 'analytics/units' : route.view
   const params = new URLSearchParams()
   if (route.account && route.view !== 'account' && route.view !== 'admin') params.set('account', route.account)
   if (route.week && route.view !== 'admin') params.set('week', route.week)
