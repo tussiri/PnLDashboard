@@ -5,7 +5,6 @@ import { segmentLabel, useRows, vendorLabel } from '../data'
 import { hours1, rate } from '../format'
 import { cutRow, cutSummary, siteMetrics, type AccountSummary, type CutRow, type MetricOptions } from '../metrics'
 import { weekTick } from '../routes'
-import { useLeadership } from '../state'
 import { Empty, Kpi, Pills, Skeleton, Swatch } from '../ui'
 
 type Row = CutRow<LeadershipRow>

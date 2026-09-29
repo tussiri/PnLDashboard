@@ -1,17 +1,18 @@
-import { lazy, Suspense, useMemo, useState } from 'react'
+import { lazy, Suspense, useMemo } from 'react'
 import type { LeadershipAccount, LeadershipRow } from '../../services/apiTypes'
 import { ChartCard, Swatch } from '../ui'
 import { OtHoursChart, useTokens } from '../charts'
-import { dataFlags, includesVendor, isSubcontracted, rowsOfWeek, segmentLabel, segmentOrder, useRows, vendorLabel } from '../data'
+import { dataFlags, isSubcontracted, rowsOfWeek, segmentLabel, segmentOrder, useMonthly, useRows, vendorLabel } from '../data'
 import { hours, hours1, money, pct } from '../format'
-import { accountSummary, type AccountSummary as Summary, type MetricOptions, type SiteMetrics as Metrics } from '../metrics'
+import { accountSummary, type AccountSummary as Summary, type SiteMetrics as Metrics } from '../metrics'
 import { Overview } from '../Overview'
-import { ACCOUNT_TABS, monthLabel, monthShort, weekLabel, type AccountTab } from '../routes'
+import { ACCOUNT_TABS, monthLabel, weekLabel, type AccountTab } from '../routes'
 import { PageHeader, updatedLine } from '../Shell'
 import { useLeadership } from '../state'
-import { Badge, Empty, Kpi, LoadError, Pills, Skeleton, SortTable, toneOf, VocabContext, type Column } from '../ui'
+import { Empty, Kpi, LoadError, Skeleton, SortTable, toneOf, VocabContext, type Column } from '../ui'
 import { HoursToCut } from './HoursToCut'
-import { FedexOverview, FedexSites, IncomeStatementTab, PalletTab, SubcontractedTab } from './FedexViews'
+import { IncomeStatementTab, PalletTab, SubcontractedTab } from './ReportViews'
+import { Sites } from './Sites'
 import { tabLabel, tabsFor, vocabOf } from '../vocab'
 import { SiteDrawer } from './SiteDrawer'
 import { Vendors } from './Vendors'
@@ -24,57 +25,11 @@ const SiteMap = lazy(() => import('./SiteMap'))
 
 const shortName = (name: string) => name.replace(/^[A-Z][A-Za-z]+ ?- ?/, '').replace(/ (Elementary|Middle|High) School$/, ' $1').replace(' Senior High School', ' Sr High')
 
-export const roleBadge = (r: Metrics) => (r.role === 'catch_all' ? <Badge status="none" label="Catch-all" /> : r.role === 'non_billed' ? <Badge status="none" label="Non-billed" /> : <Badge status={r.status} />)
-
 function useSiteOpener() {
   const { navigate } = useLeadership()
   return (r: LeadershipRow) => navigate({ site: { company: r.company ?? '', job: r.job_number } })
 }
 
-function SitesTab({ account, summary, priorShort, selfOnly }: { account: LeadershipAccount; summary: AccountSummary; priorShort: string; selfOnly: boolean }) {
-  const [filter, setFilter] = useState('All')
-  const open = useSiteOpener()
-  const hasCatch = summary.sites.some((r) => r.role === 'catch_all')
-  const hasNb = summary.sites.some((r) => r.role === 'non_billed')
-  const vendor = includesVendor(account) && !selfOnly
-  const options = ['All', ...summary.segments.map((s) => s.segment), ...(hasCatch ? ['Catch-all'] : []), ...(hasNb ? ['Non-billed'] : [])]
-  const rows = summary.sites.filter((r) => filter === 'All' || (filter === 'Catch-all' ? r.role === 'catch_all' : filter === 'Non-billed' ? r.role === 'non_billed' : r.segment === filter && r.role === 'site'))
-  // The weekly report's site breakdown: Budget is total labor allowed at target; $ Var is total labor
-  // minus budget (in parentheses when under).
-  const budget = (r: SiteMetrics) => (r.invoice > 0 ? r.invoice * r.target : null)
-  const variance = (r: SiteMetrics) => (r.invoice > 0 ? r.cost - r.invoice * r.target : null)
-  const cols: Column<SiteMetrics>[] = [
-    { key: 'job', header: 'Job', left: true, value: (r) => r.job_number },
-    { key: 'name', header: 'Site', left: true, value: (r) => r.site_name, className: 'nm' },
-    { key: 'inv', header: 'Invoicing', value: (r) => r.invoice, render: (r) => money(r.invoice) },
-    { key: 'lab', header: 'Direct labor', value: (r) => r.labor, render: (r) => money(r.labor) },
-    ...(vendor ? [
-      { key: 'ven', header: vendorLabel(account), value: (r: SiteMetrics) => r.vendor, render: (r: SiteMetrics) => money(r.vendor) },
-      { key: 'tot', header: 'Total labor', value: (r: SiteMetrics) => r.cost, render: (r: SiteMetrics) => money(r.cost) },
-    ] : []),
-    { key: 'lp', header: 'Labor %', value: (r) => r.measurePct, render: (r) => <span className={toneOf(r.status)}>{pct(r.measurePct)}</span> },
-    { key: 'prior', header: `${priorShort} actual`, value: (r) => r.priorLaborPct, render: (r) => <span className="neutral">{pct(r.priorLaborPct)}</span> },
-    { key: 'bud', header: 'Budget', value: budget, render: (r) => <span className="neutral">{money(budget(r))}</span> },
-    { key: 'var', header: '$ Var', value: variance, render: (r) => { const v = variance(r); return <span className={v == null ? '' : v > 0 ? 'bad' : 'ok'}>{money(v)}</span> } },
-    { key: 'hrs', header: 'Hours', value: (r) => r.hours, render: (r) => hours1(r.hours) },
-    { key: 'oth', header: 'OT hrs', value: (r) => r.ot_hours, render: (r) => hours1(r.ot_hours) },
-    { key: 'otp', header: 'OT %', value: (r) => r.otPct, render: (r) => <span className={r.otPct > 0.25 ? 'bad' : r.otPct > 0.15 ? 'warn' : ''}>{pct(r.otPct)}</span> },
-    { key: 'st', header: 'Status', value: (r) => r.measurePct, render: roleBadge, csv: (r) => (r.role === 'site' ? r.status : r.role) },
-  ]
-  const s = accountSummary(rows, { target: 0 }, [])
-  const sum = (f: (r: SiteMetrics) => number | null) => rows.reduce((a, r) => a + (f(r) ?? 0), 0)
-  const cost = sum((r) => r.cost)
-  const totalVar = sum(variance)
-  const tot = <tr className="tot"><td></td><td className="l">Total ({rows.length})</td><td>{money(s.all.invoice)}</td><td>{money(s.all.labor)}</td>
-    {vendor && <><td>{money(sum((r) => r.vendor))}</td><td>{money(cost)}</td></>}
-    <td>{pct(cost / (s.all.invoice || NaN))}</td><td className="neutral">{pct(s.all.priorLaborPct)}</td><td className="neutral">{money(sum(budget))}</td>
-    <td className={totalVar > 0 ? 'bad' : 'ok'}>{money(totalVar)}</td><td>{hours1(s.all.hours)}</td><td>{hours1(s.all.otHours)}</td><td>{pct(s.all.otPct)}</td><td></td></tr>
-  return <>
-    <Pills label="Filter sites" options={options.map((o) => ({ value: o, label: o }))} value={filter} onChange={setFilter} />
-    <div className="card"><SortTable caption={`${account.name} sites`} rows={rows} columns={cols} defaultSort={{ key: 'lp', dir: -1 }} total={tot}
-      rowClass={(r) => (r.role !== 'site' ? 'dim' : '')} onRowClick={open} rowLabel={(r) => `Open ${r.site_name}`} csvName={`${account.slug}-sites`} /></div>
-  </>
-}
 
 function OvertimeTab({ account, summary }: { account: LeadershipAccount; summary: AccountSummary }) {
   const t = useTokens()
@@ -123,12 +78,15 @@ export function Account() {
   const options = useMemo(() => optionsFor(account), [optionsFor, account])
   const summary = useMemo(() => (account && rows.length ? accountSummary(rows, options, segmentOrder(account)) : null), [account, rows, options])
   const flags = useMemo(() => dataFlags(config.data, weekStart, rows), [config.data, weekStart, rows])
-  const priorShort = monthShort(rows.find((r) => r.revenue_month)?.revenue_month)
   const subtitle = [weekStart ? weekLabel(weekStart) : null, updatedLine(config.data)].filter(Boolean).join('. ')
   const setTab = (next: AccountTab) => navigate({ view: 'account', account: account?.slug, tab: next })
-  const tabs = tabsFor(account, ACCOUNT_TABS)
+  const monthly = useMonthly(account?.slug)
+  const tabs = tabsFor(account, ACCOUNT_TABS, {
+    pallet: rows.some((r) => (r.kids?.length ?? 1) > 1),
+    subcontracted: Boolean(account?.split_subcontracted) || subcontracted > 0 || Boolean(monthly.data?.jobs.some((j) => j.delivery_model === 'subcontracted' && j.role === 'site')),
+    incomeStatement: Boolean(account?.split_subcontracted) || Object.keys(monthly.data?.income_statement ?? {}).length > 0,
+  })
   const vocab = vocabOf(account)
-  const fedex = vocab === 'fedex'
   let body
   if (rowsQuery.error) body = <LoadError error={rowsQuery.error} onRetry={rowsQuery.refetch} />
   else if (!rowsQuery.data || !account) body = <Skeleton height={360} />
@@ -137,15 +95,13 @@ export function Account() {
   else if (tab === 'income-statement' && tabs.includes(tab)) body = <IncomeStatementTab account={account} options={options} />
   else if (!summary) body = <Empty>No data for this week.</Empty>
   else if (tab === 'pallet' && tabs.includes(tab)) body = <PalletTab account={account} summary={summary} options={options} />
-  else if (tab === 'overview' && fedex) body = <FedexOverview account={account} rows={rows} summary={summary} options={options} />
-  else if (tab === 'sites' && fedex) body = <FedexSites account={account} summary={summary} options={options} />
   else if (tab === 'overview' || !tabs.includes(tab)) body = <Overview account={account} rows={rows} summary={summary} options={options} flags={flags} />
-  else if (tab === 'sites') body = <SitesTab account={account} summary={summary} priorShort={priorShort} selfOnly={selfOnly} />
+  else if (tab === 'sites') body = <Sites account={account} summary={summary} options={options} selfOnly={selfOnly} />
   else if (tab === 'over-target') body = <HoursToCut account={account} summary={summary} options={options} />
   else if (tab === 'overtime') body = <OvertimeTab account={account} summary={summary} />
   else body = <Suspense fallback={<Skeleton height={520} />}><SiteMap account={account} summary={summary} /></Suspense>
   const basis = options.invoiceBasis ?? 'last_month'
-  const basisControl = fedex && tab !== 'vendors' && tab !== 'subcontracted' && tab !== 'income-statement' && <>
+  const basisControl = account?.revenue_method !== 'weekly_billing' && tab !== 'vendors' && tab !== 'subcontracted' && tab !== 'income-statement' && <>
     <label htmlFor="basis">Invoice basis</label>
     <select id="basis" value={basis} onChange={(e) => navigate({ basis: e.target.value === account?.invoice_basis ? undefined : e.target.value as 'run_rate_3m' | 'last_month' }, { replace: true })}>
       <option value="run_rate_3m">3-month run rate</option><option value="last_month">{monthLabel(rows.find((r) => r.revenue_month)?.revenue_month ?? null)} actual</option>

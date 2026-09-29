@@ -1,182 +1,24 @@
 /**
- * The FedEx Labor P&L report's views (vocabulary 'fedex'): Account Overview, Sites, Pallet, Income
- * Statement and Subcontracted Sites. Sites carry their pallet job rolled in (data.ts prepareRows);
- * subcontracted sites are left out of the labor views and scored on AR − AP instead.
+ * Views from the FedEx Labor P&L report, shown for any account with the data: Pallet (accounts with
+ * pallet jobs), Income Statement (a loaded Trend Income Statement) and Subcontracted Sites (AR − AP
+ * margin per subcontracted site).
  */
 import { useMemo, useState, type ReactNode } from 'react'
 import type { LeadershipAccount, LeadershipMonthlyJob, LeadershipRow } from '../../services/apiTypes'
-import { LaborMixChart, MarginChart, MonthWeekTrendChart, SiteLpChart, useTokens } from '../charts'
-import { closedMonths, dataFlags, monthLaborPct, monthRevenue, PALLET_GROUPS, rowsOfWeek, segmentOrder, siteMonths, useMonthly, useRows, vendorLabel } from '../data'
+import { MarginChart, useTokens } from '../charts'
+import { closedMonths, monthRevenue, siteMonths, useMonthly, vendorLabel } from '../data'
 import { hours, hours1, money, moneyK, pct } from '../format'
 import { accountSummary, statusOf, type AccountSummary, type MetricOptions, type SiteMetrics } from '../metrics'
-import { Notes } from '../Overview'
-import { monthLabel, monthShort, weekTick } from '../routes'
-import { useLeadership } from '../state'
-import { Badge, ChartCard, Empty, Kpi, LoadError, Pills, Skeleton, SortTable, Swatch, toneOf, type Column } from '../ui'
-import { weekChange } from '../vocab'
+import { directOf, laborJobs, palletOf, variableWk } from '../Overview'
+import { monthLabel, monthShort } from '../routes'
+import { ChartCard, Empty, Kpi, LoadError, Pills, Skeleton, SortTable, Swatch, toneOf, type Column } from '../ui'
 
 type Row = SiteMetrics<LeadershipRow>
 type Summary = AccountSummary<LeadershipRow>
 
-const pallet = (r: Row) => r.pallet_labor ?? 0
-const core = (r: Row) => r.labor - pallet(r)
-const variableWk = (r: Row, o: MetricOptions) => {
-  const monthly = o.invoiceBasis === 'run_rate_3m' ? r.variable_run_rate : r.revenue_month_variable
-  return monthly == null ? null : monthly / (o.divisor ?? 4.33)
-}
+const pallet = palletOf
+const core = directOf
 const lpCell = (v: number | null, target: number) => <span className={toneOf(statusOf(v, target))}>{pct(v)}</span>
-const short = (name: string) => name.replace(/^FedEx - /, '').replace(', CA 94534', '').replace(' - Cargo Bldg', ' Cargo')
-
-function useSiteOpener() {
-  const { navigate } = useLeadership()
-  return (r: LeadershipRow) => navigate({ site: { company: r.company ?? '', job: r.job_number } })
-}
-
-function basisNote(account: LeadershipAccount, options: MetricOptions, revenueMonth: string | null, fixed: number, variable: number | null) {
-  const div = account.revenue_divisor
-  if (options.invoiceBasis === 'run_rate_3m') return variable != null ? `Fixed ${moneyK(fixed)} + variable ${moneyK(variable)} run rate ÷ ${div}` : `3-month run rate ÷ ${div}`
-  return `${monthLabel(revenueMonth)} revenue ÷ ${div}`
-}
-
-// Account Overview
-export function FedexOverview({ account, rows, summary, options }: { account: LeadershipAccount; rows: LeadershipRow[]; summary: Summary; options: MetricOptions }) {
-  const { config, weekStart } = useLeadership()
-  const t = useTokens()
-  const target = options.target
-  const history = useRows(account.slug, 8)
-  const monthly = useMonthly(account.slug)
-  const flags = useMemo(() => dataFlags(config.data, weekStart, rows), [config.data, weekStart, rows])
-  const revenueMonth = rows.find((r) => r.revenue_month)?.revenue_month ?? null
-  const all = summary.all
-  const sites = summary.sites
-  const billed = sites.filter((r) => r.invoice > 0)
-  const unbilled = sites.filter((r) => !(r.invoice > 0) && r.labor > 0)
-  const palD = sites.reduce((a, r) => a + pallet(r), 0)
-  const palHrs = sites.reduce((a, r) => a + (r.pallet_hours ?? 0), 0)
-  const variable = sites.every((r) => variableWk(r, options) == null) ? null : sites.reduce((a, r) => a + (variableWk(r, options) ?? 0), 0)
-  const unbilledHours = unbilled.reduce((a, r) => a + r.hours + r.otPremiumHours, 0)
-  const hot = summary.billed.overHours + unbilledHours
-
-  // Prior week and the trend: the same rows shaped the same way, week by week.
-  const weeks = useMemo(() => {
-    const list = history.data?.weeks ?? []
-    return list.map((w) => { const wr = rowsOfWeek(history.data?.rows, w); return { week: w, s: wr.length ? accountSummary(wr, options, segmentOrder(account)).all : null } })
-  }, [history.data, options, account])
-  const prev = weeks.length > 1 ? weeks[weeks.length - 2].s : null
-  const lastMonth = closedMonths(monthly.data).at(-1)
-  const augLp = useMemo(() => (monthly.data && lastMonth ? monthLaborPct(selfPerformJobs(monthly.data.jobs), lastMonth, options.vendorFactor ?? 1) : null), [monthly.data, lastMonth, options.vendorFactor])
-  const delta = (cur: number | null, before: number | null | undefined, format: (v: number) => string) =>
-    cur == null || before == null ? '' : `; ${cur - before >= 0 ? '+' : '−'}${format(Math.abs(cur - before))} vs prior wk`
-
-  const groups = PALLET_GROUPS.map((g) => ({ g, list: sites.filter((r) => r.segment === g) })).filter((x) => x.list.length)
-  const sorted = [...billed].sort((a, b) => (b.measurePct ?? 0) - (a.measurePct ?? 0))
-  const trend = useMemo(() => {
-    const out: { label: string; labor: number | null; invoice: number | null; lp: number | null }[] = []
-    const div = account.revenue_divisor
-    if (monthly.data) for (const m of closedMonths(monthly.data)) {
-      const jobs = selfPerformJobs(monthly.data.jobs)
-      const inv = jobs.reduce((a, j) => a + monthRevenue(j.months[m]), 0)
-      const lab = jobs.reduce((a, j) => a + (j.months[m]?.direct_labor ?? 0) + (j.months[m]?.subcontractors ?? 0) * (options.vendorFactor ?? 1), 0)
-      out.push({ label: `${monthShort(m)} actual`, labor: lab / div, invoice: inv / div, lp: inv > 0 ? lab / inv : null })
-    }
-    for (const w of weeks) out.push({ label: weekTick(w.week), labor: w.s?.cost ?? null, invoice: w.s?.invoice ?? null, lp: w.s?.measurePct ?? null })
-    return out
-  }, [monthly.data, weeks, account, options.vendorFactor])
-  const weekFrom = trend.length - weeks.length
-
-  return <>
-    <div className="kpi-lg">
-      <Kpi label="Weekly invoice" value={money(all.invoice)} sub={basisNote(account, options, revenueMonth, all.invoice - (variable ?? 0), variable)} />
-      <Kpi label="Labor" value={money(all.cost)} sub={`Core ${moneyK(all.labor - palD)} + pallet ${moneyK(palD)}${all.vendor ? ` + sub ~${moneyK(all.vendor)}` : ''}${delta(all.cost, prev?.cost, money)}`} />
-      <Kpi label="Account labor %" value={pct(all.measurePct)} tone={toneOf(statusOf(all.measurePct, target, options.watchBand))}
-        sub={`Target ${pct(target)}; ${monthLabel(lastMonth ?? null)} actual ${pct(augLp)}${prev?.measurePct != null && all.measurePct != null ? `; ${weekChange(all.measurePct - prev.measurePct, 'fedex')}` : ''}`} />
-      <Kpi label="Hours paid" value={hours(all.hours)} sub={`${hours(all.otHours)} OT/DT (${pct(all.otPct)}); pallet ${hours(palHrs)}${delta(all.hours, prev?.hours, hours)}`} />
-      <Kpi label="Hours over target" value={hours(hot)} tone={hot > 0 ? 'bad' : 'ok'}
-        sub={`${summary.billed.over} of ${billed.length} billed sites over${unbilled.length ? `, plus ${hours(unbilledHours)} unbilled` : ''}`} />
-    </div>
-    <Notes summary={summary} account={account} flags={flags} options={options} revenueMonth={revenueMonth} />
-    <div className="seg-grid">
-      {groups.map(({ g, list }) => {
-        const s = accountSummary(list, options, []).all
-        const palG = list.reduce((a, r) => a + pallet(r), 0)
-        const varG = list.every((r) => variableWk(r, options) == null) ? null : list.reduce((a, r) => a + (variableWk(r, options) ?? 0), 0)
-        const lp = monthly.data && lastMonth ? monthLaborPct(monthly.data.jobs.filter((j) => list.some((r) => r.company === j.company && (r.kids ?? [r.job_number]).includes(j.job_number))), lastMonth, options.vendorFactor ?? 1) : null
-        const status = statusOf(s.measurePct, target, options.watchBand)
-        return <div className="card" key={g}>
-          <div className="seg-hdr"><div><div className="seg-name">{g}</div><div className="seg-sub">{list.length} sites, {s.over} over target</div></div><Badge status={status} /></div>
-          <div className="kpi4">
-            <Kpi small label="Invoice" value={moneyK(s.invoice)} sub={g === PALLET_GROUPS[0] && varG != null ? `${moneyK(varG)} variable` : undefined} />
-            <Kpi small label="Labor" value={moneyK(s.cost)} sub={g === PALLET_GROUPS[0] ? `${moneyK(palG)} pallet` : undefined} />
-            <Kpi small label="Labor %" value={pct(s.measurePct)} tone={toneOf(status)} sub={lastMonth ? `${monthShort(lastMonth)} ${pct(lp)}` : undefined} />
-            <Kpi small label="OT %" value={pct(s.otPct)} sub={`${hours(s.otHours)} hrs`} tone={s.otPct > 0.15 ? 'bad' : s.otPct > 0.1 ? 'warn' : ''} />
-          </div>
-        </div>
-      })}
-    </div>
-    {trend.length > 1 && <ChartCard title="Labor vs invoice: monthly actuals (weekly equivalent) and weekly timekeeping" height={260}
-      legend={<><Swatch color={t.muted} label="Monthly actual" /><Swatch color={t.accent2} label="Week" /><Swatch color={t.bad} label="Labor %" /><Swatch line label={`Target ${pct(target)}`} /></>}
-      chart={<MonthWeekTrendChart labels={trend.map((x) => x.label)} labor={trend.map((x) => x.labor)} invoice={trend.map((x) => x.invoice)} lp={trend.map((x) => x.lp)} target={target} weekFrom={weekFrom} current={trend.length - 1} />}
-      table={<table><thead><tr><th className="nosort l">Period</th><th className="nosort">Invoice</th><th className="nosort">Labor</th><th className="nosort">Labor %</th></tr></thead>
-        <tbody>{trend.map((x) => <tr key={x.label}><td className="l">{x.label}</td><td>{money(x.invoice)}</td><td>{money(x.labor)}</td><td>{pct(x.lp)}</td></tr>)}</tbody></table>} />}
-    <div className="charts2">
-      <ChartCard title="Labor % by site this week" height={Math.max(200, sorted.length * 16 + 60)}
-        legend={<><Swatch color={t.ok} label="On target" /><Swatch color={t.warn} label="Watch" /><Swatch color={t.bad} label="Over" /><Swatch line label={`Target ${pct(target)}`} /></>}
-        chart={<SiteLpChart labels={sorted.map((r) => short(r.site_name))} values={sorted.map((r) => r.measurePct)} tones={sorted.map((r) => toneOf(r.status))} target={target}
-          details={sorted.map((r) => `${pct(r.measurePct)} (${money(r.cost)} / ${money(r.invoice)})`)} />}
-        table={<table><thead><tr><th className="nosort l">Site</th><th className="nosort">Labor %</th><th className="nosort">Labor</th><th className="nosort">Invoice</th></tr></thead>
-          <tbody>{sorted.map((r) => <tr key={r.job_number}><td className="l">{r.site_name}</td><td>{pct(r.measurePct)}</td><td>{money(r.cost)}</td><td>{money(r.invoice)}</td></tr>)}</tbody></table>} />
-      <ChartCard title="Where the labor dollars went" height={200}
-        legend={<><Swatch color={t.accent2} label="Weekly invoice" /><Swatch color={t.accent} label="Core labor" /><Swatch color={t.warn} label="Pallet labor" /><Swatch color={t.muted} label="Sub ~est." /></>}
-        chart={<LaborMixChart labels={groups.map((x) => x.g)} invoice={groups.map((x) => x.list.reduce((a, r) => a + r.invoice, 0))} core={groups.map((x) => x.list.reduce((a, r) => a + core(r), 0))}
-          pallet={groups.map((x) => x.list.reduce((a, r) => a + pallet(r), 0))} sub={groups.map((x) => x.list.reduce((a, r) => a + r.vendor, 0))} subLabel="Sub ~est." />}
-        table={<table><thead><tr><th className="nosort l">Group</th><th className="nosort">Invoice</th><th className="nosort">Core</th><th className="nosort">Pallet</th><th className="nosort">Sub</th></tr></thead>
-          <tbody>{groups.map((x) => <tr key={x.g}><td className="l">{x.g}</td><td>{money(x.list.reduce((a, r) => a + r.invoice, 0))}</td><td>{money(x.list.reduce((a, r) => a + core(r), 0))}</td><td>{money(x.list.reduce((a, r) => a + pallet(r), 0))}</td><td>{money(x.list.reduce((a, r) => a + r.vendor, 0))}</td></tr>)}</tbody></table>} />
-    </div>
-  </>
-}
-
-/** Monthly jobs on the labor views: not subcontracted, pallet jobs included (they sum into their site). */
-const selfPerformJobs = (jobs: LeadershipMonthlyJob[]) => jobs.filter((j) => j.delivery_model !== 'subcontracted' && (j.role === 'site' || j.role === 'pallet'))
-
-// Sites
-export function FedexSites({ account, summary, options }: { account: LeadershipAccount; summary: Summary; options: MetricOptions }) {
-  const [filter, setFilter] = useState('All')
-  const open = useSiteOpener()
-  const monthly = useMonthly(account.slug)
-  const months = closedMonths(monthly.data)
-  const [julKey, augKey] = [months.at(-2), months.at(-1)]
-  const factor = options.vendorFactor ?? 1
-  const lpOf = (r: Row, m: string | undefined) => (m && monthly.data ? monthLaborPct(siteMonths(monthly.data.jobs, r.company, r.kids, r.job_number), m, factor) : null)
-  const rows = summary.sites.filter((r) => filter === 'All' || r.segment === filter)
-  const cols: Column<Row>[] = [
-    { key: 'job', header: 'Job', left: true, value: (r) => Number(r.job_number) || r.job_number, render: (r) => <>{r.job_number}{(r.kids?.length ?? 1) > 1 && <span className="neutral"> +{r.kids!.slice(1).join(',')}</span>}</> },
-    { key: 'name', header: 'Site', left: true, value: (r) => r.site_name, className: 'nm', render: (r) => <>{r.site_name}{r.labor_basis !== 'pay_report' && r.labor > 0 && <span className="warn"> ~</span>}</> },
-    { key: 'fix', header: 'Fixed inv', value: (r) => r.invoice - (variableWk(r, options) ?? 0), render: (r) => money(r.invoice - (variableWk(r, options) ?? 0)) },
-    { key: 'var', header: 'Var inv', value: (r) => variableWk(r, options), render: (r) => (variableWk(r, options) ? money(variableWk(r, options)) : '–') },
-    { key: 'inv', header: 'Invoice', value: (r) => r.invoice, render: (r) => money(r.invoice) },
-    { key: 'core', header: 'Core $', value: core, render: (r) => money(core(r)) },
-    { key: 'pal', header: 'Pallet $', value: pallet, render: (r) => (pallet(r) ? money(pallet(r)) : '–') },
-    { key: 'sub', header: 'Sub ~$', value: (r) => r.vendor, render: (r) => (r.vendor ? <span className="warn">~{money(r.vendor)}</span> : '–') },
-    { key: 'lab', header: 'Labor $', value: (r) => r.cost, render: (r) => <b>{money(r.cost)}</b> },
-    { key: 'lp', header: 'Labor %', value: (r) => r.measurePct, render: (r) => <span className={toneOf(r.status)}>{pct(r.measurePct)}</span> },
-    ...[julKey, augKey].filter((m): m is string => Boolean(m)).map((m): Column<Row> => ({ key: `lp-${m}`, header: `${monthShort(m)} LP`, value: (r) => lpOf(r, m), render: (r) => <span className="neutral">{pct(lpOf(r, m))}</span> })),
-    { key: 'hrs', header: 'Hours', value: (r) => r.hours, render: (r) => hours1(r.hours) },
-    { key: 'oth', header: 'OT hrs', value: (r) => r.ot_hours, render: (r) => hours1(r.ot_hours) },
-    { key: 'otp', header: 'OT %', value: (r) => r.otPct, render: (r) => <span className={r.otPct > 0.25 ? 'bad' : r.otPct > 0.15 ? 'warn' : ''}>{pct(r.otPct)}</span> },
-    { key: 'over', header: 'Hrs over', value: (r) => r.overHours, render: (r) => (r.overHours > 0.5 ? <span className="bad">{hours1(r.overHours)}</span> : '–') },
-    { key: 'st', header: 'Status', value: (r) => r.measurePct, render: (r) => <Badge status={r.status} />, csv: (r) => r.status },
-  ]
-  const s = accountSummary(rows, options, []).all
-  const sum = (f: (r: Row) => number | null) => rows.reduce((a, r) => a + (f(r) ?? 0), 0)
-  const tot = <tr className="tot"><td></td><td className="l">Total ({rows.length})</td><td>{money(sum((r) => r.invoice - (variableWk(r, options) ?? 0)))}</td><td>{money(sum((r) => variableWk(r, options)))}</td>
-    <td>{money(s.invoice)}</td><td>{money(sum(core))}</td><td>{money(sum(pallet))}</td><td className="warn">{s.vendor ? `~${money(s.vendor)}` : '–'}</td><td>{money(s.cost)}</td>
-    <td className={toneOf(statusOf(s.measurePct, options.target, options.watchBand))}>{pct(s.measurePct)}</td>{[julKey, augKey].filter(Boolean).map((m) => <td key={m} />)}<td>{hours1(s.hours)}</td><td>{hours1(s.otHours)}</td><td>{pct(s.otPct)}</td><td>{hours1(sum((r) => r.overHours))}</td><td></td></tr>
-  return <>
-    <Pills label="Filter sites" options={['All', ...PALLET_GROUPS].map((o) => ({ value: o, label: o }))} value={filter} onChange={setFilter} />
-    <div className="card"><SortTable caption={`${account.name} sites`} rows={rows} columns={cols} defaultSort={{ key: 'lp', dir: -1 }} total={tot}
-      rowClass={(r) => (r.invoice > 0 ? '' : 'dim')} onRowClick={open} rowLabel={(r) => `Open ${r.site_name}`} csvName={`${account.slug}-sites`} /></div>
-  </>
-}
 
 // Pallet
 export function PalletTab({ account, summary, options }: { account: LeadershipAccount; summary: Summary; options: MetricOptions }) {
@@ -300,7 +142,7 @@ export function IncomeStatementTab({ account, options }: { account: LeadershipAc
   const loaded = months.filter((m) => IS[m] && IS[m].revenue != null)
   if (!loaded.length) return <Empty>No Trend Income Statement loaded for {months.length ? `${monthLabel(months[0])} to ${monthLabel(months.at(-1)!)}` : 'these months'}. Import it in Admin, Imports.</Empty>
   const factor = options.vendorFactor ?? 1
-  const onDashboard = new Set(selfPerformJobs(jobs).map((j) => `${j.company}|${j.job_number}`))
+  const onDashboard = new Set(laborJobs(account, jobs).filter((j) => j.delivery_model !== 'subcontracted').map((j) => `${j.company}|${j.job_number}`))
   const C = Object.fromEntries(loaded.map((m) => {
     const I = IS[m]
     const sum = (inside: boolean, f: (x: LeadershipMonthlyJob['months'][string]) => number) => jobs.filter((j) => onDashboard.has(`${j.company}|${j.job_number}`) === inside).reduce((a, j) => a + (j.months[m] ? f(j.months[m]) : 0), 0)

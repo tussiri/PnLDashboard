@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { LeadershipAccount, LeadershipRow } from '../services/apiTypes'
-import { prepareRows } from './data'
+import { closedMonths, prepareRows } from './data'
 
 const row = (job: string, extra: Partial<LeadershipRow> = {}): LeadershipRow => ({
   week_start: '2026-09-14', week_end: '2026-09-20', company: 'Crane West', job_number: job, site_name: `Site ${job}`, parent_account: 'FedEx',
@@ -30,5 +30,21 @@ describe('prepareRows (the weekly reports\' site shape)', () => {
   it('keeps an orphan pallet job as its own site and leaves other accounts alone', () => {
     const out = prepareRows([row('481', { role: 'pallet', parent_job_number: '48' }), row('7', { account_slug: 'amazon', segment: 'Crane IFS', delivery_model: 'subcontracted' })], bySlug)
     expect(out.map((r) => [r.job_number, r.role, r.segment])).toEqual([['7', 'site', 'Crane IFS'], ['481', 'site', 'Janitorial only']])
+  })
+})
+
+describe('closedMonths', () => {
+  const month = (revenue: number, direct_labor: number, timekeeping_labor: number, relay_ar = 0) =>
+    ({ revenue, revenue_variable: null, direct_labor, payroll_taxes: 0, subcontractors: 0, relay_ar, relay_ap: 0, timekeeping_labor })
+  const job = (months: Record<string, ReturnType<typeof month>>, delivery_model: 'self_perform' | 'subcontracted' = 'self_perform') =>
+    ({ company: 'C', job_number: '1', job_name: null, role: 'site' as const, parent_job_number: null, delivery_model, months })
+
+  it('keeps months whose job cost revenue and labor are posted, and drops half-loaded ones', () => {
+    const data = { account: 'x', months: ['2026-06-01', '2026-07-01', '2026-08-01'], income_statement: {}, jobs: [
+      job({ '2026-06-01': month(1000, 600, 610), '2026-07-01': month(1000, 400, 620), '2026-08-01': month(0, 300, 600, 1000) }),
+      job({ '2026-06-01': month(0, 0, 0, 9000), '2026-07-01': month(0, 0, 0, 9000), '2026-08-01': month(0, 0, 0, 9000) }, 'subcontracted'),
+    ] }
+    // July: revenue in, labor 400 of 620 timekept (65%); August: carried by Relay billing. Subcontracted jobs are ignored.
+    expect(closedMonths(data)).toEqual(['2026-06-01'])
   })
 })

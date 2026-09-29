@@ -476,4 +476,8 @@ the revenue month and the two before it: job cost, else Relay AR for Relay-bille
 Imports: `job_cost` files may carry `FixedRevenue` / `VariableRevenue` (stored on
 `core.fact_job_cost_month`); new kind `income_statement` (Account, Period, Line, Amount) into
 `core.fact_income_statement_month`, one file replacing the months it covers (docs/export-feeds.md).
+`POST /leadership/imports` also recognizes WinTeam's own layouts (app/native_exports.py): the timekeeping
+labor summary (loaded as kind `pay_report`, one Monday-Sunday week per file) and the Job Cost Analysis by
+GL line (kind `job_cost`, GL accounts pivoted by the `job_cost_gl_map` ranges; a file replaces the
+imported months it covers).
 

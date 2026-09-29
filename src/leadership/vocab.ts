@@ -16,11 +16,11 @@ const TABS: Record<Vocabulary, Record<AccountTab, string>> = {
 export const tabLabel = (tab: AccountTab, account: LeadershipAccount | undefined, vendorLabel: string) =>
   tab === 'vendors' && vocabOf(account) === 'amazon' ? vendorLabel : TABS[vocabOf(account)][tab]
 
-/** Tabs an account shows: the Pallet view only for accounts grouped by pallet, the Income Statement and
- * Subcontracted Sites views only for accounts that split their subcontracted sites out (FedEx). */
-export function tabsFor(account: LeadershipAccount | undefined, all: readonly AccountTab[]): AccountTab[] {
-  return all.filter((t) => (t !== 'pallet' || account?.group_by === 'pallet')
-    && ((t !== 'income-statement' && t !== 'subcontracted') || Boolean(account?.split_subcontracted)))
+/** Tabs an account shows, the same rule for every account: Pallet where it has pallet jobs, Subcontracted
+ * Sites where it has subcontracted sites, Income Statement where one is loaded (or subcontracted sites
+ * are split out, so the import has a home). */
+export function tabsFor(_account: LeadershipAccount | undefined, all: readonly AccountTab[], has: { pallet: boolean; subcontracted: boolean; incomeStatement: boolean }): AccountTab[] {
+  return all.filter((t) => (t !== 'pallet' || has.pallet) && (t !== 'subcontracted' || has.subcontracted) && (t !== 'income-statement' || has.incomeStatement))
 }
 
 /** Signed percentage points in the account's wording: "+0.7pp WoW" or "+0.7 pts vs prior wk". */
@@ -29,3 +29,43 @@ export function weekChange(change: number | null, vocab: Vocabulary): string {
   const n = `${change >= 0 ? '+' : '−'}${Math.abs(change * 100).toFixed(1)}`
   return vocab === 'fedex' ? `${n} pts vs prior wk` : `${n}pp WoW`
 }
+
+/** The labels the shared views print, per report. Views are identical for every account; only these differ. */
+export interface Words {
+  invoice: string
+  invoiceCol: string
+  labor: string
+  laborCol: string
+  direct: string
+  directCol: string
+  accountLaborPct: string
+  hours: string
+  hoursOver: string
+  hoursOverCol: string
+  /** "{n} of {m} billed sites over" vs "{n} of {m} over". */
+  over: (n: number, of: number) => string
+  /** Prior closed month's labor %: "Jul LP" / "Jul actual". */
+  prior: (month: string) => string
+  trendTitle: string
+  /** The vendor column: "Sub ~$" in the FedEx report, the account's own label otherwise. */
+  subCol: (vendorLabel: string) => string
+}
+
+const WORDS: Record<Vocabulary, Words> = {
+  amazon: {
+    invoice: 'Invoicing', invoiceCol: 'Invoicing', labor: 'Total labor', laborCol: 'Total labor', direct: 'Direct', directCol: 'Direct labor',
+    accountLaborPct: 'Labor %', hours: 'Hours', hoursOver: 'Hours to cut', hoursOverCol: 'Hrs to cut',
+    over: (n, of) => `${n} of ${of} over`, prior: (m) => `${m} actual`,
+    trendTitle: 'Total labor vs invoicing: closed months (weekly equivalent) and weeks',
+    subCol: (label) => label,
+  },
+  fedex: {
+    invoice: 'Weekly invoice', invoiceCol: 'Invoice', labor: 'Labor', laborCol: 'Labor $', direct: 'Core', directCol: 'Core $',
+    accountLaborPct: 'Account labor %', hours: 'Hours paid', hoursOver: 'Hours over target', hoursOverCol: 'Hrs over',
+    over: (n, of) => `${n} of ${of} billed sites over`, prior: (m) => `${m} LP`,
+    trendTitle: 'Labor vs invoice: monthly actuals (weekly equivalent) and weekly timekeeping',
+    subCol: () => 'Sub ~$',
+  },
+}
+
+export const wordsFor = (vocab: Vocabulary): Words => WORDS[vocab]

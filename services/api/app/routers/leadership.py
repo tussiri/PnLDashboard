@@ -250,17 +250,26 @@ delivery AS (
   FROM mart.leadership_week w JOIN jobs USING (company, job_number)
   ORDER BY w.company, w.job_number, w.week_start DESC
 ),
-months AS (SELECT g.m::date AS month FROM generate_series(%(first)s::date, %(last)s::date, interval '1 month') AS g(m))
+months AS (SELECT g.m::date AS month FROM generate_series(%(first)s::date, %(last)s::date, interval '1 month') AS g(m)),
+-- Weekly timekeeping labor per job and month (a week belongs to the month holding its Thursday): the
+-- check that a month's job cost labor is fully posted before it counts as a closed month.
+timekeeping AS (
+  SELECT w.company, w.job_number, date_trunc('month', w.week_start + 3)::date AS month, sum(w.labor) AS labor
+  FROM mart.leadership_week w JOIN jobs USING (company, job_number)
+  WHERE w.week_start + 3 BETWEEN %(first)s::date AND (%(last)s::date + interval '1 month - 1 day')
+  GROUP BY 1, 2, 3
+)
 SELECT jobs.company, jobs.job_number, jobs.job_name, jobs.role, jobs.parent_job_number, d.delivery_model, months.month,
        coalesce(jc.revenue, 0) AS revenue, ex.revenue_variable, coalesce(jc.direct_labor, 0) AS direct_labor,
        coalesce(jc.payroll_taxes_insurance, 0) AS payroll_taxes, coalesce(jc.subcontractors, 0) AS subcontractors,
-       coalesce(r.ar_revenue, 0) AS relay_ar, coalesce(r.ap_amount, 0) AS relay_ap
+       coalesce(r.ar_revenue, 0) AS relay_ar, coalesce(r.ap_amount, 0) AS relay_ap, coalesce(tk.labor, 0) AS timekeeping_labor
 FROM jobs CROSS JOIN months
 LEFT JOIN delivery d USING (company, job_number)
 LEFT JOIN mart.v_job_cost_month_effective jc ON jc.company = jobs.company AND jc.job_number = jobs.job_number AND jc.month = months.month
 LEFT JOIN core.fact_job_cost_month ex ON ex.source = 'export_import' AND ex.company = jobs.company AND ex.job_number = jobs.job_number
                                      AND ex.month = months.month
 LEFT JOIN mart.v_relay_job_month r ON r.job_number = jobs.job_number AND r.month = months.month
+LEFT JOIN timekeeping tk ON tk.company = jobs.company AND tk.job_number = jobs.job_number AND tk.month = months.month
 ORDER BY jobs.company, jobs.job_number, months.month
 """
 
@@ -301,7 +310,7 @@ def leadership_monthly(account: str = Query(..., description="An account slug"),
             key = (r["company"], r["job_number"])
             job = jobs.setdefault(key, {k: r[k] for k in ("company", "job_number", "job_name", "role", "parent_job_number", "delivery_model")} | {"months": {}})
             job["months"][r["month"].isoformat()] = jsonable({k: r[k] for k in ("revenue", "revenue_variable", "direct_labor", "payroll_taxes",
-                                                                                   "subcontractors", "relay_ar", "relay_ap")})
+                                                                                   "subcontractors", "relay_ar", "relay_ap", "timekeeping_labor")})
         cursor.execute("SELECT month, line, amount FROM core.fact_income_statement_month WHERE account_slug = %s AND month BETWEEN %s AND %s",
                        (account, first, last))
         statement: dict[str, dict[str, float]] = {}

@@ -1347,6 +1347,8 @@ export interface LeadershipMonth {
   subcontractors: number
   relay_ar: number
   relay_ap: number
+  /** Weekly timekeeping labor in the month (weeks by their Thursday). */
+  timekeeping_labor: number
 }
 
 export interface LeadershipMonthlyJob {
