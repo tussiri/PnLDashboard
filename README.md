@@ -38,7 +38,10 @@ docker compose up -d --build
 `.env`: dashboard `http://127.0.0.1:15173` (API docs at `/api/docs`), Metabase
 `http://127.0.0.1:13001`, PostgreSQL `127.0.0.1:15433`, simulator `http://127.0.0.1:18081`.
 
-WinTeam is synced on demand only - nothing polls it, and the worker never calls it. A sync
+The worker syncs WinTeam nightly (`app/nightly.py`) and runs a light timekeeping sync every
+`WINTEAM_SYNC_INTERVAL_MINUTES` (default 30, 0 = off; `app/schedule.py`) under the on-demand sync's
+throttles; it also pulls PhotoValidation staffing requests every `PV_SYNC_INTERVAL_MINUTES` (default 15)
+when `PHOTOVALIDATION_API_URL` and `PHOTOVALIDATION_API_TOKEN` are set. A WinTeam sync
 normalizes, rebuilds the marts and reruns the forecast engine. The Administration page (admin token = `INGESTION_ADMIN_TOKEN`) can test the
 connection, sync, reset a watermark for a full re-pull, rebuild marts or forecasts, and edit
 tenant settings (job tier map, overtime rule, GL account classes, fiscal year start, payroll

@@ -7,6 +7,7 @@
 import fixture from '../leadership/fixtures/plano-we-2026-09-20.json'
 import type {
   LeadershipAccount, LeadershipRole, LeadershipConfig, LeadershipRow, LeadershipRowsQuery, LeadershipRowsResponse, LeadershipSiteResponse, LeadershipVendorsResponse, LeadershipWeek, SourceBlock, LeadershipMonthlyResponse,
+  StaffingJobResponse, StaffingRequestLine,
 } from './apiTypes'
 
 export const DEMO_LEADERSHIP_WEEK = '2026-09-14'
@@ -140,6 +141,29 @@ export function demoLeadershipVendors(account: string): LeadershipVendorsRespons
   return { account, since: '2026-04-01', vendor_type_ids: ['6'], total, by_vendor: byVendor,
     by_site: lines.map((l) => ({ company: l.company, job_number: l.job_number, site_name: l.site_name, amount: l.amount, invoices: 1 })),
     by_month: lines.length ? [{ month: '2026-08-01', amount: total, invoices: lines.length }] : [], lines }
+}
+
+/**
+ * Demo staffing requests for a site: deterministic per job, a posted night line and, on every third
+ * site, a submitted day line. Days open are counted to the end of the requested week.
+ */
+export function demoStaffingJob(company: string, jobNumber: string, query: { week?: string } = {}): StaffingJobResponse {
+  const week = query.week ? mondayOf(query.week) : DEMO_LEADERSHIP_WEEK
+  const weekEnd = addDays(week, 7)
+  const k = jitter(`${company}-${jobNumber}-staffing`, 0.5)
+  const days = (from: string) => Math.max(0, Math.round((Date.parse(`${weekEnd}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000))
+  const line = (n: number, status: StaffingRequestLine['status'], shift: string, role: string, needed: number, submitted: string, rate: number): StaffingRequestLine => ({
+    line_id: `demo-${jobNumber}-${n}`, request_id: `demo-${jobNumber}`, request_code: `SR-${jobNumber}`, site_name: null, role, shift,
+    shift_start: shift === 'night' ? '22:00' : '06:00', shift_end: shift === 'night' ? '06:30' : '14:30', headcount_needed: needed, current_filled: null,
+    reason: 'backfill', employment_type: 'full_time', hours_per_week: 40, pay_rate: rate, needed_by: addDays(week, 14), status, hire_job_id: status === 'posted' ? 'H-DEMO' : null,
+    reported_headcount: null, submitted_at: `${submitted}T14:00:00Z`, decided_at: status === 'submitted' ? null : `${addDays(submitted, 1)}T14:00:00Z`,
+    posted_at: status === 'posted' ? `${addDays(submitted, 2)}T14:00:00Z` : null, filled_at: null, closed_at: null, updated_at: `${submitted}T14:00:00Z`,
+    days_open: days(submitted),
+  })
+  const lines = [line(1, 'posted', 'night', 'Custodian', Math.max(1, Math.round(2 * k)), addDays(week, -9), round2(15 * k))]
+  if (Number(jobNumber.replace(/\D/g, '') || 0) % 3 === 0) lines.unshift(line(2, 'submitted', 'day', 'Porter', 1, addDays(week, 2), 15.5))
+  const sum = (status: string) => lines.filter((l) => l.status === status).reduce((a, l) => a + l.headcount_needed, 0)
+  return { source, configured: true, as_of: '2026-09-21T06:00:00Z', week, requested_headcount: sum('posted'), pending_requested_headcount: sum('submitted'), lines }
 }
 
 /** Demo months: none. The monthly views show their empty state on demo data. */

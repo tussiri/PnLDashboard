@@ -230,8 +230,9 @@ Precedence is per database. `winteam_api` keeps its window and company scoping u
 backfill never widens the Crane window. AR: an API invoice supersedes only the export invoice of its
 own database with the same `(customer_number, invoice_number)`.
 
-Sarus is synced on demand only, like the primary: the Administration page's Sync Sarus, or
-`POST /api/v1/integrations/winteam/sarus/sync` (requires `WINTEAM_SARUS_ENABLED=true`).
+Sarus is synced like the primary (requires `WINTEAM_SARUS_ENABLED=true`): nightly, on the light
+timekeeping interval (`WINTEAM_SYNC_INTERVAL_MINUTES`, app/schedule.py), and on demand from the
+Administration page's Sync Sarus or `POST /api/v1/integrations/winteam/sarus/sync`.
 
 ### Pricing punches the API reports without a rate
 

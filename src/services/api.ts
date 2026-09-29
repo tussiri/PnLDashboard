@@ -1,7 +1,7 @@
 import type {
   FullSyncResult, LeadershipAccount, LeadershipAccountJob, LeadershipAccountPatch, LeadershipConfig, LeadershipImportFile, LeadershipImportKind,
   LeadershipJobMapping, LeadershipRowsQuery, LeadershipRowsResponse, LeadershipSegment, LeadershipSiteResponse, LeadershipVendorsResponse, LeadershipMonthlyResponse, MailInboxStatus, MailPollResult,
-  RebuildResult, SyncOptions, SyncRunsResponse, SystemStatus } from './apiTypes'
+  PhotoValidationSyncResult, RebuildResult, StaffingJobResponse, SyncOptions, SyncRunsResponse, SystemStatus } from './apiTypes'
 
 /**
  * The live API expresses ratio fields as fractions (gross_margin_pct: 0.25, pct_over: -0.046)
@@ -118,9 +118,10 @@ const syncQuery = (options?: SyncOptions): QueryParams => ({ ...(options?.force 
 export const api = {
   // Platform
   systemStatus: (signal?: AbortSignal) => request<SystemStatus>('/system/status', { signal, timeoutMs: 8_000 }),
-  /** On demand (the nightly schedule runs server-side). */
+  /** On demand (the nightly and interval schedules run server-side). */
   syncAll: (options?: SyncOptions, signal?: AbortSignal) => request<FullSyncResult>('/integrations/winteam/sync', { method: 'POST', admin: true, query: syncQuery(options), signal, timeoutMs: 900_000 }),
   syncSarus: (options?: SyncOptions, signal?: AbortSignal) => request<FullSyncResult>('/integrations/winteam/sarus/sync', { method: 'POST', admin: true, query: syncQuery(options), signal, timeoutMs: 900_000 }),
+  syncPhotoValidation: (signal?: AbortSignal) => request<PhotoValidationSyncResult>('/integrations/photovalidation/sync', { method: 'POST', admin: true, signal, timeoutMs: 300_000 }),
   rebuildMarts: (signal?: AbortSignal) => request<RebuildResult>('/marts/rebuild', { method: 'POST', admin: true, signal, timeoutMs: 600_000 }),
   syncRuns: (limit = 25, signal?: AbortSignal) => request<SyncRunsResponse>('/integrations/winteam/runs', { query: { limit }, signal }),
   mailStatus: (signal?: AbortSignal) => request<MailInboxStatus>('/integrations/mail', { signal, rawRatios: true }),
@@ -130,6 +131,9 @@ export const api = {
   leadershipRows: (query?: LeadershipRowsQuery, signal?: AbortSignal) => request<LeadershipRowsResponse>('/leadership/rows', { query: { ...query }, signal, rawRatios: true }),
   leadershipSite: (company: string, jobNumber: string, query?: { week?: string; weeks?: number }, signal?: AbortSignal) =>
     request<LeadershipSiteResponse>(`/leadership/sites/${encodeURIComponent(company)}/${encodeURIComponent(jobNumber)}`, { query: { ...query }, signal, rawRatios: true }),
+  // Staffing requests (analyst and admin; lines carry pay rates)
+  staffingJob: (company: string, jobNumber: string, query?: { week?: string }, signal?: AbortSignal) =>
+    request<StaffingJobResponse>(`/staffing/jobs/${encodeURIComponent(company)}/${encodeURIComponent(jobNumber)}`, { query: { ...query }, signal, rawRatios: true }),
   leadershipVendors: (account: string, months = 6, signal?: AbortSignal) => request<LeadershipVendorsResponse>('/leadership/vendors', { query: { account, months }, signal, rawRatios: true }),
   leadershipMonthly: (account: string, months = 3, signal?: AbortSignal) => request<LeadershipMonthlyResponse>('/leadership/monthly', { query: { account, months }, signal, rawRatios: true }),
   leadershipUpdateAccount: (slug: string, patch: LeadershipAccountPatch, signal?: AbortSignal) =>

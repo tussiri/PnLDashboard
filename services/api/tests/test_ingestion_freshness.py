@@ -1,7 +1,7 @@
 """Freshness on /api/v1/data/freshness (app.routers.platform).
 
-WinTeam is synced on demand only - the worker never calls it - so no resource is behind a
-schedule. `_mark_overdue` therefore never calls a resource overdue, whatever its age; the age is
+WinTeam is synced nightly, on the light interval (timekeeping) and on demand; a failed sync is
+recorded as failed, so `_mark_overdue` never calls a resource overdue, whatever its age; the age is
 reported as is, and a tenant 403 is still flagged as not entitled.
 """
 from app.routers.platform import _mark_overdue
@@ -35,17 +35,20 @@ def test_not_entitled_resource_is_flagged():
     assert _mark_overdue(row(last_status="failed", last_error="connection refused"))["not_entitled"] is False
 
 
-def test_the_worker_reaches_winteam_only_through_the_nightly_sync():
-    """Approved 2026-09-23: one incremental sync a day. The worker imports no WinTeam client; the
-    nightly job calls sync_all without force or deep, so the 3-day lookback and daily skips hold."""
+def test_the_worker_reaches_winteam_only_through_the_nightly_and_interval_syncs():
+    """Approved 2026-09-23 (nightly) and 2026-09-29 (light interval). The worker imports no WinTeam
+    client; both schedules call sync_all without force or deep, so the 3-day lookback and the 20-hour
+    skips hold."""
     import inspect
 
-    from app import nightly, worker
+    from app import nightly, schedule, worker
     source = inspect.getsource(worker)
     assert "sync_all" not in source and "from .winteam" not in source
-    nightly_source = inspect.getsource(nightly)
-    assert "force=True" not in nightly_source and "deep=True" not in nightly_source
-    assert nightly_source.count("sync_all(") == 2
+    for module in (nightly, schedule):
+        text = inspect.getsource(module)
+        assert "force=True" not in text and "deep=True" not in text, module.__name__
+    assert inspect.getsource(nightly).count("sync_all(") == 2
+    assert inspect.getsource(schedule).count(".sync_all(") == 1
 
 
 def test_reference_stale_threshold_is_one_week():

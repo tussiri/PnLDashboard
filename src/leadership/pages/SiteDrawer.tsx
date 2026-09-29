@@ -1,7 +1,7 @@
 import { X } from 'lucide-react'
 import { useEffect, useMemo, useRef } from 'react'
 import { useApiQuery } from '../../hooks/useApiQuery'
-import type { LeadershipSiteResponse } from '../../services/apiTypes'
+import type { LeadershipSiteResponse, StaffingJobResponse, StaffingRequestLine } from '../../services/apiTypes'
 import { queryKey } from '../../services/queryClient'
 import { TrendChart } from '../charts'
 import { includesVendor, inSentence, vendorLabel } from '../data'
@@ -13,9 +13,37 @@ import { Badge, ChartCard, Empty, Kpi, LoadError, Skeleton, Swatch, toneOf, Voca
 import { vocabOf } from '../vocab'
 import { useTokens } from '../charts'
 
-/** Site detail drawer: this week's labor P&L, a 13-week trend, subcontractor invoices and CompanyCam photos. */
+const cap = (s: string | null) => (s ? s.charAt(0).toUpperCase() + s.slice(1).replace(/_/g, ' ') : '–')
+const STATUS_TONE: Record<string, string> = { submitted: 'warn', approved: 'neutral', posted: 'neutral', filled: 'ok', rejected: 'bad', cancelled: 'neutral' }
+const shiftLabel = (l: StaffingRequestLine) => [cap(l.shift), l.shift_start && l.shift_end ? `${l.shift_start}-${l.shift_end}` : null].filter(Boolean).join(' ')
+
+/** PhotoValidation staffing requests for the site: the week's requested and pending headcount and each line. */
+function StaffingCard({ company, job }: { company: string; job: string }) {
+  const { api, keyPrefix, decision, weekStart } = useLeadership()
+  const q = useApiQuery<StaffingJobResponse>(decision && weekStart ? queryKey(`${keyPrefix}/staffing/job`, { company, job, week: weekStart }) : null,
+    (signal) => api.staffingJob(company, job, { week: weekStart }, signal), [api, company, job, weekStart])
+  return <div className="card">
+    <div className="ct"><span>Staffing requests</span>{q.data?.as_of && <span className="ks">PhotoValidation {new Date(q.data.as_of).toLocaleDateString('en-US')}</span>}</div>
+    {q.error ? <LoadError error={q.error} onRetry={q.refetch} /> : !q.data ? <Skeleton height={120} />
+      : !q.data.configured && !q.data.lines.length ? <Empty>PhotoValidation is not connected.</Empty> : <>
+        <div className="kpi-lg">
+          <Kpi small label="Requested" value={q.data.requested_headcount ?? '–'} sub="Approved or posted" />
+          <Kpi small label="Pending" value={q.data.pending_requested_headcount ?? '–'} sub="Awaiting approval" />
+        </div>
+        {q.data.lines.length ? <div className="tw"><table><caption className="sr-only">Staffing request lines</caption>
+          <thead><tr><th className="nosort l">Role</th><th className="nosort l">Shift</th><th className="nosort">Needed</th><th className="nosort l">Status</th><th className="nosort">Pay rate</th><th className="nosort l">Needed by</th><th className="nosort">Days open</th></tr></thead>
+          <tbody>{q.data.lines.map((l) => <tr key={l.line_id}>
+            <td className="l nm">{l.role ?? '–'}</td><td className="l">{shiftLabel(l)}</td><td>{l.headcount_needed}</td>
+            <td className={`l ${STATUS_TONE[l.status] ?? 'neutral'}`}>{cap(l.status)}</td><td>{rate(l.pay_rate)}</td>
+            <td className="l">{l.needed_by ?? '–'}</td><td>{l.days_open ?? '–'}</td></tr>)}</tbody>
+        </table></div> : <Empty>No staffing requests.</Empty>}
+      </>}
+  </div>
+}
+
+/** Site detail drawer: this week's labor P&L, a 13-week trend, staffing requests, subcontractor invoices and CompanyCam photos. */
 export function SiteDrawer({ company, job }: { company: string; job: string }) {
-  const { api, keyPrefix, decision, weekStart, navigate, accountBySlug, optionsFor } = useLeadership()
+  const { api, keyPrefix, decision, weekStart, navigate, accountBySlug, optionsFor, user } = useLeadership()
   const t = useTokens()
   const panel = useRef<HTMLDivElement>(null)
   const close = () => navigate({ site: undefined })
@@ -60,6 +88,7 @@ export function SiteDrawer({ company, job }: { company: string; job: string }) {
           chart={<TrendChart labels={weeks.map((r) => weekTick(r.week_start))} values={weeks.map((r) => r.measurePct)} target={current?.target ?? options.target} label={m} />}
           table={<table><thead><tr><th className="nosort l">Week ending</th><th className="nosort">Invoicing</th><th className="nosort">Direct labor</th><th className="nosort">{m}</th><th className="nosort">Hours</th><th className="nosort">OT hrs</th></tr></thead>
             <tbody>{weeks.map((r) => <tr key={r.week_start}><td className="l">{weekTick(r.week_start)}</td><td>{money(r.invoice)}</td><td>{money(r.labor)}</td><td>{pct(r.measurePct)}</td><td>{hours1(r.hours)}</td><td>{hours1(r.ot_hours)}</td></tr>)}</tbody></table>} />}
+        {user.role !== 'executive' && <StaffingCard company={company} job={job} />}
         <div className="card">
           <div className="ct"><span>{vendorLabel(account)} invoices since {monthLabel(q.data.invoices.since)}</span><span>{money(q.data.invoices.total)}</span></div>
           {q.data.invoices.lines.length ? <div className="tw"><table><caption className="sr-only">{vendorLabel(account)} invoices</caption>

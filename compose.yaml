@@ -46,6 +46,12 @@ x-api-environment: &api-environment
   RELAY_BASE_URL: ${RELAY_BASE_URL:-}
   RELAY_EXPORT_TOKEN: ${RELAY_EXPORT_TOKEN:-}
   RELAY_TIMEOUT_SECONDS: ${RELAY_TIMEOUT_SECONDS:-60}
+  # Worker intervals in minutes (0 = off): light WinTeam timekeeping sync, PhotoValidation pull.
+  WINTEAM_SYNC_INTERVAL_MINUTES: ${WINTEAM_SYNC_INTERVAL_MINUTES:-30}
+  PV_SYNC_INTERVAL_MINUTES: ${PV_SYNC_INTERVAL_MINUTES:-15}
+  # PhotoValidation staffing-request feed (origin, and an existing PhotoValidation API token). Blank = off.
+  PHOTOVALIDATION_API_URL: ${PHOTOVALIDATION_API_URL:-}
+  PHOTOVALIDATION_API_TOKEN: ${PHOTOVALIDATION_API_TOKEN:-}
   # Records mailbox (Microsoft Graph, app registration with Mail.Read limited to this mailbox).
   GRAPH_TENANT_ID: ${GRAPH_TENANT_ID:-}
   GRAPH_CLIENT_ID: ${GRAPH_CLIENT_ID:-}

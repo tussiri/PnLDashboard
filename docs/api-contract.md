@@ -36,21 +36,21 @@ Optional filters on every reporting endpoint: `account` (parent account name), `
 | Route | Response |
 |---|---|
 | `GET /system/status` | `{database, winteam: IntegrationStatus, marts: {latest_month, rebuilt_at, job_month_rows}, forecast: {run_id, engine_version, latest_closed_month, generated_at} \| null}` |
-| `GET /integrations/winteam` | `IntegrationStatus = {enabled, configured, base_url_host, normalize_enabled, resources: [{name, enabled, entitled: true|false|null, kind, last_status, last_completed_at, records_fetched, watermark}], poll_seconds: null, sync: 'on_demand'}` — `entitled=false` after the gateway answered 403 for that resource. Nothing polls WinTeam; `poll_seconds` is always null. |
+| `GET /integrations/winteam` | `IntegrationStatus = {enabled, configured, base_url_host, normalize_enabled, resources: [{name, enabled, entitled: true|false|null, kind, last_status, last_completed_at, records_fetched, watermark}], poll_seconds, sync: 'scheduled' \| 'on_demand'}` — `entitled=false` after the gateway answered 403 for that resource. `sync: 'scheduled'` with `poll_seconds` = WINTEAM_SYNC_INTERVAL_MINUTES × 60 while the worker's light timekeeping sync is on for a database enabled and configured for ingestion; `'on_demand'` with `poll_seconds: null` otherwise (the nightly sync runs either way). |
 | `POST /integrations/winteam/test` (admin) | `{ok, resource, records_in_probe, total_count}` |
-| `POST /integrations/winteam/sync/{resource}?deep=` (admin) | `{run_id, resource, status, fetched, inserted, normalized, message?}` — always runs (the daily skip does not apply to a named resource) |
+| `POST /integrations/winteam/sync/{resource}?deep=` (admin) | `{run_id, resource, status, fetched, inserted, normalized, message?}` — always runs (the daily skip does not apply to a named resource); 409 while another WinTeam sync runs |
 | `POST /integrations/winteam/watermark/{resource}/reset` (admin) | `{resource, watermark_removed, next_sync}` — the next sync of that resource backfills `WINTEAM_BACKFILL_MONTHS` (raw records are kept; replays are idempotent) |
-| `POST /integrations/winteam/sync?normalize=&resources=&force=&deep=` (admin) | `{runs: [...as above], marts: RebuildResult \| null, normalized, not_entitled}` — on-demand sync (nothing polls WinTeam), normalize, rebuild marts and forecasts. Timekeeping and AP re-read 3 days before the last sync, 35 with `deep=true`. Jobs, vendors, budgets and AR synced within 20 hours come back `status: 'skipped'` unless `force=true`; `marts` is null when every resource was skipped. |
+| `POST /integrations/winteam/sync?normalize=&resources=&force=&deep=` (admin) | `{runs: [...as above], marts: RebuildResult \| null, normalized, not_entitled}` — on-demand sync, normalize, rebuild marts and forecasts; 409 while another WinTeam sync (the worker's nightly or interval run, or another Admin sync) holds the sync lock. Timekeeping and AP re-read 3 days before the last sync, 35 with `deep=true`. Jobs, vendors, budgets and AR synced within 20 hours come back `status: 'skipped'` unless `force=true`; `marts` is null when every resource was skipped. |
 | `POST /marts/rebuild` (admin) | `RebuildResult = {job_month_rows, portfolio_month_rows, forecast: ForecastBuildResult \| null, seconds}` |
 | `POST /forecasts/rebuild` (admin) | `ForecastBuildResult = {run_id, forecast_rows, accuracy_rows, track_rows, status_rows, sites_forecast}` |
 | `GET /integrations/winteam/runs?limit=25` | `{runs: [{id, resource_name, status, started_at, completed_at, records_fetched, records_inserted, error_message}]}` |
-| `GET /integrations/winteam/sarus` | `{configured, enabled, base_url_host, has_subscription_key, ingestion, resources: [{name, enabled, kind, last_status, last_completed_at, records_fetched, watermark, entitled}], precedence: {sarus_timekeeping_from, sarus_timekeeping_to, sarus_ap_invoice_from, sarus_ap_invoice_to, sarus_ar_invoices_api}}` — the second WinTeam database (Sarus). Never returns the tenant id or key. `ingestion` is true when `WINTEAM_SARUS_ENABLED` and the tenant is configured; the worker then syncs it each poll, before the primary. Sarus rows carry source `winteam_sarus` and supersede only Sarus export rows inside their own window (migration 026). |
-| `POST /integrations/winteam/sarus/sync?normalize=&resources=&force=&deep=` (admin) | Same shape as `POST /integrations/winteam/sync`: `{runs, marts, normalized, not_entitled}`. GET-only against WinTeam; 409 unless `WINTEAM_SARUS_ENABLED`. Resources: jobs (raw only), vendors, timekeeping, job_budgets, ap_invoices, ap_invoice_details, ar_invoices. |
+| `GET /integrations/winteam/sarus` | `{configured, enabled, base_url_host, has_subscription_key, ingestion, resources: [{name, enabled, kind, last_status, last_completed_at, records_fetched, watermark, entitled}], precedence: {sarus_timekeeping_from, sarus_timekeeping_to, sarus_ap_invoice_from, sarus_ap_invoice_to, sarus_ar_invoices_api}}` — the second WinTeam database (Sarus). Never returns the tenant id or key. `ingestion` is true when `WINTEAM_SARUS_ENABLED` and the tenant is configured; the worker then syncs it nightly and on the light timekeeping interval, after the primary. Sarus rows carry source `winteam_sarus` and supersede only Sarus export rows inside their own window (migration 026). |
+| `POST /integrations/winteam/sarus/sync?normalize=&resources=&force=&deep=` (admin) | Same shape as `POST /integrations/winteam/sync`: `{runs, marts, normalized, not_entitled}`. GET-only against WinTeam; 409 unless `WINTEAM_SARUS_ENABLED`, and while another WinTeam sync runs. Resources: jobs (raw only), vendors, timekeeping, job_budgets, ap_invoices, ap_invoice_details, ar_invoices. |
 | `POST /integrations/winteam/sarus/test` (admin) | `{ok, jobs_total, company_numbers, matches_known_sarus_jobs, matches_known_crane_jobs, sample_jobs, configured, enabled, base_url_host, has_subscription_key, ingestion}` — one read-only GET of the Sarus jobs list; works before `WINTEAM_SARUS_ENABLED`, lands nothing. Company numbers are per database (Sarus and Crane both have company 1), so identity is judged by job: `matches_known_crane_jobs` above zero means the id points back at the Crane tenant. |
 | `GET /integrations/companycam` | `{configured, base_url, match_rule, note}` — whether site photos are wired. The token is server-side only and is never returned. |
 | `GET /integrations/companycam/probe?limit=5` (admin) | `{configured, projects_returned, fields_present, sample, next_step}` — read-only look at real CompanyCam projects so a project-to-job match rule can be chosen from evidence rather than guessed. |
 | `GET /data/reconciliation?months=6` | `{ar_chain: [{month, raw_invoices, core_invoices, raw_revenue, core_revenue, variance, exact}], ingestion_exact, suppressed_ar: [...], suppressed_ar_total, uncosted_revenue: [...], uncosted_revenue_total, healthy, note}`. Proves published figures trace to WinTeam payloads. `raw -> core` must reconcile to the cent - a variance is an ingestion defect. `suppressed_ar` is invoiced AR published as zero revenue (margin too low); `uncosted_revenue` is revenue published with no labor basis (margin too high). A month is reportable only when both are zero. |
-| `GET /data/freshness` | `{resources: [{resource_name, last_status, last_completed_at, records_fetched, records_inserted, last_error, watermark_value, seconds_since_last_completion, overdue: null, overdue_after_seconds: null, not_entitled}], ingestion: {healthy, overdue_resources: [], overdue_after_seconds: null, poll_seconds: null, sync: 'on_demand', reference_stale, reference_stale_after_seconds}, marts: {...}}`. WinTeam is synced on demand only, so no resource is judged overdue; `seconds_since_last_completion` is the age of its last sync. Resources the tenant is not entitled to (HTTP 403) carry `not_entitled`. `reference_stale` covers the hand-loaded finance_reference export (the primary job-cost P&L source; stale after 7 days, at which point the newest months carry labor without revenue). `healthy` is false when it is stale. |
+| `GET /data/freshness` | `{resources: [{resource_name, last_status, last_completed_at, records_fetched, records_inserted, last_error, watermark_value, seconds_since_last_completion, overdue: null, overdue_after_seconds: null, not_entitled}], ingestion: {healthy, overdue_resources: [], overdue_after_seconds: null, poll_seconds, sync: 'scheduled' \| 'on_demand', reference_stale, reference_stale_after_seconds}, marts: {...}}`. `sync` and `poll_seconds` as in `GET /integrations/winteam`. A failed sync is recorded as failed, so no resource is judged overdue; `seconds_since_last_completion` is the age of its last sync. Resources the tenant is not entitled to (HTTP 403) carry `not_entitled`. `reference_stale` covers the hand-loaded finance_reference export (the primary job-cost P&L source; stale after 7 days, at which point the newest months carry labor without revenue). `healthy` is false when it is stale. |
 | `GET /settings` | `{settings: [{key, value, description, updated_at}]}` |
 | `PUT /settings/{key}` (admin) body `{value}` | updated setting |
 | `GET /dimensions` | `{months: [ISO], month_status: [{month, status: "closed" \| "in_progress" \| "no_revenue"}], latest_month, latest_closed_month, default_month, accounts: [], regions: [], branches: [], service_types: [], verticals: [], customers: [{customer_number, customer_name}]}` |
@@ -246,7 +246,8 @@ unit, labor % of invoicing vs BU target) for every account. Weeks are Monday-bas
               "carry_forward_source": null,                   // "job_cost" | "ar_invoice" when carried forward, else null (migration 010)
               "hours": 0, "ot_hours": 0, "dt_hours": 0, "budget_hours": 0, "budget_dollars": 0, "budget_basis": "daily_budget" | "hbc" | "none",
               "direct_dollars": 0, "ot_dollars": 0, "sub_dollars": 0, "sub_estimated": false, "total_dollars": 0,
-              "labor_cost_basis": "trailing_job_rate" | "job_cost" , "days_with_labor": 7 } ],
+              "labor_cost_basis": "trailing_job_rate" | "job_cost" , "days_with_labor": 7,
+              "requested_headcount": 2, "pending_requested_headcount": 1 } ],  // added 2026-09-29, null before the PhotoValidation feed loads
   "qa": null,                                          // QA scores are not in the warehouse; always null for now
   "notes": ["Invoicing = closed-month job-cost revenue apportioned to weeks by calendar days ...", ...] }
 ```
@@ -357,9 +358,9 @@ above, all additive:
 ## Leadership labor P&L (added 2026-09-23)
 
 WinTeam sync cadence changed the same day: the worker runs one incremental sync a night
-(`app/nightly.py`, setting `nightly_sync`); the integration status fields `sync: 'on_demand'` and
-`poll_seconds: null` still describe the on-demand routes, and the nightly run is recorded in
-`ops.integration_sync_run` as integration `nightly` (reported by `GET /leadership/config` `status.syncs`).
+(`app/nightly.py`, setting `nightly_sync`), recorded in `ops.integration_sync_run` as integration
+`nightly` (reported by `GET /leadership/config` `status.syncs`). Since 2026-09-29 it also runs a light
+timekeeping sync every `WINTEAM_SYNC_INTERVAL_MINUTES` (see "Staffing requests and the sync schedule").
 
 The leadership views (Home, Account, Analytics) read `mart.leadership_week` (migration 030, rules
 in `services/api/app/leadership.py`) joined at read time with the account configuration
@@ -492,3 +493,48 @@ Migration 038, docs/mail-inbox.md. The worker reads the records mailbox through 
 | `POST /integrations/mail/poll` | Admin. Check now: `{status, loaded, duplicate, failed, ignored, messages, rebuilt}` or `{status: 'failed', error}`. `409` when not configured. |
 
 `GET /auth/me` returns `{user: {username, role, accounts}}`; `accounts` is null for every account. The leadership routes answer only for the user's accounts (docs/auth-rbac.md, Account access).
+
+
+## Staffing requests and the sync schedule, added 2026-09-29
+
+**PhotoValidation feed.** The worker pulls PhotoValidation's staffing request lines (Contract B,
+`GET {PHOTOVALIDATION_API_URL}/api/v1/staffing-requests?updatedSince=&page=&limit=500`, bearer
+`PHOTOVALIDATION_API_TOKEN`) every `PV_SYNC_INTERVAL_MINUTES` (default 15, 0 = off) into
+`core.fact_staffing_request` (migration 041, `app/sources/photovalidation.py`), upserted by `line_id`.
+`updatedSince` is the largest `updated_at` held; within a pull the cursor moves to each full page's last
+`updatedAt`. Lines resolve to a job through the WinTeam job number and database: `Crane` through
+`mart.v_api_job_map` (never a Sarus row; the namespaced `Crane:<n>` row on a collision), `Sarus` through
+`mart.v_sarus_job_map`; unmapped lines are kept with no job. Nothing runs without both variables.
+
+**Weekly demand.** `mart.job_week` gains `requested_headcount` (sum of `headcount_needed` over lines
+approved or posted) and `pending_requested_headcount` (lines submitted and undecided), each read at the
+end of the week (Monday 00:00 UTC after it) or now for the week in progress, from the line timestamps: a
+line is pending from `submitted_at` until `decided_at` (or `closed_at` when withdrawn undecided), and
+active from its approval (`decided_at`, else `posted_at`) until `filled_at` or `closed_at`. The week in
+progress therefore equals the current state; past weeks keep the demand that was open then. Both are
+null until the feed first loads. Refreshed after every pull and at every mart rebuild.
+
+**WinTeam interval.** Every `WINTEAM_SYNC_INTERVAL_MINUTES` (default 30, 0 = off) the worker runs
+`sync_all(resources=[jobs, timekeeping])` for the primary database and, when enabled, Sarus: never
+forced, so timekeeping re-reads 3 days before its last sync and jobs are re-read at most once per 20
+hours; everything else waits for the nightly run. A database is due when its last timekeeping sync
+(from any trigger) started an interval ago. One mart rebuild follows when anything was normalized.
+Every WinTeam sync (nightly, interval, Admin) holds one Postgres advisory lock; the Admin routes answer
+409 while it is held and the worker skips to its next tick.
+
+| Route | Response |
+|---|---|
+| `GET /staffing/jobs/{company}/{job_number}?week=` (analyst, admin) | `{source, configured, as_of, week, requested_headcount, pending_requested_headcount, lines: [StaffingRequestLine]}`. `company` and `job_number` as in `GET /leadership/sites/...`; `week` = any date in the week (default this week); the headcounts follow the `mart.job_week` rule for that week (null before the feed loads). Lines: open first, then newest submission; at most 200. `as_of` = the last successful pull. 404 for an unknown job. |
+| `GET /integrations/photovalidation` | `{configured, base_url_host, interval_minutes, watermark, lines, mapped_lines, open_lines, last_run: {status, started_at, completed_at, records_fetched, records_inserted, error_message} \| null}`. Never returns the token. |
+| `POST /integrations/photovalidation/sync` (admin) | `{run_id, status: 'succeeded' \| 'failed', since, fetched, loaded, rejected, job_keys_changed, job_week_rows_changed, error?}`. One incremental pull, then the job resolution and `mart.job_week` demand refresh (no mart rebuild). GET-only against PhotoValidation; 409 when not configured or while another pull runs. |
+
+```
+StaffingRequestLine = { line_id, request_id, request_code, site_name, role, shift: 'day'|'swing'|'night'|'weekend'|'other',
+  shift_start, shift_end, headcount_needed, current_filled, reason, employment_type, hours_per_week, pay_rate (USD per hour),
+  needed_by, status: 'submitted'|'approved'|'posted'|'filled'|'rejected'|'cancelled', hire_job_id, reported_headcount,
+  submitted_at, decided_at, posted_at, filled_at, closed_at, updated_at, days_open (submission to fill or close; to now while open) }
+```
+
+Pulls are recorded in `ops.integration_sync_run` as integration `photovalidation`, so `GET /leadership/config`
+`status.syncs` reports them.
+
