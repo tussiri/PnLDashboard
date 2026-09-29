@@ -1,9 +1,34 @@
 #!/bin/sh
-# Sourced by the nginx entrypoint before the templates are rendered. The /api proxy resolves the API
-# hostname per request, so nginx needs a resolver: the first nameserver in resolv.conf (Docker's
-# embedded DNS locally, the platform's on Render) unless NGINX_RESOLVER is set.
+# Sourced by the nginx entrypoint before the templates are rendered.
+#
+# The /api proxy resolves the API hostname per request through `resolver`, so nginx needs:
+#   NGINX_RESOLVER  the first nameserver in resolv.conf (Docker's embedded DNS locally, the
+#                   platform's on Render) unless set.
+#   API_UPSTREAM    host:port. nginx's resolver ignores resolv.conf `search` domains. Docker's DNS
+#                   answers a bare service name (api), but Render's private names only resolve with
+#                   the search domain appended, so a bare name that does not resolve as-is is
+#                   expanded to the first search domain that does (else the first one listed).
+ns=$(awk '/^nameserver/ { print $2; exit }' /etc/resolv.conf)
 if [ -z "${NGINX_RESOLVER:-}" ]; then
-  ns=$(awk '/^nameserver/ { print $2; exit }' /etc/resolv.conf)
-  case "$ns" in *:*) ns="[$ns]" ;; esac
-  export NGINX_RESOLVER="${ns:-127.0.0.11}"
+  case "$ns" in *:*) NGINX_RESOLVER="[$ns]" ;; *) NGINX_RESOLVER="${ns:-127.0.0.11}" ;; esac
+  export NGINX_RESOLVER
 fi
+
+api_host=${API_UPSTREAM%:*}
+api_port=${API_UPSTREAM##*:}
+case "$api_host" in
+  *.*) ;;
+  *)
+    if ! nslookup "$api_host." "$ns" >/dev/null 2>&1; then
+      first=""
+      expanded=""
+      for domain in $(awk '/^search/ { for (i = 2; i <= NF; i++) print $i }' /etc/resolv.conf); do
+        [ -z "$first" ] && first=$domain
+        if nslookup "$api_host.$domain." "$ns" >/dev/null 2>&1; then expanded="$api_host.$domain"; break; fi
+      done
+      if [ -n "$expanded" ]; then api_host=$expanded; elif [ -n "$first" ]; then api_host="$api_host.$first"; fi
+    fi
+    ;;
+esac
+export API_UPSTREAM="$api_host:$api_port"
+echo "15-resolver: API upstream $API_UPSTREAM via resolver $NGINX_RESOLVER" >&2
