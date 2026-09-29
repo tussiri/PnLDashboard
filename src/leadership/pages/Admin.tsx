@@ -191,6 +191,7 @@ function DataTab() {
       <div className="ctrl">
         <button type="button" className="btn" disabled={busy} onClick={() => run('WinTeam synced', () => api.syncAll())}>Sync WinTeam</button>
         <button type="button" className="btn" disabled={busy} onClick={() => run('Sarus synced', () => api.syncSarus())}>Sync Sarus</button>
+        <button type="button" className="btn" disabled={busy} onClick={() => run('PhotoValidation synced', () => api.syncPhotoValidation())}>Sync PhotoValidation</button>
         <button type="button" className="btn" disabled={busy} onClick={() => run('Marts rebuilt', () => api.rebuildMarts())}>Rebuild marts</button>
         {busy && <span className="ks">Running</span>}
       </div>
