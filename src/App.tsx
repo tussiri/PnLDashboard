@@ -10,13 +10,12 @@ import { LeadershipProvider, useLeadership } from './leadership/state'
 import { Skeleton } from './leadership/ui'
 
 function Page() {
-  const { route, config, decision, user } = useLeadership()
+  const { route, config, decision, user, can, unlimited } = useLeadership()
   if (!decision || (!config.data && !config.error)) return <Skeleton height={420} />
   if (route.view === 'account') return <Account />
-  // Company covers every account: users limited to some accounts see Home instead.
-  if (route.view === 'company' && (user.role === 'admin' || !user.accounts?.length)) return <Company />
-  // Analytics is being reworked: administrators only until it is ready for everyone.
-  if (route.view === 'analytics' && user.role === 'admin') return <Analytics />
+  // Company and Analytics cover every account: users limited to some accounts see Home instead.
+  if (route.view === 'company' && unlimited && can('view.company')) return <Company />
+  if (route.view === 'analytics' && unlimited && can('view.analytics')) return <Analytics />
   if (route.view === 'admin') return <Admin />
   return <Home />
 }

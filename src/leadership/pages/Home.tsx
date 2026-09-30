@@ -15,6 +15,7 @@ function AccountSnapshot({ account, rows, prior, options, periodLabel }: {
   account: LeadershipAccount; rows: LeadershipRow[]; prior: LeadershipRow[]; options: MetricOptions; periodLabel: string
 }) {
   const period = options.period ?? 'week'
+  const { can } = useLeadership()
   const s = rows.length ? accountSummary(rows, options, segmentOrder(account)) : null
   const p = prior.length ? accountSummary(prior, options, segmentOrder(account)) : null
   const vocab = vocabOf(account)
@@ -43,7 +44,7 @@ function AccountSnapshot({ account, rows, prior, options, periodLabel }: {
     <div className="snap__grid">
       <div><span className="kl">{invoiceLabel(w, vocab, period)}</span><b>{money(a.invoice)}</b></div>
       <div><span className="kl">{w.labor}</span><b>{money(a.cost)}</b></div>
-      <div><span className="kl">Margin</span><b className={a.margin < 0 ? 'bad' : ''}>{money(a.margin)}</b><span className="ks">{pct(a.marginPct)}{a.allocation > 0 ? `, after ${moneyK(a.allocation)} alloc.` : ''}</span></div>
+      {can('data.allocations') && <div><span className="kl">Margin</span><b className={a.margin < 0 ? 'bad' : ''}>{money(a.margin)}</b><span className="ks">{pct(a.marginPct)}{a.allocation > 0 ? `, after ${moneyK(a.allocation)} alloc.` : ''}</span></div>}
       <div><span className="kl">{w.hoursOver}</span><b className={over > 0 ? 'bad' : 'ok'}>{hours1(over / (options.periodDays ?? 7))}<span className="of">/day</span></b><span className="ks">{hours(over)}h this {period}</span></div>
       <div><span className="kl">OT %</span><b className={a.otPct > 0.15 ? 'bad' : a.otPct > 0.1 ? 'warn' : ''}>{pct(a.otPct)}</b><span className="ks">{hours(a.otHours)} hrs</span></div>
       <div><span className="kl">{w.hours}</span><b>{hours(a.hours)}</b></div>

@@ -451,9 +451,13 @@ Sign-in itself (`/auth/login`, `/auth/logout`, `/auth/me`, `/auth/mode`) is desc
 |---|---|
 | `GET /auth/setup` | `{needed}`: true while `APP_SETUP_TOKEN` is set and no database or `APP_USERS_JSON` user exists. Public. |
 | `POST /auth/setup` | Body `{token, username, password}`. Creates the first administrator and sets the session cookie; `201 {user: {username, role}}`. `404` without a setup token, `409` once any user exists, `401` for a wrong code, `422` for an invalid username or a password under 10 characters. Public. |
-| `GET /users` | Admin. `{users: [{username, role, active, source, accounts, created_at, created_by, last_login_at}]}` (`accounts`: slugs the user may see, null = every account); `source` is `database`, `environment` (`APP_USERS_JSON`, read-only) or `development` (dev mode). Never returns hashes. |
-| `POST /users` | Admin. Body `{username, role, password, accounts?}`; `201 {user}`. `409` when the name exists (any case) or is an environment user. |
-| `PATCH /users/{username}` | Admin. Body any of `{role, active, password, accounts}` (`accounts: []` = every account); `{user}`. `409` for an environment user or when the change would leave no active administrator; `404` for an unknown user. A password reset refuses every session issued before it (the administrator resetting their own password gets a fresh cookie). |
+| `GET /users` | Admin. `{users: [{username, role, active, source, accounts, permissions, effective_permissions, created_at, created_by, last_login_at}]}` (`accounts`: slugs the user may see, null = every account; `permissions`: overrides over the role's defaults; `effective_permissions`: every key after them); `source` is `database`, `environment` (`APP_USERS_JSON`, read-only) or `development` (dev mode). Never returns hashes. |
+| `GET /users/permissions` | Admin. The catalog: `{permissions: [{key, group, label}], defaults: {executive: {key: bool}, analyst, admin}}`. |
+| `POST /users` | Admin. Body `{username, role, password, accounts?, permissions?}`; `201 {user}`. `409` when the name exists (any case) or is an environment user; `422` for an unknown permission key. |
+| `PATCH /users/{username}` | Admin. Body any of `{role, active, password, accounts, permissions}` (`accounts: []` = every account; `permissions: {}` = the role's defaults, otherwise the whole override set); `{user}`. `409` for an environment user or when the change would leave no active administrator; `404` for an unknown user. A password reset refuses every session issued before it (the administrator resetting their own password gets a fresh cookie). |
+
+`/auth/login`, `/auth/setup` and `/auth/me` answer `{user: {username, role, accounts, permissions}}`
+where `permissions` are the user's effective values (see the permissions section below).
 
 ## Report parity: FedEx and Amazon weekly reports, added 2026-09-29
 
@@ -583,4 +587,25 @@ The month view includes subcontracted sites (the weekly views leave them out for
   its payables for the month are in; `ar_invoices`: the month's Relay AR invoices.
 * Allocations at monthly amounts: management wages of the month, labor × the month's burden rate,
   and the overhead pool × the job's share of the month's company revenue.
+
+## Per-user permissions, added 2026-09-30
+
+Migration 042 (`ops.app_user.permissions jsonb`), app/permissions.py, mirrored in
+`src/auth/permissions.ts`. A role is a preset: each permission has a default per role; a user's
+overrides switch single permissions on or off (Admin > Users > Permissions; or `"permissions"` on
+an `APP_USERS_JSON` entry). Administrators hold every permission. Account scope (which accounts) is
+separate and unchanged.
+
+| Key | Default off for | Enforced by |
+|---|---|---|
+| `view.company` | – | `403` on `GET /leadership/company`; the Company link |
+| `view.analytics` | executive, analyst | the Analytics link (its data is the user's own rows) |
+| `tab.sites`, `tab.pallet`, `tab.over-target`, `tab.overtime`, `tab.income-statement`, `tab.subcontracted`, `tab.map` | – | the account tab |
+| `tab.vendors` | – | `403` on `GET /leadership/vendors`; the Vendors tab |
+| `data.allocations` | – | `alloc_management`, `alloc_burden`, `alloc_overhead` are dropped from the rows of `/leadership/rows`, `/leadership/month` and `/leadership/sites/…`; margin is hidden |
+| `data.month` | – | `403` on `GET /leadership/month`; the Week / Month switch |
+| `data.staffing` | executive | `403` on `GET /staffing/jobs/…`; the staffing card |
+| `data.invoices` | – | `invoices: null` on `/leadership/sites/…` |
+| `data.photos` | – | `photos: null` on `/leadership/sites/…` |
+| `data.export` | – | the CSV buttons |
 

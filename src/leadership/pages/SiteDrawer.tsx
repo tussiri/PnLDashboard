@@ -43,7 +43,7 @@ function StaffingCard({ company, job }: { company: string; job: string }) {
 
 /** Site detail drawer: this week's labor P&L, a 13-week trend, staffing requests, subcontractor invoices and CompanyCam photos. */
 export function SiteDrawer({ company, job }: { company: string; job: string }) {
-  const { api, keyPrefix, decision, weekStart, navigate, accountBySlug, optionsFor, user } = useLeadership()
+  const { api, keyPrefix, decision, weekStart, navigate, accountBySlug, optionsFor, can } = useLeadership()
   const t = useTokens()
   const panel = useRef<HTMLDivElement>(null)
   const close = () => navigate({ site: undefined })
@@ -81,7 +81,7 @@ export function SiteDrawer({ company, job }: { company: string; job: string }) {
           <Kpi label={m} value={pct(current.measurePct)} tone={toneOf(current.status)} sub={`${current.measurePct == null ? '' : `${pts(current.measurePct - current.target)} vs ${pct(current.target)} target; `}${monthLabel(current.revenue_month)} ${pct(current.priorLaborPct)}`} />
           <Kpi label="Hours" value={hours1(current.hours)} sub={`${hours1(current.ot_hours)} OT (${pct(current.otPct)})`} />
           <Kpi label="Hours to cut" value={<>{hours1(current.overHours / 7)}<span className="of">/day</span></>} tone={current.overHours > 0.5 ? 'bad' : 'ok'} sub={`${hours1(current.overHours)}h this week; base rate ${rate(current.baseRate)}`} />
-          <Kpi label="Margin" value={money(current.margin)} tone={current.margin < 0 ? 'bad' : ''} sub={current.allocation > 0 ? `After ${money(current.allocation)} alloc.` : undefined} />
+          {can('data.allocations') && <Kpi label="Margin" value={money(current.margin)} tone={current.margin < 0 ? 'bad' : ''} sub={current.allocation > 0 ? `After ${money(current.allocation)} alloc.` : undefined} />}
           {(includesVendor(account) || (current.sub_week ?? 0) > 0) && <Kpi label={vendorLabel(account)} value={money(current.sub_week)} sub={includesVendor(account) ? `Total labor ${money(current.cost)}` : undefined} />}
         </div> : <Empty>No data for this week.</Empty>}
         {weeks.length > 1 && <ChartCard title={`${m} by week`} height={200}
@@ -89,15 +89,15 @@ export function SiteDrawer({ company, job }: { company: string; job: string }) {
           chart={<TrendChart labels={weeks.map((r) => weekTick(r.week_start))} values={weeks.map((r) => r.measurePct)} target={current?.target ?? options.target} label={m} />}
           table={<table><thead><tr><th className="nosort l">Week ending</th><th className="nosort">Invoicing</th><th className="nosort">Direct labor</th><th className="nosort">{m}</th><th className="nosort">Hours</th><th className="nosort">OT hrs</th></tr></thead>
             <tbody>{weeks.map((r) => <tr key={r.week_start}><td className="l">{weekTick(r.week_start)}</td><td>{money(r.invoice)}</td><td>{money(r.labor)}</td><td>{pct(r.measurePct)}</td><td>{hours1(r.hours)}</td><td>{hours1(r.ot_hours)}</td></tr>)}</tbody></table>} />}
-        {user.role !== 'executive' && <StaffingCard company={company} job={job} />}
-        <div className="card">
+        {can('data.staffing') && <StaffingCard company={company} job={job} />}
+        {q.data.invoices && <div className="card">
           <div className="ct"><span>{vendorLabel(account)} invoices since {monthLabel(q.data.invoices.since)}</span><span>{money(q.data.invoices.total)}</span></div>
           {q.data.invoices.lines.length ? <div className="tw"><table><caption className="sr-only">{vendorLabel(account)} invoices</caption>
             <thead><tr><th className="nosort l">Date</th><th className="nosort l">Vendor</th><th className="nosort l">Invoice</th><th className="nosort l">Source</th><th className="nosort">GL</th><th className="nosort">Amount</th></tr></thead>
             <tbody>{q.data.invoices.lines.map((l, i) => <tr key={`${l.invoice_number}-${i}`}><td className="l">{l.invoice_date}</td><td className="l nm">{l.vendor_name}</td><td className="l">{l.invoice_number}</td><td className="l neutral">{l.source === 'relay' ? 'Relay' : 'WinTeam'}</td><td>{l.gl_account_number ?? '–'}</td><td>{money(l.amount)}</td></tr>)}</tbody>
           </table></div> : <Empty>No {inSentence(vendorLabel(account))} invoices.</Empty>}
-        </div>
-        <div className="card">
+        </div>}
+        {q.data.photos && <div className="card">
           <div className="ct"><span>Photos</span></div>
           {!q.data.photos.configured ? <Empty>CompanyCam is not connected.</Empty>
             : !q.data.photos.project_id ? <Empty>No CompanyCam project mapped.</Empty>
@@ -105,7 +105,7 @@ export function SiteDrawer({ company, job }: { company: string; job: string }) {
                 : q.data.photos.items?.length ? <div className="photos">{q.data.photos.items.map((p, i) => <a key={String(p.id ?? i)} href={p.web ?? '#'} target="_blank" rel="noreferrer noopener">
                   <img src={p.thumbnail ?? p.web ?? ''} alt={`Site photo${p.creator_name ? ` by ${p.creator_name}` : ''}`} loading="lazy" /></a>)}</div>
                   : <Empty>No photos.</Empty>}
-        </div>
+        </div>}
         {site && <div className="card"><div className="ct"><span>Site</span>{site.role !== 'site' && <Badge status="none" label={site.role === 'catch_all' ? 'Catch-all' : 'Non-billed'} />}</div>
           <dl className="dl">
             <dt>Address</dt><dd>{[site.address_line_1, site.city, site.state_province, site.postal_code].filter(Boolean).join(', ') || '–'}</dd>

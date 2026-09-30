@@ -10,7 +10,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
-from .. import users
+from .. import permissions, users
 from ..auth import User, get_auth_settings
 from ..common import current_user, require_admin
 from .auth import set_session_cookie
@@ -24,6 +24,8 @@ class UserIn(BaseModel):
     password: str = Field(min_length=1, max_length=1000)
     #: Accounts the user may see; empty or absent = every account.
     accounts: list[str] | None = None
+    #: Permission overrides over the role's defaults; absent or {} = the defaults.
+    permissions: dict[str, bool] | None = None
 
 
 class UserPatch(BaseModel):
@@ -32,6 +34,8 @@ class UserPatch(BaseModel):
     password: str | None = Field(default=None, min_length=1, max_length=1000)
     #: Present (even as []) = replace; [] = every account.
     accounts: list[str] | None = None
+    #: Present = replace the overrides; {} = the role's defaults.
+    permissions: dict[str, bool] | None = None
 
 
 def known_accounts() -> set[str]:
@@ -59,10 +63,17 @@ def environment_admins() -> int:
 def list_users() -> dict[str, Any]:
     settings = get_auth_settings()
     env = [{"username": u.username, "role": u.role, "active": True, "source": "development" if settings.is_dev_user(u) else "environment",
-            "accounts": list(u.accounts) if u.accounts else None, "created_at": None, "created_by": None, "last_login_at": None}
+            "accounts": list(u.accounts) if u.accounts else None, "permissions": dict(u.permissions or {}),
+            "effective_permissions": permissions.effective(u.role, u.permissions), "created_at": None, "created_by": None, "last_login_at": None}
            for u in settings.users.values()]
     taken = {u["username"] for u in env}
     return {"users": env + [u for u in users.listing() if u["username"] not in taken]}
+
+
+@router.get("/users/permissions")
+def permission_catalog() -> dict[str, Any]:
+    """Every permission (key, group, label) and each role's defaults."""
+    return permissions.catalog()
 
 
 @router.post("/users", status_code=201)
@@ -71,7 +82,7 @@ def create_user(body: UserIn, request: Request) -> dict[str, Any]:
         raise HTTPException(status_code=409, detail=f"{body.username.strip()} is defined in APP_USERS_JSON")
     try:
         accounts = users.normalize_accounts(body.accounts, known_accounts() if body.accounts else None)
-        return {"user": users.create(body.username, body.role, body.password, _actor(request), accounts=accounts).public()}
+        return {"user": users.create(body.username, body.role, body.password, _actor(request), accounts=accounts, permissions_=body.permissions).public()}
     except users.UserError as exc:
         raise _fail(exc) from exc
 
@@ -84,8 +95,8 @@ def update_user(username: str, body: UserPatch, request: Request, response: Resp
     try:
         accounts = (users.normalize_accounts(body.accounts, known_accounts() if body.accounts else None)
                     if "accounts" in body.model_fields_set else users.UNCHANGED)
-        updated = users.update(username, actor, role=body.role, active=body.active, password=body.password,
-                               environment_admins=environment_admins(), accounts=accounts)
+        updated = users.update(username, actor, role=body.role, active=body.active, password=body.password, environment_admins=environment_admins(),
+                               accounts=accounts, permissions_=body.permissions if "permissions" in body.model_fields_set else users.UNCHANGED)
     except users.UserError as exc:
         raise _fail(exc) from exc
     # A password reset ends every earlier session; keep the administrator who reset their own signed in.

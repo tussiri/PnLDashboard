@@ -1,8 +1,9 @@
 export type Role = 'executive' | 'analyst' | 'admin'
 export const ROLES: readonly Role[] = ['executive', 'analyst', 'admin']
 
-/** accounts: the account slugs the user may see; null or absent = every account. */
-export interface AuthUser { username: string; role: Role; accounts?: string[] | null }
+/** accounts: the account slugs the user may see; null or absent = every account. permissions: the
+ * effective per-user permissions from the API (src/auth/permissions.ts); absent = the role's defaults. */
+export interface AuthUser { username: string; role: Role; accounts?: string[] | null; permissions?: Partial<Record<string, boolean>> | null }
 
 export const roleLabel: Record<Role, string> = { executive: 'Executive access', analyst: 'Analyst access', admin: 'Administrator access' }
 

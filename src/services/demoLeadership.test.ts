@@ -24,7 +24,7 @@ describe('demo leadership adapter', () => {
     expect(new Set(featured.rows.map((r) => r.account_slug)).size).toBeGreaterThan(5)
     const site = await api.leadershipSite('Crane Southwest', '853', { weeks: 13 })
     expect(site.weeks).toHaveLength(13)
-    expect(site.invoices.total).toBe(14132)
+    expect(site.invoices?.total).toBe(14132)
     await expect(api.leadershipUpload(new File(['x'], 'x.csv'))).rejects.toThrow(/demo mode/)
   })
 

@@ -1,4 +1,5 @@
 import { request } from '../services/api'
+import type { Permission } from './permissions'
 import type { AuthUser, Role } from './roles'
 
 export type AuthMode = 'dev' | 'required'
@@ -12,11 +13,14 @@ export interface AppUser {
   source: 'database' | 'environment' | 'development'
   /** Account slugs the user may see; null = every account. */
   accounts: string[] | null
+  /** Overrides over the role's defaults, and every permission after them. */
+  permissions: Partial<Record<Permission, boolean>>
+  effective_permissions: Record<Permission, boolean>
   created_at: string | null
   created_by: string | null
   last_login_at: string | null
 }
-export interface AppUserPatch { role?: Role; active?: boolean; password?: string; accounts?: string[] }
+export interface AppUserPatch { role?: Role; active?: boolean; password?: string; accounts?: string[]; permissions?: Partial<Record<Permission, boolean>> }
 
 /** Session routes are same-origin and cookie-based; the browser never sees the session value. */
 export const authApi = {

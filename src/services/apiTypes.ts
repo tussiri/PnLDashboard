@@ -1495,8 +1495,9 @@ export interface LeadershipSiteResponse {
     companycam_project_id: string | null
   }
   weeks: LeadershipRow[]
-  invoices: { since: string; vendor_type_ids: string[]; total: number; lines: LeadershipInvoiceLine[] }
-  photos: { configured: boolean; project_id: string | null; items: LeadershipPhoto[] | null; error: string | null }
+  /** Null when the user lacks the data.invoices / data.photos permission. */
+  invoices: { since: string; vendor_type_ids: string[]; total: number; lines: LeadershipInvoiceLine[] } | null
+  photos: { configured: boolean; project_id: string | null; items: LeadershipPhoto[] | null; error: string | null } | null
 }
 
 export interface LeadershipVendorsResponse {

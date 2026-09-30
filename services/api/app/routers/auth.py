@@ -8,7 +8,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
-from .. import users
+from .. import permissions, users
 from ..auth import COOKIE_NAME, SESSION_TTL_SECONDS, User, get_auth_settings, sign_session
 from ..common import current_user
 
@@ -55,7 +55,7 @@ def set_session_cookie(response: Response, request: Request, user: User) -> None
 
 
 @router.post("/auth/login")
-def login(body: LoginBody, request: Request, response: Response) -> dict[str, dict[str, str]]:
+def login(body: LoginBody, request: Request, response: Response) -> dict[str, Any]:
     settings = get_auth_settings()
     name = body.username.strip()
     # APP_USERS_JSON (and development) users first; they win on a name clash with a database user.
@@ -64,7 +64,14 @@ def login(body: LoginBody, request: Request, response: Response) -> dict[str, di
         time.sleep(FAILED_LOGIN_DELAY_SECONDS)
         raise HTTPException(status_code=401, detail="Invalid username or password")
     set_session_cookie(response, request, user)
-    return {"user": user.as_dict()}
+    return {"user": user_payload(user)}
+
+
+def user_payload(user: User) -> dict[str, Any]:
+    """The browser's view of a user: role, the accounts it may see (null = every account) and its
+    effective permissions (app/permissions.py)."""
+    return {**user.as_dict(), "accounts": list(user.accounts) if user.accounts and user.role != "admin" else None,
+            "permissions": permissions.effective(user.role, user.permissions)}
 
 
 def setup_needed() -> bool:
@@ -80,7 +87,7 @@ def setup_status() -> dict[str, bool]:
 
 
 @router.post("/auth/setup", status_code=201)
-def setup(body: SetupBody, request: Request, response: Response) -> dict[str, dict[str, str]]:
+def setup(body: SetupBody, request: Request, response: Response) -> dict[str, Any]:
     """Create the first administrator and sign them in. Closed for good once any user exists."""
     settings = get_auth_settings()
     if not settings.setup_token:
@@ -96,7 +103,7 @@ def setup(body: SetupBody, request: Request, response: Response) -> dict[str, di
         raise HTTPException(status_code=exc.status, detail=str(exc)) from exc
     user = User(created.username, created.role)
     set_session_cookie(response, request, user)
-    return {"user": user.as_dict()}
+    return {"user": user_payload(user)}
 
 
 @router.post("/auth/logout")
@@ -111,4 +118,4 @@ def me(request: Request) -> dict[str, Any]:
     user = current_user(request)
     if user is None:
         raise HTTPException(status_code=401, detail="Sign in required")
-    return {"user": {**user.as_dict(), "accounts": list(user.accounts) if user.accounts and user.role != "admin" else None}}
+    return {"user": user_payload(user)}

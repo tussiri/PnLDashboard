@@ -151,6 +151,13 @@ input[type=search]{min-width:200px}
 
 /* Tables */
 .tw{overflow-x:auto}
+.matrix th.grp{text-align:center;border-bottom:0.5px solid var(--border)}
+.matrix thead tr:last-child th{height:96px;vertical-align:bottom;padding:4px 2px}
+.matrix thead tr:last-child th span{writing-mode:vertical-rl;transform:rotate(180deg);font-weight:500;white-space:nowrap}
+.matrix td{text-align:center}
+.matrix td.l{text-align:left}
+.matrix td input[type=checkbox]{width:14px;min-height:0}
+.matrix td.over{background:color-mix(in srgb,var(--warn) 14%,transparent)}
 table{width:100%;border-collapse:collapse;font-size:12px;font-variant-numeric:tabular-nums}
 th{color:var(--text3);font-weight:500;font-size:11px;text-align:right;padding:0;border-bottom:0.5px solid var(--border);white-space:nowrap}
 th button{all:unset;display:block;width:100%;box-sizing:border-box;padding:6px 7px;cursor:pointer;text-align:inherit}
