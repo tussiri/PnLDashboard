@@ -138,3 +138,23 @@ def test_job_cost_merge_accepts_overtime_hours():
     _load_job_cost(cursor, 1, [record, {**record, "revenue": Decimal(50), "overtime_hours": Decimal("1.5")}])
     inserted = cursor.params[-1]
     assert inserted[4] == Decimal(150) and inserted[14] == Decimal(5)
+
+
+TIMEKEEPING_QUERY = ["ExportRunDate", "ExportStartDate", "ExportEndDate", "TKHoursID", "JobNum", "JobDesc", "EmployeeNumber", "WorkDate", "Hours",
+                     "PayRate", "HoursTypeID", "HoursTypeDescription", "RegularHours", "OvertimeHours", "DoubletimeHours", "SupervisorDescription",
+                     "CompanyNumber", "CompanyName", "OTRate", "DTRate", "Dollars", "OTDollars", "DTDollars", "TotalLaborDollars", "JobNumber", "PaidByCheckID"]
+
+
+def test_the_scheduled_timekeeping_query_loads_as_the_pay_report():
+    """The WinTeam scheduled query (<Company>_timekeeping_recent_*.csv) as it arrives in the mailbox."""
+    from app.imports import detect_kind
+
+    values = ["9/30/2026 3:00:01 AM", "9/9/2026", "9/29/2026", "292700", "300", "Amazon - BDL3/7", "30548", "9/15/2026", "10.0000", "17.0000", "15",
+              "Ops/Regular", "8.0000", "2.0000", "0.0000", "Pat Lead", "1", "ServiceMaster by Sarus Co", "25.50000", "34.00000", "136.000000",
+              "51.000000", "0.000000", "187.000000", "300", "88123"]
+    assert detect_kind("Sarus_timekeeping_recent_20260930_0309.csv", TIMEKEEPING_QUERY) == "pay_report"
+    parsed = normalize_rows("pay_report", TIMEKEEPING_QUERY, [dict(zip(TIMEKEEPING_QUERY, values))], COMPANIES, {"ServiceMaster by Sarus Co": "Sarus"})
+    r = parsed.records[0]
+    assert parsed.errors == [] and r["company"] == "Sarus"  # by name: Sarus is company 1 in its own database
+    assert (r["total_hours"], r["total_dollars"], r["overtime_dollars"], r["regular_dollars"]) == (Decimal("10"), Decimal("187"), Decimal("51"), Decimal("136"))
+    assert r["work_date"].isoformat() == "2026-09-15" and r["paid_by_check_id"] == "88123"

@@ -146,3 +146,14 @@ Files land in the import folder the nightly sync reads (default `imports/inbox/`
 the API container; `IMPORT_INBOX_DIR`), or are uploaded on the Admin page. Each file is recorded
 in `ops.import_file` by content hash, so re-sending a file is harmless. Name files
 `<feed>_<company>_<YYYYMMDD>.csv`, e.g. `pay_report_crane-southwest_20260921.csv`.
+
+### WinTeam scheduled queries, as emailed
+
+The records mailbox (docs/mail-inbox.md) and the Admin upload recognize these by their columns, so
+the WinTeam Query Scheduler can email them as they are; the file name does not matter.
+
+| Scheduled query (file as sent) | Loads as | Notes |
+|---|---|---|
+| `<Company>_timekeeping_recent_<date>.csv` | Pay Report Timekeeping | One row per punch with WorkDate and TotalLaborDollars. Covers its companies from the first to the last work date in the file; start the window on a Monday so the first week is whole. Straight-time pay arrives as `Dollars`; regular dollars are total less OT and DT. One file per WinTeam database (Crane, Sarus): the company is taken from CompanyName through `company_aliases` first, because the company numbers of the two databases overlap. |
+| `SYS Query Scheduler - <stamp>.xlsx` (Job Cost Analysis by GL line) | Job Cost Analysis | Replaces its companies' job cost for the fiscal periods in the file. It carries the GL lines the query selects; one limited to revenue, labor and subcontractor lines loads no payroll taxes, materials or supplies for the month. |
+| `<Company>_hours_budget_comparison_<date>.csv` (timekeeping labor summary) | Pay Report labor | Only when run for one Monday-Sunday week. A longer window whose rows cannot be split into weeks is refused as a whole and nothing is loaded. Not needed when the timekeeping query is sent. |

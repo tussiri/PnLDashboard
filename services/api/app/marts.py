@@ -406,7 +406,9 @@ SELECT
   manager_name, city, state_province, country_code, latitude, longitude, month,
   revenue, invoiced_total, collected_total, invoice_count,
   hours, regular_hours, overtime_hours, labor_cost, burden_cost, direct_cost, gross_profit,
-  CASE WHEN revenue <> 0 THEN round(gross_profit / revenue, 4) END,
+  -- A job with cents of revenue against real cost (a catch-all) has no meaningful margin ratio, and
+  -- it would overflow gross_margin_pct numeric(9,4).
+  CASE WHEN revenue <> 0 AND abs(gross_profit) < abs(revenue) * 99999 THEN round(gross_profit / revenue, 4) END,
   scheduled_hours, budget_revenue, budget_labor, budget_subcontract, budget_supplies,
   employee_count, work_days, last_work_date,
   CASE WHEN cardinality(notes) > 0 THEN 'warning' ELSE 'passed' END,

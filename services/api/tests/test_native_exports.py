@@ -59,6 +59,16 @@ def test_a_month_long_window_that_does_not_reconcile_is_refused():
     assert parsed.records == [] and "one Monday-Sunday week" in parsed.errors[0]
 
 
+def test_a_month_long_window_loads_nothing_even_when_some_rows_reconcile():
+    # The hours budget comparison run for a month: rows worked only in its first days reconcile, the rest
+    # cannot be split, and a half-loaded window would be marked covered with part of its labor.
+    parsed = Parsed(kind="pay_report")
+    rows = [labor_row(start="9/1/2026", end="9/30/2026", run="9/30/2026 5:00:07 AM", daily=(8, 8, 8), total=24),
+            labor_row(start="9/1/2026", end="9/30/2026", run="9/30/2026 5:00:07 AM", daily=(0,) * 7, total=11.47)]
+    assert labor_summary(rows, ALIASES, NUMBERS, parsed) == {}
+    assert parsed.records == [] and parsed.errors[0].startswith("1 row(s) cannot be split into weeks")
+
+
 def jca(job, company_no, company, gl, dollars, hours="0", ot="0", period="7/1/2026", desc="Job"):
     return {"ExportRunDate": "8/2/2026 5:00:13 AM", "FiscalYear": "2026", "FiscalPeriod": "7", "PeriodStartDate": period, "PeriodEndDate": "7/31/2026",
             "CompanyNumber": company_no, "CompanyName": company, "JobNumber": job, "JobDescription": desc, "Type": "1", "GLAccountNumber": gl,
