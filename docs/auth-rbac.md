@@ -27,6 +27,17 @@ modules stay free of session logic:
 
 Responses: `401` when no valid session exists, `403` when the role is not allowed.
 
+## Permissions
+
+Roles are presets. Each user also carries a permission matrix (Admin > Users > Permissions):
+Company and Analytics views, each account tab, and data such as allocations and margin, the month
+rollup, staffing requests, vendor invoices, photos and CSV export. Defaults come from the role
+(executives lack Analytics and staffing requests; analysts lack Analytics); an administrator's
+ticks that differ are stored as overrides in `ops.app_user.permissions` (migration 042) and Reset
+returns the role's defaults. Administrators hold everything. `APP_USERS_JSON` entries may carry a
+`"permissions": {"<key>": true|false}` object. The keys and what enforces each are listed in
+`docs/api-contract.md` (per-user permissions).
+
 ## Users and passwords
 
 Users are created and changed in **Admin > Users** and stored in `ops.app_user` (migration 035,

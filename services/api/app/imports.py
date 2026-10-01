@@ -238,8 +238,13 @@ def clean_text(value: Any) -> str | None:
     return text or None
 
 
-def company_label(record: dict[str, Any], company_numbers: dict[str, str]) -> str | None:
-    """The company label the warehouse uses: the company_numbers setting for a number, else the name."""
+def company_label(record: dict[str, Any], company_numbers: dict[str, str], company_aliases: dict[str, str] | None = None) -> str | None:
+    """The company label the warehouse uses: the company_aliases setting for the name first (Sarus and
+    the Crane companies are separate WinTeam databases whose numbers overlap), then the
+    company_numbers setting for the number, else the name."""
+    name = clean_text(record.get("company_name"))
+    if name and company_aliases and name in company_aliases:
+        return company_aliases[name]
     number = clean_text(record.get("company_number"))
     if number is not None:
         label = company_numbers.get(number.split(".")[0])
@@ -260,7 +265,8 @@ class Parsed:
             self.errors.append(message)
 
 
-def normalize_rows(kind: str, headers: list[str], rows: list[dict[str, Any]], company_numbers: dict[str, str]) -> Parsed:
+def normalize_rows(kind: str, headers: list[str], rows: list[dict[str, Any]], company_numbers: dict[str, str],
+                   company_aliases: dict[str, str] | None = None) -> Parsed:
     """Rows -> canonical records. A row with a bad value is skipped and reported by its line number
     (header = line 1); a file missing a required column fails as a whole."""
     parsed = Parsed(kind=kind, rows_read=len(rows))
@@ -288,7 +294,7 @@ def normalize_rows(kind: str, headers: list[str], rows: list[dict[str, Any]], co
                     record[f] = parse_period(v)
                 else:
                     record[f] = clean_text(v)
-            record["company"] = company_label(record, company_numbers) if kind != "income_statement" else record.get("account")
+            record["company"] = company_label(record, company_numbers, company_aliases) if kind != "income_statement" else record.get("account")
             for f in REQUIRED[kind]:
                 if record.get(f) in (None, ""):
                     raise ValueError(f"{f} is empty")
@@ -303,6 +309,9 @@ def normalize_rows(kind: str, headers: list[str], rows: list[dict[str, Any]], co
             hours = [record.get(k) or Decimal(0) for k in ("regular_hours", "overtime_hours", "doubletime_hours")]
             if record.get("total_hours") is None:
                 record["total_hours"] = sum(hours)
+            # The timekeeping query names straight-time pay "Dollars"; without a regular column it is the remainder.
+            if record.get("regular_dollars") is None and record.get("total_dollars") is not None:
+                record["regular_dollars"] = record["total_dollars"] - (record.get("overtime_dollars") or Decimal(0)) - (record.get("doubletime_dollars") or Decimal(0))
         parsed.records.append(record)
     return parsed
 
@@ -467,7 +476,7 @@ def load_file(conn: Any, file_name: str, content: bytes, *, kind: str | None = N
             else:
                 native_exports.job_cost_gl(rows, _company_aliases(cursor), _company_numbers(cursor), parsed, _gl_map(cursor))
         else:
-            parsed = normalize_rows(kind, headers, rows, _company_numbers(cursor))
+            parsed = normalize_rows(kind, headers, rows, _company_numbers(cursor), _company_aliases(cursor))
         if kind == "income_statement":
             slugs, known = _account_slugs(cursor), []
             for r in parsed.records:

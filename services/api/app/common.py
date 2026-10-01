@@ -145,7 +145,7 @@ def current_user(request: Request) -> User | None:
     user, issued_at = claims
     record = settings_.users.get(user.username)
     if record is not None:
-        return User(record.username, record.role, record.accounts)
+        return User(record.username, record.role, record.accounts, record.permissions)
     from . import users
 
     return users.session_user(user, issued_at)

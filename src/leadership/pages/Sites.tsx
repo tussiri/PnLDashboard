@@ -20,7 +20,7 @@ export const roleBadge = (r: Row) => (r.role === 'catch_all' ? <Badge status="no
  * labor % come from job cost (sub counted at the account's factor), else the row's prior month.
  */
 export function Sites({ account, summary, options, selfOnly }: { account: LeadershipAccount; summary: AccountSummary<LeadershipRow>; options: MetricOptions; selfOnly: boolean }) {
-  const { navigate } = useLeadership()
+  const { navigate, can } = useLeadership()
   const w = wordsFor(useVocab())
   const [filter, setFilter] = useState('All')
   const monthly = useMonthly(account.slug)
@@ -33,7 +33,7 @@ export function Sites({ account, summary, options, selfOnly }: { account: Leader
   const hasVariable = summary.sites.some((r) => variableWk(r, options) != null)
   const hasPallet = summary.sites.some((r) => palletOf(r) > 0 || (r.kids?.length ?? 1) > 1)
   const vendor = includesVendor(account) && !selfOnly
-  const allocated = summary.sites.some((r) => r.allocation > 0)
+  const allocated = can('data.allocations') && summary.sites.some((r) => r.allocation > 0)
   const fixed = (r: Row) => r.invoice - (variableWk(r, options) ?? 0)
   const budget = (r: Row) => (r.invoice > 0 ? r.invoice * r.target : null)
   const variance = (r: Row) => (r.invoice > 0 ? r.cost - r.invoice * r.target : null)

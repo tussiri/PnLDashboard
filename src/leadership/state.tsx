@@ -3,15 +3,21 @@ import { useApiQuery, type QueryState } from '../hooks/useApiQuery'
 import type { LeadershipAccount, LeadershipConfig } from '../services/apiTypes'
 import { apiFor, detectMode, type DashboardApi, type ModeDecision } from '../services/dataSource'
 import { queryKey } from '../services/queryClient'
+import { can as canOf, type Permission } from '../auth/permissions'
 import type { AuthUser } from '../auth/roles'
 import type { InvoiceBasis, MetricOptions } from './metrics'
 import { formatRoute, parseRoute, weekEndOf, weekStartOf, type Route } from './routes'
+import { CanExport } from './ui'
 
 export type Theme = 'system' | 'light' | 'dark'
 const THEME_KEY = 'crane-ifs-theme'
 
 export interface LeadershipState {
   user: AuthUser
+  /** Whether the signed-in user holds a permission (src/auth/permissions.ts). */
+  can: (key: Permission) => boolean
+  /** Users limited to some accounts cannot open the every-account views. */
+  unlimited: boolean
   signOut: () => void
   decision: ModeDecision | null
   api: DashboardApi
@@ -133,17 +139,19 @@ export function LeadershipProvider({ user, signOut, children, forcedDecision }: 
   const selectedAccount = accountBySlug(route.account) ?? featured.find((a) => a.sites > 0) ?? featured[0]
   const defaultWeek = config.data?.default_week ?? undefined
   const weekStart = route.week ? weekStartOf(route.week) : defaultWeek
-  const monthMode = route.period === 'month'
+  const can = useCallback((key: Permission) => canOf(user, key), [user])
+  const unlimited = user.role === 'admin' || !user.accounts?.length
+  const monthMode = route.period === 'month' && can('data.month')
   // The month defaults to the one the selected week ends in.
   const month = route.month ?? (weekStart ? weekStart.slice(0, 7) : undefined)
   const targetOverride = route.target != null ? route.target / 100 : null
   const optionsFor = useCallback((account: LeadershipAccount | undefined) => optionsForAccount(account, targetOverride, route.basis), [targetOverride, route.basis])
 
   const value: LeadershipState = {
-    user, signOut, decision, api, keyPrefix, adminApi, adminKeyPrefix, adminConfig, apiReachable, redetect, config, route, navigate, featured, accountBySlug, selectedAccount,
+    user, can, unlimited, signOut, decision, api, keyPrefix, adminApi, adminKeyPrefix, adminConfig, apiReachable, redetect, config, route, navigate, featured, accountBySlug, selectedAccount,
     weekStart, monthMode, month, targetOverride, optionsFor, theme, setTheme: setThemeState,
   }
-  return <Ctx.Provider value={value}>{children}</Ctx.Provider>
+  return <Ctx.Provider value={value}><CanExport.Provider value={value.can('data.export')}>{children}</CanExport.Provider></Ctx.Provider>
 }
 
 /** The week-ending date the URL carries for a week start. */

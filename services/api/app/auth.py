@@ -61,6 +61,8 @@ class User:
     #: Accounts (slugs) the user may see; None = every account. Not carried in the cookie: read from
     #: the user record on each request (app/common.py current_user).
     accounts: tuple[str, ...] | None = None
+    #: Permission overrides over the role's defaults (app/permissions.py); None = the defaults.
+    permissions: Mapping[str, bool] | None = None
 
     def as_dict(self) -> dict[str, str]:
         return {"username": self.username, "role": self.role}
@@ -72,6 +74,7 @@ class UserRecord:
     role: str
     password_hash: str
     accounts: tuple[str, ...] | None = None
+    permissions: Mapping[str, bool] | None = None
 
 
 # ── password hashing ─────────────────────────────────────────────────────────
@@ -146,7 +149,10 @@ def parse_users_json(raw: str) -> dict[str, UserRecord]:
         raw_accounts = item.get("accounts")
         if raw_accounts is not None and (not isinstance(raw_accounts, list) or not all(isinstance(a, str) for a in raw_accounts)):
             raise ConfigurationError(f"APP_USERS_JSON[{index}] ({username}): accounts must be a list of account slugs")
-        users[username] = UserRecord(username, role, password_hash, tuple(raw_accounts) if raw_accounts else None)
+        raw_permissions = item.get("permissions")
+        if raw_permissions is not None and (not isinstance(raw_permissions, dict) or not all(isinstance(v, bool) for v in raw_permissions.values())):
+            raise ConfigurationError(f"APP_USERS_JSON[{index}] ({username}): permissions must be an object of {{key: true|false}}")
+        users[username] = UserRecord(username, role, password_hash, tuple(raw_accounts) if raw_accounts else None, raw_permissions or None)
     return users
 
 
@@ -256,7 +262,7 @@ class AuthSettings:
             return None
         if not verify_password(password, record.password_hash):
             return None
-        return User(record.username, record.role, record.accounts)
+        return User(record.username, record.role, record.accounts, record.permissions)
 
     def is_dev_user(self, record: UserRecord) -> bool:
         return self.dev_mode and record.username in DEV_USERNAMES and record.password_hash == _dev_hash(record.username)

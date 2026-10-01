@@ -71,7 +71,10 @@ interface SortState { key: string; dir: 1 | -1 }
  * last; a text column sorts ascending first and a number column descending first, as in the reference.
  * With `pageSize`, rows are shown a page at a time (sorting and the CSV cover every row).
  */
-export function SortTable<T>({ rows, columns, defaultSort, total, rowClass, onRowClick, rowLabel, csvName, caption, tools, pageSize }: {
+/** Whether CSV downloads are offered (the data.export permission); the leadership provider sets it. */
+export const CanExport = createContext(true)
+
+export function SortTable<T>({ rows, columns, defaultSort, total, rowClass, onRowClick, rowLabel, csvName: csvWanted, caption, tools, pageSize }: {
   rows: T[]
   columns: Column<T>[]
   defaultSort: SortState
@@ -100,6 +103,7 @@ export function SortTable<T>({ rows, columns, defaultSort, total, rowClass, onRo
   const pages = pageSize ? Math.max(1, Math.ceil(sorted.length / pageSize)) : 1
   const current = Math.min(page, pages - 1)
   const shown = pageSize ? sorted.slice(current * pageSize, (current + 1) * pageSize) : sorted
+  const csvName = useContext(CanExport) ? csvWanted : undefined
   const exportCsv = () => csvName && downloadCsv(csvName, toCsv(sorted, columns.map((c) => ({ key: c.key, header: c.header, value: c.csv ?? c.value }))))
   return <>
     {(csvName || tools) && <div className="table-tools">

@@ -18,6 +18,9 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Protocol
 
+from . import permissions
+from psycopg.types.json import Jsonb
+
 from .auth import _DUMMY_HASH, ROLES, User, hash_password, verify_password
 
 logger = logging.getLogger(__name__)
@@ -48,9 +51,12 @@ class StoredUser:
     last_login_at: datetime | None = None
     #: Accounts the user may see; None = every account.
     account_slugs: list[str] | None = None
+    #: Permission overrides over the role's defaults (app/permissions.py); None = the defaults.
+    permissions: dict[str, bool] | None = None
 
     def public(self) -> dict[str, Any]:
         return {"username": self.username, "role": self.role, "active": self.active, "source": "database", "accounts": self.account_slugs,
+                "permissions": self.permissions or {}, "effective_permissions": permissions.effective(self.role, self.permissions),
                 "created_at": _iso(self.created_at), "created_by": self.created_by, "last_login_at": _iso(self.last_login_at)}
 
     @property
@@ -91,7 +97,7 @@ class UserStore(Protocol):
 
 
 class PostgresUserStore:
-    COLUMNS = "username, role, password_hash, active, sessions_valid_after, created_at, created_by, last_login_at, account_slugs"
+    COLUMNS = "username, role, password_hash, active, sessions_valid_after, created_at, created_by, last_login_at, account_slugs, permissions"
 
     def _row(self, row: dict[str, Any] | None) -> StoredUser | None:
         return StoredUser(**row) if row else None
@@ -120,11 +126,12 @@ class PostgresUserStore:
                     return False
             cursor.execute(
                 """
-                INSERT INTO ops.app_user (username, role, password_hash, active, created_by, updated_by, account_slugs)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO ops.app_user (username, role, password_hash, active, created_by, updated_by, account_slugs, permissions)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT DO NOTHING
                 """,
-                (user.username, user.role, user.password_hash, user.active, user.created_by, user.created_by, user.account_slugs),
+                (user.username, user.role, user.password_hash, user.active, user.created_by, user.created_by, user.account_slugs,
+                 Jsonb(user.permissions) if user.permissions else None),
             )
             created = cursor.rowcount == 1
             conn.commit()
@@ -134,6 +141,8 @@ class PostgresUserStore:
         from psycopg import sql
 
         from .db import connection
+        if changes.get("permissions") is not None:
+            changes = {**changes, "permissions": Jsonb(changes["permissions"])}
         sets = [sql.SQL("{} = %s").format(sql.Identifier(k)) for k in changes]
         if "password_hash" in changes:
             sets.append(sql.SQL("sessions_valid_after = date_trunc('second', now())"))
@@ -199,7 +208,7 @@ def authenticate(username: str, password: str) -> User | None:
         _store.touch_login(record.username)
     except Exception:  # noqa: BLE001 - a failed timestamp must not refuse a valid sign-in
         logger.exception("Could not record sign-in for %s", record.username)
-    return User(record.username, record.role, record.accounts)
+    return User(record.username, record.role, record.accounts, record.permissions)
 
 
 def session_user(user: User, issued_at: float) -> User | None:
@@ -210,7 +219,7 @@ def session_user(user: User, issued_at: float) -> User | None:
     # Cookies carry whole seconds; allow a little clock skew between the API and the database.
     if issued_at + CLOCK_SKEW_SECONDS < record.sessions_valid_after.timestamp():
         return None
-    return User(record.username, record.role, record.accounts)
+    return User(record.username, record.role, record.accounts, record.permissions)
 
 
 def any_users() -> bool:
@@ -232,10 +241,17 @@ def normalize_accounts(accounts: list[str] | None, known: set[str] | None = None
     return slugs or None
 
 
+def validate_permissions(value: Any) -> dict[str, bool] | None:
+    try:
+        return permissions.validate(value) or None
+    except ValueError as exc:
+        raise UserError(str(exc)) from exc
+
+
 def create(username: str, role: str, password: str, actor: str, *, only_if_empty: bool = False,
-           accounts: list[str] | None = None) -> StoredUser:
+           accounts: list[str] | None = None, permissions_: Any = None) -> StoredUser:
     user = StoredUser(validate_username(username), validate_role(role), hash_password(validate_password(password)), True,
-                      datetime.now(timezone.utc), created_by=actor, account_slugs=accounts or None)
+                      datetime.now(timezone.utc), created_by=actor, account_slugs=accounts or None, permissions=validate_permissions(permissions_))
     if not _store.create(user, only_if_empty=only_if_empty):
         raise UserError("Setup is already complete" if only_if_empty else f"{user.username} already exists", status=409)
     clear_cache()
@@ -246,9 +262,9 @@ UNCHANGED: Any = object()
 
 
 def update(username: str, actor: str, *, role: str | None = None, active: bool | None = None, password: str | None = None,
-           environment_admins: int = 0, accounts: Any = UNCHANGED) -> StoredUser:
-    """Change a database user's role, active flag or password. Refuses to leave no active administrator
-    (environment administrators from APP_USERS_JSON count)."""
+           environment_admins: int = 0, accounts: Any = UNCHANGED, permissions_: Any = UNCHANGED) -> StoredUser:
+    """Change a database user's role, active flag, password, accounts or permission overrides. Refuses to
+    leave no active administrator (environment administrators from APP_USERS_JSON count)."""
     current = _store.get(username)
     if current is None:
         raise UserError(f"{username} does not exist", status=404)
@@ -261,6 +277,8 @@ def update(username: str, actor: str, *, role: str | None = None, active: bool |
         changes["password_hash"] = hash_password(validate_password(password))
     if accounts is not UNCHANGED:
         changes["account_slugs"] = accounts or None
+    if permissions_ is not UNCHANGED:
+        changes["permissions"] = validate_permissions(permissions_)
     if not changes:
         return current
     still_admin = changes.get("role", current.role) == "admin" and changes.get("active", current.active)

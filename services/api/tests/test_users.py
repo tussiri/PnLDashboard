@@ -8,7 +8,7 @@ import pytest
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.testclient import TestClient
 
-from app import users
+from app import permissions, users
 from app.auth import COOKIE_NAME, AuthSettings, User, hash_password, reset_auth_settings, sign_session
 from app.common import require_role
 from app.routers import auth as auth_router
@@ -89,7 +89,7 @@ def test_setup_creates_the_first_admin_once(store):
     assert c.post("/api/v1/auth/setup", json={"token": "wrong", "username": "tumaini", "password": PASSWORD}).status_code == 401
     assert c.post("/api/v1/auth/setup", json={"token": SETUP, "username": "tumaini", "password": "short"}).status_code == 422
     r = c.post("/api/v1/auth/setup", json={"token": SETUP, "username": "tumaini", "password": PASSWORD})
-    assert r.status_code == 201 and r.json() == {"user": {"username": "tumaini", "role": "admin"}}
+    assert r.status_code == 201 and r.json()["user"] == {"username": "tumaini", "role": "admin", "accounts": None, "permissions": permissions.ROLE_DEFAULTS["admin"]}
     assert c.get("/api/v1/auth/me").json()["user"]["role"] == "admin"  # signed in by setup
     assert c.get("/api/v1/auth/setup").json() == {"needed": False}
     assert c.post("/api/v1/auth/setup", json={"token": SETUP, "username": "other", "password": PASSWORD}).status_code == 409

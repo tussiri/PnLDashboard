@@ -1,15 +1,16 @@
+import type { Permission } from '../auth/permissions'
 import { LogOut, Monitor, Moon, Sun } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
 import { formatRoute, monthLabel, weekEndOf, weekLabel, type View } from './routes'
 import { Pills } from './ui'
 import { useLeadership, type Theme } from './state'
 
-/** admin: administrators only; company: users who see every account (not those limited to some). */
-const NAV: { view: View; label: string; admin?: boolean; company?: boolean }[] = [
-  { view: 'company', label: 'Company', company: true },
+/** admin: administrators only; every: users who see every account (not those limited to some); permission: what the user must hold. */
+const NAV: { view: View; label: string; admin?: boolean; every?: boolean; permission?: Permission }[] = [
+  { view: 'company', label: 'Company', every: true, permission: 'view.company' },
   { view: 'home', label: 'Home' },
   { view: 'account', label: 'Account' },
-  { view: 'analytics', label: 'Analytics', admin: true },
+  { view: 'analytics', label: 'Analytics', every: true, permission: 'view.analytics' },
   { view: 'admin', label: 'Admin', admin: true },
 ]
 const THEMES: { theme: Theme; label: string; icon: ReactNode }[] = [
@@ -40,7 +41,7 @@ export function freshnessLine(config: Config): string {
 }
 
 export function Shell({ children }: { children: ReactNode }) {
-  const { route, user, signOut, theme, setTheme, decision, selectedAccount, weekStart, targetOverride } = useLeadership()
+  const { route, user, signOut, theme, setTheme, decision, selectedAccount, weekStart, targetOverride, can, unlimited } = useLeadership()
   const next = THEMES[(THEMES.findIndex((t) => t.theme === theme) + 1) % THEMES.length]
   const current = THEMES.find((t) => t.theme === theme)!
   const carry = { account: selectedAccount?.slug, week: weekStart ? weekEndOf(weekStart) : undefined, target: targetOverride != null ? targetOverride * 100 : undefined }
@@ -51,7 +52,7 @@ export function Shell({ children }: { children: ReactNode }) {
       <div className="topbar__in">
         <span className="brand">Crane IFS</span>
         <nav className="nav" aria-label="Main">
-          {NAV.filter((n) => (!n.admin || user.role === 'admin') && (!n.company || user.role === 'admin' || !user.accounts?.length)).map((n) => <a key={n.view} href={hrefFor(n.view)} aria-current={route.view === n.view ? 'page' : undefined}>{n.label}</a>)}
+          {NAV.filter((n) => (!n.admin || user.role === 'admin') && (!n.every || unlimited) && (!n.permission || can(n.permission))).map((n) => <a key={n.view} href={hrefFor(n.view)} aria-current={route.view === n.view ? 'page' : undefined}>{n.label}</a>)}
         </nav>
         <div className="topbar__end">
           <span className="user">{user.username}</span>
@@ -67,7 +68,8 @@ export function Shell({ children }: { children: ReactNode }) {
 
 /** Page header: title, subtitle and the shared account / week / target controls. */
 export function PageHeader({ title, subtitle, account = true, week = true, target = true, period = false, extra }: { title: string; subtitle?: ReactNode; account?: boolean; week?: boolean; target?: boolean; period?: boolean; extra?: ReactNode }) {
-  const { featured, selectedAccount, config, weekStart, navigate, targetOverride, route, monthMode, month } = useLeadership()
+  const { featured, selectedAccount, config, weekStart, navigate, targetOverride, route, monthMode, month, can } = useLeadership()
+  const periodSwitch = period && can('data.month')
   const weeks = [...(config.data?.weeks ?? [])].reverse()
   const months = [...new Set(weeks.map((w) => w.week_start.slice(0, 7)))]
   const [draft, setDraft] = useState('')
@@ -85,13 +87,13 @@ export function PageHeader({ title, subtitle, account = true, week = true, targe
         <select id="acct" value={selectedAccount?.slug ?? ''} onChange={(e) => navigate({ account: e.target.value, site: undefined })}>
           {featured.map((a) => <option key={a.slug} value={a.slug}>{a.name}</option>)}
         </select></>}
-      {period && <Pills label="Period" value={monthMode ? 'month' : 'week'} onChange={(v) => navigate({ period: v === 'month' ? 'month' : undefined, month: undefined }, { replace: true })}
+      {periodSwitch && <Pills label="Period" value={monthMode ? 'month' : 'week'} onChange={(v) => navigate({ period: v === 'month' ? 'month' : undefined, month: undefined }, { replace: true })}
         options={[{ value: 'week', label: 'Week' }, { value: 'month', label: 'Month' }]} />}
-      {period && monthMode && <><label htmlFor="mo">Month</label>
+      {periodSwitch && monthMode && <><label htmlFor="mo">Month</label>
         <select id="mo" value={month ?? ''} onChange={(e) => navigate({ month: e.target.value }, { replace: true })}>
           {months.map((m) => <option key={m} value={m}>{monthLabel(`${m}-01`)}</option>)}
         </select></>}
-      {week && !(period && monthMode) && <><label htmlFor="wk">Week</label>
+      {week && !(periodSwitch && monthMode) && <><label htmlFor="wk">Week</label>
         <select id="wk" value={weekStart ?? ''} onChange={(e) => navigate({ week: weekEndOf(e.target.value) })}>
           {weeks.map((w) => <option key={w.week_start} value={w.week_start}>{weekLabel(w.week_start)}{w.in_progress ? ' (in progress)' : ''}</option>)}
         </select></>}

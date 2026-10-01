@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { usersApi, type AppUser } from '../../auth/authApi'
+import { effective, overridesOf, PERMISSIONS, ROLE_DEFAULTS, type Permission } from '../../auth/permissions'
 import { ROLES, type Role } from '../../auth/roles'
 import { useLeadership } from '../state'
 import { Empty, LoadError, Skeleton } from '../ui'
@@ -91,6 +92,45 @@ function UserRow({ user, self, onChanged, accounts }: { user: AppUser; self: boo
   </tr>
 }
 
+/** Admin > Users > Permissions: one row per user, one column per permission. A tick differing from the role's
+ * default is an override (marked); Reset returns a user to the role's defaults. Administrators hold everything. */
+function PermissionMatrix({ users, onChanged }: { users: AppUser[]; onChanged: (message: { ok: boolean; text: string }) => void }) {
+  const [busy, setBusy] = useState<string | null>(null)
+  const groups = [...new Set(PERMISSIONS.map((p) => p.group))]
+  const save = async (u: AppUser, values: Record<Permission, boolean>, done: string) => {
+    setBusy(u.username)
+    try { await usersApi.update(u.username, { permissions: overridesOf(u.role, values) }); onChanged({ ok: true, text: done }) }
+    catch (e) { onChanged({ ok: false, text: errorText(e) }) }
+    finally { setBusy(null) }
+  }
+  return <div className="card">
+    <div className="ct"><span>Permissions</span><span className="ks">Ticks that differ from the role are marked</span></div>
+    <div className="tw"><table className="matrix"><caption className="sr-only">Permissions by user</caption>
+      <thead>
+        <tr><th className="nosort l" rowSpan={2}>User</th><th className="nosort l" rowSpan={2}>Role</th>{groups.map((g) => <th key={g} className="nosort grp" colSpan={PERMISSIONS.filter((p) => p.group === g).length}>{g}</th>)}<th className="nosort" rowSpan={2}></th></tr>
+        <tr>{PERMISSIONS.map((p) => <th key={p.key} className="nosort"><span>{p.label}</span></th>)}</tr>
+      </thead>
+      <tbody>{users.map((u) => {
+        const editable = u.source === 'database' && u.role !== 'admin'
+        const values = u.effective_permissions ?? effective(u.role, u.permissions)
+        const overridden = Object.keys(overridesOf(u.role, values)).length
+        return <tr key={u.username} className={u.active ? '' : 'dim'}>
+          <td className="l nm">{u.username}</td>
+          <td className="l">{ROLE_NAME[u.role]}</td>
+          {PERMISSIONS.map((p) => {
+            const off = values[p.key] !== ROLE_DEFAULTS[u.role][p.key]
+            return <td key={p.key} className={off ? 'over' : ''}>
+              <input type="checkbox" checked={values[p.key]} disabled={!editable || busy === u.username} aria-label={`${p.label} for ${u.username}`}
+                onChange={(e) => void save(u, { ...values, [p.key]: e.target.checked }, `${u.username}: ${p.label} ${e.target.checked ? 'on' : 'off'}`)} />
+            </td>
+          })}
+          <td>{editable && overridden > 0 && <button type="button" className="btn sm" disabled={busy === u.username} onClick={() => void save(u, ROLE_DEFAULTS[u.role], `${u.username} reset to ${ROLE_NAME[u.role]} defaults`)}>Reset</button>}</td>
+        </tr>
+      })}</tbody>
+    </table></div>
+  </div>
+}
+
 /** Admin > Users: sign-in users created in the dashboard, plus read-only APP_USERS_JSON entries. */
 export function UsersTab() {
   const { apiReachable, user: me, adminConfig } = useLeadership()
@@ -117,5 +157,6 @@ export function UsersTab() {
       </table></div>
       {message && <p className={`msg ${message.ok ? 'ok' : 'bad'}`} role="status">{message.text}</p>}
     </div>
+    <PermissionMatrix users={users} onChanged={changed} />
   </>
 }

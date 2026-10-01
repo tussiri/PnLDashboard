@@ -69,7 +69,7 @@ function OvertimeTab({ account, summary }: { account: LeadershipAccount; summary
 }
 
 export function Account() {
-  const { selectedAccount: account, route, navigate, weekStart, optionsFor, config, monthMode, month } = useLeadership()
+  const { selectedAccount: account, route, navigate, weekStart, optionsFor, config, monthMode, month, can } = useLeadership()
   const tab = route.tab ?? 'overview'
   const weekQuery = useRows(monthMode ? undefined : account?.slug, 1)
   const monthQuery = useMonthRows(monthMode ? account?.slug : undefined, monthMode ? month : undefined)
@@ -90,7 +90,7 @@ export function Account() {
     pallet: rows.some((r) => (r.kids?.length ?? 1) > 1),
     subcontracted: Boolean(account?.split_subcontracted) || subcontracted > 0 || Boolean(monthly.data?.jobs.some((j) => j.delivery_model === 'subcontracted' && j.role === 'site')),
     incomeStatement: Boolean(account?.split_subcontracted) || Object.keys(monthly.data?.income_statement ?? {}).length > 0,
-  }).filter((t) => !monthMode || t !== 'over-target')
+  }).filter((t) => (!monthMode || t !== 'over-target') && (t === 'overview' || can(`tab.${t}`)))
   const vocab = vocabOf(account)
   let body
   if (rowsQuery.error) body = <LoadError error={rowsQuery.error} onRetry={rowsQuery.refetch} />

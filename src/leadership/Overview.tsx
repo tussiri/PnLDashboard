@@ -68,7 +68,7 @@ export function Overview({ account, rows, summary, options, flags, headline = tr
   const w = wordsFor(vocab)
   const target = options.target
   const factor = options.vendorFactor ?? 1
-  const { optionsFor, monthMode, month } = useLeadership()
+  const { optionsFor, monthMode, month, can } = useLeadership()
   const period = options.period ?? 'week'
   const perDay = options.periodDays ?? 7
   // The trend is always weekly; the change is against the prior week, or the prior month in the rollup.
@@ -139,8 +139,8 @@ export function Overview({ account, rows, summary, options, flags, headline = tr
         sub={join(`Target ${pct(target)}`, lastClosed ? `${monthLabel(lastClosed)} actual ${pct(actual)}` : null,
           a.measurePct != null && prev?.measurePct != null ? weekChange(a.measurePct - prev.measurePct, vocab, period) : null, catchJobs.length ? `sites only ${pct(summary.billed.measurePct)}` : null)} />
       <Kpi label={w.hours} value={hours(a.hours)} sub={join(`${hours(a.otHours)} OT/DT (${pct(a.otPct)})`, palHrs ? `pallet ${hours(palHrs)}` : null, change(a.hours, prev?.hours, hours))} />
-      <Kpi label="Margin" value={money(a.margin)} tone={a.margin < 0 ? 'bad' : ''}
-        sub={join(pct(a.marginPct), a.allocation > 0 ? `after ${moneyK(a.allocation)} alloc.` : null)} />
+      {can('data.allocations') && <Kpi label="Margin" value={money(a.margin)} tone={a.margin < 0 ? 'bad' : ''}
+        sub={join(pct(a.marginPct), a.allocation > 0 ? `after ${moneyK(a.allocation)} alloc.` : null)} />}
       <Kpi label={w.hoursOver} value={hours(over)} tone={over > 0 ? 'bad' : 'ok'}
         sub={join(`${hours1(over / perDay)}/day`, w.over(summary.billed.over, billed.length), catchJobs.length ? `${hours(summary.catchAllOverHours)} catch-all` : null, unbilled.length ? `${hours(unbilledHours)} unbilled` : null)} />
     </div>}

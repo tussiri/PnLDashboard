@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field
 
 from .. import allocations, accounts, companycam, imports, marts
 from .. import month as month_module
+from .. import permissions
 from ..common import allowed_accounts, current_user, jsonable, require_account, require_admin, source_block
 from ..db import connection
 
@@ -256,6 +257,8 @@ def leadership_rows(
         cursor.execute(sql + " ORDER BY w.week_start, aj.account_slug NULLS LAST, w.job_number", params)
         rows = allocations.apply(cursor, allocate_parent_billing([jsonable(dict(r)) for r in cursor.fetchall()]))
     week_list = [(first + timedelta(weeks=i)).isoformat() for i in range(weeks)]
+    if request is not None:
+        rows = permissions.strip(current_user(request), rows)
     return {"source": source_block(), "week": anchor.isoformat(), "weeks": week_list, "account": account, "rows": rows}
 
 
@@ -372,7 +375,7 @@ ORDER BY months.month
 MONEY = ("revenue", "direct_labor", "management_wages", "subcontractors", "payroll_taxes", "gross_profit")
 
 
-@router.get("/company")
+@router.get("/company", dependencies=[Depends(permissions.require_permission("view.company"))])
 def leadership_company(request: Request, months: int = Query(14, ge=1, le=36)) -> dict[str, Any]:
     """Company health by month: job cost totals by business unit and by account, whether each month is
     closed (job cost labor at least 70% of timekeeping labor), the company income statement, and the
@@ -505,7 +508,7 @@ def update_allocation_month(month: str, body: AllocationMonthIn, request: Reques
         return {"months": jsonable(allocations.overview(cursor, _last_months(cursor, 12)))}
 
 
-@router.get("/month")
+@router.get("/month", dependencies=[Depends(permissions.require_permission("data.month"))])
 def leadership_month(request: Request, month: str = Query(..., description="YYYY-MM"),
                      account: str = Query("featured", description="An account slug, or featured | other | all")) -> dict[str, Any]:
     """The month-end rollup (app/month.py): every job of the month with its actual billing, labor split
@@ -532,7 +535,7 @@ def leadership_month(request: Request, month: str = Query(..., description="YYYY
         rows = [r for r in rows if r["account_slug"] == account]
     if scope is not None:
         rows = [r for r in rows if r["account_slug"] in scope]
-    return {"source": source_block(), "month": month[:7], "account": account, "rows": jsonable(rows)}
+    return {"source": source_block(), "month": month[:7], "account": account, "rows": permissions.strip(current_user(request), jsonable(rows))}
 
 
 @router.get("/sites/{company}/{job_number}")
@@ -576,7 +579,12 @@ def leadership_site(company: str, job_number: str, weeks: int = Query(13, ge=1, 
         except companycam.CompanyCamError as exc:
             photos["error"] = str(exc)
     site_out = jsonable({k: v for k, v in dict(site).items() if k != "job_key"})
-    return {"source": source_block(), "site": site_out, "weeks": rows, "invoices": invoices, "photos": photos}
+    user = current_user(request) if request is not None else None
+    if not permissions.allowed(user, "data.invoices"):
+        invoices = None
+    if not permissions.allowed(user, "data.photos"):
+        photos = None
+    return {"source": source_block(), "site": site_out, "weeks": permissions.strip(user, rows), "invoices": invoices, "photos": photos}
 
 
 def subcontractor_type_ids(cursor: Any) -> list[str]:
@@ -666,7 +674,7 @@ def subcontractor_invoices(cursor: Any, job_key: int, months: int) -> dict[str, 
     return {"since": since.isoformat(), "vendor_type_ids": type_ids, "total": round(sum(l["amount"] or 0 for l in lines), 2), "lines": lines}
 
 
-@router.get("/vendors")
+@router.get("/vendors", dependencies=[Depends(permissions.require_permission("tab.vendors"))])
 def leadership_vendors(account: str = Query(..., description="An account slug"), months: int = Query(6, ge=1, le=24),
                        request: Request = None) -> dict[str, Any]:  # type: ignore[assignment]
     """Subcontractor invoice lines coded to the account's sites: WinTeam AP GL distributions from

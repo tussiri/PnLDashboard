@@ -9,9 +9,9 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
-from .. import staffing
+from .. import permissions, staffing
 from ..common import jsonable, source_block
 from ..config import settings
 from ..db import connection
@@ -38,7 +38,7 @@ def line_out(line: dict[str, Any], now: datetime) -> dict[str, Any]:
     return out
 
 
-@router.get("/jobs/{company}/{job_number}")
+@router.get("/jobs/{company}/{job_number}", dependencies=[Depends(permissions.require_permission("data.staffing"))])
 def job_requests(company: str, job_number: str, week: str | None = Query(None, description="Any date in the week; default this week")) -> dict[str, Any]:
     """One site's request lines and the week's requested / pending headcount."""
     now = datetime.now(timezone.utc)
