@@ -333,6 +333,36 @@ def coverage_windows(records: list[dict[str, Any]]) -> dict[str, tuple[date, dat
     return windows
 
 
+PARTIAL_SHARE = 0.5
+PARTIAL_MIN_JOBS = 10
+
+
+def partial_export(cursor: Any, kind: str, records: list[dict[str, Any]], windows: dict[str, tuple[date, date]] | None) -> str | None:
+    """Why a file looks like a filtered export of a feed, else None: for some company it carries under half
+    of the jobs already loaded for the same dates (pay report) or months (job cost), where at least
+    PARTIAL_MIN_JOBS were. Loading it would replace that company's data with the subset."""
+    if kind == "pay_report":
+        spans = windows or coverage_windows(records)
+        mine: dict[str, set[str]] = {}
+        for r in records:
+            mine.setdefault(r["company"], set()).add(r["job_number"])
+        for company, (lo, hi) in spans.items():
+            cursor.execute("SELECT count(DISTINCT job_number) AS n FROM core.fact_pay_report WHERE company = %s AND work_date BETWEEN %s AND %s", (company, lo, hi))
+            have = cursor.fetchone()["n"]
+            if have >= PARTIAL_MIN_JOBS and len(mine.get(company, ())) < have * PARTIAL_SHARE:
+                return f"{company}: {len(mine.get(company, ()))} jobs where {have} are loaded for {lo} to {hi}; looks like a filtered export"
+    elif kind == "job_cost":
+        mine_m: dict[tuple[str, date], set[str]] = {}
+        for r in records:
+            mine_m.setdefault((r["company"], r["period"]), set()).add(r["job_number"])
+        for (company, month), jobs in mine_m.items():
+            cursor.execute("SELECT count(*) AS n FROM core.fact_job_cost_month WHERE source = 'export_import' AND company = %s AND month = %s", (company, month))
+            have = cursor.fetchone()["n"]
+            if have >= PARTIAL_MIN_JOBS and len(jobs) < have * PARTIAL_SHARE:
+                return f"{company}: {len(jobs)} jobs where {have} are loaded for {month:%Y-%m}; looks like a filtered export"
+    return None
+
+
 def _load_pay_report(cursor: Any, file_id: int, records: list[dict[str, Any]],
                      windows: dict[str, tuple[date, date]] | None = None) -> None:
     """Replace each company's pay report rows over its window: the file's work dates, or the export
@@ -492,6 +522,11 @@ def load_file(conn: Any, file_name: str, content: bytes, *, kind: str | None = N
         if not parsed.records:
             return _log(cursor, conn, kind, file_name, digest, origin, "failed", parsed.rows_read, 0, [], None, None,
                         parsed.errors or ["no rows"], uploaded_by)
+        # The reports mailbox is shared with other tools: a mailed subset must not replace a company's data.
+        partial = partial_export(cursor, kind, parsed.records, windows) if origin == "mail" and kind != "income_statement" else None
+        if partial:
+            return _log(cursor, conn, kind, file_name, digest, origin, "failed", parsed.rows_read, 0, [], None, None,
+                        [f"{partial}: upload it on Admin > Imports to load it"], uploaded_by)
         dates = [r["work_date"] if kind == "pay_report" else r["period"] for r in parsed.records]
         companies = sorted({r["company"] for r in parsed.records})
         result = _log(cursor, None, kind, file_name, digest, origin, "loaded", parsed.rows_read, len(parsed.records), companies,

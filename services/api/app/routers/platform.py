@@ -580,6 +580,7 @@ def _primary_source(value: Any) -> str:
 
 
 SETTING_VALIDATORS = {
+    "mail_inbox": mail_inbox.validate_setting,
     "account_groups": _rule_list("name"),
     "ar_treatment_rules": _rule_list("match"),
     "company_aliases": _string_map,

@@ -19,6 +19,31 @@ left alone.
 - **Read-only.** It lists messages and downloads attachments; it never moves, flags, marks read,
   deletes or sends mail.
 
+## Shared inbox: what is the dashboard's
+
+reports@ also feeds other tools' ingestion pipelines. Two layers keep their mail out:
+
+1. **The mail rule** (Admin > Imports > Reports inbox, or `mail_inbox.rule`), checked before an
+   attachment is downloaded. Each field that is filled in must match; empty fields match everything.
+
+   | Field | Matches | Example |
+   |---|---|---|
+   | Senders | the sender's address, or any address at `@domain` | `reports-bot@smcraneifs.com` |
+   | Subject contains | the subject contains one of them (case ignored) | `[Dashboard]` |
+   | Ignore subjects containing | a subject containing any of them is ignored, whatever else matches | `Power BI` |
+   | File names | the attachment name matches one glob (case ignored) | `*_timekeeping_recent_*.csv`, `SYS Query Scheduler*.xlsx` |
+
+   The most reliable rule is a subject tag: put `[Dashboard]` in the subject of the WinTeam Query
+   Scheduler jobs meant for the dashboard and set **Subject contains** to `[Dashboard]`. The sender
+   alone rarely separates them, because both pipelines' reports come from the same scheduler.
+   Refused mail is listed as ignored with the rule that refused it.
+2. **The columns and the filtered-export guard**, always on. Only an attachment shaped like a
+   dashboard feed is loaded, and a feed replaces data (a company's labor over the file's dates, a
+   company's job cost for its months). So a mailed file that, for some company, carries under half of
+   the jobs already loaded for the same dates or months (where at least 10 are loaded) is refused as
+   a filtered export, typically another tool's report run for a few jobs. To load such a file on
+   purpose, upload it on Admin > Imports, where the guard does not apply.
+
 Admin > Imports shows the inbox: the last check, **Check inbox now**, and every attachment it has
 seen with what it did. A failed check shows as "Reports inbox sync failed" in the dashboard notes.
 
@@ -54,7 +79,8 @@ seen with what it did. A failed check shows as "Reports inbox sync failed" in th
 
 ## Schedule
 
-`ops.app_setting` key `mail_inbox`: `{"enabled": true, "every_minutes": 30, "first_lookback_days": 14}`.
+`ops.app_setting` key `mail_inbox`: `{"enabled": true, "every_minutes": 30, "first_lookback_days": 14, "rule": {"senders": [], "subjects": [], "exclude_subjects": [], "files": []}}`
+(`PUT /settings/mail_inbox`, validated: every_minutes 5 to 1440, first_lookback_days 1 to 90).
 The first check reads the last 14 days. Set `enabled` to false to stop automatic checks (Check inbox
 now still works); the nightly run reads the mailbox once too (`nightly_sync.mail_inbox`).
 

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useApiQuery } from '../../hooks/useApiQuery'
-import type { LeadershipAccount, LeadershipAccountJob, LeadershipAccountPatch, LeadershipImportFile, LeadershipImportKind, LeadershipRole, SyncRunsResponse, MailInboxStatus } from '../../services/apiTypes'
+import type { LeadershipAccount, LeadershipAccountJob, LeadershipAccountPatch, LeadershipImportFile, LeadershipImportKind, LeadershipRole, SyncRunsResponse, MailInboxStatus, MailRule } from '../../services/apiTypes'
 import { queryClient, queryKey } from '../../services/queryClient'
 import { inSentence } from '../data'
 import { ADMIN_TABS, type AdminTab } from '../routes'
@@ -158,6 +158,34 @@ function JobsTab() {
 
 const MAIL_TONE: Record<string, string> = { loaded: 'ok', failed: 'bad', duplicate: 'neutral', ignored: 'neutral' }
 
+const RULE_FIELDS: { key: keyof MailRule; label: string; hint: string }[] = [
+  { key: 'senders', label: 'Senders', hint: 'reports@smcraneifs.com, @winteam.com' },
+  { key: 'subjects', label: 'Subject contains', hint: '[Dashboard]' },
+  { key: 'exclude_subjects', label: 'Ignore subjects containing', hint: 'Power BI' },
+  { key: 'files', label: 'File names', hint: '*_timekeeping_recent_*.csv, SYS Query Scheduler*.xlsx' },
+]
+const listOf = (text: string) => text.split(',').map((x) => x.trim()).filter(Boolean)
+
+/** Which mail in the shared inbox is the dashboard's. Empty fields match everything. */
+function MailRuleForm({ status, onSaved }: { status: MailInboxStatus; onSaved: () => void }) {
+  const { adminApi: api } = useLeadership()
+  const { busy, run, view } = useAction()
+  const rule = status.schedule.rule ?? { senders: [], subjects: [], exclude_subjects: [], files: [] }
+  const [draft, setDraft] = useState<Record<keyof MailRule, string>>(() => ({
+    senders: rule.senders.join(', '), subjects: rule.subjects.join(', '), exclude_subjects: rule.exclude_subjects.join(', '), files: rule.files.join(', ') }))
+  const save = (e: FormEvent) => {
+    e.preventDefault()
+    const next: MailRule = { senders: listOf(draft.senders), subjects: listOf(draft.subjects), exclude_subjects: listOf(draft.exclude_subjects), files: listOf(draft.files) }
+    void run('Saved mail rule', async () => { await api.updateMailSetting({ ...status.schedule, rule: next }); onSaved() })
+  }
+  return <form className="form-grid" onSubmit={save}>
+    {RULE_FIELDS.map((f) => <label key={f.key} className="field"><span>{f.label}</span>
+      <input type="text" placeholder={f.hint} value={draft[f.key]} onChange={(e) => setDraft({ ...draft, [f.key]: e.target.value })} /></label>)}
+    <div className="field"><button type="submit" className="btn primary" disabled={busy}>Save rule</button></div>
+    {view}
+  </form>
+}
+
 /** The reports mailbox: what arrived and what the poller did with each attachment. */
 function MailInbox() {
   const { adminApi: api, adminKeyPrefix: keyPrefix, decision } = useLeadership()
@@ -185,6 +213,7 @@ function MailInbox() {
       {view}
       {s.recent.length ? <SortTable caption="Recent attachments" rows={s.recent} columns={cols} defaultSort={{ key: 'at', dir: -1 }} pageSize={25} /> : <Empty>No attachments yet.</Empty>}
     </>}
+    {s && <MailRuleForm key={JSON.stringify(s.schedule.rule ?? null)} status={s} onSaved={() => q.refetch()} />}
   </div>
 }
 

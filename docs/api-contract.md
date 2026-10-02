@@ -493,8 +493,9 @@ Migration 038, docs/mail-inbox.md. The worker reads the reports mailbox through 
 
 | Route | Response |
 |---|---|
-| `GET /integrations/mail` | `{configured, mailbox, schedule: {enabled, every_minutes, first_lookback_days}, last_run: {status, started_at, completed_at, records_inserted, error_message} \| null, recent: [{received_at, sender, subject, file_name, status: loaded\|duplicate\|failed\|ignored, reason, kind, rows_loaded}]}`. Never returns the client secret. |
+| `GET /integrations/mail` | `{configured, mailbox, schedule: {enabled, every_minutes, first_lookback_days, rule: {senders, subjects, exclude_subjects, files}}, last_run: {status, started_at, completed_at, records_inserted, error_message} \| null, recent: [{received_at, sender, subject, file_name, status: loaded\|duplicate\|failed\|ignored, reason, kind, rows_loaded}]}`. Never returns the client secret. |
 | `POST /integrations/mail/poll` | Admin. Check now: `{status, loaded, duplicate, failed, ignored, messages, rebuilt}` or `{status: 'failed', error}`. `409` when not configured. |
+| `PUT /settings/mail_inbox` | Admin. Body `{value: {enabled, every_minutes, first_lookback_days, rule}}`; `422` for an unknown rule field or a value out of range. The rule is checked before an attachment is downloaded; a refused one is `ignored` with the reason (`sender is not a dashboard sender`, `subject is excluded`, `subject is not a dashboard subject`, `file name is not a dashboard file`). A mailed pay report or job cost file carrying under half the jobs already loaded for a company over the same dates or months (10 or more loaded) is `failed` as a filtered export. |
 
 `GET /auth/me` returns `{user: {username, role, accounts}}`; `accounts` is null for every account. The leadership routes answer only for the user's accounts (docs/auth-rbac.md, Account access).
 
