@@ -14,7 +14,7 @@ export interface PermissionInfo { key: Permission; group: string; label: string 
 
 export const PERMISSIONS: readonly PermissionInfo[] = [
   { key: 'view.company', group: 'Views', label: 'Company' },
-  { key: 'view.analytics', group: 'Views', label: 'Analytics' },
+  { key: 'view.analytics', group: 'Views', label: 'Portfolio' },
   { key: 'tab.sites', group: 'Account tabs', label: 'Sites' },
   { key: 'tab.pallet', group: 'Account tabs', label: 'Pallet' },
   { key: 'tab.over-target', group: 'Account tabs', label: 'Hours to cut' },

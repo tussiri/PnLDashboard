@@ -9,7 +9,7 @@ not see (strip).
 
 Keys
     view.company        the Company page (every account; also needs an unlimited account scope)
-    view.analytics      the Analytics pages
+    view.analytics      the Portfolio pages (route #/portfolio; the key keeps its first name)
     tab.<account tab>   an account tab (sites, pallet, over-target, overtime, income-statement,
                         subcontracted, map, vendors, feedback); Overview is always open
     data.allocations    corporate allocations and margin after allocations
@@ -31,7 +31,7 @@ from .auth import ROLES, User
 #: (key, group, label). Order is the matrix column order.
 CATALOG: tuple[tuple[str, str, str], ...] = (
     ("view.company", "Views", "Company"),
-    ("view.analytics", "Views", "Analytics"),
+    ("view.analytics", "Views", "Portfolio"),
     ("tab.sites", "Account tabs", "Sites"),
     ("tab.pallet", "Account tabs", "Pallet"),
     ("tab.over-target", "Account tabs", "Hours to cut"),

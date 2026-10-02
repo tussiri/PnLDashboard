@@ -671,7 +671,7 @@ def test_ap_detail_outage_threshold_is_defined_and_small() -> None:
     assert 5 <= AP_DETAIL_MAX_CONSECUTIVE_ERRORS <= 100
 
 
-def _per_invoice_harness(monkeypatch, answers):
+def _per_invoice_harness(monkeypatch, answers, known_good=None):
     """Run _pull_per_invoice over `answers` (invoice number -> payload, or an HTTP status to raise)."""
     from urllib.parse import quote
     from uuid import uuid4
@@ -684,6 +684,7 @@ def _per_invoice_harness(monkeypatch, answers):
     monkeypatch.setattr(ing, "_remember_unretrievable", lambda conn, resource, key, status: remembered.append(key))
     monkeypatch.setattr(ing, "_forget_unretrievable", lambda conn, resource, key: None)
     monkeypatch.setattr(ing, "_land", lambda conn, run_id, resource, records, result: landed.extend(records))
+    monkeypatch.setattr(ing, "_known_good_invoice", lambda conn: known_good)
 
     class Client:
         def get(self, path, params=None, retry_server_errors=True):
@@ -717,6 +718,23 @@ def test_a_run_of_server_errors_is_still_an_outage(monkeypatch) -> None:
     answers = {str(1000 + i): 500 for i in range(AP_DETAIL_MAX_CONSECUTIVE_ERRORS + 1)}
     with pytest.raises(WinTeamError, match="treating as an outage"):
         _per_invoice_harness(monkeypatch, answers)
+    # The known invoice failing too is still an outage.
+    with pytest.raises(WinTeamError, match="treating as an outage"):
+        _per_invoice_harness(monkeypatch, {**answers, "1426": 500}, known_good="1426")
+
+
+def test_a_run_of_free_text_numbers_answering_500_is_not_an_outage(monkeypatch) -> None:
+    """Sarus 2026-10-02: "Pay Advance", "8.31.25" and the like answer 500, enough of them in a row to
+    look like an outage. A known invoice still answers, so the run goes on and lands the real one."""
+    from app.winteam import AP_DETAIL_MAX_CONSECUTIVE_ERRORS
+
+    answers = {f"Pay Adv {i}.19.25": 500 for i in range(AP_DETAIL_MAX_CONSECUTIVE_ERRORS + 5)}
+    answers["1426"] = {"data": [{"invoiceNumber": "1426", "vendorNumber": 1162, "companyNumber": 3,
+                                 "generalLedgerDistributions": [{"accountNumber": 44000, "jobNumber": "853", "amount": 12759.13}]}]}
+    landed, remembered, result = _per_invoice_harness(monkeypatch, answers, known_good="1426")
+    assert [l["jobNumber"] for l in landed] == ["853"]
+    assert len(remembered) == AP_DETAIL_MAX_CONSECUTIVE_ERRORS + 5
+    assert f"{AP_DETAIL_MAX_CONSECUTIVE_ERRORS + 5} unserviceable" in result.message
 
 
 # ── job budgets ──────────────────────────────────────────────────────────────

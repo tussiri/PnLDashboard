@@ -2,7 +2,7 @@ import { lazy, Suspense, useMemo } from 'react'
 import type { LeadershipAccount, LeadershipRow } from '../../services/apiTypes'
 import { ChartCard, Swatch } from '../ui'
 import { OtHoursChart, useTokens } from '../charts'
-import { Feedback } from './Feedback'
+import { Feedback, FeedbackTile } from './Feedback'
 import { useApiQuery } from '../../hooks/useApiQuery'
 import { queryKey } from '../../services/queryClient'
 import type { LeadershipFeedbackResponse } from '../../services/apiTypes'
@@ -10,7 +10,7 @@ import { dataFlags, daysInMonth, isSubcontracted, monthFlags, rowsOfWeek, segmen
 import { hours, hours1, money, pct } from '../format'
 import { accountSummary, type AccountSummary as Summary, type SiteMetrics as Metrics } from '../metrics'
 import { Overview } from '../Overview'
-import { ACCOUNT_TABS, monthLabel, weekLabel, type AccountTab } from '../routes'
+import { ACCOUNT_TABS, monthLabel, weekEndOf, weekLabel, type AccountTab } from '../routes'
 import { PageHeader, updatedLine } from '../Shell'
 import { useLeadership } from '../state'
 import { Empty, Kpi, LoadError, Skeleton, SortTable, toneOf, VocabContext, type Column } from '../ui'
@@ -109,7 +109,9 @@ export function Account() {
   else if (tab === 'income-statement' && tabs.includes(tab)) body = <IncomeStatementTab account={account} options={options} />
   else if (!summary) body = <Empty>No data for this {monthMode ? 'month' : 'week'}.</Empty>
   else if (tab === 'pallet' && tabs.includes(tab)) body = <PalletTab account={account} summary={summary} options={options} />
-  else if (tab === 'overview' || !tabs.includes(tab)) body = <Overview account={account} rows={rows} summary={summary} options={options} flags={flags} />
+  else if (tab === 'overview' || !tabs.includes(tab)) body = <>
+    {can('tab.feedback') && <FeedbackTile account={account} month={monthMode ? month : weekStart ? weekEndOf(weekStart).slice(0, 7) : undefined} />}
+    <Overview account={account} rows={rows} summary={summary} options={options} flags={flags} /></>
   else if (tab === 'sites') body = <Sites account={account} summary={summary} options={options} selfOnly={selfOnly} ratings={feedback.data?.by_site} />
   else if (tab === 'over-target') body = <HoursToCut account={account} summary={summary} options={options} />
   else if (tab === 'overtime') body = <OvertimeTab account={account} summary={summary} />
@@ -122,7 +124,7 @@ export function Account() {
     </select></>
   const current = tabs.includes(tab) ? tab : 'overview'
   return <VocabContext.Provider value={vocab}>
-    <PageHeader title={account ? `${account.name} Labor P&L` : 'Account'} subtitle={subtitle} account={false} period
+    <PageHeader title={account ? `${account.name} Labor P&L` : 'Account'} subtitle={subtitle} period
       extra={<>{basisControl}{subcontracted > 0 && tab !== 'vendors' && tab !== 'feedback' && <label className="check"><input type="checkbox" checked={selfOnly}
         onChange={(e) => navigate({ selfOnly: e.target.checked || undefined }, { replace: true })} />Hide {subcontracted} subcontracted</label>}</>} />
     <nav className="tabs" role="tablist" aria-label="Account views">

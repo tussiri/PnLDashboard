@@ -101,7 +101,7 @@ export function Analytics() {
   const subtitle = [weekStart ? weekLabel(weekStart) : null, updatedLine(config.data)].filter(Boolean).join('. ')
   const set = (next: Parameters<typeof navigate>[0]) => navigate(next, { replace: true })
   return <>
-    <PageHeader title="Analytics" subtitle={subtitle} target={route.analyticsTab !== 'units'} />
+    <PageHeader title="Portfolio" subtitle={subtitle} target={route.analyticsTab !== 'units'} />
     <nav className="tabs" role="tablist" aria-label="Analytics views">
       {ANALYTICS_TABS.map((tab) => <button key={tab} type="button" role="tab" className="tab" aria-selected={(route.analyticsTab ?? 'accounts') === tab}
         onClick={() => navigate({ view: 'analytics', analyticsTab: tab === 'units' ? 'units' : undefined })}>{tab === 'units' ? 'Business units' : 'Accounts'}</button>)}

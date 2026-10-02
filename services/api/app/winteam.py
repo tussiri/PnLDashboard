@@ -896,6 +896,15 @@ class WinTeamIngestion:
                         ) from exc
                     continue
                 consecutive += 1
+                if consecutive >= AP_DETAIL_MAX_CONSECUTIVE_ERRORS and self._api_answers(conn, resource, client):
+                    # Sarus keys some AP entries with free text ("Pay Advance", "8.31.25", "Amazon
+                    # Wages") that its API answers with 500 rather than 404; repeated across vendors
+                    # they make a long run. An invoice that has answered before still answers, so
+                    # the API is up: keep going.
+                    logger.info("WinTeam %s: %s consecutive 5xx ending at %s, but a known invoice answers; continuing",
+                                resource.name, consecutive, invoice_number)
+                    consecutive = 0
+                    continue
                 if consecutive >= AP_DETAIL_MAX_CONSECUTIVE_ERRORS:
                     raise WinTeamError(
                         f"{consecutive} consecutive AP invoice detail failures ending at {invoice_number}; "
@@ -1055,8 +1064,33 @@ class WinTeamIngestion:
             numbers = [row["job_number"] for row in cursor.fetchall()]
         return numbers[:limit] if limit > 0 else numbers
 
+    def _known_good_invoice(self, conn: Any) -> str | None:
+        """An invoice number whose GL distributions have landed: proof the detail endpoint can answer."""
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT r.payload->>'invoiceNumber' AS invoice_number FROM raw.winteam_record r
+                WHERE r.resource_name = %s AND r.payload->>'invoiceNumber' IS NOT NULL
+                ORDER BY r.payload->>'invoiceNumber' LIMIT 1
+                """,
+                (self.tenant.raw_resource("ap_invoice_details"),),
+            )
+            row = cursor.fetchone()
+        return row["invoice_number"] if row else None
+
+    def _api_answers(self, conn: Any, resource: Resource, client: WinTeamClient) -> bool:
+        """After a run of 5xx: does an invoice that answered before still answer? False when none has."""
+        number = self._known_good_invoice(conn)
+        if number is None:
+            return False
+        try:
+            client.get(resource.path.format(invoiceNumber=quote(number, safe="")), retry_server_errors=False)
+        except WinTeamError:
+            return False
+        return True
+
     def _ap_invoices_missing_details(self, conn: Any, limit: int = 0) -> list[str]:
-        """AP invoice numbers with no distribution landed yet, newest first.
+        """AP invoice numbers with no distribution landed yet, newest first, each once.
 
         Driving off what is missing keeps the fan-out proportional to new work instead of to the
         size of AP: the backfill runs once, then each poll asks only about invoices that arrived
@@ -1079,7 +1113,10 @@ class WinTeamIngestion:
                     WHERE u.integration_name = %(integration)s AND u.resource_name = 'ap_invoice_details'
                       AND u.record_key = a.invoice_number AND u.last_attempt_at > now() - %(recheck)s
                   )
-                ORDER BY a.invoice_date DESC NULLS LAST, a.invoice_number
+                -- One request per number: the detail endpoint is keyed by the number alone, and free-text
+                -- numbers ("Pay Advance") repeat across vendors.
+                GROUP BY a.invoice_number
+                ORDER BY max(a.invoice_date) DESC NULLS LAST, a.invoice_number
                 """,
                 {"source": self.tenant.source, "resource": self.tenant.raw_resource("ap_invoice_details"),
                  "integration": self.tenant.integration, "recheck": UNRETRIEVABLE_RECHECK},
