@@ -40,16 +40,18 @@ a{color:var(--accent)}
 
 /* Top bar */
 .topbar{position:sticky;top:0;z-index:20;background:var(--bg);border-bottom:0.5px solid var(--border)}
-.topbar__in{max-width:1180px;margin:0 auto;padding:0 20px;display:flex;align-items:center;gap:18px;height:48px}
-.brand{font-weight:600;font-size:14px;white-space:nowrap}
-.nav{display:flex;gap:2px;overflow-x:auto;scrollbar-width:none}
+.topbar__in{padding:0 20px;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:18px;height:52px}
+.brand{justify-self:start;font-weight:600;font-size:14px;white-space:nowrap;color:var(--text);text-decoration:none}
+.nav{display:flex;gap:4px;overflow-x:auto;scrollbar-width:none;min-width:0}
 .nav::-webkit-scrollbar,.tabs::-webkit-scrollbar{display:none}
-.nav a{padding:6px 12px;border-radius:var(--r);color:var(--text2);text-decoration:none;font-size:13px;font-weight:500;white-space:nowrap}
+.nav a{display:inline-flex;align-items:center;height:32px;padding:0 12px;border-radius:var(--r);color:var(--text2);text-decoration:none;font-size:13px;font-weight:500;white-space:nowrap}
 .nav a:hover{color:var(--text);background:var(--bg2)}
 .nav a[aria-current="page"]{color:var(--text);background:var(--bg2)}
-.topbar__end{margin-left:auto;display:flex;align-items:center;gap:8px}
-.iconbtn{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border:0.5px solid var(--border2);border-radius:var(--r);background:var(--bg);color:var(--text2);cursor:pointer}
+.topbar__end{justify-self:end;display:flex;align-items:center;gap:8px}
+.iconbtn{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border:0.5px solid var(--border2);border-radius:var(--r);background:var(--bg);color:var(--text2);cursor:pointer}
 .iconbtn:hover{color:var(--text)}
+.navbtn{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border:0.5px solid var(--border2);border-radius:var(--r);background:var(--bg);color:var(--text2);font:inherit;font-size:13px;font-weight:500;white-space:nowrap;cursor:pointer}
+.navbtn:hover{color:var(--text);background:var(--bg2)}
 .user{font-size:12px;color:var(--text3);white-space:nowrap}
 .linkbtn{background:none;border:none;color:var(--accent);cursor:pointer;font-size:12px;padding:2px 0}
 .linkbtn:hover{text-decoration:underline}
@@ -277,5 +279,5 @@ tr.dim td{color:var(--text3)}
 .chip{font-size:11px;padding:2px 8px;border-radius:20px;background:var(--bg2);color:var(--text2);white-space:nowrap}
 
 /* Narrow screens: these follow every component rule so they win the cascade. */
-@media(max-width:900px){.charts2{grid-template-columns:1fr}.snap__grid{grid-template-columns:repeat(3,minmax(0,1fr))}.topbar__in{gap:10px}.user{display:none}}
+@media(max-width:900px){.charts2{grid-template-columns:1fr}.snap__grid{grid-template-columns:repeat(3,minmax(0,1fr))}.topbar__in{gap:10px}.user{display:none}.navbtn{width:32px;padding:0;justify-content:center;font-size:0;gap:0}}
 @media(max-width:520px){.map{height:clamp(420px,65vh,640px)}header.page>.ctrl{display:grid;grid-template-columns:auto 1fr;gap:6px 10px;width:100%;align-items:center}header.page>.ctrl select,header.page>.ctrl input{width:100%}.nav a{padding:6px 8px}.topbar__in{gap:8px}.shell{padding:16px}.topbar__in{padding:0 16px}.kv{font-size:18px}.snap{padding:14px}.snap__lpv b{font-size:24px}.snap__grid{grid-template-columns:repeat(2,minmax(0,1fr))}.notes>div{grid-template-columns:1fr;gap:2px}.drawer .kpi-lg{grid-template-columns:repeat(2,1fr)}input[type=search]{min-width:0;width:100%}}
