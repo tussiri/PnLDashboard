@@ -43,6 +43,7 @@ class FakeDb:
 
     def __init__(self):
         self.rows: dict[tuple[str, str], tuple] = {}
+        self.setting: dict[str, Any] | None = None
 
     @contextmanager
     def connection(self, *a, **k):
@@ -59,7 +60,7 @@ class FakeDb:
                 if "FROM ops.mail_attachment WHERE" in self.sql:
                     return (1,) if tuple(self.params) in db.rows else None
                 if "app_setting" in self.sql:
-                    return None
+                    return {"value": db.setting} if db.setting else None
                 return None
 
             def close(self): pass
@@ -91,8 +92,8 @@ def setup(monkeypatch):
     return db, loads, rebuilds
 
 
-def message(mid: str, subject: str, when: str = "2026-10-02T10:05:00Z") -> dict[str, Any]:
-    return {"id": mid, "subject": subject, "receivedDateTime": when, "from": {"emailAddress": {"address": "winteam@smcraneifs.com"}}}
+def message(mid: str, subject: str, when: str = "2026-10-02T10:05:00Z", sender: str = "winteam@smcraneifs.com") -> dict[str, Any]:
+    return {"id": mid, "subject": subject, "receivedDateTime": when, "from": {"emailAddress": {"address": sender}}}
 
 
 def test_loads_dashboard_reports_ignores_the_rest_and_handles_each_attachment_once(setup):
@@ -142,3 +143,33 @@ def test_recognizes_feeds_by_columns():
     assert mail_inbox.recognize("anything.csv", JOB_COST) == "job_cost"
     assert mail_inbox.recognize("ar_aging.csv", OTHER_REPORT) is None
     assert mail_inbox.recognize("broken.xlsx", b"\x00\x01") is None
+
+
+def test_the_message_rule_leaves_other_tools_mail_undownloaded(setup):
+    db, loads, _rebuilds = setup
+    db.setting = {"rule": {"senders": ["@smcraneifs.com"], "subjects": ["[Dashboard]"], "exclude_subjects": ["Power BI"], "files": ["*.csv"]}}
+    messages = [message("m1", "[Dashboard] Job Cost Analysis"), message("m2", "Job Cost Analysis for Power BI"),
+                message("m3", "[Dashboard] Job Cost", sender="someone@vendor.com"), message("m4", "[Dashboard] [Power BI] Job Cost"),
+                message("m5", "[dashboard] job cost xlsx")]
+    attachments = {"m1": [{"id": "a1", "name": "Crane_job_cost.csv", "size": 200}], "m2": [{"id": "a2", "name": "Crane_job_cost.csv", "size": 200}],
+                   "m3": [{"id": "a3", "name": "Crane_job_cost.csv", "size": 200}], "m4": [{"id": "a4", "name": "Crane_job_cost.csv", "size": 200}],
+                   "m5": [{"id": "a5", "name": "SYS Query Scheduler.xlsx", "size": 200}]}
+    seen: list[str] = []
+    result = mail_inbox.poll(mail_inbox.Graph(httpx.Client(transport=graph_transport(messages, attachments, {"a1": JOB_COST}, seen))))
+    assert result["loaded"] == 1 and result["ignored"] == 4 and [l[0] for l in loads] == ["Crane_job_cost.csv"]
+    assert {k[1]: v[8] for k, v in db.rows.items()} == {"a1": None, "a2": "subject is excluded", "a3": "sender is not a dashboard sender",
+                                                         "a4": "subject is excluded", "a5": "file name is not a dashboard file"}
+    assert [s for s in seen if s.endswith("/$value")] == ["GET /v1.0/users/reports@smcraneifs.com/messages/m1/attachments/a1/$value"]
+
+
+def test_rule_refusal_and_setting_validation():
+    rule = {"senders": ["reports-bot@smcraneifs.com", "@winteam.com"], "subjects": [], "exclude_subjects": [], "files": ["*_timekeeping_recent_*.csv"]}
+    assert mail_inbox.rule_refusal(rule, "Reports-Bot@smcraneifs.com", "x", "Crane_timekeeping_recent_20260930_0309.csv") is None
+    assert mail_inbox.rule_refusal(rule, "noreply@winteam.com", "x", "SARUS_TIMEKEEPING_RECENT_1.CSV") is None
+    assert mail_inbox.rule_refusal(rule, "noreply@winteam.com", "x", "payroll.csv") == "file name is not a dashboard file"
+    assert mail_inbox.rule_refusal(mail_inbox.DEFAULT_RULE, None, None, "anything.csv") is None  # no rule: columns decide
+    saved = mail_inbox.validate_setting({"enabled": True, "every_minutes": 30, "first_lookback_days": 14, "rule": {"subjects": [" [Dashboard] ", ""]}})
+    assert saved["rule"] == {"senders": [], "subjects": ["[Dashboard]"], "exclude_subjects": [], "files": []}
+    for bad in ({"rule": {"senderz": []}}, {"rule": {"files": "*.csv"}}, {"every_minutes": 1}, {"enabled": "yes"}):
+        with pytest.raises(ValueError):
+            mail_inbox.validate_setting(bad)

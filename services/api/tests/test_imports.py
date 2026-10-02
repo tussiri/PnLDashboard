@@ -158,3 +158,22 @@ def test_the_scheduled_timekeeping_query_loads_as_the_pay_report():
     assert parsed.errors == [] and r["company"] == "Sarus"  # by name: Sarus is company 1 in its own database
     assert (r["total_hours"], r["total_dollars"], r["overtime_dollars"], r["regular_dollars"]) == (Decimal("10"), Decimal("187"), Decimal("51"), Decimal("136"))
     assert r["work_date"].isoformat() == "2026-09-15" and r["paid_by_check_id"] == "88123"
+
+
+def test_a_filtered_export_is_recognized_as_partial():
+    """A mailed file carrying a slice of a company's jobs would replace the whole company's data."""
+    from app.imports import partial_export
+
+    class Cursor:
+        def __init__(self, have): self.have = have
+        def execute(self, sql, params): self.sql = sql
+        def fetchone(self): return {"n": self.have}
+
+    labor = [{"company": "Crane IFS", "job_number": str(j), "work_date": date(2026, 9, 14)} for j in range(3)]
+    assert "3 jobs where 40 are loaded" in partial_export(Cursor(40), "pay_report", labor, None)
+    assert partial_export(Cursor(5), "pay_report", labor, None) is None  # too little loaded to judge
+    assert partial_export(Cursor(4), "pay_report", labor * 1, None) is None
+    full = [{"company": "Crane IFS", "job_number": str(j), "work_date": date(2026, 9, 14)} for j in range(30)]
+    assert partial_export(Cursor(40), "pay_report", full, None) is None
+    cost = [{"company": "Crane West", "job_number": "39", "period": date(2026, 8, 1)}]
+    assert "1 jobs where 36 are loaded for 2026-08" in partial_export(Cursor(36), "job_cost", cost, None)

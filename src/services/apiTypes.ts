@@ -241,11 +241,15 @@ export interface SyncRun {
   error_message: string | null
 }
 
+/** Which mail is the dashboard's: each non-empty list must match; exclude_subjects ignores a match. */
+export interface MailRule { senders: string[]; subjects: string[]; exclude_subjects: string[]; files: string[] }
+/** ops.app_setting 'mail_inbox' (PUT /settings/mail_inbox). */
+export interface MailInboxSetting { enabled: boolean; every_minutes: number; first_lookback_days: number; rule?: MailRule }
 /** GET /integrations/mail: the reports mailbox poller. */
 export interface MailInboxStatus {
   configured: boolean
   mailbox: string | null
-  schedule: { enabled: boolean; every_minutes: number; first_lookback_days: number }
+  schedule: MailInboxSetting
   last_run: { status: string; started_at: string; completed_at: string | null; records_inserted: number | null; error_message: string | null } | null
   recent: {
     received_at: string; sender: string | null; subject: string | null; file_name: string

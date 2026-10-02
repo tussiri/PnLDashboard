@@ -14,9 +14,22 @@ never loaded. When anything loaded, the marts are rebuilt once. Each poll is a r
 
 Schedule: ops.app_setting 'mail_inbox' = {"enabled", "every_minutes", "first_lookback_days"}; the
 worker checks once a minute and polls when every_minutes have passed since the last poll.
+
+The mailbox is shared with other tools' ingestion pipelines, so two rules decide what is the
+dashboard's (docs/mail-inbox.md):
+
+* The message rule, 'mail_inbox'.rule, checked before anything is downloaded. Each list that is not
+  empty must match: senders (addresses, or @domain), subjects (the subject contains one, ignoring
+  case), files (attachment name globs such as *_timekeeping_recent_*.csv). exclude_subjects ignores
+  a message whose subject contains any of them. Empty lists match everything.
+* The columns: only an attachment shaped like a dashboard feed is loaded. And because a feed
+  replaces data (a company's labor over the file's dates, a company's job cost for its months), a
+  mailed file that covers well under the jobs already loaded for the same company and dates is
+  refused as a filtered export (imports.partial_export); upload it on Admin > Imports to load it.
 """
 from __future__ import annotations
 
+import fnmatch
 import logging
 import time
 import uuid
@@ -37,7 +50,9 @@ LOGIN = "https://login.microsoftonline.com"
 SPREADSHEETS = (".csv", ".xlsx", ".xlsm")
 MAX_BYTES = 50 * 1024 * 1024
 OVERLAP = timedelta(days=1)
-DEFAULT_SETTING: dict[str, Any] = {"enabled": True, "every_minutes": 30, "first_lookback_days": 14}
+RULE_KEYS = ("senders", "subjects", "exclude_subjects", "files")
+DEFAULT_RULE: dict[str, list[str]] = {k: [] for k in RULE_KEYS}
+DEFAULT_SETTING: dict[str, Any] = {"enabled": True, "every_minutes": 30, "first_lookback_days": 14, "rule": DEFAULT_RULE}
 
 
 class MailError(RuntimeError):
@@ -52,7 +67,43 @@ def setting(cursor: Any) -> dict[str, Any]:
     cursor.execute("SELECT value FROM ops.app_setting WHERE key = 'mail_inbox'")
     row = cursor.fetchone()
     value = row["value"] if row and isinstance(row["value"], dict) else {}
-    return {**DEFAULT_SETTING, **value}
+    return {**DEFAULT_SETTING, **value, "rule": {**DEFAULT_RULE, **(value.get("rule") or {})}}
+
+
+def validate_setting(value: Any) -> dict[str, Any]:
+    """The 'mail_inbox' setting as an administrator may save it (platform PUT /settings/mail_inbox)."""
+    if not isinstance(value, dict):
+        raise ValueError("must be an object")
+    out = {**DEFAULT_SETTING, **value}
+    if not isinstance(out["enabled"], bool):
+        raise ValueError("enabled must be true or false")
+    for key, lo, hi in (("every_minutes", 5, 1440), ("first_lookback_days", 1, 90)):
+        if isinstance(out[key], bool) or not isinstance(out[key], int) or not lo <= out[key] <= hi:
+            raise ValueError(f"{key} must be a whole number from {lo} to {hi}")
+    rule = out.get("rule") or {}
+    if not isinstance(rule, dict) or set(rule) - set(RULE_KEYS):
+        raise ValueError(f"rule takes only {', '.join(RULE_KEYS)}")
+    clean: dict[str, list[str]] = {}
+    for key in RULE_KEYS:
+        items = rule.get(key) or []
+        if not isinstance(items, list) or not all(isinstance(i, str) for i in items):
+            raise ValueError(f"rule.{key} must be a list of strings")
+        clean[key] = [i.strip() for i in items if i.strip()]
+    return {**out, "rule": clean}
+
+
+def rule_refusal(rule: dict[str, list[str]], sender: str | None, subject: str | None, file_name: str) -> str | None:
+    """Why the message rule leaves an attachment out, or None when it passes."""
+    address, title, name = (sender or "").lower(), (subject or "").lower(), file_name.lower()
+    if rule.get("senders") and not any(address == s.lower() or (s.startswith("@") and address.endswith(s.lower())) for s in rule["senders"]):
+        return "sender is not a dashboard sender"
+    if rule.get("exclude_subjects") and any(p.lower() in title for p in rule["exclude_subjects"]):
+        return "subject is excluded"
+    if rule.get("subjects") and not any(p.lower() in title for p in rule["subjects"]):
+        return "subject is not a dashboard subject"
+    if rule.get("files") and not any(fnmatch.fnmatch(name, p.lower()) for p in rule["files"]):
+        return "file name is not a dashboard file"
+    return None
 
 
 class Graph:
@@ -150,16 +201,21 @@ def poll(graph: Graph | None = None, rebuild: bool = True) -> dict[str, Any]:
         with conn.cursor() as cursor:
             cursor.execute("SELECT max(received_at) AS last FROM ops.mail_attachment")
             last = cursor.fetchone()["last"]
-            since = last - OVERLAP if last else datetime.now(timezone.utc) - timedelta(days=int(setting(cursor)["first_lookback_days"]))
+            cfg = setting(cursor)
+            since = last - OVERLAP if last else datetime.now(timezone.utc) - timedelta(days=int(cfg["first_lookback_days"]))
         for message in graph.messages(since):
             counts["messages"] += 1
+            sender = ((message.get("from") or {}).get("emailAddress") or {}).get("address")
             for attachment in graph.attachments(message["id"]):
                 with conn.cursor() as cursor:
                     if _seen(cursor, message["id"], attachment["id"]):
                         continue
                 name = attachment.get("name") or "attachment"
                 status, reason, file_id = "ignored", None, None
-                if not name.lower().endswith(SPREADSHEETS):
+                refused = rule_refusal(cfg["rule"], sender, message.get("subject"), name)
+                if refused:
+                    reason = refused  # never downloaded: another tool's mail
+                elif not name.lower().endswith(SPREADSHEETS):
                     reason = "not a CSV or Excel file"
                 elif (attachment.get("size") or 0) > MAX_BYTES:
                     reason = "larger than 50 MB"
@@ -170,7 +226,7 @@ def poll(graph: Graph | None = None, rebuild: bool = True) -> dict[str, Any]:
                         reason = "not a dashboard report"
                     else:
                         result = imports.load_file(conn, name, content, kind=kind, origin="mail",
-                                                   uploaded_by=f"mail:{((message.get('from') or {}).get('emailAddress') or {}).get('address') or 'unknown'}")
+                                                   uploaded_by=f"mail:{sender or 'unknown'}")
                         status, file_id = result["status"], result["import_file_id"]
                         reason = "; ".join(result.get("errors") or [])[:500] or None
                 counts[status] += 1
