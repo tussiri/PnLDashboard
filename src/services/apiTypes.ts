@@ -1520,6 +1520,20 @@ export interface LeadershipFeedbackResponse {
     low: number; latest_date: string | null; latest_score: number | null; latest_comment: string | null }[]
 }
 
+export interface FeedbackMonth { month: string; ratings: number; scored: number; average: number | null; low: number }
+export type FeedbackSentiment = 'positive' | 'mixed' | 'negative'
+/** GET /leadership/feedback/overview: the Home feedback tile. Scores from SQL; `summary` is Claude's reading of the comments. */
+export interface FeedbackOverview {
+  account: string; month: string; current: FeedbackMonth | null; prior: FeedbackMonth | null; months: FeedbackMonth[]
+  year: { ratings: number; average: number | null; since: string }
+  low_sites: { location_number: string; site_name: string | null; company: string | null; job_number: string | null; score: number; feedback_date: string }[]
+  summary: {
+    status: 'off' | 'none' | 'pending' | 'ready' | 'failed'; stale?: boolean; window_days?: number; comments?: number
+    model?: string | null; generated_at?: string | null; error?: string | null
+    summary?: { sentiment: FeedbackSentiment; headline: string; themes: { theme: string; sentiment: FeedbackSentiment; mentions: number; locations: string[] }[]; served_by?: string } | null
+  }
+}
+
 export interface LeadershipVendorsResponse {
   account: string
   since: string

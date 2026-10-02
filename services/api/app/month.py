@@ -7,7 +7,9 @@ actuals and includes subcontracted sites (the weekly views leave them out for Fe
   worked on the month's days (mart.v_timekeeping_daily), else by days, so the month uses the same
   labor as the weeks (pay report first, else the estimate);
 * revenue: job cost for the month, else Relay AR by service month, else (a month not yet invoiced)
-  the Relay contract amount, else the latest Relay AR or job cost month (an estimate), with its source;
+  the Relay contract amount, else the latest Relay AR or job cost month (an estimate), with its source.
+  A subcontracted job takes Relay AR before job cost: its contract revenue is booked to a GL line with
+  no job (from July 2026), so its job cost carries only the OS revenue line;
 * vendor cost: Relay AP by service month (never for self-performed stations), else job cost
   subcontractors, else the weeks' projected vendor cost, with its source;
 * sub_expected / sub_received: a subcontracted Relay station with a contract, and whether any of
@@ -99,7 +101,9 @@ def month_bounds(value: str) -> tuple[date, date, date]:
 
 
 def month_row(r: dict[str, Any], mapping: dict[tuple[str, str], dict[str, Any]], first: date, last: date) -> dict[str, Any]:
-    if _f(r["jc_revenue"]) > 0:
+    if r["delivery_model"] == "subcontracted" and _f(r["ar_revenue"]) > 0:
+        revenue, revenue_source = _f(r["ar_revenue"]), "relay_ar"
+    elif _f(r["jc_revenue"]) > 0:
         revenue, revenue_source = _f(r["jc_revenue"]), "job_cost"
     elif _f(r["ar_revenue"]) > 0:
         revenue, revenue_source = _f(r["ar_revenue"]), "relay_ar"

@@ -58,6 +58,9 @@ x-api-environment: &api-environment
   GRAPH_CLIENT_SECRET: ${GRAPH_CLIENT_SECRET:-}
   GRAPH_MAILBOX: ${GRAPH_MAILBOX:-}
   GRAPH_TIMEOUT_SECONDS: ${GRAPH_TIMEOUT_SECONDS:-60}
+  # Claude API key for the feedback comment summary (app/feedback_ai.py). Blank = no summary.
+  ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+  FEEDBACK_SUMMARY_MODEL: ${FEEDBACK_SUMMARY_MODEL:-claude-opus-5-5}
   # Second source: the restored Finance_Dashboard dump (read-only database in the same Postgres).
   # Empty = source not configured. The default is the local restored dump.
   FINANCE_REFERENCE_DATABASE_URL: ${FINANCE_REFERENCE_DATABASE_URL:-postgresql://facilities_app:facilities_dev@postgres:5432/finance_reference}

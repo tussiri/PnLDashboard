@@ -4,7 +4,8 @@ import { dataFlags, daysInMonth, monthFlags, priorMonth, rowsOfWeek, segmentOrde
 import { hours, hours1, money, moneyK, pct } from '../format'
 import { accountSummary, statusOf, type MetricOptions } from '../metrics'
 import { Overview } from '../Overview'
-import { addDays, monthLabel, weekLabel } from '../routes'
+import { addDays, monthLabel, weekEndOf, weekLabel } from '../routes'
+import { FeedbackTile } from './Feedback'
 import { PageHeader, updatedLine } from '../Shell'
 import { useLeadership } from '../state'
 import { Badge, Empty, LoadError, Skeleton, toneOf, VocabContext } from '../ui'
@@ -53,7 +54,7 @@ function AccountSnapshot({ account, rows, prior, options, periodLabel }: {
 }
 
 export function Home() {
-  const { selectedAccount, weekStart, optionsFor, config, monthMode, month } = useLeadership()
+  const { selectedAccount, weekStart, optionsFor, config, monthMode, month, can } = useLeadership()
   const slug = selectedAccount?.slug
   const weekQuery = useRows(monthMode ? undefined : 'featured', 2)
   const monthQuery = useMonthRows(monthMode ? slug : undefined, monthMode ? month : undefined)
@@ -79,7 +80,7 @@ export function Home() {
           rows={selectedRows} prior={prior.filter((r) => r.account_slug === selectedAccount.slug)} />}
     {!all ? <Skeleton height={320} />
       : !selectedAccount || !summary ? <Empty>No data for this {monthMode ? 'month' : 'week'}.</Empty>
-        : <VocabContext.Provider value={vocabOf(selectedAccount)}><Overview account={selectedAccount} rows={selectedRows} summary={summary} options={options} flags={flags} headline={false} /></VocabContext.Provider>}
+        : <VocabContext.Provider value={vocabOf(selectedAccount)}>{can('tab.feedback') && <FeedbackTile account={selectedAccount} month={monthMode ? month : weekStart ? weekEndOf(weekStart).slice(0, 7) : undefined} />}<Overview account={selectedAccount} rows={selectedRows} summary={summary} options={options} flags={flags} headline={false} /></VocabContext.Provider>}
     {selectedAccount && summary && <p className="foot"><a href={`#/account/${selectedAccount.slug}${monthMode && month ? `?period=month&month=${month}` : weekStart ? `?week=${addDays(weekStart, 6)}` : ''}`}>All {selectedAccount.name} sites</a></p>}
   </>
 }

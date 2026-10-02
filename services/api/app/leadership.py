@@ -28,7 +28,9 @@ stored: routers/leadership.py joins ops.account_job at read time.
   Relay's payables for the week's service month (the month holding the week's Thursday), or the
   site contract when that month is under 90% invoiced (basis relay_ap / relay_contract; Crane's own
   sites carry none, relay_self_perform); prior_sub also considers Relay's payables; revenue comes
-  from Relay's AR (supersession applied) when the job-cost export does not cover the month
+  from Relay's AR (supersession applied) when the job-cost export does not cover the month, and
+  always for a subcontracted Relay site with AR that month, whose contract revenue is booked to a GL
+  line with no job from July 2026, so its job cost carries only the OS revenue line
   (revenue_month_basis relay_ar); delivery_model falls back to Relay's self-perform flag.
 * invoice_week = mart.job_week.invoicing (billing apportioned to the week), used only by accounts
   whose revenue_method is weekly_billing.
@@ -171,7 +173,9 @@ relay AS (
                    AND (coalesce(a.relay_ap_monthly, 0) = 0 OR a.relay_week_ap >= 0.9 * a.relay_ap_monthly) THEN 'relay_ap'
               WHEN coalesce(a.relay_ap_monthly, 0) > 0 THEN 'relay_contract'
          END AS relay_basis,
-         coalesce(a.rm_basis, '') <> 'job_cost' AND a.relay_rm_ar IS NOT NULL AS relay_revenue
+         (coalesce(a.rm_basis, '') <> 'job_cost' AND a.relay_rm_ar IS NOT NULL)
+           OR (a.relay_covered AND NOT a.relay_self_perform AND coalesce(a.relay_rm_ar, 0) > 0
+               AND coalesce(a.delivery_model, 'subcontracted') = 'subcontracted') AS relay_revenue
   FROM assembled a
 )
 SELECT

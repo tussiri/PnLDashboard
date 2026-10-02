@@ -20,7 +20,7 @@ from pydantic import BaseModel, Field
 
 from .. import allocations, accounts, companycam, imports, marts
 from .. import month as month_module
-from .. import permissions
+from .. import feedback_ai, permissions
 from ..common import allowed_accounts, current_user, jsonable, require_account, require_admin, source_block
 from ..db import connection
 
@@ -729,6 +729,54 @@ def leadership_feedback(account: str = Query(..., description="An account slug")
     for l in lines:
         l["score"] = float(l["score"]) if l["score"] is not None else None
     return {"account": account, "since": since.isoformat(), "lines": lines, **feedback_summary(lines)}
+
+
+FEEDBACK_MONTHS_SQL = """
+SELECT date_trunc('month', feedback_date)::date AS month, count(*) AS ratings, count(score) AS scored,
+       round(avg(score), 2) AS average, count(*) FILTER (WHERE score <= 2) AS low
+FROM mart.v_service_feedback
+WHERE feedback_date >= %(since)s AND feedback_date <= %(until)s
+  AND (account_slug = %(account)s OR (account_slug IS NULL AND %(account)s = 'fedex'))
+GROUP BY 1 ORDER BY 1
+"""
+
+
+@router.get("/feedback/overview", dependencies=[Depends(permissions.require_permission("tab.feedback"))])
+def leadership_feedback_overview(account: str = Query(..., description="An account slug"),
+                                 month: str | None = Query(None, description="YYYY-MM; default this month"),
+                                 request: Request = None) -> dict[str, Any]:  # type: ignore[assignment]
+    """The Home feedback tile: the month's ratings to date (average, count, 1-2 stars), the prior month,
+    the last 12 months by month, the 1-2 star locations this month, and the Claude summary of the last
+    90 days of comments (app/feedback_ai.py). Scores are computed here, never by the model."""
+    if request is not None:
+        require_account(request, account)
+    try:
+        first = date.fromisoformat(f"{month[:7]}-01") if month else date.today().replace(day=1)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="month must be YYYY-MM") from None
+    until = (first.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
+    since = first
+    for _ in range(11):
+        since = (since - timedelta(days=1)).replace(day=1)
+    with connection() as conn, conn.cursor() as cursor:
+        cursor.execute("SELECT 1 FROM ops.account WHERE slug = %s", (account,))
+        if cursor.fetchone() is None:
+            raise HTTPException(status_code=404, detail=f"Unknown account {account!r}")
+        cursor.execute(FEEDBACK_MONTHS_SQL, {"since": since, "until": until, "account": account})
+        months = [{**jsonable(dict(r)), "average": float(r["average"]) if r["average"] is not None else None} for r in cursor.fetchall()]
+        cursor.execute(FEEDBACK_SQL + " AND feedback_date <= %(until)s AND score <= 2 AND (account_slug = %(account)s OR (account_slug IS NULL AND %(account)s = 'fedex'))"
+                       " ORDER BY feedback_date DESC", {"since": first, "until": until, "account": account})
+        low = [jsonable(dict(r)) for r in cursor.fetchall()]
+        ai = feedback_ai.state(cursor, account)
+    by_month = {m["month"]: m for m in months}
+    prior = (first - timedelta(days=1)).replace(day=1).isoformat()
+    scored = sum(m["scored"] for m in months)
+    year_avg = round(sum((m["average"] or 0) * m["scored"] for m in months) / scored, 2) if scored else None
+    return {"account": account, "month": first.isoformat(), "current": by_month.get(first.isoformat()), "prior": by_month.get(prior),
+            "months": months, "year": {"ratings": sum(m["ratings"] for m in months), "average": year_avg, "since": since.isoformat()},
+            "low_sites": [{"location_number": l["location_number"], "site_name": l["site_name"], "company": l["company"], "job_number": l["job_number"],
+                           "score": float(l["score"]), "feedback_date": l["feedback_date"]} for l in low],
+            "summary": jsonable(ai)}
 
 
 @router.get("/vendors", dependencies=[Depends(permissions.require_permission("tab.vendors"))])

@@ -625,3 +625,13 @@ a FedEx job named `FedEx - <location>`; `match_basis` says which, null when none
 
 `GET /leadership/sites/{company}/{job}` adds `feedback`: the site's ratings over 12 months (null without `tab.feedback`).
 
+Migration 044: locations compare upper case without leading zeros (`core.feedback_location`), since
+the export zero-pads Ground stations (`0331`) and Relay does not (`331`); a Relay match never resolves
+to a Sarus job, and an inactive Crane job falls back to Relay's site name. The importer skips work
+orders not rated yet (Star Ratings Score `NO FEEDBACK`) instead of reporting them.
+
+| Route | Response |
+|---|---|
+| `GET /leadership/feedback/overview?account=&month=YYYY-MM` | Permission `tab.feedback`, account scope. The Home tile: `{account, month, current, prior, months: [{month, ratings, scored, average, low}], year: {ratings, average, since}, low_sites: [{location_number, site_name, company, job_number, score, feedback_date}], summary}`. `current` is the month to date, `months` the 12 months to it, `low_sites` its 1-2 star ratings. Scores are computed in SQL. `summary` is the Claude reading of the last 90 days of comments (app/feedback_ai.py, migration 045): `{status: off \| none \| pending \| ready \| failed, window_days, comments, model, generated_at, error, summary: {sentiment, headline, themes: [{theme, sentiment, mentions, locations}]}}`; `off` without `ANTHROPIC_API_KEY`. Cached in `ops.feedback_summary` under a digest of the comments, so Claude is called only when they change, in a background thread; `pending` until the first summary lands. |
+
+

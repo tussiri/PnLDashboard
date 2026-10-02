@@ -197,6 +197,19 @@ def test_the_feedback_export_loads_as_service_feedback():
     assert (first["wo_number"], first["location_number"], first["trade"], first["feedback_date"], first["score"]) == \
         ("328967046", "3112", "JANITORIAL OFFICE", date(2025, 12, 1), Decimal(1))
     assert second["wo_number"] == "350871868" and second["comment"] is None  # Excel number, and "'-" is no comment
+    placeholder = normalize_rows("service_feedback", FEEDBACK_HEADERS, [dict(zip(FEEDBACK_HEADERS, ["Satisfactory", "1", "NIPA", "", "", "2026-05-04", "NO COMMENT", "2"]))], {})
+    assert placeholder.records[0]["comment"] is None
     assert third["wo_number"] == "354023495" and third["feedback_date"] == date(2026, 8, 3) and third["company"] is None
     missing = normalize_rows("service_feedback", FEEDBACK_HEADERS, [dict(zip(FEEDBACK_HEADERS, ["Good", "", "3112", "", "", "2026-01-01", "", "5"]))], {})
     assert missing.records == [] and "wo_number is empty" in missing.errors[0]
+
+
+def test_unrated_work_orders_are_skipped_not_errors():
+    """The full export lists every work order; unrated ones read "No Feedback" / "NO FEEDBACK"."""
+    rows = [dict(zip(FEEDBACK_HEADERS, r)) for r in FEEDBACK_ROWS] + [
+        dict(zip(FEEDBACK_HEADERS, ["No Feedback", "332150643", "PGVA", "ServiceMaster Facilities Maintenance", "JANITORIAL DOCK", None, None, "NO FEEDBACK"])),
+        dict(zip(FEEDBACK_HEADERS, [None, "332150644", "0945", "ServiceMaster Facilities Maintenance", "JANITORIAL DOCK", None, None, "NO FEEDBACK"])),
+        dict(zip(FEEDBACK_HEADERS, ["Satisfactory", "332150645", "0920", "ServiceMaster Facilities Maintenance", "JANITORIAL DOCK", "2026-08-01", None, "NO FEEDBACK"])),
+    ]
+    parsed = normalize_rows("service_feedback", FEEDBACK_HEADERS, rows, {})
+    assert (len(parsed.records), parsed.skipped, parsed.errors) == (3, 3, [])
