@@ -13,6 +13,40 @@ export const stars = (score: number | null) => (score == null ? '–' : score.to
 export const scoreTone = (score: number | null) => (score == null ? '' : score <= 2 ? 'bad' : score < 4 ? 'warn' : 'ok')
 const MONTHS = 12
 
+/** "JANITORIAL DOCK" -> "Dock". */
+export const tradeName = (trade: string | null) => {
+  const t = (trade ?? '').replace(/^JANITORIAL\s*/i, '').trim().toLowerCase()
+  return t ? t[0].toUpperCase() + t.slice(1) : '–'
+}
+
+/** One visit: the ratings a station gave on one date. FedEx rates each trade (dock, office, pallets) as its own
+ * work order and often repeats one comment on each; a visit lists every trade's score and each distinct comment once.
+ * Averages elsewhere still count every rating. */
+export interface Visit {
+  key: string; feedback_date: string; location_number: string; site_name: string | null; company: string | null; job_number: string | null
+  ratings: { trade: string | null; score: number | null; wo_number: string }[]; comments: string[]; average: number | null; low: boolean
+}
+export function groupVisits(lines: Line[]): Visit[] {
+  const out = new Map<string, Visit>()
+  for (const l of lines) {
+    const key = `${l.location_number}|${l.feedback_date}`
+    const v = out.get(key) ?? { key, feedback_date: l.feedback_date, location_number: l.location_number, site_name: l.site_name, company: l.company,
+      job_number: l.job_number, ratings: [], comments: [], average: null, low: false }
+    v.ratings.push({ trade: l.trade, score: l.score, wo_number: l.wo_number })
+    const c = l.comment?.trim()
+    if (c && !v.comments.some((x) => x.toLowerCase() === c.toLowerCase())) v.comments.push(c)
+    out.set(key, v)
+  }
+  for (const v of out.values()) {
+    const scored = v.ratings.filter((r) => r.score != null)
+    v.average = scored.length ? scored.reduce((t, r) => t + r.score!, 0) / scored.length : null
+    v.low = scored.some((r) => r.score! <= 2)
+    v.ratings.sort((a, b) => (a.trade ?? '').localeCompare(b.trade ?? ''))
+  }
+  return [...out.values()]
+}
+export const visitScores = (v: Visit) => v.ratings.map((r) => <span key={r.wo_number} className={`vs ${scoreTone(r.score)}`}>{tradeName(r.trade)} {stars(r.score)}</span>)
+
 /** Customer feedback and star ratings at the account's sites (the ServiceChannel feedback export). */
 export function Feedback({ account }: { account: LeadershipAccount }) {
   const { api, keyPrefix, decision, navigate } = useLeadership()
@@ -31,17 +65,17 @@ export function Feedback({ account }: { account: LeadershipAccount }) {
     { key: 'n', header: 'Ratings', value: (r) => r.ratings },
     { key: 'low', header: '1-2 stars', value: (r) => r.low, render: (r) => <span className={r.low ? 'bad' : ''}>{r.low}</span> },
     { key: 'last', header: 'Latest', left: true, value: (r) => r.latest_date ?? '' },
-    { key: 'comment', header: 'Latest comment', left: true, value: (r) => r.latest_comment ?? '', className: 'nm' },
+    { key: 'comment', header: 'Latest comment', left: true, value: (r) => r.latest_comment ?? '', className: 'wrap' },
   ]
-  const lineCols: Column<Line>[] = [
+  const visits = groupVisits(d.lines)
+  const visitCols: Column<Visit>[] = [
     { key: 'date', header: 'Date', left: true, value: (r) => r.feedback_date },
     { key: 'site', header: 'Site', left: true, value: siteName, className: 'nm' },
     { key: 'loc', header: 'Location', left: true, value: (r) => r.location_number },
-    { key: 'trade', header: 'Trade', left: true, value: (r) => r.trade ?? '' },
-    { key: 'fb', header: 'Feedback', left: true, value: (r) => r.feedback ?? '' },
-    { key: 'score', header: 'Rating', value: (r) => r.score, render: (r) => <span className={scoreTone(r.score)}>{stars(r.score)}</span> },
-    { key: 'comment', header: 'Comment', left: true, value: (r) => r.comment ?? '', className: 'nm' },
-    { key: 'wo', header: 'WO', left: true, value: (r) => r.wo_number },
+    { key: 'score', header: 'Ratings', value: (r) => r.average, render: visitScores,
+      csv: (r) => r.ratings.map((x) => `${tradeName(x.trade)} ${stars(x.score)}`).join('; ') },
+    { key: 'comment', header: 'Comment', left: true, value: (r) => r.comments.join(' / '), className: 'wrap' },
+    { key: 'wo', header: 'Work orders', left: true, value: (r) => r.ratings.map((x) => x.wo_number).join(', '), className: 'neutral' },
   ]
   return <>
     <div className="kpi-lg">
@@ -53,8 +87,8 @@ export function Feedback({ account }: { account: LeadershipAccount }) {
     <div className="card"><div className="ct"><span>By site</span></div>
       <SortTable caption="Feedback by site" rows={d.by_site} columns={siteCols} defaultSort={{ key: 'avg', dir: 1 }} pageSize={25}
         onRowClick={open} rowLabel={(r) => `Open ${siteName(r)}`} csvName={`${account.slug}-feedback-by-site`} /></div>
-    <div className="card"><div className="ct"><span>Ratings</span></div>
-      <SortTable caption="Feedback and star ratings" rows={d.lines} columns={lineCols} defaultSort={{ key: 'date', dir: -1 }} pageSize={50}
+    <div className="card"><div className="ct"><span>Visits</span><span className="ks">{visits.length.toLocaleString('en-US')} visits, {d.ratings.toLocaleString('en-US')} ratings</span></div>
+      <SortTable caption="Feedback by visit" rows={visits} columns={visitCols} defaultSort={{ key: 'date', dir: -1 }} pageSize={50}
         onRowClick={open} rowLabel={(r) => `Open ${siteName(r)}`} csvName={`${account.slug}-feedback`} /></div>
   </>
 }
