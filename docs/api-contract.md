@@ -486,9 +486,9 @@ labor summary (loaded as kind `pay_report`, one Monday-Sunday week per file) and
 GL line (kind `job_cost`, GL accounts pivoted by the `job_cost_gl_map` ranges; a file replaces the
 imported months it covers).
 
-## Records mailbox, added 2026-09-29
+## Reports mailbox, added 2026-09-29
 
-Migration 038, docs/mail-inbox.md. The worker reads the records mailbox through Microsoft Graph
+Migration 038, docs/mail-inbox.md. The worker reads the reports mailbox through Microsoft Graph
 (read-only) and loads dashboard report exports through the importer (`ops.import_file.origin = 'mail'`).
 
 | Route | Response |

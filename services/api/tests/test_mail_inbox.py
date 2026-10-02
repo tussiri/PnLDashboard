@@ -1,4 +1,4 @@
-"""The records mailbox poller (app/mail_inbox.py) against a fake Microsoft Graph and an in-memory
+"""The reports mailbox poller (app/mail_inbox.py) against a fake Microsoft Graph and an in-memory
 stand-in for the two tables it touches. No network, no database."""
 from __future__ import annotations
 
@@ -80,7 +80,7 @@ class FakeDb:
 
 @pytest.fixture()
 def setup(monkeypatch):
-    monkeypatch.setattr(mail_inbox, "settings", replace(mail_inbox.settings, graph_tenant_id="t", graph_client_id="c", graph_client_secret="s", graph_mailbox="records@smcraneifs.com"))
+    monkeypatch.setattr(mail_inbox, "settings", replace(mail_inbox.settings, graph_tenant_id="t", graph_client_id="c", graph_client_secret="s", graph_mailbox="reports@smcraneifs.com"))
     db = FakeDb()
     monkeypatch.setattr(mail_inbox, "connection", db.connection)
     loads: list[tuple[str, str]] = []
@@ -127,7 +127,7 @@ def test_nothing_loaded_means_no_rebuild(setup):
 
 def test_refused_access_is_reported_plainly(setup):
     graph = mail_inbox.Graph(httpx.Client(transport=graph_transport([], {}, {}, [], status=403)))
-    with pytest.raises(mail_inbox.MailError, match="refused access to records@smcraneifs.com"):
+    with pytest.raises(mail_inbox.MailError, match="refused access to reports@smcraneifs.com"):
         mail_inbox.poll(graph)
 
 

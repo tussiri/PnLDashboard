@@ -241,7 +241,7 @@ export interface SyncRun {
   error_message: string | null
 }
 
-/** GET /integrations/mail: the records mailbox poller. */
+/** GET /integrations/mail: the reports mailbox poller. */
 export interface MailInboxStatus {
   configured: boolean
   mailbox: string | null

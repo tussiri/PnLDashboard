@@ -397,15 +397,15 @@ def photovalidation_sync() -> dict[str, Any]:
         return jsonable(photovalidation.sync())
 @router.get("/integrations/mail")
 def mail_status() -> dict[str, Any]:
-    """The records mailbox poller: wired or not, schedule, last poll, recent attachments. No secrets."""
+    """The reports mailbox poller: wired or not, schedule, last poll, recent attachments. No secrets."""
     return jsonable(mail_inbox.status())
 
 
 @router.post("/integrations/mail/poll", dependencies=[Depends(require_admin)])
 def mail_poll() -> dict[str, Any]:
-    """Read the records mailbox now (read-only against Microsoft Graph); rebuilds the marts when a report loaded."""
+    """Read the reports mailbox now (read-only against Microsoft Graph); rebuilds the marts when a report loaded."""
     if not mail_inbox.configured():
-        raise HTTPException(status_code=409, detail="The records mailbox is not configured (GRAPH_TENANT_ID, GRAPH_CLIENT_ID, GRAPH_CLIENT_SECRET, GRAPH_MAILBOX)")
+        raise HTTPException(status_code=409, detail="The reports mailbox is not configured (GRAPH_TENANT_ID, GRAPH_CLIENT_ID, GRAPH_CLIENT_SECRET, GRAPH_MAILBOX)")
     return jsonable(mail_inbox.run())
 
 
