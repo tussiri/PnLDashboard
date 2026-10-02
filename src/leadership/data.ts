@@ -166,8 +166,14 @@ export function useMonthly(account: string | undefined, months = 3) {
   return useApiQuery<LeadershipMonthlyResponse>(key, (signal) => api.leadershipMonthly(account!, months, signal), [api, account, months])
 }
 
-/** A month's billing for a job: job cost revenue, else Relay AR (FedEx months before job cost closes). */
-export const monthRevenue = (m: LeadershipMonth | undefined) => (m ? (m.revenue > 0 ? m.revenue : m.relay_ar) : 0)
+/**
+ * A month's billing for a job. A subcontracted job's contract revenue is booked to a GL line with no job
+ * (from July 2026), so its job cost carries only the OS revenue line: Relay AR, else job cost revenue.
+ * Other jobs: job cost revenue, else Relay AR (FedEx months before job cost closes).
+ */
+export const monthRevenue = (m: LeadershipMonth | undefined, subcontracted = false) =>
+  (!m ? 0 : subcontracted ? (m.relay_ar > 0 ? m.relay_ar : m.revenue) : m.revenue > 0 ? m.revenue : m.relay_ar)
+const isSub = (j: LeadershipMonthlyJob) => j.delivery_model === 'subcontracted'
 
 /** The jobs of a site (itself and any rolled-in pallet job) in the monthly response. */
 export function siteMonths(jobs: LeadershipMonthlyJob[], company: string | null, kids: string[] | undefined, job: string) {
@@ -180,7 +186,7 @@ export function monthLaborPct(jobs: LeadershipMonthlyJob[], month: string, vendo
   let revenue = 0, labor = 0
   for (const j of jobs) {
     const m = j.months[month]
-    revenue += monthRevenue(m)
+    revenue += monthRevenue(m, isSub(j))
     labor += (m?.direct_labor ?? 0) + (m?.subcontractors ?? 0) * vendorFactor
   }
   return revenue > 0 ? labor / revenue : null

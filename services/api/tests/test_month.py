@@ -32,7 +32,7 @@ def test_month_bounds():
 
 
 @pytest.mark.parametrize("kw,basis,amount", [
-    ({"jc_revenue": 30000.0, "ar_revenue": 31000.0}, "job_cost", 30000.0),
+    ({"jc_revenue": 30000.0, "ar_revenue": 31000.0, "delivery_model": "self_perform"}, "job_cost", 30000.0),
     ({"ar_revenue": 31000.0, "contract_ar": 29000.0}, "relay_ar", 31000.0),
     ({"contract_ar": 29000.0, "last_ar": 28000.0}, "contract", 29000.0),
     ({"last_ar": 28000.0}, "prior_month", 28000.0),
@@ -57,3 +57,11 @@ def test_row_shape_and_sub_invoice_status():
     assert r["sub_expected"] and r["sub_received"] and r["ar_invoices"] == 1
     assert not row()["sub_received"]
     assert r["labor_basis"] == "pay_report" and row(pay_report=False)["labor_basis"] == "trailing_rate_estimate"
+
+
+def test_a_subcontracted_job_takes_relay_ar_before_its_partial_job_cost():
+    """Job 296 in August 2026: job cost carries only GL 34000 OS revenue ($4,030); Relay billed $189,144."""
+    r = row(jc_revenue=4030.48, ar_revenue=189143.50, relay_ap=189053.69)
+    assert (r["revenue_month_basis"], r["revenue_month_amount"], r["sub_week"]) == ("relay_ar", 189143.5, 189053.69)
+    assert row(jc_revenue=4030.48)["revenue_month_basis"] == "job_cost"  # no Relay AR yet: job cost
+    assert row(jc_revenue=30000.0, ar_revenue=31000.0, delivery_model="self_perform")["revenue_month_basis"] == "job_cost"

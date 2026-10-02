@@ -117,7 +117,7 @@ export function Overview({ account, rows, summary, options, flags, headline = tr
     const out: { label: string; labor: number | null; invoice: number | null; lp: number | null }[] = []
     const div = account.revenue_divisor || 4.33
     for (const m of closed) {
-      const inv = scopeJobs.reduce((x, j) => x + monthRevenue(j.months[m]), 0)
+      const inv = scopeJobs.reduce((x, j) => x + monthRevenue(j.months[m], j.delivery_model === 'subcontracted'), 0)
       const lab = scopeJobs.reduce((x, j) => x + (j.months[m]?.direct_labor ?? 0) + (j.months[m]?.subcontractors ?? 0) * factor, 0)
       out.push({ label: `${monthShort(m)} actual`, labor: lab / div, invoice: inv / div, lp: inv > 0 ? lab / inv : null })
     }

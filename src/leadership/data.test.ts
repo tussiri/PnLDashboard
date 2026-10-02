@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { LeadershipAccount, LeadershipRow } from '../services/apiTypes'
-import { closedMonths, prepareRows } from './data'
+import { closedMonths, monthRevenue, prepareRows } from './data'
 
 const row = (job: string, extra: Partial<LeadershipRow> = {}): LeadershipRow => ({
   week_start: '2026-09-14', week_end: '2026-09-20', company: 'Crane West', job_number: job, site_name: `Site ${job}`, parent_account: 'FedEx',
@@ -46,5 +46,18 @@ describe('closedMonths', () => {
     ] }
     // July: revenue in, labor 400 of 620 timekept (65%); August: carried by Relay billing. Subcontracted jobs are ignored.
     expect(closedMonths(data)).toEqual(['2026-06-01'])
+  })
+})
+
+describe('monthRevenue', () => {
+  const m = { revenue: 4030.48, relay_ar: 189143.5 } as never
+  it('takes Relay AR first for a subcontracted job, whose contract revenue has no job in job cost', () => {
+    expect(monthRevenue(m, true)).toBe(189143.5)
+    expect(monthRevenue({ revenue: 4030.48, relay_ar: 0 } as never, true)).toBe(4030.48)
+  })
+  it('takes job cost first for other jobs', () => {
+    expect(monthRevenue(m)).toBe(4030.48)
+    expect(monthRevenue({ revenue: 0, relay_ar: 900 } as never)).toBe(900)
+    expect(monthRevenue(undefined, true)).toBe(0)
   })
 })

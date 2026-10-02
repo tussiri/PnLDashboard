@@ -87,7 +87,7 @@ export function SubcontractedTab({ account }: { account: LeadershipAccount }) {
     const picked = scope === 'all' ? data.months : [scope]
     return data.jobs.filter((j) => j.delivery_model === 'subcontracted' && j.role === 'site').map((j) => {
       let ar = 0, ap = 0, direct = 0
-      for (const m of picked) { const x = j.months[m]; ar += monthRevenue(x); ap += x ? (x.relay_ap > 0 ? x.relay_ap : x.subcontractors) : 0; direct += x?.direct_labor ?? 0 }
+      for (const m of picked) { const x = j.months[m]; ar += monthRevenue(x, true); ap += x ? (x.relay_ap > 0 ? x.relay_ap : x.subcontractors) : 0; direct += x?.direct_labor ?? 0 }
       const margin = ar - ap - direct
       return { company: j.company, job_number: j.job_number, name: (j.job_name ?? '').replace(/^FedEx - /, '') || j.job_number, ar, ap, direct, margin, marginPct: ar > 0 ? margin / ar : null }
     }).filter((r) => r.ar > 0 || r.ap + r.direct > 0)
