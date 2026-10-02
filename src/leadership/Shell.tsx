@@ -50,14 +50,14 @@ export function Shell({ children }: { children: ReactNode }) {
     <a className="skip-link" href="#main">Skip to content</a>
     <div className="topbar">
       <div className="topbar__in">
-        <span className="brand">Crane IFS</span>
+        <a className="brand" href={hrefFor('home')}>Crane IFS</a>
         <nav className="nav" aria-label="Main">
           {NAV.filter((n) => (!n.admin || user.role === 'admin') && (!n.every || unlimited) && (!n.permission || can(n.permission))).map((n) => <a key={n.view} href={hrefFor(n.view)} aria-current={route.view === n.view ? 'page' : undefined}>{n.label}</a>)}
         </nav>
         <div className="topbar__end">
           <span className="user">{user.username}</span>
           <button type="button" className="iconbtn" onClick={() => setTheme(next.theme)} aria-label={`${current.label}; switch to ${next.label.toLowerCase()}`} title={current.label}>{current.icon}</button>
-          <button type="button" className="iconbtn" onClick={signOut} aria-label="Sign out" title="Sign out"><LogOut size={14} aria-hidden="true" /></button>
+          <button type="button" className="navbtn" onClick={signOut}><LogOut size={14} aria-hidden="true" />Log out</button>
         </div>
       </div>
     </div>
