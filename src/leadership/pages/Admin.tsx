@@ -10,13 +10,15 @@ import { Empty, LoadError, Pills, Skeleton, SortTable, type Column } from '../ui
 import { UsersTab } from './Users'
 import { AllocationsTab } from './Allocations'
 
-const TAB_LABEL: Record<AdminTab, string> = { accounts: 'Accounts', jobs: 'Job mapping', allocations: 'Allocations', imports: 'Imports', data: 'Data and sync', users: 'Users' }
+const TAB_LABEL: Record<AdminTab, string> = { accounts: 'Accounts', jobs: 'Job mapping', allocations: 'Allocations', imports: 'Imports', mailbox: 'Mailbox', data: 'Data and sync', users: 'Users' }
 const ROLE_LABEL: Record<LeadershipRole, string> = { site: 'Site', catch_all: 'Catch-all', non_billed: 'Non-billed', pallet: 'Pallet' }
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e))
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
 /** Refresh every cached query after a change (configuration applies at read time). */
 const refreshAll = () => queryClient.invalidate()
+
+const FEED_NAME: Record<string, string> = { pay_report: 'Labor', job_cost: 'Job cost', income_statement: 'Income statement', service_feedback: 'Feedback' }
 
 function useAction() {
   const { decision, redetect } = useLeadership()
@@ -158,32 +160,48 @@ function JobsTab() {
 
 const MAIL_TONE: Record<string, string> = { loaded: 'ok', failed: 'bad', duplicate: 'neutral', ignored: 'neutral' }
 
-const RULE_FIELDS: { key: keyof MailRule; label: string; hint: string }[] = [
+const RULE_FIELDS: { key: Exclude<keyof MailRule, 'name'>; label: string; hint: string }[] = [
   { key: 'senders', label: 'Senders', hint: 'reports@smcraneifs.com, @winteam.com' },
   { key: 'subjects', label: 'Subject contains', hint: '[Dashboard]' },
   { key: 'exclude_subjects', label: 'Ignore subjects containing', hint: 'Power BI' },
-  { key: 'files', label: 'File names', hint: '*_timekeeping_recent_*.csv, SYS Query Scheduler*.xlsx' },
+  { key: 'files', label: 'File names', hint: '*_timekeeping_recent_*.csv' },
 ]
+type RuleDraft = { id: number; name: string } & Record<Exclude<keyof MailRule, 'name'>, string>
 const listOf = (text: string) => text.split(',').map((x) => x.trim()).filter(Boolean)
+let nextRuleId = 1
+const draftOf = (r?: MailRule): RuleDraft => ({ id: nextRuleId++, name: r?.name ?? '', senders: r?.senders.join(', ') ?? '', subjects: r?.subjects.join(', ') ?? '',
+  exclude_subjects: r?.exclude_subjects.join(', ') ?? '', files: r?.files.join(', ') ?? '' })
 
-/** Which mail in the shared inbox is the dashboard's. Empty fields match everything. */
-function MailRuleForm({ status, onSaved }: { status: MailInboxStatus; onSaved: () => void }) {
+/** Mail rules: which mail in the shared inbox is the dashboard's. Mail matching any rule is; with no rules, all mail goes on to the column check. */
+function MailRules({ status, onSaved }: { status: MailInboxStatus; onSaved: () => void }) {
   const { adminApi: api } = useLeadership()
   const { busy, run, view } = useAction()
-  const rule = status.schedule.rule ?? { senders: [], subjects: [], exclude_subjects: [], files: [] }
-  const [draft, setDraft] = useState<Record<keyof MailRule, string>>(() => ({
-    senders: rule.senders.join(', '), subjects: rule.subjects.join(', '), exclude_subjects: rule.exclude_subjects.join(', '), files: rule.files.join(', ') }))
+  const [drafts, setDrafts] = useState<RuleDraft[]>(() => status.schedule.rules.map(draftOf))
+  const set = (id: number, patch: Partial<RuleDraft>) => setDrafts(drafts.map((d) => (d.id === id ? { ...d, ...patch } : d)))
   const save = (e: FormEvent) => {
     e.preventDefault()
-    const next: MailRule = { senders: listOf(draft.senders), subjects: listOf(draft.subjects), exclude_subjects: listOf(draft.exclude_subjects), files: listOf(draft.files) }
-    void run('Saved mail rule', async () => { await api.updateMailSetting({ ...status.schedule, rule: next }); onSaved() })
+    const rules: MailRule[] = drafts.map((d) => ({ name: d.name.trim(), senders: listOf(d.senders), subjects: listOf(d.subjects), exclude_subjects: listOf(d.exclude_subjects), files: listOf(d.files) }))
+    void run(`Saved ${rules.length} mail rule${rules.length === 1 ? '' : 's'}`, async () => { await api.updateMailSetting({ ...status.schedule, rules }); onSaved() })
   }
-  return <form className="form-grid" onSubmit={save}>
-    {RULE_FIELDS.map((f) => <label key={f.key} className="field"><span>{f.label}</span>
-      <input type="text" placeholder={f.hint} value={draft[f.key]} onChange={(e) => setDraft({ ...draft, [f.key]: e.target.value })} /></label>)}
-    <div className="field"><button type="submit" className="btn primary" disabled={busy}>Save rule</button></div>
-    {view}
-  </form>
+  return <div className="card">
+    <div className="ct"><span>Mail rules</span><span className="ks">{drafts.length ? 'Mail matching any rule is loaded' : 'No rules: every report-shaped attachment is loaded'}</span></div>
+    <form onSubmit={save}>
+      {drafts.map((d, i) => <fieldset key={d.id} className="rule">
+        <legend className="sr-only">Rule {i + 1}</legend>
+        <div className="form-grid">
+          <label className="field"><span>Rule name</span><input type="text" maxLength={80} placeholder={`Rule ${i + 1}`} value={d.name} onChange={(e) => set(d.id, { name: e.target.value })} /></label>
+          {RULE_FIELDS.map((f) => <label key={f.key} className="field"><span>{f.label}</span>
+            <input type="text" placeholder={f.hint} value={d[f.key]} onChange={(e) => set(d.id, { [f.key]: e.target.value })} /></label>)}
+          <div className="field"><button type="button" className="btn" onClick={() => setDrafts(drafts.filter((x) => x.id !== d.id))}>Remove</button></div>
+        </div>
+      </fieldset>)}
+      <div className="ctrl">
+        <button type="button" className="btn" onClick={() => setDrafts([...drafts, draftOf()])}>Add rule</button>
+        <button type="submit" className="btn primary" disabled={busy}>Save rules</button>
+      </div>
+      {view}
+    </form>
+  </div>
 }
 
 /** The reports mailbox: what arrived and what the poller did with each attachment. */
@@ -198,7 +216,7 @@ function MailInbox() {
     { key: 'from', header: 'From', left: true, value: (r) => r.sender ?? '', className: 'nm' },
     { key: 'subject', header: 'Subject', left: true, value: (r) => r.subject ?? '', className: 'nm' },
     { key: 'file', header: 'File', left: true, value: (r) => r.file_name, className: 'nm' },
-    { key: 'status', header: 'Status', left: true, value: (r) => r.status, render: (r) => <span className={MAIL_TONE[r.status]}>{cap(r.status)}{r.kind ? `, ${r.kind === 'pay_report' ? 'labor' : r.kind === 'income_statement' ? 'income statement' : 'job cost'}` : ''}</span> },
+    { key: 'status', header: 'Status', left: true, value: (r) => r.status, render: (r) => <span className={MAIL_TONE[r.status]}>{cap(r.status)}{r.kind ? `, ${FEED_NAME[r.kind]?.toLowerCase() ?? r.kind}` : ''}</span> },
     { key: 'reason', header: 'Detail', left: true, value: (r) => r.reason ?? (r.rows_loaded != null ? `${r.rows_loaded.toLocaleString('en-US')} rows` : ''), className: 'nm' },
   ]
   const last = s?.last_run
@@ -213,8 +231,18 @@ function MailInbox() {
       {view}
       {s.recent.length ? <SortTable caption="Recent attachments" rows={s.recent} columns={cols} defaultSort={{ key: 'at', dir: -1 }} pageSize={25} /> : <Empty>No attachments yet.</Empty>}
     </>}
-    {s && <MailRuleForm key={JSON.stringify(s.schedule.rule ?? null)} status={s} onSaved={() => q.refetch()} />}
   </div>
+}
+
+/** Admin > Mailbox: the reports inbox and the rules for which of its mail is the dashboard's. */
+function MailboxTab() {
+  const { adminApi: api, adminKeyPrefix: keyPrefix, decision } = useLeadership()
+  const q = useApiQuery<MailInboxStatus>(decision ? queryKey(`${keyPrefix}/integrations/mail`) : null, (signal) => api.mailStatus(signal), [api])
+  return <>
+    <MailInbox />
+    {q.error ? <LoadError error={q.error} onRetry={q.refetch} /> : !q.data ? <Skeleton height={160} />
+      : <MailRules key={JSON.stringify(q.data.schedule.rules)} status={q.data} onSaved={() => { q.refetch(); queryClient.invalidate() }} />}
+  </>
 }
 
 function ImportsTab() {
@@ -225,7 +253,7 @@ function ImportsTab() {
   const q = useApiQuery(decision ? queryKey(`${keyPrefix}/leadership/imports`) : null, (signal) => api.leadershipImports(50, signal), [api])
   const cols: Column<LeadershipImportFile>[] = [
     { key: 'at', header: 'Loaded', left: true, value: (f) => f.loaded_at, render: (f) => new Date(f.loaded_at).toLocaleString('en-US') },
-    { key: 'kind', header: 'Feed', left: true, value: (f) => (f.kind === 'pay_report' ? 'Pay report' : f.kind === 'income_statement' ? 'Income statement' : 'Job cost') },
+    { key: 'kind', header: 'Feed', left: true, value: (f) => FEED_NAME[f.kind] ?? f.kind },
     { key: 'file', header: 'File', left: true, value: (f) => f.file_name, className: 'nm' },
     { key: 'status', header: 'Status', left: true, value: (f) => f.status, render: (f) => <span className={f.status === 'loaded' ? 'ok' : f.status === 'failed' ? 'bad' : 'neutral'}>{cap(f.status)}</span> },
     { key: 'rows', header: 'Rows', value: (f) => f.rows_loaded, render: (f) => `${f.rows_loaded.toLocaleString('en-US')} of ${f.rows_read.toLocaleString('en-US')}` },
@@ -234,12 +262,11 @@ function ImportsTab() {
     { key: 'err', header: 'Errors', left: true, value: (f) => f.errors.length, render: (f) => (f.errors.length ? <details><summary>{f.errors.length}</summary><ul className="errors">{f.errors.map((e, i) => <li key={i}>{e}</li>)}</ul></details> : '0') },
   ]
   return <>
-    <MailInbox />
     <div className="card">
       <div className="ct"><span>Upload</span></div>
       <form className="form-grid" onSubmit={(e) => { e.preventDefault(); if (file) void run(`Imported ${file.name}`, () => api.leadershipUpload(file, kind || undefined)) }}>
         <label className="field"><span>File (CSV or XLSX)</span><input type="file" accept=".csv,.xlsx,.xlsm" onChange={(e) => setFile(e.target.files?.[0] ?? null)} /></label>
-        <label className="field"><span>Feed</span><select value={kind} onChange={(e) => setKind(e.target.value as '' | LeadershipImportKind)}><option value="">Auto-detect</option><option value="pay_report">Timekeeping labor (Pay Report or labor summary)</option><option value="job_cost">Job Cost Analysis</option><option value="income_statement">Trend Income Statement</option></select></label>
+        <label className="field"><span>Feed</span><select value={kind} onChange={(e) => setKind(e.target.value as '' | LeadershipImportKind)}><option value="">Auto-detect</option><option value="pay_report">Timekeeping labor (Pay Report or labor summary)</option><option value="job_cost">Job Cost Analysis</option><option value="income_statement">Trend Income Statement</option><option value="service_feedback">Feedback and star ratings</option></select></label>
         <div className="field"><button type="submit" className="btn primary" disabled={!file || busy}>{busy ? 'Importing' : 'Import'}</button></div>
       </form>
       {view}
@@ -289,7 +316,7 @@ export function Admin() {
       {ADMIN_TABS.map((t) => <button key={t} type="button" role="tab" className="tab" aria-selected={tab === t} onClick={() => navigate({ view: 'admin', adminTab: t })}>{TAB_LABEL[t]}</button>)}
     </nav>
     <section role="tabpanel" aria-label={TAB_LABEL[tab]}>
-      {tab === 'accounts' ? <AccountsTab /> : tab === 'jobs' ? <JobsTab /> : tab === 'imports' ? <ImportsTab /> : tab === 'users' ? <UsersTab /> : tab === 'allocations' ? <AllocationsTab /> : <DataTab />}
+      {tab === 'accounts' ? <AccountsTab /> : tab === 'jobs' ? <JobsTab /> : tab === 'imports' ? <ImportsTab /> : tab === 'mailbox' ? <MailboxTab /> : tab === 'users' ? <UsersTab /> : tab === 'allocations' ? <AllocationsTab /> : <DataTab />}
     </section>
   </>
 }

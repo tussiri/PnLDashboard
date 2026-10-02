@@ -241,10 +241,10 @@ export interface SyncRun {
   error_message: string | null
 }
 
-/** Which mail is the dashboard's: each non-empty list must match; exclude_subjects ignores a match. */
-export interface MailRule { senders: string[]; subjects: string[]; exclude_subjects: string[]; files: string[] }
-/** ops.app_setting 'mail_inbox' (PUT /settings/mail_inbox). */
-export interface MailInboxSetting { enabled: boolean; every_minutes: number; first_lookback_days: number; rule?: MailRule }
+/** One mail rule: each non-empty list must match; exclude_subjects refuses a subject containing any. */
+export interface MailRule { name: string; senders: string[]; subjects: string[]; exclude_subjects: string[]; files: string[] }
+/** ops.app_setting 'mail_inbox' (PUT /settings/mail_inbox). Mail matching any rule is the dashboard's; no rules = all mail. */
+export interface MailInboxSetting { enabled: boolean; every_minutes: number; first_lookback_days: number; rules: MailRule[] }
 /** GET /integrations/mail: the reports mailbox poller. */
 export interface MailInboxStatus {
   configured: boolean
@@ -1502,6 +1502,22 @@ export interface LeadershipSiteResponse {
   /** Null when the user lacks the data.invoices / data.photos permission. */
   invoices: { since: string; vendor_type_ids: string[]; total: number; lines: LeadershipInvoiceLine[] } | null
   photos: { configured: boolean; project_id: string | null; items: LeadershipPhoto[] | null; error: string | null } | null
+  /** The site's ratings over 12 months; null without the tab.feedback permission. */
+  feedback?: LeadershipFeedbackLine[] | null
+}
+
+/** One customer rating (the ServiceChannel feedback export, migration 043); job fields are null when the location matches no site. */
+export interface LeadershipFeedbackLine {
+  wo_number: string; location_number: string; provider_name: string | null; trade: string | null; feedback: string | null
+  feedback_date: string; comment: string | null; score: number | null; company: string | null; job_number: string | null
+  site_name: string | null; account_slug: string | null; match_basis: 'relay' | 'job_name' | null
+}
+/** GET /leadership/feedback */
+export interface LeadershipFeedbackResponse {
+  account: string; since: string; lines: LeadershipFeedbackLine[]
+  ratings: number; average: number | null; low: number; sites: number; unmatched: number
+  by_site: { location_number: string; company: string | null; job_number: string | null; site_name: string | null; ratings: number; average: number | null
+    low: number; latest_date: string | null; latest_score: number | null; latest_comment: string | null }[]
 }
 
 export interface LeadershipVendorsResponse {
@@ -1515,7 +1531,7 @@ export interface LeadershipVendorsResponse {
   lines: (LeadershipInvoiceLine & { company: string; job_number: string; site_name: string })[]
 }
 
-export type LeadershipImportKind = 'pay_report' | 'job_cost' | 'income_statement'
+export type LeadershipImportKind = 'pay_report' | 'job_cost' | 'income_statement' | 'service_feedback'
 
 export interface LeadershipImportFile {
   import_file_id: number

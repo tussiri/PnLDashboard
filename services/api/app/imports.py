@@ -9,6 +9,10 @@ Two feeds, CSV (UTF-8, header row) or XLSX (first sheet):
   which mart.v_job_cost_month_effective prefers over the restored finance_reference export. Optional
   revenue_fixed / revenue_variable columns split revenue into contract billing and variable (OS,
   pallet) billing for the Pallet view.
+* `service_feedback` - customer feedback and star ratings per work order (the ServiceChannel export:
+  Feedback, WO Number, Location Number, Provider Name, Trade, Feed Back Date, Star Ratings Comment,
+  Star Ratings Score). Upserted by work order (migration 043); mart.v_service_feedback ties each
+  Location Number to a WinTeam job through Relay.
 * `income_statement` - Trend Income Statement lines by account and month (account, period, line,
   amount). A file replaces its accounts' months. Lines are normalized to IS_LINES keys. Account
   "Company" (or All, Total, Crane IFS) is the company-wide statement behind the allocations.
@@ -37,7 +41,7 @@ from . import native_exports
 
 logger = logging.getLogger(__name__)
 
-KINDS = ("pay_report", "job_cost", "income_statement")
+KINDS = ("pay_report", "job_cost", "income_statement", "service_feedback")
 # Income statement Account values that mean the company-wide statement (allocations, Company view).
 COMPANY_SCOPE = "__company__"
 COMPANY_WORDS = {"company", "all", "total", "crane ifs", "all companies", "consolidated"}
@@ -92,6 +96,16 @@ FIELD_ALIASES: dict[str, dict[str, tuple[str, ...]]] = {
         "line": ("line", "linename", "lineitem", "description", "accountdescription", "glaccountdescription"),
         "amount": ("amount", "total", "value", "actual"),
     },
+    "service_feedback": {
+        "wo_number": ("wonumber", "workordernumber", "workorder", "wo"),
+        "location_number": ("locationnumber", "locationid", "location", "storeid"),
+        "provider_name": ("providername", "provider"),
+        "trade": ("trade",),
+        "feedback": ("feedback", "rating"),
+        "feedback_date": ("feedbackdate", "date"),
+        "comment": ("starratingscomment", "comment", "comments"),
+        "score": ("starratingsscore", "score", "starrating", "stars"),
+    },
 }
 # Trend Income Statement lines -> the keys the Income Statement view reads. Other lines are kept under
 # their compacted name.
@@ -120,6 +134,7 @@ REQUIRED: dict[str, tuple[str, ...]] = {
     "pay_report": ("employee_number", "job_number", "work_date", "total_dollars"),
     "job_cost": ("job_number", "period", "revenue"),
     "income_statement": ("account", "period", "line", "amount"),
+    "service_feedback": ("wo_number", "location_number", "feedback_date"),
 }
 MAX_ERRORS = 50
 
@@ -152,6 +167,8 @@ def detect_kind(file_name: str, headers: Iterable[Any]) -> str | None:
         return "job_cost"
     if {"line", "amount"} <= keys or {"linename", "amount"} <= keys:
         return "income_statement"
+    if "wonumber" in keys and ("starratingsscore" in keys or {"locationnumber", "feedbackdate"} <= keys):
+        return "service_feedback"
     return None
 
 
@@ -272,7 +289,7 @@ def normalize_rows(kind: str, headers: list[str], rows: list[dict[str, Any]], co
     parsed = Parsed(kind=kind, rows_read=len(rows))
     mapping = header_map(kind, headers)
     missing = [f for f in REQUIRED[kind] if f not in mapping]
-    if kind != "income_statement" and "company_number" not in mapping and "company_name" not in mapping:
+    if kind not in ("income_statement", "service_feedback") and "company_number" not in mapping and "company_name" not in mapping:
         missing.append("company_number or company_name")
     if missing:
         parsed.error(f"missing required column(s): {', '.join(missing)}")
@@ -280,7 +297,7 @@ def normalize_rows(kind: str, headers: list[str], rows: list[dict[str, Any]], co
     numeric = {"regular_hours", "overtime_hours", "doubletime_hours", "total_hours", "pay_rate", "ot_rate", "dt_rate",
                "regular_dollars", "overtime_dollars", "doubletime_dollars", "total_dollars", "revenue", "direct_labor",
                "payroll_taxes_insurance", "subcontractors", "materials", "equipment_supplies", "other_direct_costs",
-               "total_direct_costs", "gross_profit", "actual_hours", "revenue_fixed", "revenue_variable", "amount"}
+               "total_direct_costs", "gross_profit", "actual_hours", "revenue_fixed", "revenue_variable", "amount", "score"}
     for line, row in enumerate(rows, start=2):
         raw = {f: row.get(h) for f, h in mapping.items()}
         try:
@@ -288,17 +305,25 @@ def normalize_rows(kind: str, headers: list[str], rows: list[dict[str, Any]], co
             for f, v in raw.items():
                 if f in numeric:
                     record[f] = parse_number(v)
-                elif f == "work_date":
+                elif f in ("work_date", "feedback_date"):
                     record[f] = parse_date(v)
                 elif f == "period":
                     record[f] = parse_period(v)
                 else:
                     record[f] = clean_text(v)
-            record["company"] = company_label(record, company_numbers, company_aliases) if kind != "income_statement" else record.get("account")
+            if kind == "service_feedback":
+                # The customer's export: no company column; the site comes from the location (migration 043).
+                record["company"] = None
+                if record.get("comment") in ("-", "'-", "'"):
+                    record["comment"] = None
+                record["wo_number"] = (record.get("wo_number") or "").lstrip("'") or None
+                record["location_number"] = (record.get("location_number") or "").lstrip("'") or None
+            else:
+                record["company"] = company_label(record, company_numbers, company_aliases) if kind != "income_statement" else record.get("account")
             for f in REQUIRED[kind]:
                 if record.get(f) in (None, ""):
                     raise ValueError(f"{f} is empty")
-            if not record["company"]:
+            if kind != "service_feedback" and not record["company"]:
                 raise ValueError("company is empty")
             if kind == "income_statement":
                 record["line"] = is_line_key(record["line"])
@@ -376,6 +401,23 @@ def _load_pay_report(cursor: Any, file_id: int, records: list[dict[str, Any]],
         f"INSERT INTO core.fact_pay_report (import_file_id, {', '.join(PAY_COLUMNS)}) VALUES ({placeholders})",
         [(file_id, *[(r.get(c) if r.get(c) is not None else (Decimal(0) if c in ZERO_DEFAULT else None)) for c in PAY_COLUMNS])
          for r in records],
+    )
+
+
+FEEDBACK_COLUMNS = ("wo_number", "location_number", "provider_name", "trade", "feedback", "feedback_date", "comment", "score")
+
+
+def _load_service_feedback(cursor: Any, file_id: int, records: list[dict[str, Any]]) -> None:
+    """Upsert by work order: a re-sent work order (a later rating) replaces its row."""
+    latest = {r["wo_number"]: r for r in records}
+    cursor.executemany(
+        f"""
+        INSERT INTO core.fact_service_feedback ({', '.join(FEEDBACK_COLUMNS)}, import_file_id)
+        VALUES ({', '.join(['%s'] * (len(FEEDBACK_COLUMNS) + 1))})
+        ON CONFLICT (wo_number) DO UPDATE SET {', '.join(f'{c} = EXCLUDED.{c}' for c in FEEDBACK_COLUMNS[1:])},
+          import_file_id = EXCLUDED.import_file_id, loaded_at = now()
+        """,
+        [(*[r.get(c) for c in FEEDBACK_COLUMNS], file_id) for r in latest.values()],
     )
 
 
@@ -493,7 +535,7 @@ def load_file(conn: Any, file_name: str, content: bytes, *, kind: str | None = N
             layout = None
         kind = native_exports.LAYOUT_KIND[layout] if layout else (kind or detect_kind(file_name, headers))
         if kind not in KINDS:
-            errors = [read_error or "unknown feed: name the file pay_report_*, job_cost_* or income_statement_*, or use the documented column names"]
+            errors = [read_error or "unknown feed: name the file pay_report_*, job_cost_*, income_statement_* or service_feedback_*, or use the documented column names"]
             return _log(cursor, conn, kind or "pay_report", file_name, digest, origin, "failed", len(rows), 0, [], None, None, errors, uploaded_by)
         cursor.execute("SELECT import_file_id FROM ops.import_file WHERE kind = %s AND sha256 = %s AND status = 'loaded'", (kind, digest))
         if cursor.fetchone():
@@ -527,14 +569,17 @@ def load_file(conn: Any, file_name: str, content: bytes, *, kind: str | None = N
         if partial:
             return _log(cursor, conn, kind, file_name, digest, origin, "failed", parsed.rows_read, 0, [], None, None,
                         [f"{partial}: upload it on Admin > Imports to load it"], uploaded_by)
-        dates = [r["work_date"] if kind == "pay_report" else r["period"] for r in parsed.records]
-        companies = sorted({r["company"] for r in parsed.records})
+        date_field = {"pay_report": "work_date", "service_feedback": "feedback_date"}.get(kind, "period")
+        dates = [r[date_field] for r in parsed.records]
+        companies = sorted({r["company"] for r in parsed.records if r.get("company")})
         result = _log(cursor, None, kind, file_name, digest, origin, "loaded", parsed.rows_read, len(parsed.records), companies,
                       min(dates), max(dates), parsed.errors, uploaded_by)
         if kind == "pay_report":
             _load_pay_report(cursor, result["import_file_id"], parsed.records, windows)
         elif kind == "income_statement":
             _load_income_statement(cursor, result["import_file_id"], parsed.records)
+        elif kind == "service_feedback":
+            _load_service_feedback(cursor, result["import_file_id"], parsed.records)
         else:
             _load_job_cost(cursor, result["import_file_id"], parsed.records, replace_months=layout == "job_cost_gl")
     conn.commit()

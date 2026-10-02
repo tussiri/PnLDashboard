@@ -493,9 +493,9 @@ Migration 038, docs/mail-inbox.md. The worker reads the reports mailbox through 
 
 | Route | Response |
 |---|---|
-| `GET /integrations/mail` | `{configured, mailbox, schedule: {enabled, every_minutes, first_lookback_days, rule: {senders, subjects, exclude_subjects, files}}, last_run: {status, started_at, completed_at, records_inserted, error_message} \| null, recent: [{received_at, sender, subject, file_name, status: loaded\|duplicate\|failed\|ignored, reason, kind, rows_loaded}]}`. Never returns the client secret. |
+| `GET /integrations/mail` | `{configured, mailbox, schedule: {enabled, every_minutes, first_lookback_days, rules: [{name, senders, subjects, exclude_subjects, files}]}, last_run: {status, started_at, completed_at, records_inserted, error_message} \| null, recent: [{received_at, sender, subject, file_name, status: loaded\|duplicate\|failed\|ignored, reason, kind, rows_loaded}]}`. Never returns the client secret. |
 | `POST /integrations/mail/poll` | Admin. Check now: `{status, loaded, duplicate, failed, ignored, messages, rebuilt}` or `{status: 'failed', error}`. `409` when not configured. |
-| `PUT /settings/mail_inbox` | Admin. Body `{value: {enabled, every_minutes, first_lookback_days, rule}}`; `422` for an unknown rule field or a value out of range. The rule is checked before an attachment is downloaded; a refused one is `ignored` with the reason (`sender is not a dashboard sender`, `subject is excluded`, `subject is not a dashboard subject`, `file name is not a dashboard file`). A mailed pay report or job cost file carrying under half the jobs already loaded for a company over the same dates or months (10 or more loaded) is `failed` as a filtered export. |
+| `PUT /settings/mail_inbox` | Admin. Body `{value: {enabled, every_minutes, first_lookback_days, rules}}` (at most 25 rules; each needs a sender, subject or file name); `422` for an unknown rule field, an empty rule or a value out of range. Mail matching any rule passes; no rules = all mail. The rules are checked before an attachment is downloaded; a refused one is `ignored` with the reason (`sender is not a dashboard sender`, `subject is excluded`, `subject is not a dashboard subject`, `file name is not a dashboard file`, or `matches none of the N mail rules`). A mailed pay report or job cost file carrying under half the jobs already loaded for a company over the same dates or months (10 or more loaded) is `failed` as a filtered export. |
 
 `GET /auth/me` returns `{user: {username, role, accounts}}`; `accounts` is null for every account. The leadership routes answer only for the user's accounts (docs/auth-rbac.md, Account access).
 
@@ -609,4 +609,19 @@ separate and unchanged.
 | `data.invoices` | – | `invoices: null` on `/leadership/sites/…` |
 | `data.photos` | – | `photos: null` on `/leadership/sites/…` |
 | `data.export` | – | the CSV buttons |
+
+## Customer feedback and star ratings, added 2026-10-02
+
+Migration 043. The ServiceChannel feedback export FedEx sends (Feedback, WO Number, Location Number,
+Provider Name, Trade, Feed Back Date, Star Ratings Comment, Star Ratings Score) imports as kind
+`service_feedback`, by upload or the reports mailbox, recognized by its columns. Rows are upserted by
+work order into `core.fact_service_feedback`. `mart.v_service_feedback` gives each row its WinTeam
+job: the Relay site whose ServiceChannel location id is the Location Number (janitorial first), else
+a FedEx job named `FedEx - <location>`; `match_basis` says which, null when none matched.
+
+| Route | Response |
+|---|---|
+| `GET /leadership/feedback?account=&months=12` | Permission `tab.feedback`, account scope. `{account, since, lines: [{wo_number, location_number, provider_name, trade, feedback, feedback_date, comment, score, company, job_number, site_name, account_slug, match_basis}], ratings, average, low, sites, unmatched, by_site: [{location_number, company, job_number, site_name, ratings, average, low, latest_date, latest_score, latest_comment}]}`. `low` counts scores of 1 or 2; `by_site` is lowest average first. For `fedex`, ratings whose location matched no site are included and counted in `unmatched`. |
+
+`GET /leadership/sites/{company}/{job}` adds `feedback`: the site's ratings over 12 months (null without `tab.feedback`).
 

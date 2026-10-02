@@ -11,7 +11,7 @@ Keys
     view.company        the Company page (every account; also needs an unlimited account scope)
     view.analytics      the Analytics pages
     tab.<account tab>   an account tab (sites, pallet, over-target, overtime, income-statement,
-                        subcontracted, map, vendors); Overview is always open
+                        subcontracted, map, vendors, feedback); Overview is always open
     data.allocations    corporate allocations and margin after allocations
     data.month          the month-end rollup (the Week / Month switch)
     data.staffing       staffing requests on the site drawer
@@ -40,6 +40,7 @@ CATALOG: tuple[tuple[str, str, str], ...] = (
     ("tab.subcontracted", "Account tabs", "Subcontracted"),
     ("tab.map", "Account tabs", "Map"),
     ("tab.vendors", "Account tabs", "Vendors"),
+    ("tab.feedback", "Account tabs", "Feedback"),
     ("data.allocations", "Data", "Allocations and margin"),
     ("data.month", "Data", "Month rollup"),
     ("data.staffing", "Data", "Staffing requests"),
