@@ -1541,7 +1541,10 @@ export interface BudgetMonth {
   actual: { site: number; overhead: number; events: number; total: number; revenue: number; basis: 'job_cost' | 'pay_report' | 'estimate'; labor_pct: number | null } | null
   variance: { total: number; site: number; overhead: number; pct: number | null; points: number | null } | null
 }
-export interface LeadershipBudgetResponse { account: string; months: BudgetMonth[] }
+/** A week of the plan's day calendar; holiday is the week's stat-holiday pay (counted when the view pays stat holidays). */
+export interface BudgetWeek { week_end: string; site: number; overhead: number; holiday: number; details: BudgetMonth['details'] }
+export interface LeadershipBudgetResponse { account: string; months: BudgetMonth[]; weeks: BudgetWeek[] }
+export interface BudgetWeekRow { week_end: string; site_labor: number; overhead_labor: number; holiday_labor: number; details: Record<string, number> }
 /** PUT /leadership/budget/{slug}: what is saved. */
 export interface BudgetPlanRow { month: string; site_labor: number | null; overhead_labor: number | null; revenue: number | null; supplies: number | null; details: Record<string, number>; updated_at?: string; updated_by?: string | null }
 

@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { useApiQuery } from '../../hooks/useApiQuery'
 import type { BudgetMonth, BudgetPlanRow, LeadershipAccount, LeadershipBudgetResponse } from '../../services/apiTypes'
 import { queryClient, queryKey } from '../../services/queryClient'
-import { parseBudget, type BudgetRow } from '../budgetParse'
+import { parseBudget, type BudgetRow, type BudgetWeekRow } from '../budgetParse'
 import { money, pct } from '../format'
 import { monthLabel } from '../routes'
 import { useLeadership } from '../state'
@@ -76,9 +76,27 @@ export function BudgetsAdmin() {
   const [slug, setSlug] = useState('')
   const account = slug || accounts.find((a) => a.slug === 'plano-isd')?.slug || accounts[0]?.slug || ''
   const [text, setText] = useState('')
+  const [sheets, setSheets] = useState<{ file: string; sheets: { name: string; text: string }[] } | null>(null)
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null)
   const [busy, setBusy] = useState(false)
-  const parsed = useMemo(() => (text.trim() ? parseBudget(text) : null), [text])
+  // A pasted table, or every sheet of an uploaded workbook: the monthly plan and the weekly calendar are found by their headers.
+  const found = useMemo(() => {
+    const sources = sheets ? sheets.sheets : text.trim() ? [{ name: 'Pasted', text }] : []
+    return sources.map((x) => ({ name: x.name, parsed: parseBudget(x.text) })).filter((x) => x.parsed.rows.length || x.parsed.weeks.length || !sheets)
+  }, [sheets, text])
+  const months = found.flatMap((x) => x.parsed.rows)
+  const weekRows = found.flatMap((x) => x.parsed.weeks)
+  const problems = found.flatMap((x) => x.parsed.errors.map((e) => (sheets ? `${x.name}: ${e}` : e)))
+  const skipped = found.flatMap((x) => x.parsed.skipped)
+  const readFile = async (file: File | undefined) => {
+    if (!file) return
+    setMessage(null); setText(''); setSheets(null)
+    if (/\.(csv|tsv|txt)$/i.test(file.name)) { setText(await file.text()); return }
+    setBusy(true)
+    try { setSheets(await api.readBudgetWorkbook(file)) }
+    catch (e) { setMessage({ ok: false, text: e instanceof Error ? e.message : String(e) }) }
+    finally { setBusy(false) }
+  }
   const q = useApiQuery<LeadershipBudgetResponse>(decision && account ? queryKey(`${keyPrefix}/leadership/budget`, { account }) : null,
     (signal) => api.leadershipBudget(account, signal), [api, account])
   const act = async (done: string, fn: () => Promise<unknown>) => {
@@ -98,25 +116,39 @@ export function BudgetsAdmin() {
     { key: 'su', header: 'Supplies', value: (r) => r.supplies, render: (r) => money(r.supplies) },
     { key: 'd', header: 'Days', left: true, value: (r) => daysOf(r.details), className: 'neutral' },
   ]
+  const weekCols: Column<BudgetWeekRow>[] = [
+    { key: 'w', header: 'Week ending', left: true, value: (r) => r.week_end },
+    { key: 's', header: 'Site labor', value: (r) => r.site_labor, render: (r) => money(r.site_labor) },
+    { key: 'o', header: 'Overhead labor', value: (r) => r.overhead_labor, render: (r) => money(r.overhead_labor) },
+    { key: 'h', header: 'Stat holiday labor', value: (r) => r.holiday_labor, render: (r) => (r.holiday_labor ? money(r.holiday_labor) : '–') },
+    { key: 't', header: 'Total', value: (r) => r.site_labor + r.overhead_labor, render: (r) => <b>{money(r.site_labor + r.overhead_labor)}</b> },
+    { key: 'd', header: 'Days', left: true, value: (r) => daysOf(r.details), className: 'neutral' },
+  ]
+  const weeks = q.data?.weeks ?? []
+  const what = [months.length ? `${months.length} months` : null, weekRows.length ? `${weekRows.length} weeks` : null].filter(Boolean).join(' and ')
   return <>
     <div className="card">
       <div className="ct"><span>Labor budget</span></div>
       <div className="form-grid">
-        <label className="field"><span>Account</span><select value={account} onChange={(e) => { setSlug(e.target.value); setText(''); setMessage(null) }}>
+        <label className="field"><span>Account</span><select value={account} onChange={(e) => { setSlug(e.target.value); setText(''); setSheets(null); setMessage(null) }}>
           {accounts.map((a) => <option key={a.slug} value={a.slug}>{a.name}</option>)}</select></label>
       </div>
-      <label className="field wide"><span>Paste from Excel</span>
-        <textarea rows={8} value={text} onChange={(e) => setText(e.target.value)} spellCheck={false} /></label>
-      {parsed && parsed.errors.length > 0 && <ul className="msg bad">{parsed.errors.map((e) => <li key={e}>{e}</li>)}</ul>}
-      {parsed && parsed.rows.length > 0 && <>
-        <SortTable caption="Budget to save" rows={parsed.rows} columns={previewCols} defaultSort={{ key: 'm', dir: 1 }} />
-        <div className="ctrl">
-          <button type="button" className="btn primary" disabled={busy || parsed.errors.length > 0}
-            onClick={() => void act(`Saved ${parsed.rows.length} months for ${name}`, async () => { await api.saveBudget(account, parsed.rows.map(toPlan)); setText('') })}>
-            Save {parsed.rows.length} months for {name}</button>
-          {parsed.skipped.length > 0 && <span className="ks">Skipped: {parsed.skipped.join(', ')}</span>}
-        </div>
-      </>}
+      <label className="field wide"><span>Budget workbook (.xlsx or .csv)</span>
+        <input type="file" accept=".xlsx,.xlsm,.csv,.tsv,.txt" disabled={busy} onChange={(e) => { void readFile(e.target.files?.[0]); e.target.value = '' }} /></label>
+      {sheets && <p className="ks">{sheets.file}: {found.length ? found.map((x) => `${x.name} (${x.parsed.kind === 'weeks' ? `${x.parsed.weeks.length} weeks` : `${x.parsed.rows.length} months`})`).join(', ') : 'no sheet with a Month or Week ending table'}
+        {' '}<button type="button" className="linkbtn" onClick={() => setSheets(null)}>Clear</button></p>}
+      {!sheets && <label className="field wide"><span>Or paste from Excel</span>
+        <textarea rows={8} value={text} onChange={(e) => setText(e.target.value)} spellCheck={false} /></label>}
+      {problems.length > 0 && <ul className="msg bad">{problems.map((e) => <li key={e}>{e}</li>)}</ul>}
+      {months.length > 0 && <SortTable caption="Monthly budget to save" rows={months} columns={previewCols} defaultSort={{ key: 'm', dir: 1 }} />}
+      {weekRows.length > 0 && <SortTable caption="Weekly budget to save" rows={weekRows} columns={weekCols} defaultSort={{ key: 'w', dir: 1 }} pageSize={14} />}
+      {(months.length > 0 || weekRows.length > 0) && <div className="ctrl">
+        <button type="button" className="btn primary" disabled={busy || problems.length > 0}
+          onClick={() => void act(`Saved ${what} for ${name}`, async () => {
+            await api.saveBudget(account, { months: months.map(toPlan), weeks: weekRows }); setText(''); setSheets(null) })}>
+          Save {what} for {name}</button>
+        {skipped.length > 0 && <span className="ks">Skipped: {[...new Set(skipped)].join(', ')}</span>}
+      </div>}
       {message && <p className={`msg ${message.ok ? 'ok' : 'bad'}`} role="status">{message.text}</p>}
     </div>
     <div className="card">
@@ -129,6 +161,13 @@ export function BudgetsAdmin() {
             <td>{money(m.budget.revenue)}</td><td>{pct(m.budget.labor_pct)}</td><td className="neutral">{daysOf(m.details)}</td>
             <td><button type="button" className="linkbtn" disabled={busy} onClick={() => void act(`Removed ${monthLabel(m.month)}`, () => api.deleteBudget(account, m.month.slice(0, 7)))}>Remove</button></td></tr>)}</tbody>
         </table></div>}
+    </div>
+    <div className="card">
+      <div className="ct"><span>{name}, weekly calendar</span>{weeks.length > 0 && <span className="ctrl"><span className="ks">{weeks.length} weeks, {weeks[0].week_end} to {weeks.at(-1)!.week_end}</span>
+        <button type="button" className="btn sm" disabled={busy} onClick={() => { if (window.confirm(`Clear the ${name} weekly calendar?`)) void act(`Cleared ${name} weekly calendar`, () => api.deleteBudget(account, undefined, undefined, true)) }}>Clear weeks</button></span>}</div>
+      {!weeks.length ? <Empty>No weekly calendar saved.</Empty>
+        : <SortTable caption="Saved weekly calendar" rows={weeks.map((x) => ({ week_end: x.week_end, site_labor: x.site, overhead_labor: x.overhead, holiday_labor: x.holiday, details: x.details }))}
+          columns={weekCols} defaultSort={{ key: 'w', dir: 1 }} pageSize={14} />}
     </div>
   </>
 }

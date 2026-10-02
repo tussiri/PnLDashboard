@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseAmount, parseBudget, parseMonth, splitTable } from './budgetParse'
+import { parseAmount, parseBudget, parseDay, parseMonth, splitTable } from './budgetParse'
 
 // Plano ISD's 2026-27 plan as Excel copies it: tab-separated, wrapped headers quoted.
 const PLANO = [
@@ -35,5 +35,26 @@ describe('helpers', () => {
     expect(['Jul 2026', 'September 2026', '2026-07', '7/2026', '07/01/2026', 'Year'].map(parseMonth)).toEqual(['2026-07', '2026-09', '2026-07', '2026-07', '2026-07', null])
     expect(['$1,026,956', '(1,200)', '', '67.6%', 'abc'].map(parseAmount)).toEqual([1026956, -1200, null, 67.6, NaN])
     expect(splitTable('"a\nb"\tc\n1\t2')).toEqual([['a\nb', 'c'], ['1', '2']])
+  })
+})
+
+describe('weekly calendar', () => {
+  const WEEKS = [
+    'Week ending\tSite labor\tOverhead labor\tStat holiday labor\tSchool days\tStaff days\tClosure days\tSummer days\tStat holidays',
+    '2026-09-06\t$194,614.48\t$9,578.54\t$0.00\t5\t0\t0\t0\t0',
+    '9/13/2026\t155691.58\t9578.54\t37069.42\t4\t0\t0\t0\t1',
+  ].join('\n')
+  it('reads the weekly budget, keeping stat holiday pay apart', () => {
+    const p = parseBudget(WEEKS)
+    expect(p.kind).toBe('weeks')
+    expect(p.errors).toEqual([])
+    expect(p.weeks[1]).toEqual({ week_end: '2026-09-13', site_labor: 155691.58, overhead_labor: 9578.54, holiday_labor: 37069.42,
+      details: { school_days: 4, staff_days: 0, closure_days: 0, summer_days: 0, stat_holidays: 1 } })
+  })
+  it('refuses a week that does not end on Sunday', () => {
+    expect(parseBudget(WEEKS.replace('9/13/2026', '9/12/2026')).errors).toEqual(['9/12/2026: weeks end on a Sunday'])
+  })
+  it('reads day formats', () => {
+    expect(['2026-09-13', '9/13/2026', 'Sep 13, 2026', 'x'].map(parseDay)).toEqual(['2026-09-13', '2026-09-13', '2026-09-13', null])
   })
 })

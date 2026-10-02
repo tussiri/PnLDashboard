@@ -27,6 +27,54 @@ FIELDS = ("site_labor", "overhead_labor", "revenue", "supplies")
 DETAIL_KEYS = ("school_days", "staff_days", "closure_days", "summer_days", "stat_holidays")
 
 
+MAX_SHEET_ROWS = 2000
+MAX_SHEET_COLUMNS = 60
+
+
+def _cell(value: Any) -> str:
+    """One cell as the paste parser reads it: dates ISO, whole numbers without .0, text quoted when it holds a
+    tab, line break or quote (Excel's own copy format)."""
+    from datetime import datetime as dt
+
+    if value is None:
+        return ""
+    if isinstance(value, dt):
+        value = value.date()
+    if isinstance(value, date):
+        return value.isoformat()
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    text = str(value)
+    if any(c in text for c in "\t\n\r\""):
+        return '"' + text.replace('"', '""') + '"'
+    return text
+
+
+def workbook_sheets(content: bytes) -> list[dict[str, str]]:
+    """Each sheet of an Excel workbook as tab-separated text (values, not formulas), for the budget parser in
+    the browser, which finds the monthly plan and the weekly calendar by their headers. Empty sheets are left out."""
+    import io
+
+    from openpyxl import load_workbook
+
+    book = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+    out = []
+    try:
+        for sheet in book.worksheets:
+            lines = []
+            for row in sheet.iter_rows(max_row=MAX_SHEET_ROWS, max_col=MAX_SHEET_COLUMNS, values_only=True):
+                cells = [_cell(v) for v in row]
+                while cells and cells[-1] == "":
+                    cells.pop()
+                if cells:
+                    lines.append("\t".join(cells))
+            if lines:
+                out.append({"name": sheet.title, "text": "\n".join(lines)})
+    finally:
+        book.close()
+    return out
+
+
 def _f(value: Any) -> float | None:
     return None if value is None else float(value)
 
@@ -60,6 +108,63 @@ def validate(rows: Any) -> list[dict[str, Any]]:
         clean["details"] = details
         out.append(clean)
     return out
+
+
+WEEK_FIELDS = ("site_labor", "overhead_labor", "holiday_labor")
+WEEK_DETAIL_KEYS = ("school_days", "staff_days", "closure_days", "summer_days", "stat_holidays")
+
+
+def validate_weeks(rows: Any) -> list[dict[str, Any]]:
+    """Weekly plan rows: week_end a Sunday (YYYY-MM-DD), non-negative amounts. ValueError otherwise."""
+    if not isinstance(rows, list):
+        raise ValueError("weeks must be a list")
+    out, seen = [], set()
+    for n, row in enumerate(rows, start=1):
+        if not isinstance(row, dict):
+            raise ValueError(f"week {n} must be an object")
+        try:
+            week_end = date.fromisoformat(str(row.get("week_end", ""))[:10])
+        except ValueError:
+            raise ValueError(f"week {n}: week_end must be YYYY-MM-DD") from None
+        if week_end.isoweekday() != 7:
+            raise ValueError(f"week {n}: {week_end} is not a Sunday (weeks end on Sunday)")
+        if week_end in seen:
+            raise ValueError(f"week {n}: {week_end} appears twice")
+        seen.add(week_end)
+        clean: dict[str, Any] = {"week_end": week_end}
+        for key in WEEK_FIELDS:
+            value = row.get(key) or 0
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0:
+                raise ValueError(f"week {n}: {key} must be a non-negative number")
+            clean[key] = Decimal(str(round(value, 2)))
+        details = row.get("details") or {}
+        if not isinstance(details, dict) or any(k not in WEEK_DETAIL_KEYS or isinstance(v, bool) or not isinstance(v, (int, float)) for k, v in details.items()):
+            raise ValueError(f"week {n}: details takes numbers for {', '.join(WEEK_DETAIL_KEYS)}")
+        clean["details"] = details
+        out.append(clean)
+    return out
+
+
+def save_weeks(cursor: Any, slug: str, rows: list[dict[str, Any]], actor: str) -> None:
+    from psycopg.types.json import Jsonb
+
+    for r in rows:
+        cursor.execute(
+            """
+            INSERT INTO ops.account_budget_week (account_slug, week_end, site_labor, overhead_labor, holiday_labor, details, updated_by)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (account_slug, week_end) DO UPDATE SET site_labor = EXCLUDED.site_labor, overhead_labor = EXCLUDED.overhead_labor,
+              holiday_labor = EXCLUDED.holiday_labor, details = EXCLUDED.details, updated_at = now(), updated_by = EXCLUDED.updated_by
+            """,
+            (slug, r["week_end"], r["site_labor"], r["overhead_labor"], r["holiday_labor"], Jsonb(r["details"]), actor),
+        )
+
+
+def weeks(cursor: Any, slug: str) -> list[dict[str, Any]]:
+    cursor.execute("SELECT week_end, site_labor, overhead_labor, holiday_labor, details FROM ops.account_budget_week "
+                   "WHERE account_slug = %s ORDER BY week_end", (slug,))
+    return [{"week_end": r["week_end"].isoformat(), "site": float(r["site_labor"]), "overhead": float(r["overhead_labor"]),
+             "holiday": float(r["holiday_labor"]), "details": r["details"] or {}} for r in cursor.fetchall()]
 
 
 def save(cursor: Any, slug: str, rows: list[dict[str, Any]], actor: str) -> None:

@@ -37,7 +37,7 @@ export function createDemoApi(options: DemoApiOptions = {}): DashboardApi {
     leadershipSite: (company, jobNumber, query, signal) => settle(() => demoLeadershipSite(company, jobNumber, query), signal),
     staffingJob: (company, jobNumber, query, signal) => settle(() => demoStaffingJob(company, jobNumber, query), signal),
     leadershipVendors: (account, _months, signal) => settle(() => demoLeadershipVendors(account), signal),
-    leadershipBudget: (account, signal) => settle(() => ({ account, months: [] }), signal),
+    leadershipBudget: (account, signal) => settle(() => ({ account, months: [], weeks: [] }), signal),
     saveBudget: () => notAvailable('Budget'),
     deleteBudget: () => notAvailable('Budget'),
     leadershipFeedbackOverview: (account, month, signal) => settle(() => ({ account, month: `${month ?? ''}-01`, current: null, prior: null, months: [], year: { ratings: 0, average: null, since: '' }, low_sites: [], summary: { status: 'off' as const } }), signal),
@@ -55,5 +55,6 @@ export function createDemoApi(options: DemoApiOptions = {}): DashboardApi {
     leadershipReloadSeed: () => notAvailable('Seed reload'),
     leadershipImports: (_limit, signal) => settle(() => ({ files: [] }), signal),
     leadershipUpload: () => notAvailable('File import'),
+    readBudgetWorkbook: () => notAvailable('Budget workbook'),
   }
 }

@@ -38,6 +38,8 @@ export interface Route {
   segment?: string
   /** Account view: hide subcontracted sites. */
   selfOnly?: boolean
+  /** Account view: count stat-holiday pay in the weekly budget (off while staff are under 90 days). */
+  payHolidays?: boolean
   /** Invoice basis override (the FedEx report's toggle); the account's own basis when absent. */
   basis?: 'run_rate_3m' | 'last_month'
   /** Home and Account: the month-end rollup instead of a week. */
@@ -85,6 +87,7 @@ export function parseRoute(hash: string): Route {
     if (value) route[key] = value
   }
   if (route.view === 'account' && params.get('delivery') === 'self') route.selfOnly = true
+  if (route.view === 'account' && params.get('hol') === 'paid') route.payHolidays = true
   const basis = params.get('basis')
   if (basis === 'run_rate_3m' || basis === 'last_month') route.basis = basis
   if (params.get('period') === 'month' && route.view === 'account') route.period = 'month'
@@ -106,6 +109,7 @@ export function formatRoute(route: Route): string {
   if (route.site && route.view !== 'admin') params.set('site', `${route.site.company}${SITE_SEP}${route.site.job}`)
   if (route.view === 'analytics') for (const key of ['q', 'status', 'segment'] as const) if (route[key]) params.set(key, route[key]!)
   if (route.view === 'account' && route.selfOnly) params.set('delivery', 'self')
+  if (route.view === 'account' && route.payHolidays) params.set('hol', 'paid')
   if (route.basis && route.view !== 'admin') params.set('basis', route.basis)
   if (route.period === 'month' && route.view === 'account') {
     params.set('period', 'month')

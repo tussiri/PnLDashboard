@@ -782,7 +782,9 @@ def leadership_feedback_overview(account: str = Query(..., description="An accou
 
 class BudgetIn(BaseModel):
     #: [{month: YYYY-MM, site_labor, overhead_labor, revenue, supplies, details}]
-    months: list[dict[str, Any]]
+    months: list[dict[str, Any]] = []
+    #: [{week_end: YYYY-MM-DD (a Sunday), site_labor, overhead_labor, holiday_labor, details}]
+    weeks: list[dict[str, Any]] = []
 
 
 @router.get("/budget", dependencies=[Depends(permissions.require_permission("tab.budget"))])
@@ -797,14 +799,18 @@ def leadership_budget(account: str = Query(..., description="An account slug"), 
             raise HTTPException(status_code=404, detail=f"Unknown account {account!r}")
         months = budget_module.report(cursor, account,
                                       rollup=lambda m: month_module.rows_for(cursor, m.isoformat()[:7], allocate_parent_billing))
-    return {"account": account, "months": jsonable(months)}
+        weeks = budget_module.weeks(cursor, account)
+    return {"account": account, "months": jsonable(months), "weeks": weeks}
 
 
 @router.put("/budget/{slug}", dependencies=[Depends(require_admin)])
 def update_budget(slug: str, body: BudgetIn, request: Request) -> dict[str, Any]:
-    """Admin: save plan months (upsert by month); other months are kept."""
+    """Admin: save plan months and / or weeks (upsert by month and by week); others are kept."""
+    if not body.months and not body.weeks:
+        raise HTTPException(status_code=422, detail="Send months, weeks or both")
     try:
-        rows = budget_module.validate(body.months)
+        rows = budget_module.validate(body.months) if body.months else []
+        week_rows = budget_module.validate_weeks(body.weeks)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     with connection() as conn, conn.cursor() as cursor:
@@ -812,15 +818,34 @@ def update_budget(slug: str, body: BudgetIn, request: Request) -> dict[str, Any]
         if cursor.fetchone() is None:
             raise HTTPException(status_code=404, detail=f"Unknown account {slug!r}")
         budget_module.save(cursor, slug, rows, _actor(request))
+        budget_module.save_weeks(cursor, slug, week_rows, _actor(request))
         conn.commit()
         saved = budget_module.plan(cursor, slug)
-    return {"account": slug, "months": jsonable(saved)}
+        saved_weeks = budget_module.weeks(cursor, slug)
+    return {"account": slug, "months": jsonable(saved), "weeks": saved_weeks}
+
+
+@router.post("/budget/read", dependencies=[Depends(require_admin)])
+async def read_budget_workbook(file: UploadFile = File(...)) -> dict[str, Any]:
+    """Admin: an uploaded labor budget workbook (.xlsx) as one tab-separated table per sheet. Nothing is
+    saved; the Budgets page parses the sheets, previews the monthly plan and weekly calendar, and saves."""
+    content = await file.read(MAX_UPLOAD_BYTES + 1)
+    if len(content) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="File is larger than 50 MB")
+    try:
+        sheets = budget_module.workbook_sheets(content)
+    except Exception as exc:  # noqa: BLE001 - not a readable workbook: say so plainly
+        raise HTTPException(status_code=422, detail=f"Could not read the workbook ({exc.__class__.__name__}); save it as .xlsx") from exc
+    return {"file": file.filename, "sheets": sheets}
 
 
 @router.delete("/budget/{slug}", dependencies=[Depends(require_admin)])
-def delete_budget(slug: str, month: str | None = Query(None, description="YYYY-MM; omit to clear the account's plan")) -> dict[str, Any]:
+def delete_budget(slug: str, month: str | None = Query(None, description="YYYY-MM; omit to clear the account's plan"),
+                  weeks: bool = Query(False, description="Clear only the weekly calendar")) -> dict[str, Any]:
     with connection() as conn, conn.cursor() as cursor:
-        if month:
+        if weeks:
+            cursor.execute("DELETE FROM ops.account_budget_week WHERE account_slug = %s", (slug,))
+        elif month:
             try:
                 first = date.fromisoformat(f"{month[:7]}-01")
             except ValueError:
@@ -828,6 +853,7 @@ def delete_budget(slug: str, month: str | None = Query(None, description="YYYY-M
             cursor.execute("DELETE FROM ops.account_budget_month WHERE account_slug = %s AND month = %s", (slug, first))
         else:
             cursor.execute("DELETE FROM ops.account_budget_month WHERE account_slug = %s", (slug,))
+            cursor.execute("DELETE FROM ops.account_budget_week WHERE account_slug = %s", (slug,))
         removed = cursor.rowcount
         conn.commit()
     return {"account": slug, "removed": removed}
