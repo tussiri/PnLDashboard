@@ -277,6 +277,12 @@ tr.dim td{color:var(--text3)}
 .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:7px;vertical-align:1px}
 .kpi-grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
 .chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:10px}
+.fbt{margin-bottom:12px}
+.fbt__ai{margin-top:12px;padding-top:12px;border-top:0.5px solid var(--border)}
+.fbt__hd{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.fbt__line{margin:6px 0 0;font-size:13px;color:var(--text)}
+.chip.ok{color:var(--ok)}.chip.warn{color:var(--warn)}.chip.bad{color:var(--bad)}
+.chip.linkbtn{border:none;cursor:pointer;font:inherit;font-size:11px}
 .chip{font-size:11px;padding:2px 8px;border-radius:20px;background:var(--bg2);color:var(--text2);white-space:nowrap}
 
 /* Narrow screens: these follow every component rule so they win the cascade. */

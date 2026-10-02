@@ -37,6 +37,7 @@ export function createDemoApi(options: DemoApiOptions = {}): DashboardApi {
     leadershipSite: (company, jobNumber, query, signal) => settle(() => demoLeadershipSite(company, jobNumber, query), signal),
     staffingJob: (company, jobNumber, query, signal) => settle(() => demoStaffingJob(company, jobNumber, query), signal),
     leadershipVendors: (account, _months, signal) => settle(() => demoLeadershipVendors(account), signal),
+    leadershipFeedbackOverview: (account, month, signal) => settle(() => ({ account, month: `${month ?? ''}-01`, current: null, prior: null, months: [], year: { ratings: 0, average: null, since: '' }, low_sites: [], summary: { status: 'off' as const } }), signal),
     leadershipFeedback: (account, _months, signal) => settle(() => ({ account, since: '', lines: [], ratings: 0, average: null, low: 0, sites: 0, unmatched: 0, by_site: [] }), signal),
     leadershipMonthly: (account, _months, signal) => settle(() => demoLeadershipMonthly(account), signal),
     leadershipMonth: (account, month, signal) => settle(() => ({ month, account, rows: [] }), signal),

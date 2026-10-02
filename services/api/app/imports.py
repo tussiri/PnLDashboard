@@ -276,10 +276,23 @@ class Parsed:
     records: list[dict[str, Any]] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
     rows_read: int = 0
+    #: Rows left out on purpose (a feedback work order not rated yet), not errors.
+    skipped: int = 0
 
     def error(self, message: str) -> None:
         if len(self.errors) < MAX_ERRORS:
             self.errors.append(message)
+
+
+NO_FEEDBACK = {"nofeedback", "noratings", "norating", "none", ""}
+NO_COMMENT = {"", "nocomment", "nocomments", "na", "none"}  # after compact(): "'-", "-", "N/A" and "NO COMMENT" too
+
+
+def _no_feedback(raw: dict[str, Any]) -> bool:
+    """A work order in the feedback export with no rating: Star Ratings Score reads "NO FEEDBACK" (or is empty
+    with no feedback date)."""
+    score, date_value = compact(raw.get("score")), raw.get("feedback_date")
+    return score in NO_FEEDBACK - {""} or (score == "" and date_value in (None, ""))
 
 
 def normalize_rows(kind: str, headers: list[str], rows: list[dict[str, Any]], company_numbers: dict[str, str],
@@ -300,6 +313,9 @@ def normalize_rows(kind: str, headers: list[str], rows: list[dict[str, Any]], co
                "total_direct_costs", "gross_profit", "actual_hours", "revenue_fixed", "revenue_variable", "amount", "score"}
     for line, row in enumerate(rows, start=2):
         raw = {f: row.get(h) for f, h in mapping.items()}
+        if kind == "service_feedback" and _no_feedback(raw):
+            parsed.skipped += 1  # a work order the customer has not rated yet
+            continue
         try:
             record: dict[str, Any] = {}
             for f, v in raw.items():
@@ -314,7 +330,7 @@ def normalize_rows(kind: str, headers: list[str], rows: list[dict[str, Any]], co
             if kind == "service_feedback":
                 # The customer's export: no company column; the site comes from the location (migration 043).
                 record["company"] = None
-                if record.get("comment") in ("-", "'-", "'"):
+                if compact(record.get("comment")) in NO_COMMENT:
                     record["comment"] = None
                 record["wo_number"] = (record.get("wo_number") or "").lstrip("'") or None
                 record["location_number"] = (record.get("location_number") or "").lstrip("'") or None

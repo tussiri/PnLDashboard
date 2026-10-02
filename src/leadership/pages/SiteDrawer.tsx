@@ -92,6 +92,13 @@ export function SiteDrawer({ company, job }: { company: string; job: string }) {
           chart={<TrendChart labels={weeks.map((r) => weekTick(r.week_start))} values={weeks.map((r) => r.measurePct)} target={current?.target ?? options.target} label={m} />}
           table={<table><thead><tr><th className="nosort l">Week ending</th><th className="nosort">Invoicing</th><th className="nosort">Direct labor</th><th className="nosort">{m}</th><th className="nosort">Hours</th><th className="nosort">OT hrs</th></tr></thead>
             <tbody>{weeks.map((r) => <tr key={r.week_start}><td className="l">{weekTick(r.week_start)}</td><td>{money(r.invoice)}</td><td>{money(r.labor)}</td><td>{pct(r.measurePct)}</td><td>{hours1(r.hours)}</td><td>{hours1(r.ot_hours)}</td></tr>)}</tbody></table>} />}
+        {q.data.feedback && q.data.feedback.length > 0 && <div className="card">
+          <div className="ct"><span>Feedback, 12 months</span><span className={scoreTone(avgOf(q.data.feedback))}>{stars(avgOf(q.data.feedback))} avg, {q.data.feedback.length} ratings</span></div>
+          <div className="tw"><table><caption className="sr-only">Feedback and star ratings</caption>
+            <thead><tr><th className="nosort">Date</th><th className="nosort">Trade</th><th className="nosort">Rating</th><th className="nosort">Comment</th><th className="nosort">WO</th></tr></thead>
+            <tbody>{q.data.feedback.map((f) => <tr key={f.wo_number}><td>{f.feedback_date}</td><td>{f.trade ?? '–'}</td><td className={scoreTone(f.score)}>{stars(f.score)}</td><td className="nm">{f.comment ?? '–'}</td><td>{f.wo_number}</td></tr>)}</tbody>
+          </table></div>
+        </div>}
         {can('data.staffing') && <StaffingCard company={company} job={job} />}
         {q.data.invoices && <div className="card">
           <div className="ct"><span>{vendorLabel(account)} invoices since {monthLabel(q.data.invoices.since)}</span><span>{money(q.data.invoices.total)}</span></div>
@@ -99,13 +106,6 @@ export function SiteDrawer({ company, job }: { company: string; job: string }) {
             <thead><tr><th className="nosort l">Date</th><th className="nosort l">Vendor</th><th className="nosort l">Invoice</th><th className="nosort l">Source</th><th className="nosort">GL</th><th className="nosort">Amount</th></tr></thead>
             <tbody>{q.data.invoices.lines.map((l, i) => <tr key={`${l.invoice_number}-${i}`}><td className="l">{l.invoice_date}</td><td className="l nm">{l.vendor_name}</td><td className="l">{l.invoice_number}</td><td className="l neutral">{l.source === 'relay' ? 'Relay' : 'WinTeam'}</td><td>{l.gl_account_number ?? '–'}</td><td>{money(l.amount)}</td></tr>)}</tbody>
           </table></div> : <Empty>No {inSentence(vendorLabel(account))} invoices.</Empty>}
-        </div>}
-        {q.data.feedback && q.data.feedback.length > 0 && <div className="card">
-          <div className="ct"><span>Feedback, 12 months</span><span className={scoreTone(avgOf(q.data.feedback))}>{stars(avgOf(q.data.feedback))} avg, {q.data.feedback.length} ratings</span></div>
-          <div className="tw"><table><caption className="sr-only">Feedback and star ratings</caption>
-            <thead><tr><th className="nosort">Date</th><th className="nosort">Trade</th><th className="nosort">Rating</th><th className="nosort">Comment</th><th className="nosort">WO</th></tr></thead>
-            <tbody>{q.data.feedback.map((f) => <tr key={f.wo_number}><td>{f.feedback_date}</td><td>{f.trade ?? '–'}</td><td className={scoreTone(f.score)}>{stars(f.score)}</td><td className="nm">{f.comment ?? '–'}</td><td>{f.wo_number}</td></tr>)}</tbody>
-          </table></div>
         </div>}
         {q.data.photos && <div className="card">
           <div className="ct"><span>Photos</span></div>

@@ -109,6 +109,9 @@ services:
         sync: false
       - key: GRAPH_MAILBOX
         value: reports@smcraneifs.com
+      # Claude API key for the feedback comment summary (server-side only). Leave empty for no summary.
+      - key: ANTHROPIC_API_KEY
+        sync: false
 
   - type: worker
     name: crane-ifs-worker

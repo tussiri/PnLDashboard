@@ -110,7 +110,7 @@ export function Account() {
   else if (!summary) body = <Empty>No data for this {monthMode ? 'month' : 'week'}.</Empty>
   else if (tab === 'pallet' && tabs.includes(tab)) body = <PalletTab account={account} summary={summary} options={options} />
   else if (tab === 'overview' || !tabs.includes(tab)) body = <Overview account={account} rows={rows} summary={summary} options={options} flags={flags} />
-  else if (tab === 'sites') body = <Sites account={account} summary={summary} options={options} selfOnly={selfOnly} />
+  else if (tab === 'sites') body = <Sites account={account} summary={summary} options={options} selfOnly={selfOnly} ratings={feedback.data?.by_site} />
   else if (tab === 'over-target') body = <HoursToCut account={account} summary={summary} options={options} />
   else if (tab === 'overtime') body = <OvertimeTab account={account} summary={summary} />
   else body = <Suspense fallback={<Skeleton height={520} />}><SiteMap account={account} summary={summary} /></Suspense>
