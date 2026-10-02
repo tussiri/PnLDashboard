@@ -2,7 +2,7 @@
 
 Steps, each isolated so one failure does not stop the others:
   1. load every file in the import inbox (Pay Report / Job Cost exports, app/imports.py), then read the
-     records mailbox for report exports (app/mail_inbox.py), which the worker also polls on its own
+     reports mailbox for report exports (app/mail_inbox.py), which the worker also polls on its own
   2. WinTeam primary database: the same incremental sync as the Admin button (3-day lookback, masters
      and AR skipped when synced within 20 hours, unretrievable records remembered, 403 resources
      skipped) without its own mart rebuild

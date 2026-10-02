@@ -1,6 +1,6 @@
-# Records mailbox poller
+# Reports mailbox poller
 
-The worker reads **records@smcraneifs.com** through Microsoft Graph and loads the report exports
+The worker reads **reports@smcraneifs.com** through Microsoft Graph and loads the report exports
 that belong to the dashboard (`app/mail_inbox.py`, migration 038). Everything else in the mailbox is
 left alone.
 
@@ -20,12 +20,12 @@ left alone.
   deletes or sends mail.
 
 Admin > Imports shows the inbox: the last check, **Check inbox now**, and every attachment it has
-seen with what it did. A failed check shows as "Records inbox sync failed" in the dashboard notes.
+seen with what it did. A failed check shows as "Reports inbox sync failed" in the dashboard notes.
 
 ## Setup (Microsoft Entra ID and Exchange Online)
 
 1. **App registration.** Entra admin center > App registrations > New registration, for example
-   "Crane IFS dashboard - records inbox". Single tenant; no redirect URI.
+   "Crane IFS dashboard - reports inbox". Single tenant; no redirect URI.
 2. **Permission.** API permissions > Add > Microsoft Graph > **Application permissions** > `Mail.Read`.
    Grant admin consent. (Application permission, because the poller runs without a signed-in user.)
 3. **Client secret.** Certificates & secrets > New client secret. Copy the value once.
@@ -33,13 +33,13 @@ seen with what it did. A failed check shows as "Records inbox sync failed" in th
    until an application access policy scopes it. In Exchange Online PowerShell:
 
    ```powershell
-   New-DistributionGroup -Name "Dashboard Mail Scope" -Type Security -Members records@smcraneifs.com
+   New-DistributionGroup -Name "Dashboard Mail Scope" -Type Security -Members reports@smcraneifs.com
    New-ApplicationAccessPolicy -AppId <Application (client) ID> -PolicyScopeGroupId "Dashboard Mail Scope" `
-     -AccessRight RestrictAccess -Description "Crane IFS dashboard reads only records@"
-   Test-ApplicationAccessPolicy -Identity records@smcraneifs.com -AppId <Application (client) ID>
+     -AccessRight RestrictAccess -Description "Crane IFS dashboard reads only reports@"
+   Test-ApplicationAccessPolicy -Identity reports@smcraneifs.com -AppId <Application (client) ID>
    ```
 
-   `Test-ApplicationAccessPolicy` should answer `Granted` for records@ and `Denied` for any other
+   `Test-ApplicationAccessPolicy` should answer `Granted` for reports@ and `Denied` for any other
    mailbox. Microsoft's current guidance may prefer RBAC for Applications; either scoping works.
 5. **Settings** (Render: `crane-ifs-api` > Environment; local: `.env`):
 
@@ -48,7 +48,7 @@ seen with what it did. A failed check shows as "Records inbox sync failed" in th
    | `GRAPH_TENANT_ID` | Directory (tenant) ID |
    | `GRAPH_CLIENT_ID` | Application (client) ID |
    | `GRAPH_CLIENT_SECRET` | the client secret value |
-   | `GRAPH_MAILBOX` | `records@smcraneifs.com` |
+   | `GRAPH_MAILBOX` | `reports@smcraneifs.com` |
 
    The secret stays server-side (API and worker only); nothing reaches the browser.
 

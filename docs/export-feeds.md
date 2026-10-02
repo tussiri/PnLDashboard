@@ -149,7 +149,7 @@ in `ops.import_file` by content hash, so re-sending a file is harmless. Name fil
 
 ### WinTeam scheduled queries, as emailed
 
-The records mailbox (docs/mail-inbox.md) and the Admin upload recognize these by their columns, so
+The reports mailbox (docs/mail-inbox.md) and the Admin upload recognize these by their columns, so
 the WinTeam Query Scheduler can email them as they are; the file name does not matter.
 
 | Scheduled query (file as sent) | Loads as | Notes |

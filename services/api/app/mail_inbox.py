@@ -1,6 +1,6 @@
-"""The records mailbox poller: dashboard report exports that arrive by email (migration 038).
+"""The reports mailbox poller: dashboard report exports that arrive by email (migration 038).
 
-Reads GRAPH_MAILBOX (records@smcraneifs.com) through Microsoft Graph with an app registration
+Reads GRAPH_MAILBOX (reports@smcraneifs.com) through Microsoft Graph with an app registration
 (client credentials, application permission Mail.Read, limited to that mailbox by an Exchange
 application access policy; docs/mail-inbox.md). Read-only: nothing is moved, flagged, deleted or sent.
 
@@ -143,7 +143,7 @@ def poll(graph: Graph | None = None, rebuild: bool = True) -> dict[str, Any]:
     from . import imports, marts
 
     if not configured():
-        raise MailError("The records mailbox is not configured (GRAPH_TENANT_ID, GRAPH_CLIENT_ID, GRAPH_CLIENT_SECRET, GRAPH_MAILBOX)")
+        raise MailError("The reports mailbox is not configured (GRAPH_TENANT_ID, GRAPH_CLIENT_ID, GRAPH_CLIENT_SECRET, GRAPH_MAILBOX)")
     graph = graph or Graph()
     counts = {"loaded": 0, "duplicate": 0, "failed": 0, "ignored": 0, "messages": 0}
     with connection() as conn:
@@ -204,7 +204,7 @@ def run(rebuild: bool = True) -> dict[str, Any]:
         result = poll(rebuild=rebuild)
     except Exception as exc:  # noqa: BLE001 - recorded, and the worker carries on
         message = str(exc)[:500] or exc.__class__.__name__
-        logger.warning("Records mailbox poll failed: %s", message)
+        logger.warning("Reports mailbox poll failed: %s", message)
         _record(run_id, "failed", started, 0, 0, message)
         return {"status": "failed", "error": message}
     _record(run_id, "succeeded", started, result["loaded"], result["loaded"] + result["duplicate"] + result["failed"] + result["ignored"], None)

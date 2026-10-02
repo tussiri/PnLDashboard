@@ -166,7 +166,7 @@ documented WinTeam GET endpoints (WinTeamAPI.txt)
 
 ## Report exports by email
 
-The worker reads records@smcraneifs.com through Microsoft Graph (read-only) and loads the dashboard's
+The worker reads reports@smcraneifs.com through Microsoft Graph (read-only) and loads the dashboard's
 report exports; other mail is ignored. Setup and scoping: `docs/mail-inbox.md`.
 
 ## Hosted deployment

@@ -99,7 +99,7 @@ services:
         sync: false
       - key: COMPANYCAM_API_TOKEN
         sync: false
-      # Records mailbox poller (docs/mail-inbox.md): Microsoft Graph app registration, Mail.Read,
+      # Reports mailbox poller (docs/mail-inbox.md): Microsoft Graph app registration, Mail.Read,
       # limited to the mailbox. Leave empty until the app registration exists.
       - key: GRAPH_TENANT_ID
         sync: false
@@ -108,7 +108,7 @@ services:
       - key: GRAPH_CLIENT_SECRET
         sync: false
       - key: GRAPH_MAILBOX
-        value: records@smcraneifs.com
+        value: reports@smcraneifs.com
 
   - type: worker
     name: crane-ifs-worker

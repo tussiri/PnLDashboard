@@ -158,7 +158,7 @@ function JobsTab() {
 
 const MAIL_TONE: Record<string, string> = { loaded: 'ok', failed: 'bad', duplicate: 'neutral', ignored: 'neutral' }
 
-/** The records mailbox: what arrived and what the poller did with each attachment. */
+/** The reports mailbox: what arrived and what the poller did with each attachment. */
 function MailInbox() {
   const { adminApi: api, adminKeyPrefix: keyPrefix, decision } = useLeadership()
   const { busy, run, view } = useAction()
@@ -175,7 +175,7 @@ function MailInbox() {
   ]
   const last = s?.last_run
   return <div className="card">
-    <div className="ct"><span>Records inbox</span><span className="ks">{s?.mailbox ?? ''}</span></div>
+    <div className="ct"><span>Reports inbox</span><span className="ks">{s?.mailbox ?? ''}</span></div>
     {q.error ? <LoadError error={q.error} onRetry={q.refetch} /> : !s ? <Skeleton height={80} /> : !s.configured ? <Empty>Not connected. Set GRAPH_TENANT_ID, GRAPH_CLIENT_ID, GRAPH_CLIENT_SECRET and GRAPH_MAILBOX (docs/mail-inbox.md).</Empty> : <>
       <div className="ctrl">
         <button type="button" className="btn" disabled={busy} onClick={() => run('Inbox checked', async () => { const r = await api.mailPoll(); if (r.status === 'failed') throw new Error(r.error ?? 'Mailbox check failed'); q.refetch() })}>Check inbox now</button>
