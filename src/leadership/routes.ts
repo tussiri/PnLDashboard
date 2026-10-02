@@ -13,7 +13,7 @@
  */
 
 export type View = 'home' | 'company' | 'account' | 'analytics' | 'admin'
-export const ACCOUNT_TABS = ['overview', 'sites', 'pallet', 'over-target', 'overtime', 'income-statement', 'subcontracted', 'map', 'vendors'] as const
+export const ACCOUNT_TABS = ['overview', 'sites', 'pallet', 'over-target', 'overtime', 'income-statement', 'subcontracted', 'map', 'vendors', 'feedback'] as const
 export type AccountTab = (typeof ACCOUNT_TABS)[number]
 export const ADMIN_TABS = ['accounts', 'jobs', 'allocations', 'imports', 'mailbox', 'data', 'users'] as const
 export const ANALYTICS_TABS = ['accounts', 'units'] as const

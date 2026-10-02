@@ -177,3 +177,26 @@ def test_a_filtered_export_is_recognized_as_partial():
     assert partial_export(Cursor(40), "pay_report", full, None) is None
     cost = [{"company": "Crane West", "job_number": "39", "period": date(2026, 8, 1)}]
     assert "1 jobs where 36 are loaded for 2026-08" in partial_export(Cursor(36), "job_cost", cost, None)
+
+
+FEEDBACK_HEADERS = ["Feedback", "WO Number", "Location Number", "Provider Name", "Trade", "Feed Back Date", "Star Ratings Comment", "Star Ratings Score"]
+FEEDBACK_ROWS = [
+    ["Satisfactory", "328967046", "3112", "ServiceMaster Facilities Maintenance", "JANITORIAL OFFICE", "2025-12-01",
+     "THE OFFICE HAS NOT BEEN THOROUGHLY CLEANED.", "1"],
+    ["Satisfactory", 350871868.0, "NIPA", "ServiceMaster Facilities Maintenance", "JANITORIAL DOCK", "2026-07-02", "'-", "1"],
+    ["Satisfactory", "'354023495", "NRBA", "ServiceMaster Facilities Maintenance", "JANITORIAL DOCK", "8/3/2026", "not cleaning fully", "1"],
+]
+
+
+def test_the_feedback_export_loads_as_service_feedback():
+    """FedEx's ServiceChannel feedback and star ratings export, as sent (no company column)."""
+    assert detect_kind("Feedback export.xlsx", FEEDBACK_HEADERS) == "service_feedback"
+    parsed = normalize_rows("service_feedback", FEEDBACK_HEADERS, [dict(zip(FEEDBACK_HEADERS, r)) for r in FEEDBACK_ROWS], COMPANIES)
+    assert parsed.errors == [] and len(parsed.records) == 3
+    first, second, third = parsed.records
+    assert (first["wo_number"], first["location_number"], first["trade"], first["feedback_date"], first["score"]) == \
+        ("328967046", "3112", "JANITORIAL OFFICE", date(2025, 12, 1), Decimal(1))
+    assert second["wo_number"] == "350871868" and second["comment"] is None  # Excel number, and "'-" is no comment
+    assert third["wo_number"] == "354023495" and third["feedback_date"] == date(2026, 8, 3) and third["company"] is None
+    missing = normalize_rows("service_feedback", FEEDBACK_HEADERS, [dict(zip(FEEDBACK_HEADERS, ["Good", "", "3112", "", "", "2026-01-01", "", "5"]))], {})
+    assert missing.records == [] and "wo_number is empty" in missing.errors[0]

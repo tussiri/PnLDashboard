@@ -7,7 +7,7 @@ import type { AuthUser, Role } from './roles'
  */
 export type Permission =
   | 'view.company' | 'view.analytics'
-  | 'tab.sites' | 'tab.pallet' | 'tab.over-target' | 'tab.overtime' | 'tab.income-statement' | 'tab.subcontracted' | 'tab.map' | 'tab.vendors'
+  | 'tab.sites' | 'tab.pallet' | 'tab.over-target' | 'tab.overtime' | 'tab.income-statement' | 'tab.subcontracted' | 'tab.map' | 'tab.vendors' | 'tab.feedback'
   | 'data.allocations' | 'data.month' | 'data.staffing' | 'data.invoices' | 'data.photos' | 'data.export'
 
 export interface PermissionInfo { key: Permission; group: string; label: string }
@@ -23,6 +23,7 @@ export const PERMISSIONS: readonly PermissionInfo[] = [
   { key: 'tab.subcontracted', group: 'Account tabs', label: 'Subcontracted' },
   { key: 'tab.map', group: 'Account tabs', label: 'Map' },
   { key: 'tab.vendors', group: 'Account tabs', label: 'Vendors' },
+  { key: 'tab.feedback', group: 'Account tabs', label: 'Feedback' },
   { key: 'data.allocations', group: 'Data', label: 'Allocations and margin' },
   { key: 'data.month', group: 'Data', label: 'Month rollup' },
   { key: 'data.staffing', group: 'Data', label: 'Staffing requests' },

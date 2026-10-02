@@ -18,6 +18,8 @@ const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 /** Refresh every cached query after a change (configuration applies at read time). */
 const refreshAll = () => queryClient.invalidate()
 
+const FEED_NAME: Record<string, string> = { pay_report: 'Labor', job_cost: 'Job cost', income_statement: 'Income statement', service_feedback: 'Feedback' }
+
 function useAction() {
   const { decision, redetect } = useLeadership()
   const [busy, setBusy] = useState(false)
@@ -214,7 +216,7 @@ function MailInbox() {
     { key: 'from', header: 'From', left: true, value: (r) => r.sender ?? '', className: 'nm' },
     { key: 'subject', header: 'Subject', left: true, value: (r) => r.subject ?? '', className: 'nm' },
     { key: 'file', header: 'File', left: true, value: (r) => r.file_name, className: 'nm' },
-    { key: 'status', header: 'Status', left: true, value: (r) => r.status, render: (r) => <span className={MAIL_TONE[r.status]}>{cap(r.status)}{r.kind ? `, ${r.kind === 'pay_report' ? 'labor' : r.kind === 'income_statement' ? 'income statement' : 'job cost'}` : ''}</span> },
+    { key: 'status', header: 'Status', left: true, value: (r) => r.status, render: (r) => <span className={MAIL_TONE[r.status]}>{cap(r.status)}{r.kind ? `, ${FEED_NAME[r.kind]?.toLowerCase() ?? r.kind}` : ''}</span> },
     { key: 'reason', header: 'Detail', left: true, value: (r) => r.reason ?? (r.rows_loaded != null ? `${r.rows_loaded.toLocaleString('en-US')} rows` : ''), className: 'nm' },
   ]
   const last = s?.last_run
@@ -251,7 +253,7 @@ function ImportsTab() {
   const q = useApiQuery(decision ? queryKey(`${keyPrefix}/leadership/imports`) : null, (signal) => api.leadershipImports(50, signal), [api])
   const cols: Column<LeadershipImportFile>[] = [
     { key: 'at', header: 'Loaded', left: true, value: (f) => f.loaded_at, render: (f) => new Date(f.loaded_at).toLocaleString('en-US') },
-    { key: 'kind', header: 'Feed', left: true, value: (f) => (f.kind === 'pay_report' ? 'Pay report' : f.kind === 'income_statement' ? 'Income statement' : 'Job cost') },
+    { key: 'kind', header: 'Feed', left: true, value: (f) => FEED_NAME[f.kind] ?? f.kind },
     { key: 'file', header: 'File', left: true, value: (f) => f.file_name, className: 'nm' },
     { key: 'status', header: 'Status', left: true, value: (f) => f.status, render: (f) => <span className={f.status === 'loaded' ? 'ok' : f.status === 'failed' ? 'bad' : 'neutral'}>{cap(f.status)}</span> },
     { key: 'rows', header: 'Rows', value: (f) => f.rows_loaded, render: (f) => `${f.rows_loaded.toLocaleString('en-US')} of ${f.rows_read.toLocaleString('en-US')}` },
@@ -264,7 +266,7 @@ function ImportsTab() {
       <div className="ct"><span>Upload</span></div>
       <form className="form-grid" onSubmit={(e) => { e.preventDefault(); if (file) void run(`Imported ${file.name}`, () => api.leadershipUpload(file, kind || undefined)) }}>
         <label className="field"><span>File (CSV or XLSX)</span><input type="file" accept=".csv,.xlsx,.xlsm" onChange={(e) => setFile(e.target.files?.[0] ?? null)} /></label>
-        <label className="field"><span>Feed</span><select value={kind} onChange={(e) => setKind(e.target.value as '' | LeadershipImportKind)}><option value="">Auto-detect</option><option value="pay_report">Timekeeping labor (Pay Report or labor summary)</option><option value="job_cost">Job Cost Analysis</option><option value="income_statement">Trend Income Statement</option></select></label>
+        <label className="field"><span>Feed</span><select value={kind} onChange={(e) => setKind(e.target.value as '' | LeadershipImportKind)}><option value="">Auto-detect</option><option value="pay_report">Timekeeping labor (Pay Report or labor summary)</option><option value="job_cost">Job Cost Analysis</option><option value="income_statement">Trend Income Statement</option><option value="service_feedback">Feedback and star ratings</option></select></label>
         <div className="field"><button type="submit" className="btn primary" disabled={!file || busy}>{busy ? 'Importing' : 'Import'}</button></div>
       </form>
       {view}

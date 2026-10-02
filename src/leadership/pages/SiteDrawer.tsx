@@ -1,3 +1,4 @@
+import { scoreTone, stars } from './Feedback'
 import { X } from 'lucide-react'
 import { useEffect, useMemo, useRef } from 'react'
 import { useApiQuery } from '../../hooks/useApiQuery'
@@ -40,6 +41,8 @@ function StaffingCard({ company, job }: { company: string; job: string }) {
       </>}
   </div>
 }
+
+const avgOf = (lines: { score: number | null }[]) => { const scored = lines.filter((l) => l.score != null); return scored.length ? scored.reduce((t, l) => t + l.score!, 0) / scored.length : null }
 
 /** Site detail drawer: this week's labor P&L, a 13-week trend, staffing requests, subcontractor invoices and CompanyCam photos. */
 export function SiteDrawer({ company, job }: { company: string; job: string }) {
@@ -96,6 +99,13 @@ export function SiteDrawer({ company, job }: { company: string; job: string }) {
             <thead><tr><th className="nosort l">Date</th><th className="nosort l">Vendor</th><th className="nosort l">Invoice</th><th className="nosort l">Source</th><th className="nosort">GL</th><th className="nosort">Amount</th></tr></thead>
             <tbody>{q.data.invoices.lines.map((l, i) => <tr key={`${l.invoice_number}-${i}`}><td className="l">{l.invoice_date}</td><td className="l nm">{l.vendor_name}</td><td className="l">{l.invoice_number}</td><td className="l neutral">{l.source === 'relay' ? 'Relay' : 'WinTeam'}</td><td>{l.gl_account_number ?? '–'}</td><td>{money(l.amount)}</td></tr>)}</tbody>
           </table></div> : <Empty>No {inSentence(vendorLabel(account))} invoices.</Empty>}
+        </div>}
+        {q.data.feedback && q.data.feedback.length > 0 && <div className="card">
+          <div className="ct"><span>Feedback, 12 months</span><span className={scoreTone(avgOf(q.data.feedback))}>{stars(avgOf(q.data.feedback))} avg, {q.data.feedback.length} ratings</span></div>
+          <div className="tw"><table><caption className="sr-only">Feedback and star ratings</caption>
+            <thead><tr><th className="nosort">Date</th><th className="nosort">Trade</th><th className="nosort">Rating</th><th className="nosort">Comment</th><th className="nosort">WO</th></tr></thead>
+            <tbody>{q.data.feedback.map((f) => <tr key={f.wo_number}><td>{f.feedback_date}</td><td>{f.trade ?? '–'}</td><td className={scoreTone(f.score)}>{stars(f.score)}</td><td className="nm">{f.comment ?? '–'}</td><td>{f.wo_number}</td></tr>)}</tbody>
+          </table></div>
         </div>}
         {q.data.photos && <div className="card">
           <div className="ct"><span>Photos</span></div>

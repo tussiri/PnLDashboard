@@ -584,7 +584,14 @@ def leadership_site(company: str, job_number: str, weeks: int = Query(13, ge=1, 
         invoices = None
     if not permissions.allowed(user, "data.photos"):
         photos = None
-    return {"source": source_block(), "site": site_out, "weeks": permissions.strip(user, rows), "invoices": invoices, "photos": photos}
+    feedback = None
+    if permissions.allowed(user, "tab.feedback"):
+        with connection() as conn, conn.cursor() as cursor:
+            cursor.execute(FEEDBACK_SQL + " AND company = %(company)s AND job_number = %(job)s ORDER BY feedback_date DESC, wo_number",
+                           {"since": months_back(12), "company": company, "job": job_number})
+            feedback = [{**jsonable(dict(r)), "score": float(r["score"]) if r["score"] is not None else None} for r in cursor.fetchall()]
+    return {"source": source_block(), "site": site_out, "weeks": permissions.strip(user, rows), "invoices": invoices, "photos": photos,
+            "feedback": feedback}
 
 
 def subcontractor_type_ids(cursor: Any) -> list[str]:
@@ -672,6 +679,56 @@ def subcontractor_invoices(cursor: Any, job_key: int, months: int) -> dict[str, 
     cursor.execute(RELAY_LINES_SQL.format(join="", where="j.job_key = %(job_key)s"), {"since": since, "job_key": job_key})
     lines = merge_relay_lines(winteam, [jsonable(dict(r)) for r in cursor.fetchall()])
     return {"since": since.isoformat(), "vendor_type_ids": type_ids, "total": round(sum(l["amount"] or 0 for l in lines), 2), "lines": lines}
+
+
+FEEDBACK_SQL = """
+SELECT wo_number, location_number, provider_name, trade, feedback, feedback_date, comment, score, company, job_number,
+       site_name, account_slug, match_basis
+FROM mart.v_service_feedback
+WHERE feedback_date >= %(since)s
+"""
+
+
+def feedback_summary(lines: list[dict[str, Any]]) -> dict[str, Any]:
+    """Totals and one row per site (location): ratings, average score, low scores (1 or 2), the latest comment."""
+    scored = [l for l in lines if l["score"] is not None]
+    sites: dict[str, dict[str, Any]] = {}
+    for l in sorted(lines, key=lambda x: x["feedback_date"]):
+        s = sites.setdefault(l["location_number"], {"location_number": l["location_number"], "company": l["company"], "job_number": l["job_number"],
+                                                     "site_name": l["site_name"], "ratings": 0, "scored": 0, "total": 0.0, "low": 0,
+                                                     "latest_date": None, "latest_comment": None, "latest_score": None})
+        s["ratings"] += 1
+        if l["score"] is not None:
+            s["scored"] += 1; s["total"] += l["score"]; s["low"] += l["score"] <= 2
+        s["latest_date"], s["latest_score"] = l["feedback_date"], l["score"]
+        if l["comment"]:
+            s["latest_comment"] = l["comment"]
+    rows = [{**{k: v for k, v in s.items() if k not in ("total", "scored")}, "average": round(s["total"] / s["scored"], 2) if s["scored"] else None}
+            for s in sites.values()]
+    return {"ratings": len(lines), "average": round(sum(l["score"] for l in scored) / len(scored), 2) if scored else None,
+            "low": sum(1 for l in scored if l["score"] <= 2), "sites": len(sites), "unmatched": sum(1 for l in lines if l["job_number"] is None),
+            "by_site": sorted(rows, key=lambda r: (r["average"] if r["average"] is not None else 99, -r["ratings"]))}
+
+
+@router.get("/feedback", dependencies=[Depends(permissions.require_permission("tab.feedback"))])
+def leadership_feedback(account: str = Query(..., description="An account slug"), months: int = Query(12, ge=1, le=36),
+                        request: Request = None) -> dict[str, Any]:  # type: ignore[assignment]
+    """Customer feedback and star ratings (migration 043) at the account's sites over `months`, with totals and one
+    row per site. For FedEx, ratings whose location matches no site are included and counted as unmatched."""
+    if request is not None:
+        require_account(request, account)
+    since = months_back(months)
+    with connection() as conn, conn.cursor() as cursor:
+        cursor.execute("SELECT 1 FROM ops.account WHERE slug = %s", (account,))
+        if cursor.fetchone() is None:
+            raise HTTPException(status_code=404, detail=f"Unknown account {account!r}")
+        # The feed is FedEx's ServiceChannel export: a location matching no site still belongs to FedEx.
+        cursor.execute(FEEDBACK_SQL + " AND (account_slug = %(account)s OR (account_slug IS NULL AND %(account)s = 'fedex'))"
+                       " ORDER BY feedback_date DESC, wo_number", {"since": since, "account": account})
+        lines = [jsonable(dict(r)) for r in cursor.fetchall()]
+    for l in lines:
+        l["score"] = float(l["score"]) if l["score"] is not None else None
+    return {"account": account, "since": since.isoformat(), "lines": lines, **feedback_summary(lines)}
 
 
 @router.get("/vendors", dependencies=[Depends(permissions.require_permission("tab.vendors"))])

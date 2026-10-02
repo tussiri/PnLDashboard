@@ -610,3 +610,18 @@ separate and unchanged.
 | `data.photos` | – | `photos: null` on `/leadership/sites/…` |
 | `data.export` | – | the CSV buttons |
 
+## Customer feedback and star ratings, added 2026-10-02
+
+Migration 043. The ServiceChannel feedback export FedEx sends (Feedback, WO Number, Location Number,
+Provider Name, Trade, Feed Back Date, Star Ratings Comment, Star Ratings Score) imports as kind
+`service_feedback`, by upload or the reports mailbox, recognized by its columns. Rows are upserted by
+work order into `core.fact_service_feedback`. `mart.v_service_feedback` gives each row its WinTeam
+job: the Relay site whose ServiceChannel location id is the Location Number (janitorial first), else
+a FedEx job named `FedEx - <location>`; `match_basis` says which, null when none matched.
+
+| Route | Response |
+|---|---|
+| `GET /leadership/feedback?account=&months=12` | Permission `tab.feedback`, account scope. `{account, since, lines: [{wo_number, location_number, provider_name, trade, feedback, feedback_date, comment, score, company, job_number, site_name, account_slug, match_basis}], ratings, average, low, sites, unmatched, by_site: [{location_number, company, job_number, site_name, ratings, average, low, latest_date, latest_score, latest_comment}]}`. `low` counts scores of 1 or 2; `by_site` is lowest average first. For `fedex`, ratings whose location matched no site are included and counted in `unmatched`. |
+
+`GET /leadership/sites/{company}/{job}` adds `feedback`: the site's ratings over 12 months (null without `tab.feedback`).
+
