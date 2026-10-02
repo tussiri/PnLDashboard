@@ -362,7 +362,7 @@ WinTeam sync cadence changed the same day: the worker runs one incremental sync 
 `nightly` (reported by `GET /leadership/config` `status.syncs`). Since 2026-09-29 it also runs a light
 timekeeping sync every `WINTEAM_SYNC_INTERVAL_MINUTES` (see "Staffing requests and the sync schedule").
 
-The leadership views (Home, Account, Analytics) read `mart.leadership_week` (migration 030, rules
+The leadership views (Company, Accounts, Portfolio) read `mart.leadership_week` (migration 030, rules
 in `services/api/app/leadership.py`) joined at read time with the account configuration
 (`ops.account`, `ops.account_segment`, `ops.account_job`, migration 028), so configuration edits
 apply without a rebuild. **Ratios in these payloads are fractions** (`target_labor_pct: 0.645`); the
@@ -568,7 +568,7 @@ as `management_wages` (still inside `direct_labor`).
 ## Month-end rollup, added 2026-09-29
 
 app/month.py. FedEx invoices at month end, when its subcontractors are also due to have invoiced, so
-the Home and account views have a Week / Month switch (`period=month&month=YYYY-MM` on the route).
+the account views have a Week / Month switch (`period=month&month=YYYY-MM` on the route).
 The month view includes subcontracted sites (the weekly views leave them out for accounts with
 `split_subcontracted`).
 
@@ -600,7 +600,7 @@ separate and unchanged.
 | Key | Default off for | Enforced by |
 |---|---|---|
 | `view.company` | – | `403` on `GET /leadership/company`; the Company link |
-| `view.analytics` | executive, analyst | the Analytics link (its data is the user's own rows) |
+| `view.analytics` | executive, analyst | the Portfolio link (its data is the user's own rows) |
 | `tab.sites`, `tab.pallet`, `tab.over-target`, `tab.overtime`, `tab.income-statement`, `tab.subcontracted`, `tab.map` | – | the account tab |
 | `tab.vendors` | – | `403` on `GET /leadership/vendors`; the Vendors tab |
 | `data.allocations` | – | `alloc_management`, `alloc_burden`, `alloc_overhead` are dropped from the rows of `/leadership/rows`, `/leadership/month` and `/leadership/sites/…`; margin is hidden |
@@ -634,4 +634,12 @@ orders not rated yet (Star Ratings Score `NO FEEDBACK`) instead of reporting the
 |---|---|
 | `GET /leadership/feedback/overview?account=&month=YYYY-MM` | Permission `tab.feedback`, account scope. The Home tile: `{account, month, current, prior, months: [{month, ratings, scored, average, low}], year: {ratings, average, since}, low_sites: [{location_number, site_name, company, job_number, score, feedback_date}], summary}`. `current` is the month to date, `months` the 12 months to it, `low_sites` its 1-2 star ratings. Scores are computed in SQL. `summary` is the Claude reading of the last 90 days of comments (app/feedback_ai.py, migration 045): `{status: off \| none \| pending \| ready \| failed, window_days, comments, model, generated_at, error, summary: {sentiment, headline, themes: [{theme, sentiment, mentions, locations}]}}`; `off` without `ANTHROPIC_API_KEY`. Cached in `ops.feedback_summary` under a digest of the comments, so Claude is called only when they change, in a background thread; `pending` until the first summary lands. |
 
+## Navigation, added 2026-10-02
+
+Company · Accounts · Portfolio · Admin. `#/` opens Company (the landing page); a user limited to some
+accounts, or without `view.company`, lands on their account. The Home page is retired: its feedback
+tile is on the account Overview tab, and old links (`#/?account=`, `#/home?account=`) open that
+account. Every account page has an account picker that keeps the tab. The Analytics pages are
+Portfolio at `#/portfolio` (`#/analytics` still opens them; the permission key stays
+`view.analytics`).
 

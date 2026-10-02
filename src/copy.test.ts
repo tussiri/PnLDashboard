@@ -21,7 +21,7 @@ const files = sourceFiles(SRC).map((path) => relative(SRC, path)).filter((file) 
 
 describe('user-facing copy', () => {
   it('scans the views and components', () => {
-    expect(files.some((f) => f === 'leadership/pages/Home.tsx')).toBe(true)
+    expect(files.some((f) => f === 'leadership/pages/Company.tsx')).toBe(true)
     expect(files.some((f) => f === 'leadership/Shell.tsx')).toBe(true)
   })
 

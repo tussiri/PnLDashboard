@@ -12,7 +12,8 @@
  * `target` is a percentage (64.5) and overrides the account target while present.
  */
 
-export type View = 'home' | 'company' | 'account' | 'analytics' | 'admin'
+/** company: the landing page. analytics: the Portfolio pages (#/portfolio; #/analytics still opens them). */
+export type View = 'company' | 'account' | 'analytics' | 'admin'
 export const ACCOUNT_TABS = ['overview', 'sites', 'pallet', 'over-target', 'overtime', 'income-statement', 'subcontracted', 'map', 'vendors', 'feedback'] as const
 export type AccountTab = (typeof ACCOUNT_TABS)[number]
 export const ADMIN_TABS = ['accounts', 'jobs', 'allocations', 'imports', 'mailbox', 'data', 'users'] as const
@@ -52,13 +53,13 @@ export function parseRoute(hash: string): Route {
   const [path, query = ''] = hash.replace(/^#\/?/, '').split('?')
   const parts = path.split('/').filter(Boolean).map(decodeURIComponent)
   const params = new URLSearchParams(query)
-  const route: Route = { view: 'home' }
+  const route: Route = { view: 'company' }
   const [first, second, third] = parts
   if (first === 'account') {
     route.view = 'account'
     if (second) route.account = second
     route.tab = (ACCOUNT_TABS as readonly string[]).includes(third ?? '') ? (third as AccountTab) : 'overview'
-  } else if (first === 'analytics') {
+  } else if (first === 'analytics' || first === 'portfolio') {
     route.view = 'analytics'
     if (second === 'units') route.analyticsTab = 'units'
   } else if (first === 'company') route.view = 'company'
@@ -67,7 +68,9 @@ export function parseRoute(hash: string): Route {
     route.adminTab = (ADMIN_TABS as readonly string[]).includes(second ?? '') ? (second as AdminTab) : 'accounts'
   }
   const account = params.get('account')
-  if (account && route.view !== 'account') route.account = account
+  // The retired Home page (#/?account=, #/home?account=) was one account's summary: open that account.
+  if (account && (!first || first === 'home') && route.view === 'company') { route.view = 'account'; route.tab = 'overview' }
+  if (account) route.account = account
   const week = params.get('week')
   if (week && ISO.test(week)) route.week = week
   const target = Number(params.get('target'))
@@ -84,7 +87,7 @@ export function parseRoute(hash: string): Route {
   if (route.view === 'account' && params.get('delivery') === 'self') route.selfOnly = true
   const basis = params.get('basis')
   if (basis === 'run_rate_3m' || basis === 'last_month') route.basis = basis
-  if (params.get('period') === 'month' && (route.view === 'home' || route.view === 'account')) route.period = 'month'
+  if (params.get('period') === 'month' && route.view === 'account') route.period = 'month'
   const month = params.get('month')
   if (route.period && month && /^\d{4}-\d{2}$/.test(month)) route.month = month
   return route
@@ -95,7 +98,7 @@ export function formatRoute(route: Route): string {
     ? `account/${encodeURIComponent(route.account ?? '')}${route.tab && route.tab !== 'overview' ? `/${route.tab}` : ''}`
     : route.view === 'admin'
       ? `admin${route.adminTab && route.adminTab !== 'accounts' ? `/${route.adminTab}` : ''}`
-      : route.view === 'analytics' && route.analyticsTab === 'units' ? 'analytics/units' : route.view
+      : route.view === 'analytics' ? (route.analyticsTab === 'units' ? 'portfolio/units' : 'portfolio') : route.view
   const params = new URLSearchParams()
   if (route.account && route.view !== 'account' && route.view !== 'admin') params.set('account', route.account)
   if (route.week && route.view !== 'admin') params.set('week', route.week)
@@ -104,7 +107,7 @@ export function formatRoute(route: Route): string {
   if (route.view === 'analytics') for (const key of ['q', 'status', 'segment'] as const) if (route[key]) params.set(key, route[key]!)
   if (route.view === 'account' && route.selfOnly) params.set('delivery', 'self')
   if (route.basis && route.view !== 'admin') params.set('basis', route.basis)
-  if (route.period === 'month' && (route.view === 'home' || route.view === 'account')) {
+  if (route.period === 'month' && route.view === 'account') {
     params.set('period', 'month')
     if (route.month) params.set('month', route.month)
   }

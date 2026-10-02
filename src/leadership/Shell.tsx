@@ -8,9 +8,8 @@ import { useLeadership, type Theme } from './state'
 /** admin: administrators only; every: users who see every account (not those limited to some); permission: what the user must hold. */
 const NAV: { view: View; label: string; admin?: boolean; every?: boolean; permission?: Permission }[] = [
   { view: 'company', label: 'Company', every: true, permission: 'view.company' },
-  { view: 'home', label: 'Home' },
-  { view: 'account', label: 'Account' },
-  { view: 'analytics', label: 'Analytics', every: true, permission: 'view.analytics' },
+  { view: 'account', label: 'Accounts' },
+  { view: 'analytics', label: 'Portfolio', every: true, permission: 'view.analytics' },
   { view: 'admin', label: 'Admin', admin: true },
 ]
 const THEMES: { theme: Theme; label: string; icon: ReactNode }[] = [
@@ -50,7 +49,7 @@ export function Shell({ children }: { children: ReactNode }) {
     <a className="skip-link" href="#main">Skip to content</a>
     <div className="topbar">
       <div className="topbar__in">
-        <a className="brand" href={hrefFor('home')}>Crane IFS</a>
+        <a className="brand" href="#/">Crane IFS</a>
         <nav className="nav" aria-label="Main">
           {NAV.filter((n) => (!n.admin || user.role === 'admin') && (!n.every || unlimited) && (!n.permission || can(n.permission))).map((n) => <a key={n.view} href={hrefFor(n.view)} aria-current={route.view === n.view ? 'page' : undefined}>{n.label}</a>)}
         </nav>
