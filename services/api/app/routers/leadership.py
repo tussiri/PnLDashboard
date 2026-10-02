@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field
 
 from .. import allocations, accounts, companycam, imports, marts
 from .. import month as month_module
+from .. import budget as budget_module
 from .. import feedback_ai, permissions
 from ..common import allowed_accounts, current_user, jsonable, require_account, require_admin, source_block
 from ..db import connection
@@ -777,6 +778,59 @@ def leadership_feedback_overview(account: str = Query(..., description="An accou
             "low_sites": [{"location_number": l["location_number"], "site_name": l["site_name"], "company": l["company"], "job_number": l["job_number"],
                            "score": float(l["score"]), "feedback_date": l["feedback_date"]} for l in low],
             "summary": jsonable(ai)}
+
+
+class BudgetIn(BaseModel):
+    #: [{month: YYYY-MM, site_labor, overhead_labor, revenue, supplies, details}]
+    months: list[dict[str, Any]]
+
+
+@router.get("/budget", dependencies=[Depends(permissions.require_permission("tab.budget"))])
+def leadership_budget(account: str = Query(..., description="An account slug"), request: Request = None) -> dict[str, Any]:  # type: ignore[assignment]
+    """The account's monthly labor plan (migration 046) against actuals: site, overhead and events labor
+    from job cost, else the month rollup from timekeeping; variance and labor % (app/budget.py)."""
+    if request is not None:
+        require_account(request, account)
+    with connection() as conn, conn.cursor() as cursor:
+        cursor.execute("SELECT 1 FROM ops.account WHERE slug = %s", (account,))
+        if cursor.fetchone() is None:
+            raise HTTPException(status_code=404, detail=f"Unknown account {account!r}")
+        months = budget_module.report(cursor, account,
+                                      rollup=lambda m: month_module.rows_for(cursor, m.isoformat()[:7], allocate_parent_billing))
+    return {"account": account, "months": jsonable(months)}
+
+
+@router.put("/budget/{slug}", dependencies=[Depends(require_admin)])
+def update_budget(slug: str, body: BudgetIn, request: Request) -> dict[str, Any]:
+    """Admin: save plan months (upsert by month); other months are kept."""
+    try:
+        rows = budget_module.validate(body.months)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    with connection() as conn, conn.cursor() as cursor:
+        cursor.execute("SELECT 1 FROM ops.account WHERE slug = %s", (slug,))
+        if cursor.fetchone() is None:
+            raise HTTPException(status_code=404, detail=f"Unknown account {slug!r}")
+        budget_module.save(cursor, slug, rows, _actor(request))
+        conn.commit()
+        saved = budget_module.plan(cursor, slug)
+    return {"account": slug, "months": jsonable(saved)}
+
+
+@router.delete("/budget/{slug}", dependencies=[Depends(require_admin)])
+def delete_budget(slug: str, month: str | None = Query(None, description="YYYY-MM; omit to clear the account's plan")) -> dict[str, Any]:
+    with connection() as conn, conn.cursor() as cursor:
+        if month:
+            try:
+                first = date.fromisoformat(f"{month[:7]}-01")
+            except ValueError:
+                raise HTTPException(status_code=422, detail="month must be YYYY-MM") from None
+            cursor.execute("DELETE FROM ops.account_budget_month WHERE account_slug = %s AND month = %s", (slug, first))
+        else:
+            cursor.execute("DELETE FROM ops.account_budget_month WHERE account_slug = %s", (slug,))
+        removed = cursor.rowcount
+        conn.commit()
+    return {"account": slug, "removed": removed}
 
 
 @router.get("/vendors", dependencies=[Depends(permissions.require_permission("tab.vendors"))])

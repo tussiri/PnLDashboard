@@ -228,7 +228,8 @@ tr.dim td{color:var(--text3)}
 .rule{border:none;border-bottom:0.5px solid var(--border);padding:0 0 12px;margin:0 0 12px}
 .form-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px 14px;align-items:end}
 .field{display:flex;flex-direction:column;gap:4px}
-.field select,.field input{width:100%}
+.field select,.field input,.field textarea{width:100%}
+.field textarea{font-family:var(--mono,ui-monospace,monospace);font-size:12px;padding:8px;border:0.5px solid var(--border2);border-radius:var(--r);background:var(--bg);resize:vertical;margin-bottom:10px}
 .field.check{flex-direction:row;align-items:center;gap:8px;font-size:12.5px;color:var(--text);min-height:32px}
 .field.check input{width:14px}
 .msg{font-size:12.5px;margin-top:8px}

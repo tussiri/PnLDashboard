@@ -9,8 +9,9 @@ import { useLeadership } from '../state'
 import { Empty, LoadError, Pills, Skeleton, SortTable, type Column } from '../ui'
 import { UsersTab } from './Users'
 import { AllocationsTab } from './Allocations'
+import { BudgetsAdmin } from './Budget'
 
-const TAB_LABEL: Record<AdminTab, string> = { accounts: 'Accounts', jobs: 'Job mapping', allocations: 'Allocations', imports: 'Imports', mailbox: 'Mailbox', data: 'Data and sync', users: 'Users' }
+const TAB_LABEL: Record<AdminTab, string> = { accounts: 'Accounts', jobs: 'Job mapping', budgets: 'Budgets', allocations: 'Allocations', imports: 'Imports', mailbox: 'Mailbox', data: 'Data and sync', users: 'Users' }
 const ROLE_LABEL: Record<LeadershipRole, string> = { site: 'Site', catch_all: 'Catch-all', non_billed: 'Non-billed', pallet: 'Pallet' }
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e))
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
@@ -316,7 +317,7 @@ export function Admin() {
       {ADMIN_TABS.map((t) => <button key={t} type="button" role="tab" className="tab" aria-selected={tab === t} onClick={() => navigate({ view: 'admin', adminTab: t })}>{TAB_LABEL[t]}</button>)}
     </nav>
     <section role="tabpanel" aria-label={TAB_LABEL[tab]}>
-      {tab === 'accounts' ? <AccountsTab /> : tab === 'jobs' ? <JobsTab /> : tab === 'imports' ? <ImportsTab /> : tab === 'mailbox' ? <MailboxTab /> : tab === 'users' ? <UsersTab /> : tab === 'allocations' ? <AllocationsTab /> : <DataTab />}
+      {tab === 'accounts' ? <AccountsTab /> : tab === 'jobs' ? <JobsTab /> : tab === 'imports' ? <ImportsTab /> : tab === 'budgets' ? <BudgetsAdmin /> : tab === 'mailbox' ? <MailboxTab /> : tab === 'users' ? <UsersTab /> : tab === 'allocations' ? <AllocationsTab /> : <DataTab />}
     </section>
   </>
 }

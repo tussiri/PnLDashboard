@@ -1,6 +1,6 @@
 import type {
   FullSyncResult, LeadershipAccount, LeadershipAccountJob, LeadershipAccountPatch, LeadershipConfig, LeadershipImportFile, LeadershipImportKind,
-  LeadershipJobMapping, LeadershipRowsQuery, LeadershipRowsResponse, LeadershipSegment, LeadershipSiteResponse, LeadershipVendorsResponse, LeadershipFeedbackResponse, FeedbackOverview, LeadershipMonthlyResponse, MailInboxStatus, MailInboxSetting, MailPollResult, CompanyResponse, LeadershipMonthResponse, AllocationStatus, AllocationSettings, AllocationMonth,
+  LeadershipJobMapping, LeadershipRowsQuery, LeadershipRowsResponse, LeadershipSegment, LeadershipSiteResponse, LeadershipVendorsResponse, LeadershipFeedbackResponse, FeedbackOverview, LeadershipBudgetResponse, BudgetPlanRow, LeadershipMonthlyResponse, MailInboxStatus, MailInboxSetting, MailPollResult, CompanyResponse, LeadershipMonthResponse, AllocationStatus, AllocationSettings, AllocationMonth,
   PhotoValidationSyncResult, RebuildResult, StaffingJobResponse, SyncOptions, SyncRunsResponse, SystemStatus } from './apiTypes'
 
 /**
@@ -60,7 +60,7 @@ export function buildQuery(params?: QueryParams): string {
 }
 
 export interface RequestOptions {
-  method?: 'GET' | 'POST' | 'PUT' | 'PATCH'
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
   query?: QueryParams
   body?: unknown
   admin?: boolean
@@ -135,6 +135,9 @@ export const api = {
   // Staffing requests (analyst and admin; lines carry pay rates)
   staffingJob: (company: string, jobNumber: string, query?: { week?: string }, signal?: AbortSignal) =>
     request<StaffingJobResponse>(`/staffing/jobs/${encodeURIComponent(company)}/${encodeURIComponent(jobNumber)}`, { query: { ...query }, signal, rawRatios: true }),
+  leadershipBudget: (account: string, signal?: AbortSignal) => request<LeadershipBudgetResponse>('/leadership/budget', { query: { account }, signal, rawRatios: true }),
+  saveBudget: (account: string, months: BudgetPlanRow[], signal?: AbortSignal) => request<{ account: string; months: BudgetPlanRow[] }>(`/leadership/budget/${encodeURIComponent(account)}`, { method: 'PUT', body: { months }, admin: true, signal, rawRatios: true }),
+  deleteBudget: (account: string, month?: string, signal?: AbortSignal) => request<{ account: string; removed: number }>(`/leadership/budget/${encodeURIComponent(account)}`, { method: 'DELETE', query: month ? { month } : undefined, admin: true, signal, rawRatios: true }),
   leadershipFeedbackOverview: (account: string, month: string | undefined, signal?: AbortSignal) => request<FeedbackOverview>('/leadership/feedback/overview', { query: { account, month }, signal, rawRatios: true }),
   leadershipFeedback: (account: string, months = 12, signal?: AbortSignal) => request<LeadershipFeedbackResponse>('/leadership/feedback', { query: { account, months }, signal, rawRatios: true }),
   leadershipVendors: (account: string, months = 6, signal?: AbortSignal) => request<LeadershipVendorsResponse>('/leadership/vendors', { query: { account, months }, signal, rawRatios: true }),
