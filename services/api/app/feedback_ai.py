@@ -55,8 +55,8 @@ SCHEMA: dict[str, Any] = {
 
 SYSTEM = (
     "You summarize customer feedback on janitorial service at FedEx stations for Crane IFS operations "
-    "leaders. Each line is one rated work order: date, location, trade, star score (1 to 5) and the "
-    "customer's comment. Return the overall sentiment of the comments, a headline of at most 20 words "
+    "leaders. Each line is one comment from one station visit: date, location, the star score (1 to 5) "
+    "of each trade rated that visit, and the customer's comment. Return the overall sentiment of the comments, a headline of at most 20 words "
     "stating what customers are saying, and at most five themes ordered by how many comments raise "
     "them, each with a label of at most six words, its sentiment, the number of comments that raise "
     "it and the location codes they came from. Use only what the comments say; do not invent causes, "
@@ -71,17 +71,28 @@ def configured() -> bool:
     return bool(settings.anthropic_api_key)
 
 
+def _trade(trade: Any) -> str:
+    t = str(trade or "").upper().removeprefix("JANITORIAL").strip()
+    return t.capitalize() if t else "-"
+
+
 def _input(lines: list[dict[str, Any]]) -> str:
-    rows = [f"{l['feedback_date']} | {l['location_number']} | {l['trade'] or '-'} | "
-            f"{'-' if l['score'] is None else int(l['score'])} | {' '.join(str(l['comment']).split())}" for l in lines]
-    return "date | location | trade | score | comment\n" + "\n".join(rows)
+    """One line per distinct comment of a visit (location and date): FedEx rates each trade as its own work order
+    and often repeats one comment on each, so the trades and their scores are joined and the comment appears once."""
+    visits: dict[tuple[Any, ...], dict[str, Any]] = {}
+    for l in lines:
+        comment = " ".join(str(l["comment"]).split())
+        v = visits.setdefault((l["feedback_date"], l["location_number"], comment.lower()), {"line": l, "comment": comment, "scores": []})
+        v["scores"].append(f"{_trade(l['trade'])} {'-' if l['score'] is None else int(l['score'])}")
+    rows = [f"{v['line']['feedback_date']} | {v['line']['location_number']} | {', '.join(sorted(v['scores']))} | {v['comment']}" for v in visits.values()]
+    return "date | location | trade scores | comment\n" + "\n".join(rows)
 
 
 def comments_for(cursor: Any, account: str, today: date | None = None) -> list[dict[str, Any]]:
     since = (today or date.today()) - timedelta(days=WINDOW_DAYS)
     cursor.execute(
         """
-        SELECT feedback_date, location_number, trade, score, comment FROM mart.v_service_feedback
+        SELECT feedback_date, location_number, trade, score, comment, wo_number FROM mart.v_service_feedback
         WHERE feedback_date >= %(since)s AND comment IS NOT NULL AND btrim(comment) <> ''
           AND (account_slug = %(account)s OR (account_slug IS NULL AND %(account)s = 'fedex'))
         ORDER BY feedback_date DESC, wo_number LIMIT %(limit)s
@@ -166,6 +177,7 @@ def state(cursor: Any, account: str) -> dict[str, Any]:
     if not lines:
         return {"status": "none", "window_days": WINDOW_DAYS}
     text = _input(lines)
+    distinct = text.count("\n")
     input_hash = digest(text, settings.feedback_summary_model)
     row = cached(cursor, account)
     stale = row is None or row["input_hash"] != input_hash
@@ -174,11 +186,11 @@ def state(cursor: Any, account: str) -> dict[str, Any]:
         running = key in _running
         if stale and not running:
             _running.add(key)
-            threading.Thread(target=refresh, args=(account, text, input_hash, len(lines)), daemon=True,
+            threading.Thread(target=refresh, args=(account, text, input_hash, distinct), daemon=True,
                              name=f"feedback-summary-{account}").start()
             running = True
     summary = row["summary"] if row else None
     status = "pending" if running and summary is None else "failed" if row and row["error"] and summary is None else "ready" if summary else "pending"
-    return {"status": status, "stale": stale, "window_days": WINDOW_DAYS, "summary": summary, "comments": len(lines),
+    return {"status": status, "stale": stale, "window_days": WINDOW_DAYS, "summary": summary, "comments": distinct,
             "model": row["model"] if row else None, "generated_at": row["generated_at"].isoformat() if row else None,
             "error": row["error"] if row and row["error"] else None}

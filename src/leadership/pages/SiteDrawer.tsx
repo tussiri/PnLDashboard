@@ -1,4 +1,4 @@
-import { scoreTone, stars } from './Feedback'
+import { groupVisits, scoreTone, stars, visitScores } from './Feedback'
 import { X } from 'lucide-react'
 import { useEffect, useMemo, useRef } from 'react'
 import { useApiQuery } from '../../hooks/useApiQuery'
@@ -95,8 +95,9 @@ export function SiteDrawer({ company, job }: { company: string; job: string }) {
         {q.data.feedback && q.data.feedback.length > 0 && <div className="card">
           <div className="ct"><span>Feedback, 12 months</span><span className={scoreTone(avgOf(q.data.feedback))}>{stars(avgOf(q.data.feedback))} avg, {q.data.feedback.length} ratings</span></div>
           <div className="tw"><table><caption className="sr-only">Feedback and star ratings</caption>
-            <thead><tr><th className="nosort">Date</th><th className="nosort">Trade</th><th className="nosort">Rating</th><th className="nosort">Comment</th><th className="nosort">WO</th></tr></thead>
-            <tbody>{q.data.feedback.map((f) => <tr key={f.wo_number}><td>{f.feedback_date}</td><td>{f.trade ?? '–'}</td><td className={scoreTone(f.score)}>{stars(f.score)}</td><td className="nm">{f.comment ?? '–'}</td><td>{f.wo_number}</td></tr>)}</tbody>
+            <thead><tr><th className="nosort">Date</th><th className="nosort">Ratings</th><th className="nosort">Comment</th></tr></thead>
+            <tbody>{groupVisits(q.data.feedback).map((v) => <tr key={v.key}><td>{v.feedback_date}</td><td>{visitScores(v)}</td>
+              <td className="wrap">{v.comments.length ? v.comments.join(' / ') : '–'}</td></tr>)}</tbody>
           </table></div>
         </div>}
         {can('data.staffing') && <StaffingCard company={company} job={job} />}

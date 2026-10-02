@@ -26,14 +26,16 @@ class FakeClient:
 
 
 LINES = [{"feedback_date": date(2026, 8, 3), "location_number": "NRBA", "trade": "JANITORIAL DOCK", "score": 1.0, "comment": "not  cleaning\nfully"},
+         {"feedback_date": date(2026, 8, 3), "location_number": "NRBA", "trade": "JANITORIAL OFFICE", "score": 2.0, "comment": "Not cleaning fully"},
          {"feedback_date": date(2026, 7, 2), "location_number": "0331", "trade": None, "score": None, "comment": "Pallets set on the dock for days untouched."}]
 
 
-def test_input_is_one_line_per_rating_and_the_digest_tracks_it():
+def test_input_is_one_line_per_visit_comment_and_the_digest_tracks_it():
+    """The same comment on a visit's dock and office work orders is one line with both scores."""
     text = feedback_ai._input(LINES)
-    assert text.splitlines() == ["date | location | trade | score | comment",
-                                 "2026-08-03 | NRBA | JANITORIAL DOCK | 1 | not cleaning fully",
-                                 "2026-07-02 | 0331 | - | - | Pallets set on the dock for days untouched."]
+    assert text.splitlines() == ["date | location | trade scores | comment",
+                                 "2026-08-03 | NRBA | Dock 1, Office 2 | not cleaning fully",
+                                 "2026-07-02 | 0331 | - - | Pallets set on the dock for days untouched."]
     assert feedback_ai.digest(text, "m") == feedback_ai.digest(text, "m") != feedback_ai.digest(text + "x", "m")
     assert feedback_ai.digest(text, "m") != feedback_ai.digest(text, "other-model")
 
