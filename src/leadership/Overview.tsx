@@ -1,8 +1,8 @@
 import { useMemo, type ReactNode } from 'react'
-import type { BudgetWeek, LeadershipAccount, LeadershipMonthlyJob, LeadershipRow } from '../services/apiTypes'
+import type { BudgetMonth, BudgetWeek, LeadershipAccount, LeadershipMonthlyJob, LeadershipRow } from '../services/apiTypes'
 import { Badge, ChartCard, Kpi, Swatch, toneOf, useVocab } from './ui'
-import { LaborMixChart, MonthWeekTrendChart, SiteLpChart, useTokens } from './charts'
-import { closedMonths, includesVendor, inSentence, monthLaborPct, monthRevenue, priorMonth, rowsOfWeek, segmentLabel, segmentOrder, siteMonths, useMonthly, useMonthRows, useRows, vendorLabel, type DataFlags } from './data'
+import { LaborMixChart, MonthWeekTrendChart, SegmentMeasureChart, SiteLpChart, useTokens } from './charts'
+import { closedMonths, includesVendor, inSentence, monthLaborPct, monthRevenue, priorMonth, rowsOfWeek, segmentLabel, segmentOrder, siteMonths, useMonthly, useMonthRows, useRows, vendorLabel, weekBudgetOf, type DataFlags, type WeekBudget } from './data'
 import { hours, hours1, money, moneyK, pct } from './format'
 import { accountSummary, statusOf, type AccountNote, type AccountSummary, type MetricOptions, type SiteMetrics } from './metrics'
 import { monthLabel, monthShort, weekEndOf, weekTick } from './routes'
@@ -62,11 +62,13 @@ export const laborJobs = (account: LeadershipAccount, jobs: LeadershipMonthlyJob
   jobs.filter((j) => j.role !== 'non_billed' && !(account.split_subcontracted && j.delivery_model === 'subcontracted'))
 
 /** Every account's overview: headline figures, notes, one card per group, the trend, labor % by site and where the labor dollars went. */
-export function Overview({ account, rows, summary, options, flags, headline = true, afterGroups, budgetWeeks, payHolidays = false }: { account: LeadershipAccount; rows: LeadershipRow[]; summary: AccountSummary<LeadershipRow>; options: MetricOptions; flags: DataFlags; headline?: boolean
+export function Overview({ account, rows, summary, options, flags, headline = true, afterGroups, budgetWeeks, budgetMonths, payHolidays = false }: { account: LeadershipAccount; rows: LeadershipRow[]; summary: AccountSummary<LeadershipRow>; options: MetricOptions; flags: DataFlags; headline?: boolean
   /** Rendered after the group cards (the account page puts customer feedback here). */
   afterGroups?: ReactNode
   /** The account's weekly budget calendar (Admin > Budgets): budget labor and target per week. */
   budgetWeeks?: BudgetWeek[]
+  /** The monthly plan: a week without a calendar row takes its budget from it, spread over weekdays. */
+  budgetMonths?: BudgetMonth[]
   /** Count each week's stat-holiday pay in its budget. */
   payHolidays?: boolean }) {
   const t = useTokens()
@@ -75,8 +77,8 @@ export function Overview({ account, rows, summary, options, flags, headline = tr
   const target = options.target
   const factor = options.vendorFactor ?? 1
   const { optionsFor, monthMode, month, can, navigate, weekStart } = useLeadership()
-  const budgetByWeek = useMemo(() => new Map((budgetWeeks ?? []).map((x) => [x.week_end, x])), [budgetWeeks])
-  const budgetLabor = (weekStartIso: string) => { const b = budgetByWeek.get(weekEndOf(weekStartIso)); return b ? b.site + b.overhead + (payHolidays ? b.holiday : 0) : null }
+  const hasBudget = Boolean(budgetWeeks?.length || budgetMonths?.length)
+  const budgetOf = (weekStartIso: string): WeekBudget | null => weekBudgetOf(weekStartIso, budgetWeeks, budgetMonths, payHolidays)
   const period = options.period ?? 'week'
   const perDay = options.periodDays ?? 7
   // The trend is always weekly; the change is against the prior week, or the prior month in the rollup.
@@ -100,7 +102,8 @@ export function Overview({ account, rows, summary, options, flags, headline = tr
 
   const weeks = useMemo(() => (history.data?.weeks ?? []).map((wk) => {
     const wr = rowsOfWeek(history.data?.rows, wk)
-    return { week: wk, s: wr.length ? accountSummary(wr, weekOptions, segmentOrder(account)).account : null }
+    const sum = wr.length ? accountSummary(wr, weekOptions, segmentOrder(account)) : null
+    return { week: wk, s: sum?.account ?? null, sitesLp: sum?.billed.measurePct ?? null }
   }), [history.data, weekOptions, account])
   const prevMonthRows = priorMonthQuery.data?.rows
   const prev = monthMode
@@ -134,11 +137,18 @@ export function Overview({ account, rows, summary, options, flags, headline = tr
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [closed.join(), scopeJobs, weeks, account, factor])
   // The weekly budget target: each week's budget labor over its invoice (closed months have none).
-  const weekTargets = budgetByWeek.size ? [...closed.map(() => null), ...weeks.map((x) => { const b = budgetLabor(x.week); return b != null && x.s?.invoice ? b / x.s.invoice : null })] : undefined
-  const budgetWeek = period === 'week' && weekStart ? budgetLabor(weekStart) : null
-  const budgetDays = period === 'week' && weekStart ? budgetByWeek.get(weekEndOf(weekStart)) : undefined
+  const weekTargets = hasBudget ? [...closed.map(() => null), ...weeks.map((x) => { const b = budgetOf(x.week); return b && x.s?.invoice ? b.labor / x.s.invoice : null })] : undefined
+  // Sites only: the billed sites without the catch-all and non-billed jobs (shown when the account has those).
+  const sitesLp = catchJobs.length || nonBilled.length ? [...closed.map((m) => {
+    const siteJobs = scopeJobs.filter((j) => j.role === 'site')
+    const inv = siteJobs.reduce((x, j) => x + monthRevenue(j.months[m], j.delivery_model === 'subcontracted'), 0)
+    const lab = siteJobs.reduce((x, j) => x + (j.months[m]?.direct_labor ?? 0) + (j.months[m]?.subcontractors ?? 0) * factor, 0)
+    return inv > 0 ? lab / inv : null
+  }), ...weeks.map((x) => x.sitesLp)] : undefined
+  const thisWeekBudget = period === 'week' && weekStart ? budgetOf(weekStart) : null
+  const budgetWeek = thisWeekBudget?.labor ?? null
   const exEvents = summary.sites.filter((r) => r.role !== 'non_billed').reduce((x, r) => x + r.cost, 0)
-  const dayText = (b: BudgetWeek | undefined) => (b ? Object.entries(b.details).filter(([, v]) => v).map(([k, v]) => `${v} ${({ school_days: 'school', staff_days: 'staff', closure_days: 'closure', summer_days: 'summer', stat_holidays: 'holiday' } as Record<string, string>)[k] ?? k}`).join(', ') : '')
+  const dayText = (b: WeekBudget | null) => (!b ? '' : b.source === 'monthly' ? 'from the monthly plan' : Object.entries(b.details).filter(([, v]) => v).map(([k, v]) => `${v} ${({ school_days: 'school', staff_days: 'staff', closure_days: 'closure', summer_days: 'summer', stat_holidays: 'holiday' } as Record<string, string>)[k] ?? k}`).join(', '))
   const sorted = [...billed].sort((x, y) => (y.measurePct ?? 0) - (x.measurePct ?? 0))
   const mix = [...groups.map((g) => ({ name: g.name, list: g.list })), ...catchJobs.map((r) => ({ name: `Job ${r.job_number} catch-all`, list: [r] })), ...nonBilled.map((r) => ({ name: `Job ${r.job_number} non-billed`, list: [r] }))]
   const sum = (list: Row[], f: (r: Row) => number) => list.reduce((x, r) => x + f(r), 0)
@@ -156,7 +166,7 @@ export function Overview({ account, rows, summary, options, flags, headline = tr
       {can('data.allocations') && <Kpi label="Margin" value={money(a.margin)} tone={a.margin < 0 ? 'bad' : ''}
         sub={join(pct(a.marginPct), a.allocation > 0 ? `after ${moneyK(a.allocation)} alloc.` : null)} />}
       {budgetWeek != null && <Kpi label="Vs budget labor" value={`${exEvents - budgetWeek >= 0 ? '+' : '−'}${money(Math.abs(exEvents - budgetWeek))}`} tone={exEvents > budgetWeek ? 'bad' : 'ok'}
-        sub={join(`Budget ${money(budgetWeek)} (${dayText(budgetDays) || 'no days'}${budgetDays?.holiday ? (payHolidays ? ', stat holiday paid' : ', stat holiday not paid') : ''})`,
+        sub={join(`Budget ${money(budgetWeek)} (${dayText(thisWeekBudget) || 'no days'}${thisWeekBudget?.holiday ? (payHolidays ? ', stat holiday paid' : ', stat holiday not paid') : ''})`,
           `${pct(Math.abs(exEvents / budgetWeek - 1))} ${exEvents > budgetWeek ? 'over' : 'under'}`, nonBilled.length ? 'events excluded' : null)} />}
       <Kpi label={w.hoursOver} value={hours(over)} tone={over > 0 ? 'bad' : 'ok'}
         sub={join(`${hours1(over / perDay)}/day`, w.over(summary.billed.over, billed.length), catchJobs.length ? `${hours(summary.catchAllOverHours)} catch-all` : null, unbilled.length ? `${hours(unbilledHours)} unbilled` : null)} />
@@ -179,13 +189,20 @@ export function Overview({ account, rows, summary, options, flags, headline = tr
     </div>
     {afterGroups}
     {trend.length > 1 && <ChartCard title={w.trendTitle} height={260}
-      legend={<><Swatch color={t.muted} label="Closed month" /><Swatch color={t.accent2} label="Week" /><Swatch color={t.bad} label="Labor %" />
+      legend={<><Swatch color={t.muted} label="Closed month" /><Swatch color={t.accent2} label="Week" /><Swatch color={t.bad} label="Labor %" />{sitesLp && <Swatch color={t.warn} label="Sites-only labor %" />}
         {weekTargets ? <Swatch color={t.tgt} label="Weekly budget target" /> : <Swatch line label={`Target ${pct(target)}`} />}</>}
       chart={<MonthWeekTrendChart labels={trend.map((x) => x.label)} labor={trend.map((x) => x.labor)} invoice={trend.map((x) => x.invoice)} lp={trend.map((x) => x.lp)} target={target} weekFrom={trend.length - weeks.length}
-        current={period === 'week' && weekStart ? closed.length + weeks.findIndex((x) => x.week === weekStart) : trend.length - 1} weekTargets={weekTargets}
+        current={period === 'week' && weekStart ? closed.length + weeks.findIndex((x) => x.week === weekStart) : trend.length - 1} weekTargets={weekTargets} sitesLp={sitesLp}
         onPick={(i) => { const wk = weeks[i - closed.length]; if (wk) navigate({ week: weekEndOf(wk.week), period: undefined, month: undefined }, { replace: true }) }} />}
-      table={<table><thead><tr><th className="nosort l">Period</th><th className="nosort">{w.invoiceCol}</th><th className="nosort">{w.laborCol}</th><th className="nosort">Labor %</th>{weekTargets && <th className="nosort">Budget target</th>}</tr></thead>
-        <tbody>{trend.map((x, i) => <tr key={x.label}><td className="l">{x.label}</td><td>{money(x.invoice)}</td><td>{money(x.labor)}</td><td>{pct(x.lp)}</td>{weekTargets && <td>{pct(weekTargets[i])}</td>}</tr>)}</tbody></table>} />}
+      table={<table><thead><tr><th className="nosort l">Period</th><th className="nosort">{w.invoiceCol}</th><th className="nosort">{w.laborCol}</th><th className="nosort">Labor %</th>{sitesLp && <th className="nosort">Sites only</th>}{weekTargets && <th className="nosort">Budget target</th>}</tr></thead>
+        <tbody>{trend.map((x, i) => <tr key={x.label}><td className="l">{x.label}</td><td>{money(x.invoice)}</td><td>{money(x.labor)}</td><td>{pct(x.lp)}</td>{sitesLp && <td>{pct(sitesLp[i])}</td>}{weekTargets && <td>{pct(weekTargets[i])}</td>}</tr>)}</tbody></table>} />}
+    {summary.segments.length > 1 && <ChartCard title={`Labor % by ${segmentLabel(account).toLowerCase()}: this ${period} vs ${lastClosed ? `${monthLabel(lastClosed)} actual` : 'prior month'}`} height={260}
+      legend={<><Swatch color={t.ok} label={`This ${period}`} /><Swatch color={t.muted} label={lastClosed ? `${monthShort(lastClosed)} actual` : 'Prior month'} />{weekTargets ? <Swatch color={t.tgt} label={`Week target ${pct(target)}`} /> : <Swatch line label={`Target ${pct(target)}`} />}</>}
+      chart={<SegmentMeasureChart labels={groups.map((g) => g.name)} week={groups.map((g) => summary.segments.find((s) => s.segment === g.name)?.rollup.measurePct ?? null)}
+        weekTones={groups.map((g) => { const s = summary.segments.find((x) => x.segment === g.name); return s ? (toneOf(s.status) || 'neutral') as 'ok' | 'warn' | 'bad' | 'neutral' : 'neutral' })}
+        prior={groups.map((g) => groupLp(g.list))} target={target} weekLabel={`This ${period}`} priorLabel={lastClosed ? `${monthShort(lastClosed)} actual` : 'Prior month'} targetColor={weekTargets ? t.tgt : undefined} />}
+      table={<table><thead><tr><th className="nosort l">{segmentLabel(account)}</th><th className="nosort">This {period}</th><th className="nosort">{lastClosed ? `${monthShort(lastClosed)} actual` : 'Prior month'}</th></tr></thead>
+        <tbody>{groups.map((g) => <tr key={g.name}><td className="l">{g.name}</td><td>{pct(summary.segments.find((s) => s.segment === g.name)?.rollup.measurePct ?? null)}</td><td>{pct(groupLp(g.list))}</td></tr>)}</tbody></table>} />}
     {billed.length > 0 && <div className="charts2">
       <ChartCard title={`Labor % by site this ${period}`} height={Math.max(200, sorted.length * 16 + 60)}
         legend={<><Swatch color={t.ok} label={vocab === 'fedex' ? 'On target' : 'On track'} /><Swatch color={t.warn} label="Watch" /><Swatch color={t.bad} label={vocab === 'fedex' ? 'Over' : 'High'} /><Swatch line label={`Target ${pct(target)}`} /></>}

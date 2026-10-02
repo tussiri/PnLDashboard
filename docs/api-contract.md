@@ -663,6 +663,8 @@ Sunday): site labor, overhead labor, stat-holiday labor and the day counts, past
 Week ending header. `GET /leadership/budget` adds `weeks: [{week_end, site, overhead, holiday, details}]`
 and `PUT` accepts `weeks` beside `months`. On the account Overview, a week with a calendar row takes its
 target labor % from it: (site + overhead, plus the stat-holiday labor when Pay stat holidays is ticked,
-route `hol=paid`) ÷ the week's invoice, unless a target is typed in. The trend draws it as the stepped
+route `hol=paid`) ÷ the week's invoice, unless a target is typed in. An account with a monthly plan but
+no calendar row for a week takes that week's budget from the monthly plan spread evenly over each month's
+weekdays (labeled as from the monthly plan). The trend draws it as the stepped
 Weekly budget target line, and a Vs budget labor figure compares the week's labor without events.
 
