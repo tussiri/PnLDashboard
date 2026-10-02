@@ -18,10 +18,12 @@ worker checks once a minute and polls when every_minutes have passed since the l
 The mailbox is shared with other tools' ingestion pipelines, so two rules decide what is the
 dashboard's (docs/mail-inbox.md):
 
-* The message rule, 'mail_inbox'.rule, checked before anything is downloaded. Each list that is not
-  empty must match: senders (addresses, or @domain), subjects (the subject contains one, ignoring
-  case), files (attachment name globs such as *_timekeeping_recent_*.csv). exclude_subjects ignores
-  a message whose subject contains any of them. Empty lists match everything.
+* The mail rules, 'mail_inbox'.rules, checked before anything is downloaded. An attachment is the
+  dashboard's when any rule matches it; with no rules, every attachment goes on to the columns. In a
+  rule, each list that is not empty must match: senders (addresses, or @domain), subjects (the
+  subject contains one, ignoring case), files (attachment name globs such as
+  *_timekeeping_recent_*.csv); exclude_subjects refuses a subject containing any of them. A rule
+  needs at least one condition. (A setting saved with a single 'rule' object reads as one rule.)
 * The columns: only an attachment shaped like a dashboard feed is loaded. And because a feed
   replaces data (a company's labor over the file's dates, a company's job cost for its months), a
   mailed file that covers well under the jobs already loaded for the same company and dates is
@@ -52,7 +54,16 @@ MAX_BYTES = 50 * 1024 * 1024
 OVERLAP = timedelta(days=1)
 RULE_KEYS = ("senders", "subjects", "exclude_subjects", "files")
 DEFAULT_RULE: dict[str, list[str]] = {k: [] for k in RULE_KEYS}
-DEFAULT_SETTING: dict[str, Any] = {"enabled": True, "every_minutes": 30, "first_lookback_days": 14, "rule": DEFAULT_RULE}
+MAX_RULES = 25
+DEFAULT_SETTING: dict[str, Any] = {"enabled": True, "every_minutes": 30, "first_lookback_days": 14, "rules": []}
+
+
+def _rules_of(value: dict[str, Any]) -> list[Any]:
+    """The saved rules; a setting from before rules were a list carries one 'rule' object."""
+    if isinstance(value.get("rules"), list):
+        return value["rules"]
+    legacy = value.get("rule")
+    return [legacy] if isinstance(legacy, dict) and any(legacy.get(k) for k in RULE_KEYS) else []
 
 
 class MailError(RuntimeError):
@@ -67,7 +78,8 @@ def setting(cursor: Any) -> dict[str, Any]:
     cursor.execute("SELECT value FROM ops.app_setting WHERE key = 'mail_inbox'")
     row = cursor.fetchone()
     value = row["value"] if row and isinstance(row["value"], dict) else {}
-    return {**DEFAULT_SETTING, **value, "rule": {**DEFAULT_RULE, **(value.get("rule") or {})}}
+    rules = [{"name": str(r.get("name") or ""), **{k: list(r.get(k) or []) for k in RULE_KEYS}} for r in _rules_of(value) if isinstance(r, dict)]
+    return {**{k: v for k, v in {**DEFAULT_SETTING, **value}.items() if k != "rule"}, "rules": rules}
 
 
 def validate_setting(value: Any) -> dict[str, Any]:
@@ -80,16 +92,32 @@ def validate_setting(value: Any) -> dict[str, Any]:
     for key, lo, hi in (("every_minutes", 5, 1440), ("first_lookback_days", 1, 90)):
         if isinstance(out[key], bool) or not isinstance(out[key], int) or not lo <= out[key] <= hi:
             raise ValueError(f"{key} must be a whole number from {lo} to {hi}")
-    rule = out.get("rule") or {}
-    if not isinstance(rule, dict) or set(rule) - set(RULE_KEYS):
-        raise ValueError(f"rule takes only {', '.join(RULE_KEYS)}")
-    clean: dict[str, list[str]] = {}
-    for key in RULE_KEYS:
-        items = rule.get(key) or []
-        if not isinstance(items, list) or not all(isinstance(i, str) for i in items):
-            raise ValueError(f"rule.{key} must be a list of strings")
-        clean[key] = [i.strip() for i in items if i.strip()]
-    return {**out, "rule": clean}
+    legacy = value.get("rule")
+    if "rules" in value:
+        rules = value["rules"]
+    elif isinstance(legacy, dict) and (set(legacy) - set(RULE_KEYS) or any(legacy.get(k) for k in RULE_KEYS)):
+        rules = [legacy]  # checked below like any rule
+    else:
+        rules = []
+    if not isinstance(rules, list) or len(rules) > MAX_RULES:
+        raise ValueError(f"rules must be a list of at most {MAX_RULES}")
+    clean_rules: list[dict[str, Any]] = []
+    for n, rule in enumerate(rules, start=1):
+        if not isinstance(rule, dict) or set(rule) - {"name", *RULE_KEYS}:
+            raise ValueError(f"rule {n} takes only name, {', '.join(RULE_KEYS)}")
+        name = rule.get("name") or ""
+        if not isinstance(name, str):
+            raise ValueError(f"rule {n}: name must be a string")
+        clean: dict[str, Any] = {"name": name.strip()[:80]}
+        for key in RULE_KEYS:
+            items = rule.get(key) or []
+            if not isinstance(items, list) or not all(isinstance(i, str) for i in items):
+                raise ValueError(f"rule {n}: {key} must be a list of strings")
+            clean[key] = [i.strip() for i in items if i.strip()]
+        if not any(clean[k] for k in ("senders", "subjects", "files")):
+            raise ValueError(f"rule {n} needs a sender, a subject or a file name; an empty rule would match all mail")
+        clean_rules.append(clean)
+    return {**{k: v for k, v in out.items() if k != "rule"}, "rules": clean_rules}
 
 
 def rule_refusal(rule: dict[str, list[str]], sender: str | None, subject: str | None, file_name: str) -> str | None:
@@ -104,6 +132,16 @@ def rule_refusal(rule: dict[str, list[str]], sender: str | None, subject: str | 
     if rule.get("files") and not any(fnmatch.fnmatch(name, p.lower()) for p in rule["files"]):
         return "file name is not a dashboard file"
     return None
+
+
+def rules_refusal(rules: list[dict[str, Any]], sender: str | None, subject: str | None, file_name: str) -> str | None:
+    """None when there are no rules or any rule passes; else why (one rule's reason, or that none matched)."""
+    if not rules:
+        return None
+    reasons = [rule_refusal(r, sender, subject, file_name) for r in rules]
+    if any(r is None for r in reasons):
+        return None
+    return reasons[0] if len(rules) == 1 else f"matches none of the {len(rules)} mail rules"
 
 
 class Graph:
@@ -212,7 +250,7 @@ def poll(graph: Graph | None = None, rebuild: bool = True) -> dict[str, Any]:
                         continue
                 name = attachment.get("name") or "attachment"
                 status, reason, file_id = "ignored", None, None
-                refused = rule_refusal(cfg["rule"], sender, message.get("subject"), name)
+                refused = rules_refusal(cfg["rules"], sender, message.get("subject"), name)
                 if refused:
                     reason = refused  # never downloaded: another tool's mail
                 elif not name.lower().endswith(SPREADSHEETS):

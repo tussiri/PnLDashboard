@@ -168,8 +168,22 @@ def test_rule_refusal_and_setting_validation():
     assert mail_inbox.rule_refusal(rule, "noreply@winteam.com", "x", "SARUS_TIMEKEEPING_RECENT_1.CSV") is None
     assert mail_inbox.rule_refusal(rule, "noreply@winteam.com", "x", "payroll.csv") == "file name is not a dashboard file"
     assert mail_inbox.rule_refusal(mail_inbox.DEFAULT_RULE, None, None, "anything.csv") is None  # no rule: columns decide
-    saved = mail_inbox.validate_setting({"enabled": True, "every_minutes": 30, "first_lookback_days": 14, "rule": {"subjects": [" [Dashboard] ", ""]}})
-    assert saved["rule"] == {"senders": [], "subjects": ["[Dashboard]"], "exclude_subjects": [], "files": []}
-    for bad in ({"rule": {"senderz": []}}, {"rule": {"files": "*.csv"}}, {"every_minutes": 1}, {"enabled": "yes"}):
+    legacy = mail_inbox.validate_setting({"enabled": True, "every_minutes": 30, "first_lookback_days": 14, "rule": {"subjects": [" [Dashboard] ", ""]}})
+    assert "rule" not in legacy and legacy["rules"] == [{"name": "", "senders": [], "subjects": ["[Dashboard]"], "exclude_subjects": [], "files": []}]
+    assert mail_inbox.validate_setting({"rules": []})["rules"] == []
+    for bad in ({"rule": {"senderz": ["x"]}}, {"rules": [{"files": "*.csv"}]}, {"rules": [{"name": "empty"}]}, {"rules": [{}] * 26},
+                {"every_minutes": 1}, {"enabled": "yes"}):
         with pytest.raises(ValueError):
             mail_inbox.validate_setting(bad)
+
+
+def test_mail_matching_any_rule_is_the_dashboards():
+    timekeeping = {"name": "Timekeeping", "senders": ["@smcraneifs.com"], "subjects": [], "exclude_subjects": ["Active Discount"], "files": ["*_timekeeping_recent_*.csv"]}
+    job_cost = {"name": "Job cost", "senders": [], "subjects": ["[Dashboard]"], "exclude_subjects": [], "files": ["SYS Query Scheduler*.xlsx"]}
+    rules = [timekeeping, job_cost]
+    assert mail_inbox.rules_refusal(rules, "tussiri@smcraneifs.com", "Daily", "Crane_timekeeping_recent_20260930.csv") is None
+    assert mail_inbox.rules_refusal(rules, "scheduler@winteam.com", "[Dashboard] JCA", "SYS Query Scheduler - 2026.xlsx") is None
+    assert mail_inbox.rules_refusal(rules, "scheduler@winteam.com", "JCA", "SYS Query Scheduler - 2026.xlsx") == "matches none of the 2 mail rules"
+    assert mail_inbox.rules_refusal(rules, "tussiri@smcraneifs.com", "Active Discount", "Crane_timekeeping_recent_1.csv") == "matches none of the 2 mail rules"
+    assert mail_inbox.rules_refusal([timekeeping], "x@other.com", "", "Crane_timekeeping_recent_1.csv") == "sender is not a dashboard sender"
+    assert mail_inbox.rules_refusal([], None, None, "anything.csv") is None

@@ -241,10 +241,10 @@ export interface SyncRun {
   error_message: string | null
 }
 
-/** Which mail is the dashboard's: each non-empty list must match; exclude_subjects ignores a match. */
-export interface MailRule { senders: string[]; subjects: string[]; exclude_subjects: string[]; files: string[] }
-/** ops.app_setting 'mail_inbox' (PUT /settings/mail_inbox). */
-export interface MailInboxSetting { enabled: boolean; every_minutes: number; first_lookback_days: number; rule?: MailRule }
+/** One mail rule: each non-empty list must match; exclude_subjects refuses a subject containing any. */
+export interface MailRule { name: string; senders: string[]; subjects: string[]; exclude_subjects: string[]; files: string[] }
+/** ops.app_setting 'mail_inbox' (PUT /settings/mail_inbox). Mail matching any rule is the dashboard's; no rules = all mail. */
+export interface MailInboxSetting { enabled: boolean; every_minutes: number; first_lookback_days: number; rules: MailRule[] }
 /** GET /integrations/mail: the reports mailbox poller. */
 export interface MailInboxStatus {
   configured: boolean

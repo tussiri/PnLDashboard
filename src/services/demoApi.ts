@@ -29,7 +29,7 @@ export function createDemoApi(options: DemoApiOptions = {}): DashboardApi {
     syncPhotoValidation: () => notAvailable('PhotoValidation sync'),
     rebuildMarts: () => notAvailable('Mart rebuild'),
     syncRuns: (_limit, signal) => settle(() => ({ runs: [] }), signal),
-    mailStatus: (signal) => settle(() => ({ configured: false, mailbox: null, schedule: { enabled: false, every_minutes: 30, first_lookback_days: 14 }, last_run: null, recent: [] }), signal),
+    mailStatus: (signal) => settle(() => ({ configured: false, mailbox: null, schedule: { enabled: false, every_minutes: 30, first_lookback_days: 14, rules: [] }, last_run: null, recent: [] }), signal),
     mailPoll: () => notAvailable('Mailbox check'),
     updateMailSetting: () => notAvailable('Mailbox rule'),
     leadershipConfig: (signal) => settle(demoLeadershipConfig, signal),
