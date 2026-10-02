@@ -62,7 +62,9 @@ export const laborJobs = (account: LeadershipAccount, jobs: LeadershipMonthlyJob
   jobs.filter((j) => j.role !== 'non_billed' && !(account.split_subcontracted && j.delivery_model === 'subcontracted'))
 
 /** Every account's overview: headline figures, notes, one card per group, the trend, labor % by site and where the labor dollars went. */
-export function Overview({ account, rows, summary, options, flags, headline = true }: { account: LeadershipAccount; rows: LeadershipRow[]; summary: AccountSummary<LeadershipRow>; options: MetricOptions; flags: DataFlags; headline?: boolean }) {
+export function Overview({ account, rows, summary, options, flags, headline = true, afterGroups }: { account: LeadershipAccount; rows: LeadershipRow[]; summary: AccountSummary<LeadershipRow>; options: MetricOptions; flags: DataFlags; headline?: boolean
+  /** Rendered after the group cards (the account page puts customer feedback here). */
+  afterGroups?: ReactNode }) {
   const t = useTokens()
   const vocab = useVocab()
   const w = wordsFor(vocab)
@@ -160,6 +162,7 @@ export function Overview({ account, rows, summary, options, flags, headline = tr
       {nonBilled.length > 0 && <GroupCard name="Non-billed" sub={nonBilled.map((r) => `Job ${r.job_number} ${r.site_name}`).join(', ')} badge={null} invoice={0} labor={summary.nonBilled.cost}
         lp={null} lpTone="" otPct={summary.nonBilled.otPct} otHours={summary.nonBilled.otHours} w={w} />}
     </div>
+    {afterGroups}
     {trend.length > 1 && <ChartCard title={w.trendTitle} height={260}
       legend={<><Swatch color={t.muted} label="Closed month" /><Swatch color={t.accent2} label="Week" /><Swatch color={t.bad} label="Labor %" /><Swatch line label={`Target ${pct(target)}`} /></>}
       chart={<MonthWeekTrendChart labels={trend.map((x) => x.label)} labor={trend.map((x) => x.labor)} invoice={trend.map((x) => x.invoice)} lp={trend.map((x) => x.lp)} target={target} weekFrom={trend.length - weeks.length} current={trend.length - 1} />}

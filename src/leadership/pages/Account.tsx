@@ -109,9 +109,8 @@ export function Account() {
   else if (tab === 'income-statement' && tabs.includes(tab)) body = <IncomeStatementTab account={account} options={options} />
   else if (!summary) body = <Empty>No data for this {monthMode ? 'month' : 'week'}.</Empty>
   else if (tab === 'pallet' && tabs.includes(tab)) body = <PalletTab account={account} summary={summary} options={options} />
-  else if (tab === 'overview' || !tabs.includes(tab)) body = <>
-    {can('tab.feedback') && <FeedbackTile account={account} month={monthMode ? month : weekStart ? weekEndOf(weekStart).slice(0, 7) : undefined} />}
-    <Overview account={account} rows={rows} summary={summary} options={options} flags={flags} /></>
+  else if (tab === 'overview' || !tabs.includes(tab)) body = <Overview account={account} rows={rows} summary={summary} options={options} flags={flags}
+    afterGroups={can('tab.feedback') && <FeedbackTile account={account} month={monthMode ? month : weekStart ? weekEndOf(weekStart).slice(0, 7) : undefined} />} />
   else if (tab === 'sites') body = <Sites account={account} summary={summary} options={options} selfOnly={selfOnly} ratings={feedback.data?.by_site} />
   else if (tab === 'over-target') body = <HoursToCut account={account} summary={summary} options={options} />
   else if (tab === 'overtime') body = <OvertimeTab account={account} summary={summary} />
