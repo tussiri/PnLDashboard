@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field
 
 from .. import allocations, accounts, companycam, imports, marts
 from .. import month as month_module
+from .. import budget as budget_module
 from .. import feedback_ai, permissions
 from ..common import allowed_accounts, current_user, jsonable, require_account, require_admin, source_block
 from ..db import connection
@@ -777,6 +778,85 @@ def leadership_feedback_overview(account: str = Query(..., description="An accou
             "low_sites": [{"location_number": l["location_number"], "site_name": l["site_name"], "company": l["company"], "job_number": l["job_number"],
                            "score": float(l["score"]), "feedback_date": l["feedback_date"]} for l in low],
             "summary": jsonable(ai)}
+
+
+class BudgetIn(BaseModel):
+    #: [{month: YYYY-MM, site_labor, overhead_labor, revenue, supplies, details}]
+    months: list[dict[str, Any]] = []
+    #: [{week_end: YYYY-MM-DD (a Sunday), site_labor, overhead_labor, holiday_labor, details}]
+    weeks: list[dict[str, Any]] = []
+
+
+@router.get("/budget", dependencies=[Depends(permissions.require_permission("tab.budget"))])
+def leadership_budget(account: str = Query(..., description="An account slug"), request: Request = None) -> dict[str, Any]:  # type: ignore[assignment]
+    """The account's monthly labor plan (migration 046) against actuals: site, overhead and events labor
+    from job cost, else the month rollup from timekeeping; variance and labor % (app/budget.py)."""
+    if request is not None:
+        require_account(request, account)
+    with connection() as conn, conn.cursor() as cursor:
+        cursor.execute("SELECT 1 FROM ops.account WHERE slug = %s", (account,))
+        if cursor.fetchone() is None:
+            raise HTTPException(status_code=404, detail=f"Unknown account {account!r}")
+        months = budget_module.report(cursor, account,
+                                      rollup=lambda m: month_module.rows_for(cursor, m.isoformat()[:7], allocate_parent_billing))
+        weeks = budget_module.weeks(cursor, account)
+    return {"account": account, "months": jsonable(months), "weeks": weeks}
+
+
+@router.put("/budget/{slug}", dependencies=[Depends(require_admin)])
+def update_budget(slug: str, body: BudgetIn, request: Request) -> dict[str, Any]:
+    """Admin: save plan months and / or weeks (upsert by month and by week); others are kept."""
+    if not body.months and not body.weeks:
+        raise HTTPException(status_code=422, detail="Send months, weeks or both")
+    try:
+        rows = budget_module.validate(body.months) if body.months else []
+        week_rows = budget_module.validate_weeks(body.weeks)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    with connection() as conn, conn.cursor() as cursor:
+        cursor.execute("SELECT 1 FROM ops.account WHERE slug = %s", (slug,))
+        if cursor.fetchone() is None:
+            raise HTTPException(status_code=404, detail=f"Unknown account {slug!r}")
+        budget_module.save(cursor, slug, rows, _actor(request))
+        budget_module.save_weeks(cursor, slug, week_rows, _actor(request))
+        conn.commit()
+        saved = budget_module.plan(cursor, slug)
+        saved_weeks = budget_module.weeks(cursor, slug)
+    return {"account": slug, "months": jsonable(saved), "weeks": saved_weeks}
+
+
+@router.post("/budget/read", dependencies=[Depends(require_admin)])
+async def read_budget_workbook(file: UploadFile = File(...)) -> dict[str, Any]:
+    """Admin: an uploaded labor budget workbook (.xlsx) as one tab-separated table per sheet. Nothing is
+    saved; the Budgets page parses the sheets, previews the monthly plan and weekly calendar, and saves."""
+    content = await file.read(MAX_UPLOAD_BYTES + 1)
+    if len(content) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="File is larger than 50 MB")
+    try:
+        sheets = budget_module.workbook_sheets(content)
+    except Exception as exc:  # noqa: BLE001 - not a readable workbook: say so plainly
+        raise HTTPException(status_code=422, detail=f"Could not read the workbook ({exc.__class__.__name__}); save it as .xlsx") from exc
+    return {"file": file.filename, "sheets": sheets}
+
+
+@router.delete("/budget/{slug}", dependencies=[Depends(require_admin)])
+def delete_budget(slug: str, month: str | None = Query(None, description="YYYY-MM; omit to clear the account's plan"),
+                  weeks: bool = Query(False, description="Clear only the weekly calendar")) -> dict[str, Any]:
+    with connection() as conn, conn.cursor() as cursor:
+        if weeks:
+            cursor.execute("DELETE FROM ops.account_budget_week WHERE account_slug = %s", (slug,))
+        elif month:
+            try:
+                first = date.fromisoformat(f"{month[:7]}-01")
+            except ValueError:
+                raise HTTPException(status_code=422, detail="month must be YYYY-MM") from None
+            cursor.execute("DELETE FROM ops.account_budget_month WHERE account_slug = %s AND month = %s", (slug, first))
+        else:
+            cursor.execute("DELETE FROM ops.account_budget_month WHERE account_slug = %s", (slug,))
+            cursor.execute("DELETE FROM ops.account_budget_week WHERE account_slug = %s", (slug,))
+        removed = cursor.rowcount
+        conn.commit()
+    return {"account": slug, "removed": removed}
 
 
 @router.get("/vendors", dependencies=[Depends(permissions.require_permission("tab.vendors"))])

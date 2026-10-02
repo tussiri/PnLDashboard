@@ -11,12 +11,12 @@ import { useLeadership } from './state'
 
 ChartJS.register(BarController, BarElement, CategoryScale, LinearScale, LineController, LineElement, PointElement, Tooltip, Legend, Filler)
 
-export interface Tokens { text: string; text2: string; text3: string; border: string; ok: string; warn: string; bad: string; accent: string; accent2: string; muted: string; bg: string }
+export interface Tokens { text: string; text2: string; text3: string; border: string; ok: string; warn: string; bad: string; accent: string; accent2: string; muted: string; bg: string; tgt: string }
 
 function readTokens(): Tokens {
   const css = getComputedStyle(document.documentElement)
   const v = (n: string) => css.getPropertyValue(n).trim()
-  return { text: v('--text'), text2: v('--text2'), text3: v('--text3'), border: v('--border'), ok: v('--ok'), warn: v('--warn'), bad: v('--bad'), accent: v('--accent'), accent2: v('--accent2'), muted: v('--muted'), bg: v('--bg') }
+  return { text: v('--text'), text2: v('--text2'), text3: v('--text3'), border: v('--border'), ok: v('--ok'), warn: v('--warn'), bad: v('--bad'), accent: v('--accent'), accent2: v('--accent2'), muted: v('--muted'), bg: v('--bg'), tgt: v('--tgt') }
 }
 
 /** Token colors, re-read when the theme or the system color scheme changes. */
@@ -164,16 +164,25 @@ export function LaborMixChart({ labels, invoice, core, pallet, sub, subLabel, di
 }
 
 /** Closed months (weekly equivalent) then weeks: labor dollars as bars, invoice and labor % as lines, target dashed. */
-export function MonthWeekTrendChart({ labels, labor, invoice, lp, target, weekFrom, current }: { labels: string[]; labor: (number | null)[]; invoice: (number | null)[]; lp: (number | null)[]; target: number; weekFrom: number; current: number }) {
+export function MonthWeekTrendChart({ labels, labor, invoice, lp, target, weekFrom, current, weekTargets, onPick }: { labels: string[]; labor: (number | null)[]; invoice: (number | null)[]; lp: (number | null)[]; target: number; weekFrom: number; current: number
+  /** Each point's budget target (the weekly budget calendar): drawn as the green stepped line in place of the flat target. */
+  weekTargets?: (number | null)[]
+  /** Click a point to open it. */
+  onPick?: (index: number) => void }) {
   const t = useTokens()
   const o = base(t) as unknown as ChartOptions<'bar'>
   const data = { labels, datasets: [
     { type: 'bar' as const, label: 'Labor (weekly equiv.)', data: labor, backgroundColor: labels.map((_, i) => (i === current ? t.accent : i >= weekFrom ? t.accent2 : t.muted)), yAxisID: 'y', order: 3, ...bar },
     { type: 'line' as const, label: 'Invoice (weekly equiv.)', data: invoice, borderColor: t.text2, borderDash: [4, 3], borderWidth: 1.5, pointRadius: 2, yAxisID: 'y', order: 2 },
     { type: 'line' as const, label: 'Labor %', data: lp.map((v) => (v == null ? null : v * 100)), borderColor: t.bad, backgroundColor: t.bad, borderWidth: 2, pointRadius: 3, yAxisID: 'y1', order: 1 },
-    { type: 'line' as const, label: 'Target', data: labels.map(() => target * 100), borderColor: t.ok, borderDash: [5, 4], borderWidth: 1, pointRadius: 0, yAxisID: 'y1', order: 0 },
+    weekTargets
+      ? { type: 'line' as const, label: 'Weekly budget target', data: weekTargets.map((v) => (v == null ? null : v * 100)), borderColor: t.tgt, backgroundColor: t.tgt, borderWidth: 4,
+        stepped: 'middle', pointRadius: 4, pointHoverRadius: 7, pointBackgroundColor: t.tgt, pointBorderColor: t.bg, pointBorderWidth: 1.5, yAxisID: 'y1', order: -1 }
+      : { type: 'line' as const, label: 'Target', data: labels.map(() => target * 100), borderColor: t.ok, borderDash: [5, 4], borderWidth: 1, pointRadius: 0, yAxisID: 'y1', order: 0 },
   ] } as unknown as ChartData<'bar'>
   const options = { ...o, interaction: { mode: 'index', intersect: false },
+    onClick: (_e: unknown, els: { index: number }[]) => { if (onPick && els.length) onPick(els[0].index) },
+    onHover: (e: { native?: { target?: EventTarget | null } }, els: unknown[]) => { const el = e.native?.target as HTMLElement | null; if (el && onPick) el.style.cursor = els.length ? 'pointer' : 'default' },
     scales: { x: { ...o.scales!.x, grid: { display: false } }, y: { ...o.scales!.y, beginAtZero: true, ticks: { color: t.text2, callback: (v: number | string) => `$${Number(v) / 1000}K` } },
       y1: { position: 'right', beginAtZero: true, suggestedMax: 90, grid: { display: false }, ticks: { color: t.text2, callback: (v: number | string) => `${v}%` } } },
     plugins: { ...o.plugins, tooltip: { ...o.plugins!.tooltip, callbacks: { label: (c: { dataset: { label?: string; yAxisID?: string }; parsed: { y: number | null } }) =>

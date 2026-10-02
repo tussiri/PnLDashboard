@@ -643,3 +643,26 @@ account. Every account page has an account picker that keeps the tab. The Analyt
 Portfolio at `#/portfolio` (`#/analytics` still opens them; the permission key stays
 `view.analytics`).
 
+## Account labor budget, added 2026-10-02
+
+Migration 046, app/budget.py. An account's monthly labor plan, pasted in Admin > Budgets from the
+account's budget workbook (tab-separated as Excel copies it, or CSV; columns found by header: Month,
+Site labor, Overhead labor, Revenue, Supplies, School / Staff / Closure / Summer days, Stat holidays;
+Total labor is checked against site + overhead; Year and Total rows are skipped). Stored in
+`ops.account_budget_month`, separate from WinTeam's job budgets.
+
+| Route | Response |
+|---|---|
+| `GET /leadership/budget?account=` | Permission `tab.budget`, account scope. `{account, months: [{month, in_progress, details, supplies, budget: {site, overhead, total, revenue, labor_pct}, actual: {site, overhead, events, total, revenue, basis, labor_pct} \| null, variance: {total, site, overhead, pct, points} \| null}]}`. Actual site labor is the account's site jobs, overhead its catch-all jobs, events its non-billed jobs (shown, left out of the total). Job cost when the month's site jobs carry job cost labor (`basis` job_cost), else the month rollup from timekeeping (`pay_report`, or `estimate` when any of it is estimated); none for months not started. A month still running (`in_progress`) has its actual to date and no variance. |
+| `PUT /leadership/budget/{slug}` | Admin. `{months: [{month: YYYY-MM, site_labor, overhead_labor, revenue, supplies, details}]}`, upserted by month; `422` for a bad month, a negative amount or a row with no labor. |
+| `DELETE /leadership/budget/{slug}?month=YYYY-MM` | Admin. One month; `weeks=true` the weekly calendar; neither, the account's whole plan. |
+| `POST /leadership/budget/read` | Admin. Multipart `file` (.xlsx): `{file, sheets: [{name, text}]}`, each non-empty sheet as tab-separated text (values, dates ISO, wrapped cells quoted). Nothing is saved; the Budgets page finds the monthly plan and the weekly calendar by their headers on any sheet, previews them and saves with the PUT. `422` for a file that is not a workbook. |
+
+**Weekly calendar** (migration 047, `ops.account_budget_week`): the plan's day calendar by week ending (a
+Sunday): site labor, overhead labor, stat-holiday labor and the day counts, pasted or uploaded with a
+Week ending header. `GET /leadership/budget` adds `weeks: [{week_end, site, overhead, holiday, details}]`
+and `PUT` accepts `weeks` beside `months`. On the account Overview, a week with a calendar row takes its
+target labor % from it: (site + overhead, plus the stat-holiday labor when Pay stat holidays is ticked,
+route `hol=paid`) ÷ the week's invoice, unless a target is typed in. The trend draws it as the stepped
+Weekly budget target line, and a Vs budget labor figure compares the week's labor without events.
+

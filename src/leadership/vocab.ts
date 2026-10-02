@@ -9,8 +9,8 @@ import type { Vocabulary } from './ui'
 export const vocabOf = (account: LeadershipAccount | undefined): Vocabulary => account?.vocabulary ?? 'amazon'
 
 const TABS: Record<Vocabulary, Record<AccountTab, string>> = {
-  amazon: { overview: 'Overview', sites: 'Sites', pallet: 'Pallet', 'over-target': 'Hours to cut', overtime: 'Overtime', 'income-statement': 'Income Statement', subcontracted: 'Subcontracted Sites', map: 'Map', vendors: 'Vendors', feedback: 'Feedback' },
-  fedex: { overview: 'Account Overview', sites: 'Sites', pallet: 'Pallet', 'over-target': 'Over Target', overtime: 'Overtime', 'income-statement': 'Income Statement', subcontracted: 'Subcontracted Sites', map: 'Map', vendors: 'Sub invoices', feedback: 'Feedback' },
+  amazon: { overview: 'Overview', sites: 'Sites', pallet: 'Pallet', 'over-target': 'Hours to cut', overtime: 'Overtime', 'income-statement': 'Income Statement', subcontracted: 'Subcontracted Sites', map: 'Map', vendors: 'Vendors', feedback: 'Feedback', budget: 'Budget' },
+  fedex: { overview: 'Account Overview', sites: 'Sites', pallet: 'Pallet', 'over-target': 'Over Target', overtime: 'Overtime', 'income-statement': 'Income Statement', subcontracted: 'Subcontracted Sites', map: 'Map', vendors: 'Sub invoices', feedback: 'Feedback', budget: 'Budget' },
 }
 
 export const tabLabel = (tab: AccountTab, account: LeadershipAccount | undefined, vendorLabel: string) =>
@@ -19,8 +19,8 @@ export const tabLabel = (tab: AccountTab, account: LeadershipAccount | undefined
 /** Tabs an account shows, the same rule for every account: Pallet where it has pallet jobs, Subcontracted
  * Sites where it has subcontracted sites, Income Statement where one is loaded (or subcontracted sites
  * are split out, so the import has a home). */
-export function tabsFor(_account: LeadershipAccount | undefined, all: readonly AccountTab[], has: { pallet: boolean; subcontracted: boolean; incomeStatement: boolean; feedback?: boolean }): AccountTab[] {
-  return all.filter((t) => (t !== 'pallet' || has.pallet) && (t !== 'subcontracted' || has.subcontracted) && (t !== 'income-statement' || has.incomeStatement) && (t !== 'feedback' || Boolean(has.feedback)))
+export function tabsFor(_account: LeadershipAccount | undefined, all: readonly AccountTab[], has: { pallet: boolean; subcontracted: boolean; incomeStatement: boolean; feedback?: boolean; budget?: boolean }): AccountTab[] {
+  return all.filter((t) => (t !== 'pallet' || has.pallet) && (t !== 'subcontracted' || has.subcontracted) && (t !== 'income-statement' || has.incomeStatement) && (t !== 'feedback' || Boolean(has.feedback)) && (t !== 'budget' || Boolean(has.budget)))
 }
 
 /** Signed percentage points in the account's wording: "+0.7pp WoW" or "+0.7 pts vs prior wk" (MoM /

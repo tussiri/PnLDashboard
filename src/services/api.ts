@@ -1,6 +1,6 @@
 import type {
   FullSyncResult, LeadershipAccount, LeadershipAccountJob, LeadershipAccountPatch, LeadershipConfig, LeadershipImportFile, LeadershipImportKind,
-  LeadershipJobMapping, LeadershipRowsQuery, LeadershipRowsResponse, LeadershipSegment, LeadershipSiteResponse, LeadershipVendorsResponse, LeadershipFeedbackResponse, FeedbackOverview, LeadershipMonthlyResponse, MailInboxStatus, MailInboxSetting, MailPollResult, CompanyResponse, LeadershipMonthResponse, AllocationStatus, AllocationSettings, AllocationMonth,
+  LeadershipJobMapping, LeadershipRowsQuery, LeadershipRowsResponse, LeadershipSegment, LeadershipSiteResponse, LeadershipVendorsResponse, LeadershipFeedbackResponse, FeedbackOverview, LeadershipBudgetResponse, BudgetPlanRow, BudgetWeekRow, LeadershipMonthlyResponse, MailInboxStatus, MailInboxSetting, MailPollResult, CompanyResponse, LeadershipMonthResponse, AllocationStatus, AllocationSettings, AllocationMonth,
   PhotoValidationSyncResult, RebuildResult, StaffingJobResponse, SyncOptions, SyncRunsResponse, SystemStatus } from './apiTypes'
 
 /**
@@ -60,7 +60,7 @@ export function buildQuery(params?: QueryParams): string {
 }
 
 export interface RequestOptions {
-  method?: 'GET' | 'POST' | 'PUT' | 'PATCH'
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
   query?: QueryParams
   body?: unknown
   admin?: boolean
@@ -135,6 +135,9 @@ export const api = {
   // Staffing requests (analyst and admin; lines carry pay rates)
   staffingJob: (company: string, jobNumber: string, query?: { week?: string }, signal?: AbortSignal) =>
     request<StaffingJobResponse>(`/staffing/jobs/${encodeURIComponent(company)}/${encodeURIComponent(jobNumber)}`, { query: { ...query }, signal, rawRatios: true }),
+  leadershipBudget: (account: string, signal?: AbortSignal) => request<LeadershipBudgetResponse>('/leadership/budget', { query: { account }, signal, rawRatios: true }),
+  saveBudget: (account: string, plan: { months?: BudgetPlanRow[]; weeks?: BudgetWeekRow[] }, signal?: AbortSignal) => request<{ account: string; months: BudgetPlanRow[] }>(`/leadership/budget/${encodeURIComponent(account)}`, { method: 'PUT', body: { months: plan.months ?? [], weeks: plan.weeks ?? [] }, admin: true, signal, rawRatios: true }),
+  deleteBudget: (account: string, month?: string, signal?: AbortSignal, weeks = false) => request<{ account: string; removed: number }>(`/leadership/budget/${encodeURIComponent(account)}`, { method: 'DELETE', query: weeks ? { weeks: 'true' } : month ? { month } : undefined, admin: true, signal, rawRatios: true }),
   leadershipFeedbackOverview: (account: string, month: string | undefined, signal?: AbortSignal) => request<FeedbackOverview>('/leadership/feedback/overview', { query: { account, month }, signal, rawRatios: true }),
   leadershipFeedback: (account: string, months = 12, signal?: AbortSignal) => request<LeadershipFeedbackResponse>('/leadership/feedback', { query: { account, months }, signal, rawRatios: true }),
   leadershipVendors: (account: string, months = 6, signal?: AbortSignal) => request<LeadershipVendorsResponse>('/leadership/vendors', { query: { account, months }, signal, rawRatios: true }),
@@ -156,6 +159,20 @@ export const api = {
   leadershipReloadSeed: (signal?: AbortSignal) => request<{ added: { accounts: number; segments: number; jobs: number } }>('/leadership/accounts/seed', { method: 'POST', admin: true, signal }),
   leadershipImports: (limit = 25, signal?: AbortSignal) => request<{ files: LeadershipImportFile[] }>('/leadership/imports', { query: { limit }, admin: true, signal, rawRatios: true }),
   leadershipUpload: (file: File, kind?: LeadershipImportKind, signal?: AbortSignal) => uploadImport(file, kind, signal),
+  /** An uploaded labor budget workbook as one tab-separated table per sheet (nothing saved). */
+  readBudgetWorkbook: (file: File, signal?: AbortSignal) => { const form = new FormData(); form.append('file', file); return postForm<{ file: string; sheets: { name: string; text: string }[] }>('/leadership/budget/read', form, signal) },
+}
+
+async function postForm<T>(path: string, form: FormData, signal?: AbortSignal): Promise<T> {
+  const headers: Record<string, string> = { Accept: 'application/json' }
+  if (adminToken) headers['X-Admin-Token'] = adminToken
+  const response = await fetch(`${apiBaseUrl()}${path}`, { method: 'POST', body: form, headers, signal })
+  if (!response.ok) {
+    let detail = response.statusText || `HTTP ${response.status}`
+    try { const payload = await response.json() as { detail?: unknown }; if (typeof payload?.detail === 'string') detail = payload.detail } catch { /* keep statusText */ }
+    throw new ApiError(response.status, detail, path)
+  }
+  return response.json() as Promise<T>
 }
 
 /** Multipart upload of one export file (the JSON `request` helper cannot send FormData). */

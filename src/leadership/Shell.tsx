@@ -66,13 +66,15 @@ export function Shell({ children }: { children: ReactNode }) {
 }
 
 /** Page header: title, subtitle and the shared account / week / target controls. */
-export function PageHeader({ title, subtitle, account = true, week = true, target = true, period = false, extra }: { title: string; subtitle?: ReactNode; account?: boolean; week?: boolean; target?: boolean; period?: boolean; extra?: ReactNode }) {
+export function PageHeader({ title, subtitle, account = true, week = true, target = true, period = false, extra, defaultTarget }: { title: string; subtitle?: ReactNode; account?: boolean; week?: boolean; target?: boolean; period?: boolean; extra?: ReactNode
+  /** The target in force when none is typed (a week's budget target), as a fraction; the account target otherwise. */
+  defaultTarget?: number }) {
   const { featured, selectedAccount, config, weekStart, navigate, targetOverride, route, monthMode, month, can } = useLeadership()
   const periodSwitch = period && can('data.month')
   const weeks = [...(config.data?.weeks ?? [])].reverse()
   const months = [...new Set(weeks.map((w) => w.week_start.slice(0, 7)))]
   const [draft, setDraft] = useState('')
-  const accountTarget = selectedAccount ? (selectedAccount.target_labor_pct * 100).toFixed(1) : ''
+  const accountTarget = defaultTarget != null ? (defaultTarget * 100).toFixed(1) : selectedAccount ? (selectedAccount.target_labor_pct * 100).toFixed(1) : ''
   useEffect(() => { setDraft(targetOverride != null ? String(Math.round(targetOverride * 1000) / 10) : accountTarget) }, [targetOverride, accountTarget])
   const commitTarget = () => {
     const v = Number(draft)
@@ -99,7 +101,7 @@ export function PageHeader({ title, subtitle, account = true, week = true, targe
       {target && <><label htmlFor="tgt">Target %</label>
         <input id="tgt" type="number" step="0.5" min="30" max="120" value={draft} onChange={(e) => setDraft(e.target.value)} onBlur={commitTarget} onKeyDown={(e) => { if (e.key === 'Enter') commitTarget() }}
           aria-describedby="tgt-hint" />
-        <span id="tgt-hint" className="sr-only">{targetOverride != null ? 'Overrides the account and segment targets' : 'Account target'}</span>
+        <span id="tgt-hint" className="sr-only">{targetOverride != null ? 'Overrides the account and segment targets' : defaultTarget != null ? 'Budget target for this week' : 'Account target'}</span>
         {targetOverride != null && <button type="button" className="linkbtn" onClick={() => navigate({ target: undefined }, { replace: true })}>Reset</button>}</>}
       {extra}
     </div>

@@ -3,9 +3,10 @@ import type { LeadershipAccount, LeadershipRow } from '../../services/apiTypes'
 import { ChartCard, Swatch } from '../ui'
 import { OtHoursChart, useTokens } from '../charts'
 import { Feedback, FeedbackTile } from './Feedback'
+import { BudgetTab } from './Budget'
 import { useApiQuery } from '../../hooks/useApiQuery'
 import { queryKey } from '../../services/queryClient'
-import type { LeadershipFeedbackResponse } from '../../services/apiTypes'
+import type { LeadershipBudgetResponse, LeadershipFeedbackResponse } from '../../services/apiTypes'
 import { dataFlags, daysInMonth, isSubcontracted, monthFlags, rowsOfWeek, segmentLabel, segmentOrder, useMonthly, useMonthRows, useRows, vendorLabel } from '../data'
 import { hours, hours1, money, pct } from '../format'
 import { accountSummary, type AccountSummary as Summary, type SiteMetrics as Metrics } from '../metrics'
@@ -82,19 +83,31 @@ export function Account() {
   const subcontracted = weekRows.filter(isSubcontracted).length
   const selfOnly = Boolean(route.selfOnly) && subcontracted > 0
   const rows = useMemo(() => (selfOnly ? weekRows.filter((r) => !isSubcontracted(r)) : weekRows), [weekRows, selfOnly])
-  const options = useMemo(() => (monthMode && month
-    ? { ...optionsFor(account), revenueMethod: 'weekly_billing' as const, period: 'month' as const, periodDays: daysInMonth(month) }
-    : optionsFor(account)), [optionsFor, account, monthMode, month])
+  const { api, keyPrefix, decision } = useLeadership()
+  const budget = useApiQuery<LeadershipBudgetResponse>(decision && account && can('tab.budget') ? queryKey(`${keyPrefix}/leadership/budget`, { account: account.slug }) : null,
+    (signal) => api.leadershipBudget(account!.slug, signal), [api, account?.slug])
+  const budgetWeeks = budget.data?.weeks
+  const payHolidays = Boolean(route.payHolidays)
+  const weekBudget = !monthMode && weekStart ? budgetWeeks?.find((x) => x.week_end === weekEndOf(weekStart)) : undefined
+  const options = useMemo(() => {
+    if (monthMode && month) return { ...optionsFor(account), revenueMethod: 'weekly_billing' as const, period: 'month' as const, periodDays: daysInMonth(month) }
+    const base = optionsFor(account)
+    // The week's target is its budget labor over its invoice (the weekly budget calendar), unless a target is typed in.
+    if (!weekBudget || route.target != null || !account || !rows.length) return base
+    const invoice = accountSummary(rows, base, []).all.invoice
+    const labor = weekBudget.site + weekBudget.overhead + (payHolidays ? weekBudget.holiday : 0)
+    return invoice > 0 ? { ...base, target: labor / invoice } : base
+  }, [optionsFor, account, monthMode, month, weekBudget, route.target, rows, payHolidays])
   const summary = useMemo(() => (account && rows.length ? accountSummary(rows, options, segmentOrder(account)) : null), [account, rows, options])
   const flags = useMemo(() => (monthMode && month ? monthFlags(config.data, month, rows) : dataFlags(config.data, weekStart, rows)), [config.data, weekStart, rows, monthMode, month])
   const subtitle = [monthMode && month ? monthLabel(`${month}-01`) : weekStart ? weekLabel(weekStart) : null, updatedLine(config.data)].filter(Boolean).join('. ')
   const setTab = (next: AccountTab) => navigate({ view: 'account', account: account?.slug, tab: next })
   const monthly = useMonthly(account?.slug)
-  const { api, keyPrefix, decision } = useLeadership()
   const feedback = useApiQuery<LeadershipFeedbackResponse>(decision && account && can('tab.feedback') ? queryKey(`${keyPrefix}/leadership/feedback`, { account: account.slug, months: 12 }) : null,
     (signal) => api.leadershipFeedback(account!.slug, 12, signal), [api, account?.slug])
   const tabs = tabsFor(account, ACCOUNT_TABS, {
     feedback: Boolean(feedback.data?.lines.length),
+    budget: Boolean(budget.data?.months.length),
     pallet: rows.some((r) => (r.kids?.length ?? 1) > 1),
     subcontracted: Boolean(account?.split_subcontracted) || subcontracted > 0 || Boolean(monthly.data?.jobs.some((j) => j.delivery_model === 'subcontracted' && j.role === 'site')),
     incomeStatement: Boolean(account?.split_subcontracted) || Object.keys(monthly.data?.income_statement ?? {}).length > 0,
@@ -105,18 +118,20 @@ export function Account() {
   else if (!rowsQuery.data || !account) body = <Skeleton height={360} />
   else if (tab === 'vendors') body = <Vendors account={account} />
   else if (tab === 'feedback' && tabs.includes(tab)) body = <Feedback account={account} />
+  else if (tab === 'budget' && tabs.includes(tab)) body = <BudgetTab account={account} />
   else if (tab === 'subcontracted' && tabs.includes(tab)) body = <SubcontractedTab account={account} />
   else if (tab === 'income-statement' && tabs.includes(tab)) body = <IncomeStatementTab account={account} options={options} />
   else if (!summary) body = <Empty>No data for this {monthMode ? 'month' : 'week'}.</Empty>
   else if (tab === 'pallet' && tabs.includes(tab)) body = <PalletTab account={account} summary={summary} options={options} />
   else if (tab === 'overview' || !tabs.includes(tab)) body = <Overview account={account} rows={rows} summary={summary} options={options} flags={flags}
+    budgetWeeks={budgetWeeks} payHolidays={payHolidays}
     afterGroups={can('tab.feedback') && <FeedbackTile account={account} month={monthMode ? month : weekStart ? weekEndOf(weekStart).slice(0, 7) : undefined} />} />
   else if (tab === 'sites') body = <Sites account={account} summary={summary} options={options} selfOnly={selfOnly} ratings={feedback.data?.by_site} />
   else if (tab === 'over-target') body = <HoursToCut account={account} summary={summary} options={options} />
   else if (tab === 'overtime') body = <OvertimeTab account={account} summary={summary} />
   else body = <Suspense fallback={<Skeleton height={520} />}><SiteMap account={account} summary={summary} /></Suspense>
   const basis = options.invoiceBasis ?? 'last_month'
-  const basisControl = !monthMode && account?.revenue_method !== 'weekly_billing' && tab !== 'vendors' && tab !== 'feedback' && tab !== 'subcontracted' && tab !== 'income-statement' && <>
+  const basisControl = !monthMode && account?.revenue_method !== 'weekly_billing' && tab !== 'vendors' && tab !== 'feedback' && tab !== 'budget' && tab !== 'subcontracted' && tab !== 'income-statement' && <>
     <label htmlFor="basis">Invoice basis</label>
     <select id="basis" value={basis} onChange={(e) => navigate({ basis: e.target.value === account?.invoice_basis ? undefined : e.target.value as 'run_rate_3m' | 'last_month' }, { replace: true })}>
       <option value="run_rate_3m">3-month run rate</option><option value="last_month">{monthLabel(rows.find((r) => r.revenue_month)?.revenue_month ?? null)} actual</option>
@@ -124,8 +139,11 @@ export function Account() {
   const current = tabs.includes(tab) ? tab : 'overview'
   return <VocabContext.Provider value={vocab}>
     <PageHeader title={account ? `${account.name} Labor P&L` : 'Account'} subtitle={subtitle} period
-      extra={<>{basisControl}{subcontracted > 0 && tab !== 'vendors' && tab !== 'feedback' && <label className="check"><input type="checkbox" checked={selfOnly}
-        onChange={(e) => navigate({ selfOnly: e.target.checked || undefined }, { replace: true })} />Hide {subcontracted} subcontracted</label>}</>} />
+      defaultTarget={weekBudget && route.target == null && options.target !== optionsFor(account).target ? options.target : undefined}
+      extra={<>{basisControl}{subcontracted > 0 && tab !== 'vendors' && tab !== 'feedback' && tab !== 'budget' && <label className="check"><input type="checkbox" checked={selfOnly}
+        onChange={(e) => navigate({ selfOnly: e.target.checked || undefined }, { replace: true })} />Hide {subcontracted} subcontracted</label>}
+        {!monthMode && (budgetWeeks?.some((x) => x.holiday > 0) ?? false) && <label className="check"><input type="checkbox" checked={payHolidays}
+          onChange={(e) => navigate({ payHolidays: e.target.checked || undefined }, { replace: true })} />Pay stat holidays</label>}</>} />
     <nav className="tabs" role="tablist" aria-label="Account views">
       {tabs.map((t) => <button key={t} type="button" role="tab" className="tab" aria-selected={current === t} onClick={() => setTab(t)}>{tabLabel(t, account, vendorLabel(account))}</button>)}
     </nav>
