@@ -1,17 +1,17 @@
 import { lazy, Suspense, useMemo } from 'react'
 import type { LeadershipAccount, LeadershipRow } from '../../services/apiTypes'
 import { ChartCard, Swatch } from '../ui'
-import { OtHoursChart, useTokens } from '../charts'
+import { OtHoursChart, OtWeekChart, useTokens } from '../charts'
 import { Feedback, FeedbackTile } from './Feedback'
 import { BudgetTab } from './Budget'
 import { useApiQuery } from '../../hooks/useApiQuery'
 import { queryKey } from '../../services/queryClient'
 import type { LeadershipBudgetResponse, LeadershipFeedbackResponse } from '../../services/apiTypes'
-import { dataFlags, daysInMonth, isSubcontracted, monthFlags, rowsOfWeek, segmentLabel, segmentOrder, useMonthly, useMonthRows, useRows, vendorLabel } from '../data'
+import { dataFlags, daysInMonth, weekBudgetOf, isSubcontracted, monthFlags, rowsOfWeek, segmentLabel, segmentOrder, useMonthly, useMonthRows, useRows, vendorLabel } from '../data'
 import { hours, hours1, money, pct } from '../format'
 import { accountSummary, type AccountSummary as Summary, type SiteMetrics as Metrics } from '../metrics'
 import { Overview } from '../Overview'
-import { ACCOUNT_TABS, monthLabel, weekEndOf, weekLabel, type AccountTab } from '../routes'
+import { ACCOUNT_TABS, monthLabel, weekEndOf, weekLabel, weekTick, type AccountTab } from '../routes'
 import { PageHeader, updatedLine } from '../Shell'
 import { useLeadership } from '../state'
 import { Empty, Kpi, LoadError, Skeleton, SortTable, toneOf, VocabContext, type Column } from '../ui'
@@ -39,8 +39,15 @@ function useSiteOpener() {
 function OvertimeTab({ account, summary }: { account: LeadershipAccount; summary: AccountSummary }) {
   const t = useTokens()
   const open = useSiteOpener()
-  const { monthMode } = useLeadership()
+  const { monthMode, navigate, weekStart } = useLeadership()
   const o = summary.overtime
+  // OT by week over 13 weeks, catch-all included, non-billed events left out (as the weekly report).
+  const history = useRows(account.slug, 13)
+  const byWeek = useMemo(() => (history.data?.weeks ?? []).map((wk) => {
+    const wr = rowsOfWeek(history.data?.rows, wk).filter((r) => r.role !== 'non_billed')
+    const hrs = wr.reduce((x, r) => x + r.hours, 0), ot = wr.reduce((x, r) => x + r.ot_hours, 0)
+    return { week: wk, ot, pct: hrs > 0 ? ot / hrs : null, dollars: wr.reduce((x, r) => x + (r.ot_dollars ?? 0), 0) }
+  }), [history.data])
   const withOt = summary.sites.filter((r) => r.ot_hours > 0)
   const top = [...summary.sites].sort((a, b) => b.ot_hours - a.ot_hours).filter((r) => r.ot_hours > 0).slice(0, 15)
   const unbilled = summary.sites.filter((r) => r.role !== 'site').map((r) => r.job_number)
@@ -69,6 +76,12 @@ function OvertimeTab({ account, summary }: { account: LeadershipAccount; summary
         details={top.map((r) => `${r.ot_hours.toFixed(1)} OT hrs, ${pct(r.otPct)} of hours, ${money(r.ot_dollars)}`)} />}
       table={<table><thead><tr><th className="nosort l">Site</th><th className="nosort">OT hrs</th><th className="nosort">OT %</th><th className="nosort">OT cost</th></tr></thead><tbody>{top.map((r) => <tr key={r.job_number}><td className="l">{r.site_name}</td><td>{hours1(r.ot_hours)}</td><td>{pct(r.otPct)}</td><td>{money(r.ot_dollars)}</td></tr>)}</tbody></table>} />
       : <Empty>No overtime this {monthMode ? 'month' : 'week'}.</Empty>}
+    {byWeek.length > 1 && <ChartCard title="OT by week" height={240}
+      legend={<><Swatch color={t.warn} label="OT hours" /><Swatch color={t.bad} label="OT % of hours" /></>}
+      chart={<OtWeekChart labels={byWeek.map((x) => weekTick(x.week))} otHours={byWeek.map((x) => x.ot)} otPct={byWeek.map((x) => x.pct)} otDollars={byWeek.map((x) => x.dollars)}
+        current={byWeek.findIndex((x) => x.week === weekStart)} onPick={(i) => navigate({ week: weekEndOf(byWeek[i].week), period: undefined, month: undefined }, { replace: true })} />}
+      table={<table><thead><tr><th className="nosort l">Week ending</th><th className="nosort">OT hrs</th><th className="nosort">OT %</th><th className="nosort">OT cost</th></tr></thead>
+        <tbody>{byWeek.map((x) => <tr key={x.week}><td className="l">{weekTick(x.week)}</td><td>{hours1(x.ot)}</td><td>{pct(x.pct)}</td><td>{money(x.dollars)}</td></tr>)}</tbody></table>} />}
     {withOt.length > 0 && <div className="card"><SortTable caption="Sites with overtime" rows={withOt} columns={cols} defaultSort={{ key: 'oth', dir: -1 }} rowClass={(r) => (r.role !== 'site' ? 'dim' : '')} onRowClick={open} rowLabel={(r) => `Open ${r.site_name}`} csvName={`${account.slug}-overtime`} /></div>}
   </>
 }
@@ -87,16 +100,16 @@ export function Account() {
   const budget = useApiQuery<LeadershipBudgetResponse>(decision && account && can('tab.budget') ? queryKey(`${keyPrefix}/leadership/budget`, { account: account.slug }) : null,
     (signal) => api.leadershipBudget(account!.slug, signal), [api, account?.slug])
   const budgetWeeks = budget.data?.weeks
+  const budgetMonths = budget.data?.months
   const payHolidays = Boolean(route.payHolidays)
-  const weekBudget = !monthMode && weekStart ? budgetWeeks?.find((x) => x.week_end === weekEndOf(weekStart)) : undefined
+  const weekBudget = !monthMode && weekStart ? weekBudgetOf(weekStart, budgetWeeks, budgetMonths, payHolidays) : null
   const options = useMemo(() => {
     if (monthMode && month) return { ...optionsFor(account), revenueMethod: 'weekly_billing' as const, period: 'month' as const, periodDays: daysInMonth(month) }
     const base = optionsFor(account)
     // The week's target is its budget labor over its invoice (the weekly budget calendar), unless a target is typed in.
     if (!weekBudget || route.target != null || !account || !rows.length) return base
     const invoice = accountSummary(rows, base, []).all.invoice
-    const labor = weekBudget.site + weekBudget.overhead + (payHolidays ? weekBudget.holiday : 0)
-    return invoice > 0 ? { ...base, target: labor / invoice } : base
+    return invoice > 0 ? { ...base, target: weekBudget.labor / invoice } : base
   }, [optionsFor, account, monthMode, month, weekBudget, route.target, rows, payHolidays])
   const summary = useMemo(() => (account && rows.length ? accountSummary(rows, options, segmentOrder(account)) : null), [account, rows, options])
   const flags = useMemo(() => (monthMode && month ? monthFlags(config.data, month, rows) : dataFlags(config.data, weekStart, rows)), [config.data, weekStart, rows, monthMode, month])
@@ -124,7 +137,7 @@ export function Account() {
   else if (!summary) body = <Empty>No data for this {monthMode ? 'month' : 'week'}.</Empty>
   else if (tab === 'pallet' && tabs.includes(tab)) body = <PalletTab account={account} summary={summary} options={options} />
   else if (tab === 'overview' || !tabs.includes(tab)) body = <Overview account={account} rows={rows} summary={summary} options={options} flags={flags}
-    budgetWeeks={budgetWeeks} payHolidays={payHolidays}
+    budgetWeeks={budgetWeeks} budgetMonths={budgetMonths} payHolidays={payHolidays}
     afterGroups={can('tab.feedback') && <FeedbackTile account={account} month={monthMode ? month : weekStart ? weekEndOf(weekStart).slice(0, 7) : undefined} />} />
   else if (tab === 'sites') body = <Sites account={account} summary={summary} options={options} selfOnly={selfOnly} ratings={feedback.data?.by_site} />
   else if (tab === 'over-target') body = <HoursToCut account={account} summary={summary} options={options} />

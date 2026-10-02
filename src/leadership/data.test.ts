@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { LeadershipAccount, LeadershipRow } from '../services/apiTypes'
-import { closedMonths, monthRevenue, prepareRows } from './data'
+import { closedMonths, monthRevenue, prepareRows, weekBudgetOf, weekdaysIn } from './data'
 
 const row = (job: string, extra: Partial<LeadershipRow> = {}): LeadershipRow => ({
   week_start: '2026-09-14', week_end: '2026-09-20', company: 'Crane West', job_number: job, site_name: `Site ${job}`, parent_account: 'FedEx',
@@ -59,5 +59,24 @@ describe('monthRevenue', () => {
     expect(monthRevenue(m)).toBe(4030.48)
     expect(monthRevenue({ revenue: 0, relay_ar: 900 } as never)).toBe(900)
     expect(monthRevenue(undefined, true)).toBe(0)
+  })
+})
+
+describe('weekBudgetOf', () => {
+  const month = (m: string, total: number) => ({ month: `${m}-01`, in_progress: false, details: {}, supplies: null, actual: null, variance: null,
+    budget: { site: total, overhead: 0, total, revenue: null, labor_pct: null } })
+  const weeks = [{ week_end: '2026-09-13', site: 155691.58, overhead: 9578.54, holiday: 37069.42, details: { school_days: 4, stat_holidays: 1 } }]
+  it('uses the weekly calendar, holiday pay only when paid', () => {
+    expect(weekBudgetOf('2026-09-07', weeks, [], false)).toMatchObject({ labor: 165270.12, source: 'calendar' })
+    expect(weekBudgetOf('2026-09-07', weeks, [], true)!.labor).toBeCloseTo(202339.54, 2)
+  })
+  it('falls back to the monthly plan spread over weekdays (Crowley with a monthly plan only)', () => {
+    // September 2026 has 22 weekdays; the week of Sep 21 is five of them.
+    expect(weekdaysIn('2026-09')).toBe(22)
+    expect(weekBudgetOf('2026-09-21', undefined, [month('2026-09', 440000)], false)).toMatchObject({ labor: 100000, source: 'monthly' })
+    // A week across two months takes each day from its own month.
+    const b = weekBudgetOf('2026-09-28', undefined, [month('2026-09', 440000), month('2026-10', 460000)], false)!
+    expect(b.labor).toBeCloseTo(3 * 20000 + 2 * (460000 / 22), 2) // Sep 28-30 at 440K/22, Oct 1-2 at 460K/22
+    expect(weekBudgetOf('2026-09-21', undefined, [], false)).toBeNull()
   })
 })

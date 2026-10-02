@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { useApiQuery } from '../hooks/useApiQuery'
-import type { LeadershipAccount, LeadershipConfig, LeadershipMonth, LeadershipMonthlyJob, LeadershipMonthlyResponse, LeadershipMonthResponse, LeadershipRow, LeadershipRowsResponse } from '../services/apiTypes'
+import type { BudgetMonth, BudgetWeek, LeadershipAccount, LeadershipConfig, LeadershipMonth, LeadershipMonthlyJob, LeadershipMonthlyResponse, LeadershipMonthResponse, LeadershipRow, LeadershipRowsResponse } from '../services/apiTypes'
 import { queryKey } from '../services/queryClient'
 import { accountSummary, type AccountSummary, type MetricOptions } from './metrics'
 import { addDays } from './routes'
@@ -210,4 +210,34 @@ export function closedMonths(data: LeadershipMonthlyResponse | undefined): strin
     }
     return billing > 0 && jobCost >= 0.5 * billing && (timekeeping === 0 || labor >= 0.7 * timekeeping)
   })
+}
+
+/**
+ * A week's budget labor from the account's plan: its weekly calendar row when there is one (site + overhead,
+ * plus stat-holiday labor when paid), else the monthly plan spread evenly over each month's weekdays (a plan
+ * loaded without a weekly calendar). Null when neither covers the week.
+ */
+export interface WeekBudget { labor: number; source: 'calendar' | 'monthly'; details: Partial<Record<string, number>>; holiday: number }
+export function weekBudgetOf(weekStart: string, weeks: BudgetWeek[] | undefined, months: BudgetMonth[] | undefined, payHolidays: boolean): WeekBudget | null {
+  const end = addDays(weekStart, 6)
+  const row = weeks?.find((x) => x.week_end === end)
+  if (row) return { labor: row.site + row.overhead + (payHolidays ? row.holiday : 0), source: 'calendar', details: row.details, holiday: row.holiday }
+  if (!months?.length) return null
+  const byMonth = new Map(months.map((m) => [m.month.slice(0, 7), m.budget.total]))
+  let labor = 0, covered = false
+  for (let i = 0; i < 5; i++) { // Monday to Friday
+    const day = addDays(weekStart, i), key = day.slice(0, 7), total = byMonth.get(key)
+    if (total == null) continue
+    covered = true
+    labor += total / weekdaysIn(key)
+  }
+  return covered ? { labor, source: 'monthly', details: {}, holiday: 0 } : null
+}
+
+/** Monday-to-Friday days in a month (YYYY-MM). */
+export function weekdaysIn(month: string): number {
+  const [y, m] = month.split('-').map(Number)
+  let n = 0
+  for (let d = 1; d <= new Date(Date.UTC(y, m, 0)).getUTCDate(); d++) { const w = new Date(Date.UTC(y, m - 1, d)).getUTCDay(); if (w !== 0 && w !== 6) n++ }
+  return n
 }
