@@ -1,7 +1,8 @@
 """The Claude summary of customer feedback comments behind the Home feedback tile (migration 045).
 
-Scores and counts come from SQL (routers/leadership.py); Claude reads only the comments of the last
-WINDOW_DAYS days and returns an overall sentiment, a one-line headline and up to five themes with the
+Scores and counts come from SQL (routers/leadership.py); Claude reads only the comments of the
+WINDOW_DAYS days up to the account's newest rating (not up to today, so the comments read, and the
+summary, change only when an import brings new or changed ratings, never as days pass) and returns an overall sentiment, a one-line headline and up to five themes with the
 locations they came from, as structured JSON. The result is cached in ops.feedback_summary under a
 digest of the comments it read, so Claude is called again only when the comments change, never per
 page view. A stale or missing summary is rebuilt in a background thread while the tile shows the last
@@ -88,16 +89,22 @@ def _input(lines: list[dict[str, Any]]) -> str:
     return "date | location | trade scores | comment\n" + "\n".join(rows)
 
 
-def comments_for(cursor: Any, account: str, today: date | None = None) -> list[dict[str, Any]]:
-    since = (today or date.today()) - timedelta(days=WINDOW_DAYS)
+ACCOUNT_FILTER = "(account_slug = %(account)s OR (account_slug IS NULL AND %(account)s = 'fedex'))"
+
+
+def comments_for(cursor: Any, account: str) -> list[dict[str, Any]]:
+    """The comments of the WINDOW_DAYS days up to the account's newest rating (fixed between imports)."""
+    cursor.execute(f"SELECT max(feedback_date) AS latest FROM mart.v_service_feedback WHERE {ACCOUNT_FILTER}", {"account": account})
+    latest = cursor.fetchone()["latest"]
+    if latest is None:
+        return []
     cursor.execute(
-        """
+        f"""
         SELECT feedback_date, location_number, trade, score, comment, wo_number FROM mart.v_service_feedback
-        WHERE feedback_date >= %(since)s AND comment IS NOT NULL AND btrim(comment) <> ''
-          AND (account_slug = %(account)s OR (account_slug IS NULL AND %(account)s = 'fedex'))
+        WHERE feedback_date > %(since)s AND comment IS NOT NULL AND btrim(comment) <> '' AND {ACCOUNT_FILTER}
         ORDER BY feedback_date DESC, wo_number LIMIT %(limit)s
         """,
-        {"since": since, "account": account, "limit": MAX_COMMENTS},
+        {"since": latest - timedelta(days=WINDOW_DAYS), "account": account, "limit": MAX_COMMENTS},
     )
     return [dict(r) for r in cursor.fetchall()]
 
@@ -166,6 +173,19 @@ def refresh(account: str, text: str, input_hash: str, comments: int) -> None:
     finally:
         with _lock:
             _running.discard((account, SCOPE))
+
+
+def warm() -> list[str]:
+    """After a feedback import: start rebuilding the summary of every account with ratings whose comments
+    changed, so it is ready before anyone opens the page. Returns the accounts checked."""
+    if not configured():
+        return []
+    with connection() as conn, conn.cursor() as cursor:
+        cursor.execute("SELECT DISTINCT coalesce(account_slug, 'fedex') AS account FROM mart.v_service_feedback")
+        accounts = [r["account"] for r in cursor.fetchall()]
+        for account in accounts:
+            state(cursor, account)  # starts a background rebuild only when the comments changed
+    return accounts
 
 
 def state(cursor: Any, account: str) -> dict[str, Any]:

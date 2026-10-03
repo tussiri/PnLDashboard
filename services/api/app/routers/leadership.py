@@ -1109,4 +1109,6 @@ async def upload_import(request: Request, file: UploadFile = File(...), kind: st
     with connection() as conn:
         result = imports.load_file(conn, file.filename or "upload.csv", content, kind=kind, origin="upload", uploaded_by=_actor(request))
     marts_result = marts.rebuild_all("leadership-import") if rebuild and result["status"] == "loaded" else None
+    if result["kind"] == "service_feedback" and result["status"] == "loaded":
+        feedback_ai.warm()  # the comment summary is ready before anyone opens the page
     return {"file": jsonable({k: v for k, v in result.items() if k != "sha256"}), "marts": jsonable(marts_result)}
