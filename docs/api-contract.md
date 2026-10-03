@@ -668,3 +668,16 @@ no calendar row for a week takes that week's budget from the monthly plan spread
 weekdays (labeled as from the monthly plan). The trend draws it as the stepped
 Weekly budget target line, and a Vs budget labor figure compares the week's labor without events.
 
+## Account job lists and exclusions, added 2026-10-03
+
+Migration 048 (`ops.account_job_exclusion`). A seed account may list `jobs` (mapped on every mart
+rebuild, replacing an automatic mapping, never an administrator's) and `exclude_jobs` (held out of
+every account, shown as Other). Auto-assignment skips excluded jobs, so `PUT /leadership/account-jobs/
+{company}/{job}` with `account_slug: null` now keeps a job in Other instead of it returning on the next
+rebuild; mapping it to an account removes the exclusion. Amazon lists the 14 Crane sites of the weekly
+Amazon report and excludes its project, management and closed jobs.
+
+In the views a site counts as subcontracted by its delivery model only for accounts that split
+subcontracted sites out (FedEx, from Relay); elsewhere only when Crane has no payroll hours there and the
+week carries vendor cost, since the restored reference flag marks any site with agency cost.
+
