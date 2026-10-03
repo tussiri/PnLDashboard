@@ -63,3 +63,26 @@ def test_without_a_key_the_tile_shows_scores_only(monkeypatch):
     monkeypatch.setattr(feedback_ai, "settings", replace(feedback_ai.settings, anthropic_api_key=""))
     assert feedback_ai.configured() is False
     assert feedback_ai.state(object(), "fedex") == {"status": "off"}
+
+
+def test_the_comment_window_ends_at_the_newest_rating_not_today():
+    """Between imports the comments read, so the digest and the stored summary, do not change as days pass."""
+    calls = []
+
+    class Cursor:
+        def execute(self, sql, params=None):
+            calls.append((" ".join(sql.split()), params))
+        def fetchone(self):
+            return {"latest": date(2026, 9, 6)}
+        def fetchall(self):
+            return LINES
+
+    assert feedback_ai.comments_for(Cursor(), "fedex") == LINES
+    assert calls[0][0].startswith("SELECT max(feedback_date)")
+    assert calls[1][1]["since"] == date(2026, 6, 8)  # 90 days before Sep 6, whatever today is
+    assert "date.today" not in feedback_ai.comments_for.__code__.co_names
+
+    class Empty(Cursor):
+        def fetchone(self):
+            return {"latest": None}
+    assert feedback_ai.comments_for(Empty(), "fedex") == []

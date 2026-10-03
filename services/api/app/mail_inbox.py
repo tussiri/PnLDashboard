@@ -274,6 +274,10 @@ def poll(graph: Graph | None = None, rebuild: bool = True) -> dict[str, Any]:
     rebuilt = bool(rebuild and counts["loaded"])
     if rebuilt:
         marts.rebuild_all(initiated_by="mail-inbox")
+    if counts["loaded"]:
+        from . import feedback_ai
+
+        feedback_ai.warm()  # rebuilds a feedback summary only when a mailed file changed its comments
     return {**counts, "rebuilt": rebuilt}
 
 
