@@ -210,7 +210,7 @@ export function Overview({ account, rows, summary, options, flags, headline = tr
           details={sorted.map((r) => `${pct(r.measurePct)} (${money(r.cost)} / ${money(r.invoice)})`)} />}
         table={<table><thead><tr><th className="nosort l">Site</th><th className="nosort">Labor %</th><th className="nosort">{w.laborCol}</th><th className="nosort">{w.invoiceCol}</th></tr></thead>
           <tbody>{sorted.map((r) => <tr key={`${r.company}-${r.job_number}`}><td className="l">{r.site_name}</td><td>{pct(r.measurePct)}</td><td>{money(r.cost)}</td><td>{money(r.invoice)}</td></tr>)}</tbody></table>} />
-      <ChartCard title="Where the labor dollars went" height={Math.max(180, mix.length * 44 + 40)}
+      <ChartCard title={`${invoiceLabel(w, vocab, period)} vs labor by ${segmentLabel(account)}`} height={Math.max(180, mix.length * 44 + 40)}
         legend={<><Swatch color={t.accent2} label={invoiceLabel(w, vocab, period)} /><Swatch color={t.accent} label={`${w.direct} labor`} />{palD > 0 && <Swatch color={t.warn} label="Pallet labor" />}{a.vendor > 0 && <Swatch color={t.muted} label={subLabel} />}</>}
         chart={<LaborMixChart labels={mix.map((x) => x.name)} invoice={mix.map((x) => sum(x.list, (r) => r.invoice))} core={mix.map((x) => sum(x.list, directOf))}
           pallet={mix.map((x) => sum(x.list, palletOf))} sub={mix.map((x) => sum(x.list, (r) => r.vendor))} subLabel={subLabel} directLabel={`${w.direct} labor`} invoiceLabel={invoiceLabel(w, vocab, period)} />}
