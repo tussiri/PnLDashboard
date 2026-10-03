@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { LeadershipAccount, LeadershipRow } from '../services/apiTypes'
-import { closedMonths, monthRevenue, prepareRows, syncConcerns, weekBudgetOf, weekdaysIn } from './data'
+import { closedMonths, isSubcontracted, monthRevenue, prepareRows, syncConcerns, weekBudgetOf, weekdaysIn } from './data'
 
 const row = (job: string, extra: Partial<LeadershipRow> = {}): LeadershipRow => ({
   week_start: '2026-09-14', week_end: '2026-09-20', company: 'Crane West', job_number: job, site_name: `Site ${job}`, parent_account: 'FedEx',
@@ -90,5 +90,21 @@ describe('syncConcerns', () => {
     expect(syncConcerns('relay', [row('Crane IFS', { sub_week_basis: 'relay_ap' })])).toBe(true)
     expect(syncConcerns('winteam_api', [row('Crane Southwest')])).toBe(true)
     expect(syncConcerns('winteam_sarus', [])).toBe(true)
+  })
+})
+
+describe('isSubcontracted', () => {
+  const row = (extra: object) => ({ delivery_model: 'subcontracted', hours: 4471, sub_week: 2526, ...extra }) as never
+  it('Amazon: a site with Crane payroll hours is self-performed whatever the reference flag says', () => {
+    const amazon = { split_subcontracted: false } as never
+    expect(isSubcontracted(row({}), amazon)).toBe(false) // LGB3: 4,471 hours, $2,526 agency
+    expect(isSubcontracted(row({ hours: 0, sub_week: 7129 }), amazon)).toBe(true) // vendor cost only
+    expect(isSubcontracted(row({ hours: 0, sub_week: 0 }), amazon)).toBe(false)
+  })
+  it('FedEx: the delivery model (from Relay) decides', () => {
+    const fedex = { split_subcontracted: true } as never
+    expect(isSubcontracted(row({ hours: 12 }), fedex)).toBe(true)
+    expect(isSubcontracted(row({ delivery_model: 'self_perform' }), fedex)).toBe(false)
+    expect(isSubcontracted(row({ delivery_model: null, hours: 0 }), fedex)).toBe(true)
   })
 })

@@ -93,9 +93,9 @@ export function Account() {
   const monthQuery = useMonthRows(monthMode ? account?.slug : undefined, monthMode ? month : undefined)
   const rowsQuery = monthMode ? monthQuery : weekQuery
   const weekRows = useMemo(() => (monthMode ? monthQuery.data?.rows ?? [] : rowsOfWeek(weekQuery.data?.rows, weekStart)), [monthMode, monthQuery.data, weekQuery.data, weekStart])
-  const subcontracted = weekRows.filter(isSubcontracted).length
+  const subcontracted = weekRows.filter((r) => isSubcontracted(r, account)).length
   const selfOnly = Boolean(route.selfOnly) && subcontracted > 0
-  const rows = useMemo(() => (selfOnly ? weekRows.filter((r) => !isSubcontracted(r)) : weekRows), [weekRows, selfOnly])
+  const rows = useMemo(() => (selfOnly ? weekRows.filter((r) => !isSubcontracted(r, account)) : weekRows), [weekRows, selfOnly, account])
   const { api, keyPrefix, decision } = useLeadership()
   const budget = useApiQuery<LeadershipBudgetResponse>(decision && account && can('tab.budget') ? queryKey(`${keyPrefix}/leadership/budget`, { account: account.slug }) : null,
     (signal) => api.leadershipBudget(account!.slug, signal), [api, account?.slug])
@@ -122,7 +122,7 @@ export function Account() {
     feedback: Boolean(feedback.data?.lines.length),
     budget: Boolean(budget.data?.months.length),
     pallet: rows.some((r) => (r.kids?.length ?? 1) > 1),
-    subcontracted: Boolean(account?.split_subcontracted) || subcontracted > 0 || Boolean(monthly.data?.jobs.some((j) => j.delivery_model === 'subcontracted' && j.role === 'site')),
+    subcontracted: Boolean(account?.split_subcontracted) || subcontracted > 0,
     incomeStatement: Boolean(account?.split_subcontracted) || Object.keys(monthly.data?.income_statement ?? {}).length > 0,
   }).filter((t) => (!monthMode || t !== 'over-target') && (t === 'overview' || can(`tab.${t}`)))
   const vocab = vocabOf(account)

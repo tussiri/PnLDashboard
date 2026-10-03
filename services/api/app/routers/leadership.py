@@ -1044,7 +1044,10 @@ def map_job(company: str, job_number: str, body: JobMappingIn, request: Request)
         raise HTTPException(status_code=422, detail=f"role must be one of {accounts.ROLES}")
     with connection() as conn, conn.cursor() as cursor:
         if body.account_slug is None:
+            # Other, and kept there: auto-assignment would otherwise map it again from its parent account.
             cursor.execute("DELETE FROM ops.account_job WHERE company = %s AND job_number = %s", (company, job_number))
+            cursor.execute("INSERT INTO ops.account_job_exclusion (company, job_number, excluded_by) VALUES (%s, %s, 'admin') "
+                           "ON CONFLICT (company, job_number) DO UPDATE SET excluded_by = 'admin', excluded_at = now()", (company, job_number))
             conn.commit()
             return {"company": company, "job_number": job_number, "account_slug": None}
         cursor.execute("SELECT fallback_segment, array(SELECT name FROM ops.account_segment s WHERE s.account_slug = a.slug) AS segments "
@@ -1055,6 +1058,7 @@ def map_job(company: str, job_number: str, body: JobMappingIn, request: Request)
         segment = None if body.role != "site" else (body.segment or account["fallback_segment"])
         if segment is not None and segment not in account["segments"]:
             raise HTTPException(status_code=422, detail=f"segment must be one of {account['segments']}")
+        cursor.execute("DELETE FROM ops.account_job_exclusion WHERE company = %s AND job_number = %s", (company, job_number))
         cursor.execute(
             """
             INSERT INTO ops.account_job (company, job_number, account_slug, segment, role, companycam_project_id, assigned_by,

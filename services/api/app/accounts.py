@@ -4,7 +4,10 @@
   account with a segment and a role. Jobs without a mapping are "Other".
 * The seed (config/accounts/seed.json) is loaded into an empty `ops.account`. Reloading adds
   missing accounts, segments and job rows and never overwrites a mapping an administrator changed.
-* After every mart rebuild `auto_assign` maps jobs first seen since the seed: a current job whose
+* A seed account's `jobs` replace automatic mappings (never an administrator's) and its `exclude_jobs`
+  hold jobs out of every account (ops.account_job_exclusion, migration 048), on every mart rebuild, so
+  a corrected seed reaches a running system without a manual reload.
+* After every mart rebuild `auto_assign` maps jobs first seen since the seed, unless excluded: a current job whose
   parent job is mapped joins that job's account, else a job whose parent-account label is in an
   account's `source_parent_accounts` joins that account. Either way it gets the segment
   `resolve_segment` picks, `assigned_by = 'auto'` and `needs_review = true`.
@@ -50,6 +53,7 @@ def load_seed_file(path: Path | None = None) -> dict[str, Any]:
 def validate_seed(data: dict[str, Any]) -> None:
     """Reject a seed the database would refuse, with a message naming the account and job."""
     seen_jobs: dict[tuple[str, str], str] = {}
+    excluded: set[tuple[str, str]] = set()
     slugs = set()
     for account in data.get("accounts", []):
         slug = account["slug"]
@@ -67,6 +71,8 @@ def validate_seed(data: dict[str, Any]) -> None:
         segment_names = {s["name"] for s in account.get("segments", [])}
         if account["fallback_segment"] not in segment_names:
             raise ValueError(f"{slug}: fallback_segment {account['fallback_segment']!r} is not one of its segments")
+        for job in account.get("exclude_jobs", []):
+            excluded.add((job["company"], str(job["job_number"])))
         for job in account.get("jobs", []):
             key = (job["company"], str(job["job_number"]))
             if key in seen_jobs:
@@ -76,6 +82,9 @@ def validate_seed(data: dict[str, Any]) -> None:
                 raise ValueError(f"{slug}: job {key[1]} has unknown role {job.get('role')!r}")
             if job.get("role", "site") == "site" and job.get("segment") not in segment_names:
                 raise ValueError(f"{slug}: job {key[1]} segment {job.get('segment')!r} is not one of its segments")
+    both = sorted(set(seen_jobs) & excluded)
+    if both:
+        raise ValueError(f"job {both[0][1]} ({both[0][0]}) is both mapped to {seen_jobs[both[0]]} and excluded")
 
 
 def resolve_segment(segment_source: str, *, company: str | None, sub_account: str | None,
@@ -123,16 +132,39 @@ def apply_seed(cursor: Any, data: dict[str, Any]) -> dict[str, int]:
                 (account["slug"], segment["name"], order, segment.get("target_labor_pct")),
             )
             counts["segments"] += cursor.rowcount
+    counts.update(apply_seed_jobs(cursor, data))
+    return counts
+
+
+def apply_seed_jobs(cursor: Any, data: dict[str, Any]) -> dict[str, int]:
+    """The seed's job lists: `jobs` map onto their account (replacing an automatic mapping, never an
+    administrator's), `exclude_jobs` are held out of every account (an automatic mapping is removed)."""
+    counts = {"jobs": 0, "excluded": 0}
+    for account in data["accounts"]:
         for job in account.get("jobs", []):
             cursor.execute(
                 """
                 INSERT INTO ops.account_job (company, job_number, account_slug, segment, role, companycam_project_id, assigned_by)
-                VALUES (%s, %s, %s, %s, %s, %s, 'seed') ON CONFLICT (company, job_number) DO NOTHING
+                VALUES (%s, %s, %s, %s, %s, %s, 'seed')
+                ON CONFLICT (company, job_number) DO UPDATE SET account_slug = EXCLUDED.account_slug, segment = EXCLUDED.segment,
+                  role = EXCLUDED.role, assigned_by = 'seed', needs_review = false, updated_at = now()
+                WHERE ops.account_job.assigned_by = 'auto'
                 """,
                 (job["company"], str(job["job_number"]), account["slug"], job.get("segment"), job.get("role", "site"),
                  job.get("companycam_project_id")),
             )
             counts["jobs"] += cursor.rowcount
+            cursor.execute("DELETE FROM ops.account_job_exclusion WHERE company = %s AND job_number = %s AND excluded_by = 'seed'",
+                           (job["company"], str(job["job_number"])))
+        for job in account.get("exclude_jobs", []):
+            company, number = job["company"], str(job["job_number"])
+            cursor.execute("SELECT 1 FROM ops.account_job WHERE company = %s AND job_number = %s AND assigned_by <> 'auto'", (company, number))
+            if cursor.fetchone():
+                continue  # an administrator or the seed placed it deliberately
+            cursor.execute("DELETE FROM ops.account_job WHERE company = %s AND job_number = %s AND assigned_by = 'auto'", (company, number))
+            cursor.execute("INSERT INTO ops.account_job_exclusion (company, job_number, excluded_by) VALUES (%s, %s, 'seed') "
+                           "ON CONFLICT (company, job_number) DO NOTHING", (company, number))
+            counts["excluded"] += cursor.rowcount
     return counts
 
 
@@ -149,6 +181,7 @@ WITH unmapped AS (
   SELECT j.* FROM core.dim_job j
   WHERE j.valid_to IS NULL AND j.job_number IS NOT NULL AND j.company IS NOT NULL
     AND NOT EXISTS (SELECT 1 FROM ops.account_job x WHERE x.company = j.company AND x.job_number = j.job_number)
+    AND NOT EXISTS (SELECT 1 FROM ops.account_job_exclusion e WHERE e.company = j.company AND e.job_number = j.job_number)
 ),
 matches AS (
   -- 1: the job's parent job is mapped (a family stays in one account; a parent's billing may be
@@ -197,6 +230,7 @@ def auto_assign(cursor: Any) -> int:
 
 
 def sync_accounts(cursor: Any) -> dict[str, Any]:
-    """Called after every mart rebuild: seed an empty configuration, then map new jobs."""
+    """Called after every mart rebuild: seed an empty configuration, apply the seed's job lists, then map new jobs."""
     seeded = ensure_seeded(cursor)
-    return {"seeded": seeded, "auto_assigned": auto_assign(cursor)}
+    seed_jobs = apply_seed_jobs(cursor, load_seed_file()) if seeded is None else None
+    return {"seeded": seeded, "seed_jobs": seed_jobs, "auto_assigned": auto_assign(cursor)}

@@ -39,8 +39,17 @@ export const priorMonth = (month: string) => {
 /** Days in a month (YYYY-MM), for per-day figures in the month rollup. */
 export const daysInMonth = (month: string) => { const [y, m] = month.split('-').map(Number); return new Date(Date.UTC(y, m, 0)).getUTCDate() }
 
-/** Subcontracted: marked so, or no delivery model recorded and only vendor cost (no hours) this week. */
-export const isSubcontracted = (r: LeadershipRow) => r.delivery_model === 'subcontracted' || (r.delivery_model == null && !r.hours && (r.sub_week ?? 0) > 0)
+/**
+ * Subcontracted. An account that splits subcontracted sites out (FedEx: Relay knows which stations are
+ * subcontracted) uses the site's delivery model. Elsewhere (Amazon) agency labor is part of a site's
+ * labor, and the old reference flag marks any site with agency cost as subcontracted, so a site is
+ * subcontracted only when Crane has no payroll hours there and the week carries vendor cost.
+ */
+export const isSubcontracted = (r: LeadershipRow, account?: LeadershipAccount) => {
+  const vendorOnly = !(r.hours > 0) && (r.sub_week ?? 0) > 0
+  if (account?.split_subcontracted) return r.delivery_model === 'subcontracted' || (r.delivery_model == null && vendorOnly)
+  return vendorOnly
+}
 
 export const PALLET_GROUPS = ['Pallet sites', 'Janitorial only'] as const
 
@@ -73,7 +82,7 @@ export function prepareRows(rows: LeadershipRow[], accountBySlug: (slug: string 
   }
   return out.filter((r) => {
     const account = accountBySlug(r.account_slug ?? undefined)
-    if (account?.split_subcontracted && !keepSubcontracted && isSubcontracted(r)) return false
+    if (account?.split_subcontracted && !keepSubcontracted && isSubcontracted(r, account)) return false
     if (account?.group_by === 'pallet' && r.role === 'site') r.segment = (r.kids?.length ?? 1) > 1 ? PALLET_GROUPS[0] : PALLET_GROUPS[1]
     return true
   })
