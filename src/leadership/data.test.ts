@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { LeadershipAccount, LeadershipRow } from '../services/apiTypes'
-import { closedMonths, monthRevenue, prepareRows, weekBudgetOf, weekdaysIn } from './data'
+import { closedMonths, monthRevenue, prepareRows, syncConcerns, weekBudgetOf, weekdaysIn } from './data'
 
 const row = (job: string, extra: Partial<LeadershipRow> = {}): LeadershipRow => ({
   week_start: '2026-09-14', week_end: '2026-09-20', company: 'Crane West', job_number: job, site_name: `Site ${job}`, parent_account: 'FedEx',
@@ -78,5 +78,17 @@ describe('weekBudgetOf', () => {
     const b = weekBudgetOf('2026-09-28', undefined, [month('2026-09', 440000), month('2026-10', 460000)], false)!
     expect(b.labor).toBeCloseTo(3 * 20000 + 2 * (460000 / 22), 2) // Sep 28-30 at 440K/22, Oct 1-2 at 460K/22
     expect(weekBudgetOf('2026-09-21', undefined, [], false)).toBeNull()
+  })
+})
+
+describe('syncConcerns', () => {
+  const row = (company: string, extra: object = {}) => ({ company, revenue_month_basis: 'job_cost', sub_week_basis: null, ...extra }) as never
+  it('shows a Sarus or Relay failure only on accounts those systems feed', () => {
+    expect(syncConcerns('winteam_sarus', [row('Crane Southwest')])).toBe(false)
+    expect(syncConcerns('winteam_sarus', [row('Crane IFS'), row('Sarus')])).toBe(true)
+    expect(syncConcerns('relay', [row('Crane Southwest')])).toBe(false)
+    expect(syncConcerns('relay', [row('Crane IFS', { sub_week_basis: 'relay_ap' })])).toBe(true)
+    expect(syncConcerns('winteam_api', [row('Crane Southwest')])).toBe(true)
+    expect(syncConcerns('winteam_sarus', [])).toBe(true)
   })
 })

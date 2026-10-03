@@ -46,7 +46,8 @@ function CutSite({ account, row, options, showGroup, open, onToggle }: { account
       <span className="seg worked" style={{ width: w(row.worked) }} />
       <span className="seg premium" style={{ width: w(row.otPremium) }} />
       <span className="seg sub" style={{ width: w(row.subHours) }} />
-      <span className="mark" style={{ left: w(row.allowance) }}><small>target {hours1(row.allowance)}h</small></span>
+      {/* The label sits under the target, anchored inward near either end of the bar so it stays inside the card. */}
+      <span className={`mark${parseFloat(w(row.allowance)) > 80 ? ' end' : parseFloat(w(row.allowance)) < 20 ? ' start' : ''}`} style={{ left: w(row.allowance) }}><small>target {hours1(row.allowance)}h</small></span>
     </div>
     <div className="cut-meta">
       <span>Worked <b>{hours1(row.worked)}h</b></span>

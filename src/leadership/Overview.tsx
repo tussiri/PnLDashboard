@@ -161,15 +161,15 @@ export function Overview({ account, rows, summary, options, flags, headline = tr
       <Kpi label={w.labor} value={money(a.cost)} sub={join(laborParts, change(a.cost, prev?.cost, money)) || undefined} />
       <Kpi label={w.accountLaborPct} value={pct(a.measurePct)} tone={toneOf(accountStatus)}
         sub={join(`Target ${pct(target)}`, lastClosed ? `${monthLabel(lastClosed)} actual ${pct(actual)}` : null,
-          a.measurePct != null && prev?.measurePct != null ? weekChange(a.measurePct - prev.measurePct, vocab, period) : null, catchJobs.length ? `sites only ${pct(summary.billed.measurePct)}` : null)} />
+          a.measurePct != null && prev?.measurePct != null ? weekChange(a.measurePct - prev.measurePct, vocab, period) : null)} />
       <Kpi label={w.hours} value={hours(a.hours)} sub={join(`${hours(a.otHours)} OT/DT (${pct(a.otPct)})`, palHrs ? `pallet ${hours(palHrs)}` : null, change(a.hours, prev?.hours, hours))} />
       {can('data.allocations') && <Kpi label="Margin" value={money(a.margin)} tone={a.margin < 0 ? 'bad' : ''}
         sub={join(pct(a.marginPct), a.allocation > 0 ? `after ${moneyK(a.allocation)} alloc.` : null)} />}
       {budgetWeek != null && <Kpi label="Vs budget labor" value={`${exEvents - budgetWeek >= 0 ? '+' : '−'}${money(Math.abs(exEvents - budgetWeek))}`} tone={exEvents > budgetWeek ? 'bad' : 'ok'}
-        sub={join(`Budget ${money(budgetWeek)} (${dayText(thisWeekBudget) || 'no days'}${thisWeekBudget?.holiday ? (payHolidays ? ', stat holiday paid' : ', stat holiday not paid') : ''})`,
-          `${pct(Math.abs(exEvents / budgetWeek - 1))} ${exEvents > budgetWeek ? 'over' : 'under'}`, nonBilled.length ? 'events excluded' : null)} />}
+        sub={join(`Budget ${money(budgetWeek)}`, `${pct(Math.abs(exEvents / budgetWeek - 1))} ${exEvents > budgetWeek ? 'over' : 'under'}`,
+          thisWeekBudget?.source === 'monthly' ? 'from the monthly plan' : thisWeekBudget?.holiday && !payHolidays ? 'stat holiday not paid' : null)} />}
       <Kpi label={w.hoursOver} value={hours(over)} tone={over > 0 ? 'bad' : 'ok'}
-        sub={join(`${hours1(over / perDay)}/day`, w.over(summary.billed.over, billed.length), catchJobs.length ? `${hours(summary.catchAllOverHours)} catch-all` : null, unbilled.length ? `${hours(unbilledHours)} unbilled` : null)} />
+        sub={join(`${hours1(over / perDay)}/day`, w.over(summary.billed.over, billed.length))} />
     </div>}
     <Notes summary={summary} account={account} flags={flags} options={options} revenueMonth={revenueMonth} />
     <div className="seg-grid">

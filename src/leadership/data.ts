@@ -133,7 +133,7 @@ export function monthFlags(config: LeadershipConfig | undefined, month: string, 
   return {
     estimated: rows.some((r) => r.labor_basis !== 'pay_report' && r.labor > 0),
     revenueLag: null,
-    failedSyncs: dataFlags(config, undefined, []).failedSyncs,
+    failedSyncs: dataFlags(config, undefined, rows).failedSyncs,
     weekInProgress: false,
     month: {
       subsExpected: expected.length, subsReceived: expected.filter((r) => r.sub_received).length,
@@ -154,9 +154,19 @@ export function dataFlags(config: LeadershipConfig | undefined, weekStart: strin
   return {
     estimated: rows.some((r) => r.labor_basis !== 'pay_report' && r.labor > 0),
     revenueLag: revenueMonth && expected && revenueMonth < expected ? { revenueMonth, expectedMonth: expected } : null,
-    failedSyncs: (config?.status.syncs ?? []).filter((s) => s.status === 'failed' && (s.integration_name.startsWith('winteam') || ['nightly', 'relay', 'mail_inbox'].includes(s.integration_name))).map((s) => ({ integration: s.integration_name, at: s.completed_at ?? s.started_at })),
+    failedSyncs: (config?.status.syncs ?? []).filter((s) => s.status === 'failed' && (s.integration_name.startsWith('winteam') || ['nightly', 'relay', 'mail_inbox'].includes(s.integration_name))
+      && syncConcerns(s.integration_name, rows)).map((s) => ({ integration: s.integration_name, at: s.completed_at ?? s.started_at })),
     weekInProgress: Boolean(week?.in_progress),
   }
+}
+
+/** Whether a failed sync touches these rows: the Sarus database only accounts with Sarus jobs, Relay only accounts it
+ * bills or costs (FedEx). Other syncs feed every account. With no rows, every failure counts. */
+export function syncConcerns(integration: string, rows: LeadershipRow[]): boolean {
+  if (!rows.length) return true
+  if (integration === 'winteam_sarus') return rows.some((r) => r.company === 'Sarus')
+  if (integration === 'relay') return rows.some((r) => r.revenue_month_basis === 'relay_ar' || (r.sub_week_basis ?? '').startsWith('relay'))
+  return true
 }
 
 /** Closed months of one account (job cost and Relay AR / AP per job, and its income statement). */
