@@ -92,12 +92,16 @@ input[type=search]{min-width:200px}
 .pill[aria-pressed="true"]{background:var(--text);color:var(--bg);border-color:var(--text)}
 
 /* KPIs */
-.kpi-lg{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:14px}
-.kpi{background:var(--bg);border:0.5px solid var(--border);border-radius:var(--r);padding:10px 12px;min-width:0}
+.kpi-lg{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}
+/* Rows balance by card count instead of leaving one card alone on a second row. */
+@media(min-width:1000px){.kpi-lg:has(>:nth-child(5):last-child){grid-template-columns:repeat(5,minmax(0,1fr))}.kpi-lg:has(>:nth-child(6):last-child){grid-template-columns:repeat(6,minmax(0,1fr))}.kpi-lg:has(>:nth-child(7):last-child){grid-template-columns:repeat(7,minmax(0,1fr))}.kpi-lg:has(>:nth-child(8):last-child){grid-template-columns:repeat(4,minmax(0,1fr))}}
+@media(min-width:600px) and (max-width:999px){.kpi-lg:has(>:nth-child(5):last-child),.kpi-lg:has(>:nth-child(6):last-child){grid-template-columns:repeat(3,minmax(0,1fr))}.kpi-lg:has(>:nth-child(7):last-child),.kpi-lg:has(>:nth-child(8):last-child){grid-template-columns:repeat(4,minmax(0,1fr))}}
+.kpi{background:var(--bg);border:0.5px solid var(--border);border-radius:var(--r);padding:10px 12px;min-width:0;container-type:inline-size}
 .kpi.sm{background:var(--bg2);border:none}
 .kl{font-size:11px;color:var(--text3);margin-bottom:3px}
-.kv{font-size:22px;font-weight:600;font-variant-numeric:tabular-nums}
-.kpi.sm .kv{font-size:15px}
+/* The figure scales with its card so eight-digit dollars never spill out of a narrow card. */
+.kv{font-size:clamp(17px,15cqi,22px);font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
+.kpi.sm .kv{font-size:clamp(13px,11cqi,15px)}
 .ks{font-size:11px;margin-top:3px;color:var(--text2)}
 .ok{color:var(--ok)}.warn{color:var(--warn)}.bad{color:var(--bad)}.neutral{color:var(--text3)}
 
@@ -195,14 +199,16 @@ tr.dim td{color:var(--text3)}
 .cut-site{font-size:13px;font-weight:600;display:flex;flex-wrap:wrap;align-items:center;gap:6px;min-width:0}
 .cut-bu{font-size:11px;font-weight:500;color:var(--text3)}
 .cut-flag{font-size:11px;font-weight:600;color:var(--warn);background:var(--warn-bg);border-radius:20px;padding:1px 8px}
-.cut-num{font-size:13px;font-weight:600;text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
-.cut-num small{display:block;font-size:11px;font-weight:400;color:var(--text3)}
+.cut-num{font-size:13px;font-weight:600;text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums;flex:none}
+.cut-num small{display:block;font-size:11px;font-weight:400;color:var(--text3);white-space:normal}
 .cut-bar{position:relative;display:flex;height:10px;margin:8px 0 18px;background:var(--bg2);border-radius:3px}
 .cut-bar .seg{height:100%}
 .cut-bar .seg:first-child{border-radius:3px 0 0 3px}
 .cut-bar .worked{background:var(--accent2)}.cut-bar .premium{background:var(--warn)}.cut-bar .sub{background:var(--muted)}
 .cut-bar .mark{position:absolute;top:-3px;bottom:-3px;width:0;border-left:1.5px dashed var(--text)}
 .cut-bar .mark small{position:absolute;top:15px;left:0;transform:translateX(-50%);font-size:10.5px;color:var(--text3);white-space:nowrap}
+.cut-bar .mark.end small{transform:translateX(-100%)}
+.cut-bar .mark.start small{transform:none}
 .cut-meta{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:11.5px;color:var(--text2);font-variant-numeric:tabular-nums}
 .cut-meta b{color:var(--text);font-weight:600}
 .cut-detail{margin-top:10px;background:var(--bg2);border-radius:var(--r);padding:10px 12px}
