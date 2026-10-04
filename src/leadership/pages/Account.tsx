@@ -90,6 +90,8 @@ export function Account() {
   const { selectedAccount: account, route, navigate, weekStart, optionsFor, config, monthMode, month, can } = useLeadership()
   const tab = route.tab ?? 'overview'
   const weekQuery = useRows(monthMode ? undefined : account?.slug, 1)
+  // The same request with split-out subcontracted sites kept: the Pallet tab lists those billing pallet work.
+  const fullWeek = useRows(monthMode ? undefined : account?.slug, 1, { keepSubcontracted: true })
   const monthQuery = useMonthRows(monthMode ? account?.slug : undefined, monthMode ? month : undefined)
   const rowsQuery = monthMode ? monthQuery : weekQuery
   const weekRows = useMemo(() => (monthMode ? monthQuery.data?.rows ?? [] : rowsOfWeek(weekQuery.data?.rows, weekStart)), [monthMode, monthQuery.data, weekQuery.data, weekStart])
@@ -135,7 +137,8 @@ export function Account() {
   else if (tab === 'subcontracted' && tabs.includes(tab)) body = <SubcontractedTab account={account} />
   else if (tab === 'income-statement' && tabs.includes(tab)) body = <IncomeStatementTab account={account} options={options} />
   else if (!summary) body = <Empty>No data for this {monthMode ? 'month' : 'week'}.</Empty>
-  else if (tab === 'pallet' && tabs.includes(tab)) body = <PalletTab account={account} summary={summary} options={options} />
+  else if (tab === 'pallet' && tabs.includes(tab)) body = <PalletTab account={account} summary={summary} options={options}
+    subcontracted={(monthMode ? rows : rowsOfWeek(fullWeek.data?.rows, weekStart)).filter((r) => isSubcontracted(r, account))} />
   else if (tab === 'overview' || !tabs.includes(tab)) body = <Overview account={account} rows={rows} summary={summary} options={options} flags={flags}
     budgetWeeks={budgetWeeks} budgetMonths={budgetMonths} payHolidays={payHolidays}
     afterGroups={can('tab.feedback') && <FeedbackTile account={account} month={monthMode ? month : weekStart ? weekEndOf(weekStart).slice(0, 7) : undefined} />} />

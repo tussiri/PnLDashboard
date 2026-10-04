@@ -8,7 +8,7 @@ import type { LeadershipAccount, LeadershipMonthlyJob, LeadershipRow } from '../
 import { MarginChart, useTokens } from '../charts'
 import { closedMonths, monthRevenue, siteMonths, useMonthly, vendorLabel } from '../data'
 import { hours, hours1, money, moneyK, pct } from '../format'
-import { accountSummary, statusOf, type AccountSummary, type MetricOptions, type SiteMetrics } from '../metrics'
+import { accountSummary, PROJECTED_VENDOR_BASES, statusOf, type AccountSummary, type MetricOptions, type SiteMetrics } from '../metrics'
 import { directOf, laborJobs, palletOf, variableWk } from '../Overview'
 import { monthLabel, monthShort } from '../routes'
 import { ChartCard, Empty, Kpi, LoadError, Pills, Skeleton, SortTable, Swatch, toneOf, type Column } from '../ui'
@@ -21,12 +21,16 @@ const core = directOf
 const lpCell = (v: number | null, target: number) => <span className={toneOf(statusOf(v, target))}>{pct(v)}</span>
 
 // Pallet
-export function PalletTab({ account, summary, options }: { account: LeadershipAccount; summary: Summary; options: MetricOptions }) {
+export function PalletTab({ account, summary, options, subcontracted = [] }: { account: LeadershipAccount; summary: Summary; options: MetricOptions
+  /** The period's subcontracted sites (split out of the labor views); those billing variable revenue are listed apart. */
+  subcontracted?: LeadershipRow[] }) {
   const monthly = useMonthly(account.slug)
   const lastMonth = closedMonths(monthly.data).at(-1)
   const target = options.target
-  const sites = summary.sites.filter((r) => (r.kids?.length ?? 1) > 1)
-  if (!sites.length) return <Empty>No pallet sites this week.</Empty>
+  const subKeys = new Set(subcontracted.map((r) => `${r.company}|${r.job_number}`))
+  const sites = summary.sites.filter((r) => (r.kids?.length ?? 1) > 1 && !subKeys.has(`${r.company}|${r.job_number}`))
+  const subSites = subcontracted.length ? accountSummary(subcontracted, options, []).sites.filter((r) => (variableWk(r, options) ?? 0) > 0) : []
+  if (!sites.length && !subSites.length) return <Empty>No pallet sites this week.</Empty>
   const s = accountSummary(sites, options, []).all
   const palD = sites.reduce((a, r) => a + pallet(r), 0)
   const palHrs = sites.reduce((a, r) => a + (r.pallet_hours ?? 0), 0)
@@ -59,15 +63,55 @@ export function PalletTab({ account, summary, options }: { account: LeadershipAc
     { key: 'lp', header: 'Combined LP', value: (r) => r.measurePct, render: (r) => <b>{lpCell(r.measurePct, target)}</b> },
   ]
   return <>
-    <div className="kpi-lg">
+    {sites.length > 0 && <div className="kpi-lg">
       <Kpi label="Pallet labor" value={money(palD)} sub={`${pct(s.labor ? palD / s.labor : null)} of labor at pallet sites`} />
       <Kpi label="Variable invoice" value={hasVariable ? money(varWk) : '–'} sub={hasVariable ? (options.invoiceBasis === 'run_rate_3m' ? `OS revenue run rate ÷ ${account.revenue_divisor}` : `${monthLabel(lastMonth ?? null)} OS revenue ÷ ${account.revenue_divisor}`) : 'Job Cost Analysis revenue split not loaded'} />
       <Kpi label="Pallet labor % of variable" value={hasVariable ? pct(varWk ? palD / varWk : null) : '–'} tone={hasVariable ? toneOf(statusOf(varWk ? palD / varWk : null, target, options.watchBand)) : ''}
         sub={monthTotals.variable ? `${monthLabel(lastMonth ?? null)} actual ${pct(monthTotals.labor / monthTotals.variable)}` : undefined} />
       <Kpi label="Pallet hours" value={hours(palHrs)} sub={`${hours(palOt)} OT/DT (${pct(palHrs ? palOt / palHrs : null)})`} tone={palHrs && palOt / palHrs > 0.15 ? 'bad' : palHrs && palOt / palHrs > 0.1 ? 'warn' : ''} />
       <Kpi label="Pallet sites combined LP" value={pct(s.measurePct)} tone={toneOf(statusOf(s.measurePct, target, options.watchBand))} sub="Core + pallet + sub ÷ fixed + variable" />
+    </div>}
+    {sites.length > 0 && <div className="card"><SortTable caption="Self-perform pallet sites" rows={sites} columns={cols} defaultSort={{ key: 'lp', dir: -1 }} csvName={`${account.slug}-pallet`} /></div>}
+    {subSites.length > 0 && <SubcontractedPallet account={account} sites={subSites} options={options} lastMonth={lastMonth} jobs={monthly.data?.jobs} />}
+  </>
+}
+
+/** Subcontracted sites billing variable (pallet) revenue: the subcontractor's invoice covers core and pallet work alike. */
+function SubcontractedPallet({ account, sites, options, lastMonth, jobs }: { account: LeadershipAccount; sites: Row[]; options: MetricOptions; lastMonth: string | undefined; jobs: LeadershipMonthlyJob[] | undefined }) {
+  const target = options.target
+  const sub = vendorLabel(account)
+  const varOf = (r: Row) => variableWk(r, options) ?? 0
+  // The closed month: AR against AP (and any direct labor). A week's AP is the invoices that landed in it, so it is lumpy.
+  const monthOf = (r: Row) => {
+    const js = jobs && lastMonth ? siteMonths(jobs, r.company, r.kids, r.job_number) : []
+    const rev = js.reduce((a, j) => a + monthRevenue(j.months[lastMonth!], true), 0)
+    const cost = js.reduce((a, j) => { const x = j.months[lastMonth!]; return a + (x ? (x.relay_ap > 0 ? x.relay_ap : x.subcontractors) + x.direct_labor : 0) }, 0)
+    return { rev, cost }
+  }
+  const monthCost = (r: Row) => { const m = monthOf(r); return m.rev > 0 ? m.cost / m.rev : null }
+  const monthT = sites.map(monthOf).reduce((a, m) => ({ rev: a.rev + m.rev, cost: a.cost + m.cost }), { rev: 0, cost: 0 })
+  const monthPct = monthT.rev > 0 ? monthT.cost / monthT.rev : null
+  const s = accountSummary(sites, options, []).all
+  const varT = sites.reduce((a, r) => a + varOf(r), 0)
+  const projected = sites.filter((r) => PROJECTED_VENDOR_BASES.has(r.sub_week_basis ?? '')).length
+  const cols: Column<Row>[] = [
+    { key: 'job', header: 'Job', left: true, value: (r) => Number(r.job_number) || r.job_number },
+    { key: 'name', header: 'Site', left: true, value: (r) => r.site_name, className: 'nm' },
+    { key: 'fix', header: 'Fixed inv', value: (r) => r.invoice - varOf(r), render: (r) => money(r.invoice - varOf(r)) },
+    { key: 'var', header: 'Var inv', value: varOf, render: (r) => money(varOf(r)) },
+    { key: 'inv', header: 'Total inv', value: (r) => r.invoice, render: (r) => money(r.invoice) },
+    { key: 'cost', header: `${sub} $`, value: (r) => r.cost, render: (r) => <>{money(r.cost)}{PROJECTED_VENDOR_BASES.has(r.sub_week_basis ?? '') && <span className="neutral"> proj.</span>}</> },
+    { key: 'lp', header: 'Week cost %', value: (r) => r.measurePct, render: (r) => <span className="neutral">{pct(r.measurePct)}</span> },
+    { key: 'aug', header: `${monthShort(lastMonth ?? null)} cost %`, value: monthCost, render: (r) => <b>{lpCell(monthCost(r), target)}</b> },
+  ]
+  return <>
+    <div className="kpi-lg">
+      <Kpi label="Subcontracted pallet sites" value={String(sites.length)} sub={projected ? `${projected} with projected ${sub.toLowerCase()} cost` : undefined} />
+      <Kpi label="Variable invoice" value={money(varT)} sub={`of ${money(s.invoice)} total`} />
+      <Kpi label={`${sub} cost this ${options.period ?? 'week'}`} value={money(s.cost)} sub={`${pct(s.measurePct)} of invoice; AP by invoice date`} />
+      <Kpi label={`${monthLabel(lastMonth ?? null)} cost %`} value={pct(monthPct)} tone={toneOf(statusOf(monthPct, target, options.watchBand))} sub={`AP ${moneyK(monthT.cost)} ÷ AR ${moneyK(monthT.rev)}`} />
     </div>
-    <div className="card"><SortTable caption="Pallet sites" rows={sites} columns={cols} defaultSort={{ key: 'lp', dir: -1 }} csvName={`${account.slug}-pallet`} /></div>
+    <div className="card"><SortTable caption="Subcontracted pallet sites" rows={sites} columns={cols} defaultSort={{ key: 'aug', dir: -1 }} csvName={`${account.slug}-pallet-subcontracted`} /></div>
   </>
 }
 
