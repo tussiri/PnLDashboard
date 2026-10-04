@@ -8,7 +8,7 @@ import type { AuthUser, Role } from './roles'
 export type Permission =
   | 'view.company' | 'view.analytics'
   | 'tab.sites' | 'tab.pallet' | 'tab.over-target' | 'tab.overtime' | 'tab.income-statement' | 'tab.subcontracted' | 'tab.map' | 'tab.vendors' | 'tab.feedback' | 'tab.budget'
-  | 'data.allocations' | 'data.month' | 'data.staffing' | 'data.invoices' | 'data.photos' | 'data.export'
+  | 'data.allocations' | 'data.month' | 'data.staffing' | 'data.invoices' | 'data.photos' | 'data.export' | 'data.qa'
 
 export interface PermissionInfo { key: Permission; group: string; label: string }
 
@@ -31,6 +31,7 @@ export const PERMISSIONS: readonly PermissionInfo[] = [
   { key: 'data.invoices', group: 'Data', label: 'Vendor invoices' },
   { key: 'data.photos', group: 'Data', label: 'Photos' },
   { key: 'data.export', group: 'Data', label: 'CSV export' },
+  { key: 'data.qa', group: 'Data', label: 'QA scores' },
 ]
 export const PERMISSION_KEYS: readonly Permission[] = PERMISSIONS.map((p) => p.key)
 

@@ -9,8 +9,8 @@ from decimal import Decimal
 import pytest
 from openpyxl import Workbook
 
-from app.imports import (coverage_windows, detect_kind, header_map, normalize_rows, parse_date, parse_number,
-                         parse_period, read_table)
+from app.imports import (coverage_windows, detect_kind, header_map, normalize_qa, normalize_rows, parse_date, parse_number,
+                         parse_period, qa_week, read_table)
 
 COMPANIES = {"1": "Crane IFS", "2": "Crane West", "3": "Crane Southwest"}
 
@@ -213,3 +213,41 @@ def test_unrated_work_orders_are_skipped_not_errors():
     ]
     parsed = normalize_rows("service_feedback", FEEDBACK_HEADERS, rows, {})
     assert (len(parsed.records), parsed.skipped, parsed.errors) == (3, 3, [])
+
+
+def test_qa_scores_are_recognized_in_long_and_wide_layouts():
+    assert detect_kind("scores.csv", ["Week", "Site", "Score"]) == "qa_score"
+    assert detect_kind("Amazon QA 2026.xlsx", ["Week", "LGB3", "BDL3/7"]) == "qa_score"
+    assert detect_kind("quality.csv", ["Week", "LGB3", "BDL3/7"]) is None  # a wide file needs "qa" in its name
+    assert detect_kind("aqua.csv", ["Week", "LGB3"]) is None
+
+
+def test_a_qa_week_is_its_monday():
+    assert qa_week("2026-09-14", "Week") == date(2026, 9, 14)
+    assert qa_week("Week of Sep 16, 2026", "Week") == date(2026, 9, 14)
+    assert qa_week("September 14 2026", "Week of") == date(2026, 9, 14)
+    assert qa_week("9/20/2026", "Week ending") == date(2026, 9, 14)
+    assert qa_week(datetime(2026, 9, 15), "Week") == date(2026, 9, 14)
+    with pytest.raises(ValueError, match="no year"):
+        qa_week("Week of Jan 5", "Week")
+
+
+def test_qa_long_layout_upper_cases_codes_and_rejects_out_of_range_scores():
+    parsed = normalize_qa(["Week", "Site", "Score"], [
+        {"Week": "2026-09-14", "Site": "lgb3", "Score": "96.5"},
+        {"Week": "2026-09-14", "Site": "DET3", "Score": "120"},
+        {"Week": "2026-09-14", "Site": "SBN1", "Score": ""},
+    ])
+    assert [(r["site_code"], r["week_start"], r["score"]) for r in parsed.records] == [("LGB3", date(2026, 9, 14), Decimal("96.5"))]
+    assert len(parsed.errors) == 1 and "DET3" in parsed.errors[0]
+
+
+def test_qa_wide_layout_reads_one_column_per_site():
+    parsed = normalize_qa(["Week", "LGB3", "BDL3/7"], [
+        {"Week": "Week of Sep 14, 2026", "LGB3": 100, "BDL3/7": 88.5},
+        {"Week": "Week of Sep 21, 2026", "LGB3": 92, "BDL3/7": None},
+        {"Week": "Average", "LGB3": 96, "BDL3/7": 88.5},
+    ])
+    assert [(r["site_code"], r["week_start"].isoformat(), float(r["score"])) for r in parsed.records] == [
+        ("LGB3", "2026-09-14", 100.0), ("BDL3/7", "2026-09-14", 88.5), ("LGB3", "2026-09-21", 92.0)]
+    assert parsed.errors == [] and parsed.skipped == 1  # the Average row is not a week

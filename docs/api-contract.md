@@ -609,6 +609,7 @@ separate and unchanged.
 | `data.invoices` | – | `invoices: null` on `/leadership/sites/…` |
 | `data.photos` | – | `photos: null` on `/leadership/sites/…` |
 | `data.export` | – | the CSV buttons |
+| `data.qa` | – | `403` on `GET /leadership/qa`; the QA charts on the account Overview |
 
 ## Customer feedback and star ratings, added 2026-10-02
 
@@ -633,6 +634,21 @@ orders not rated yet (Star Ratings Score `NO FEEDBACK`) instead of reporting the
 | Route | Response |
 |---|---|
 | `GET /leadership/feedback/overview?account=&month=YYYY-MM` | Permission `tab.feedback`, account scope. The Home tile: `{account, month, current, prior, months: [{month, ratings, scored, average, low}], year: {ratings, average, since}, low_sites: [{location_number, site_name, company, job_number, score, feedback_date}], summary}`. `current` is the month to date, `months` the 12 months to it, `low_sites` its 1-2 star ratings. Scores are computed in SQL. `summary` is the Claude reading of the last 90 days of comments (app/feedback_ai.py, migration 045): `{status: off \| none \| pending \| ready \| failed, window_days, comments, model, generated_at, error, summary: {sentiment, headline, themes: [{theme, sentiment, mentions, locations}]}}`; `off` without `ANTHROPIC_API_KEY`. Cached in `ops.feedback_summary` under a digest of the comments, so Claude is called only when they change, in a background thread; `pending` until the first summary lands. The comments read are the 90 days up to the account's newest rating, not up to today, so between imports they, and the summary, do not change; a feedback import (upload or mailbox) starts the rebuild at once, before anyone opens the page. Migration 049 makes `mart.v_service_feedback` read in milliseconds (the job-name fallback runs per distinct location without a Relay match). |
+
+## QA scores, added 2026-10-03
+
+Migration 050. Weekly site QA audit scores (0 to 100) import as kind `qa_score`, by upload or the
+reports mailbox. Two layouts: long (Week, Site, Score) or wide (a Week column, then one column per
+site code; recognized by its columns when the file name starts `qa_score` or holds the word `qa`). A week
+cell is a date or "Week of Sep 14, 2026" (a label without a year is rejected); it is stored as the
+Monday the week starts, and a "Week ending" column's Sunday goes back to its Monday. Rows upsert by
+site code and week into `core.fact_qa_score`. `mart.v_qa_score` matches a site code to the job mapped
+to an account whose name ends in ` - <code>` ("Amazon - LGB3"); codes matching no job (sites run by
+another provider) are kept but appear on no account.
+
+| Route | Response |
+|---|---|
+| `GET /leadership/qa?account=&weeks=16&week=YYYY-MM-DD` | Permission `data.qa`, account scope. `{account, weeks: [YYYY-MM-DD], sites: [{site_code, site_name, company, job_number, scores: {week: score}}]}`. `weeks` are the Mondays of the last `weeks` QA weeks up to the one holding `week` (default the latest loaded), oldest first. |
 
 ## Navigation, added 2026-10-02
 

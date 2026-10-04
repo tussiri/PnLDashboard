@@ -6,6 +6,7 @@ import { closedMonths, includesVendor, inSentence, monthLaborPct, monthRevenue, 
 import { hours, hours1, money, moneyK, pct } from './format'
 import { accountSummary, statusOf, type AccountNote, type AccountSummary, type MetricOptions, type SiteMetrics } from './metrics'
 import { monthLabel, monthShort, weekEndOf, weekTick } from './routes'
+import { QaCards } from './Qa'
 import { useLeadership } from './state'
 import { billingSources, invoiceLabel, weekChange, wordsFor } from './vocab'
 
@@ -217,6 +218,7 @@ export function Overview({ account, rows, summary, options, flags, headline = tr
         table={<table><thead><tr><th className="nosort l">{segmentLabel(account)}</th><th className="nosort">{w.invoiceCol}</th><th className="nosort">{w.direct}</th><th className="nosort">Pallet</th><th className="nosort">{subLabel}</th></tr></thead>
           <tbody>{mix.map((x) => <tr key={x.name}><td className="l">{x.name}</td><td>{money(sum(x.list, (r) => r.invoice))}</td><td>{money(sum(x.list, directOf))}</td><td>{money(sum(x.list, palletOf))}</td><td>{money(sum(x.list, (r) => r.vendor))}</td></tr>)}</tbody></table>} />
     </div>}
+    {can('data.qa') && <QaCards account={account} sites={sites} weekStart={period === 'week' ? weekStart ?? null : null} />}
   </>
 }
 

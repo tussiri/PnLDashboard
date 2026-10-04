@@ -151,6 +151,32 @@ export function SiteLpChart({ labels, values, tones, target, details }: { labels
   return <Chart type="bar" data={data} options={options} aria-label={`Labor % by site against a ${pct(target)} target`} role="img" />
 }
 
+/** QA score against budget variance by site: bars are labor vs budget dollars (colored by the QA score, edged by
+ * group), diamonds the QA score on the right axis, with the pass and warn lines. */
+export function QaVarianceChart({ labels, variance, scores, groups, pass, warn }: { labels: string[]; variance: (number | null)[]; scores: (number | null)[]; groups: string[]; pass: number; warn: number }) {
+  const t = useTokens()
+  const o = base(t)
+  const qaTone = (v: number | null) => (v == null ? t.text3 : v >= pass ? t.ok : v >= warn ? t.warn : t.bad)
+  const edge = [t.accent, t.accent2, t.tgt, t.muted]
+  const groupNames = [...new Set(groups)]
+  const data = { labels, datasets: [
+    { type: 'bar' as const, label: 'Vs budget', data: variance.map((v) => (v == null ? null : v * 100)), backgroundColor: scores.map(qaTone),
+      borderColor: groups.map((g) => edge[groupNames.indexOf(g) % edge.length]), borderWidth: groupNames.length > 1 ? 2 : 0, yAxisID: 'y', order: 2, ...bar, borderSkipped: false },
+    { type: 'line' as const, label: 'QA score', data: scores, showLine: false, pointStyle: 'rectRot', pointRadius: 6, pointHoverRadius: 7,
+      pointBackgroundColor: t.bg, pointBorderColor: t.text, pointBorderWidth: 2, yAxisID: 'y2', order: 0 },
+    { type: 'line' as const, label: `Pass ${pass}`, data: labels.map(() => pass), borderColor: t.ok, borderDash: [5, 4], borderWidth: 1.5, pointRadius: 0, pointHitRadius: 0, yAxisID: 'y2', order: 1 },
+    { type: 'line' as const, label: `Warn ${warn}`, data: labels.map(() => warn), borderColor: t.warn, borderDash: [5, 4], borderWidth: 1.5, pointRadius: 0, pointHitRadius: 0, yAxisID: 'y2', order: 1 },
+  ] } as unknown as ChartData<'bar'>
+  const options = { ...o,
+    scales: { x: { ...o.scales!.x, grid: { display: false }, ticks: { color: t.text2, autoSkip: false, maxRotation: 60, font: { size: 10 } } },
+      y: { ...o.scales!.y, ticks: { color: t.text2, callback: (v: string | number) => `${v}%` }, title: { display: true, text: 'Vs budget', color: t.text3 } },
+      y2: { position: 'right' as const, min: 60, max: 105, grid: { display: false }, border: { display: false }, ticks: { color: t.text2, stepSize: 10 }, title: { display: true, text: 'QA score', color: t.text3 } } },
+    plugins: { ...o.plugins, tooltip: { ...o.plugins!.tooltip, filter: (c: { datasetIndex: number }) => c.datasetIndex < 2,
+      callbacks: { label: (c: { datasetIndex: number; parsed: { y: number | null } }) => (c.datasetIndex === 0
+        ? `Vs budget: ${c.parsed.y == null ? 'no budget' : `${c.parsed.y >= 0 ? '+' : ''}${c.parsed.y.toFixed(1)}%`}` : `QA score: ${c.parsed.y == null ? 'none' : c.parsed.y.toFixed(1)}`) } } } }
+  return <Chart type="bar" data={data} options={options as unknown as ChartOptions<'bar'>} aria-label="QA score and labor against budget by site" role="img" />
+}
+
 /** Weekly invoice against core, pallet and sub labor by group (the FedEx report's "where the labor dollars went"). */
 export function LaborMixChart({ labels, invoice, core, pallet, sub, subLabel, directLabel = 'Core labor', invoiceLabel = 'Weekly invoice' }: { labels: string[]; invoice: number[]; core: number[]; pallet: number[]; sub: number[]; subLabel: string; directLabel?: string; invoiceLabel?: string }) {
   const t = useTokens()

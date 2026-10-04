@@ -41,7 +41,7 @@ from . import native_exports
 
 logger = logging.getLogger(__name__)
 
-KINDS = ("pay_report", "job_cost", "income_statement", "service_feedback")
+KINDS = ("pay_report", "job_cost", "income_statement", "service_feedback", "qa_score")
 # Income statement Account values that mean the company-wide statement (allocations, Company view).
 COMPANY_SCOPE = "__company__"
 COMPANY_WORDS = {"company", "all", "total", "crane ifs", "all companies", "consolidated"}
@@ -169,7 +169,81 @@ def detect_kind(file_name: str, headers: Iterable[Any]) -> str | None:
         return "income_statement"
     if "wonumber" in keys and ("starratingsscore" in keys or {"locationnumber", "feedbackdate"} <= keys):
         return "service_feedback"
+    if keys & QA_WEEK and keys & QA_SITE and keys & QA_SCORE:
+        return "qa_score"
+    if re.search(r"(^|[^a-z])qa([^a-z]|$)", name) and keys & QA_WEEK:  # the wide layout: a Week column, then one column per site
+        return "qa_score"
     return None
+
+
+# QA scores (migration 050): Week, Site, Score; or wide, a Week column then one column per site code.
+QA_WEEK = {"week", "weekof", "weekstart", "weekstarting", "weekending", "weekend", "date"}
+QA_SITE = {"site", "sitecode", "location", "locationcode", "building"}
+QA_SCORE = {"score", "qascore", "qa", "auditscore"}
+QA_WEEK_OF = re.compile(r"^\s*week\s+(?:of|starting)\s+", re.I)
+
+
+def qa_week(value: Any, header: str) -> date:
+    """The Monday of a QA week from "2026-09-14", "9/14/2026", "Week of Sep 14, 2026" or a date cell; a
+    "Week ending" column's Sunday is taken back to its Monday."""
+    if isinstance(value, str):
+        text = re.sub(r"[.,]", " ", QA_WEEK_OF.sub("", value)).split()
+        if len(text) == 3 and text[0][:1].isalpha():  # "Sep 14 2026", "September 14 2026"
+            value = datetime.strptime(f"{text[0][:3]} {text[1]} {text[2]}", "%b %d %Y").date()
+        elif len(text) == 2 and text[0][:1].isalpha():
+            raise ValueError(f"week {value!r} has no year")
+    day = parse_date(value)
+    if compact(header) in ("weekending", "weekend"):
+        day -= timedelta(days=6)
+    return day - timedelta(days=day.weekday())
+
+
+def normalize_qa(headers: list[str], rows: list[dict[str, Any]]) -> Parsed:
+    parsed = Parsed(kind="qa_score", rows_read=len(rows))
+    by = {compact(h): h for h in headers if h is not None}
+    week_h = next((by[k] for k in by if k in QA_WEEK), None)
+    site_h = next((by[k] for k in by if k in QA_SITE), None)
+    score_h = next((by[k] for k in by if k in QA_SCORE), None)
+    if week_h is None:
+        parsed.error("missing required column: Week")
+        return parsed
+    long = site_h is not None and score_h is not None
+    site_columns = [] if long else [h for h in headers if h is not None and h != week_h and str(h).strip()]
+    for line, row in enumerate(rows, start=2):
+        try:
+            week = qa_week(row.get(week_h), week_h)
+        except ValueError as exc:
+            if not re.search(r"\d", str(row.get(week_h) or "")):  # "Average", a blank: not a week
+                parsed.skipped += 1
+            else:
+                parsed.error(f"line {line}: {exc}")
+            continue
+        pairs = [(row.get(site_h), row.get(score_h))] if long else [(h, row.get(h)) for h in site_columns]
+        for site, value in pairs:
+            code = clean_text(site)
+            if not code or value in (None, "", "-", "–"):
+                continue
+            try:
+                score = parse_number(value)
+                if score is None or not 0 <= score <= 100:
+                    raise ValueError(f"score {value!r} is not 0 to 100")
+            except ValueError as exc:
+                parsed.error(f"line {line}, {code}: {exc}")
+                continue
+            parsed.records.append({"site_code": code.upper(), "week_start": week, "score": score, "company": None})
+    return parsed
+
+
+def _load_qa_scores(cursor: Any, file_id: int, records: list[dict[str, Any]]) -> None:
+    """Upsert by site and week: a re-sent week replaces its score."""
+    latest = {(r["site_code"], r["week_start"]): r for r in records}
+    cursor.executemany(
+        """
+        INSERT INTO core.fact_qa_score (site_code, week_start, score, import_file_id) VALUES (%s, %s, %s, %s)
+        ON CONFLICT (site_code, week_start) DO UPDATE SET score = EXCLUDED.score, import_file_id = EXCLUDED.import_file_id, loaded_at = now()
+        """,
+        [(r["site_code"], r["week_start"], r["score"], file_id) for r in latest.values()],
+    )
 
 
 def read_table(file_name: str, content: bytes) -> tuple[list[str], list[dict[str, Any]]]:
@@ -551,7 +625,7 @@ def load_file(conn: Any, file_name: str, content: bytes, *, kind: str | None = N
             layout = None
         kind = native_exports.LAYOUT_KIND[layout] if layout else (kind or detect_kind(file_name, headers))
         if kind not in KINDS:
-            errors = [read_error or "unknown feed: name the file pay_report_*, job_cost_*, income_statement_* or service_feedback_*, or use the documented column names"]
+            errors = [read_error or "unknown feed: name the file pay_report_*, job_cost_*, income_statement_*, service_feedback_* or qa_score_*, or use the documented column names"]
             return _log(cursor, conn, kind or "pay_report", file_name, digest, origin, "failed", len(rows), 0, [], None, None, errors, uploaded_by)
         cursor.execute("SELECT import_file_id FROM ops.import_file WHERE kind = %s AND sha256 = %s AND status = 'loaded'", (kind, digest))
         if cursor.fetchone():
@@ -563,6 +637,8 @@ def load_file(conn: Any, file_name: str, content: bytes, *, kind: str | None = N
                 windows = native_exports.labor_summary(rows, _company_aliases(cursor), _company_numbers(cursor), parsed)
             else:
                 native_exports.job_cost_gl(rows, _company_aliases(cursor), _company_numbers(cursor), parsed, _gl_map(cursor))
+        elif kind == "qa_score":
+            parsed = normalize_qa(headers, rows)
         else:
             parsed = normalize_rows(kind, headers, rows, _company_numbers(cursor), _company_aliases(cursor))
         if kind == "income_statement":
@@ -585,7 +661,7 @@ def load_file(conn: Any, file_name: str, content: bytes, *, kind: str | None = N
         if partial:
             return _log(cursor, conn, kind, file_name, digest, origin, "failed", parsed.rows_read, 0, [], None, None,
                         [f"{partial}: upload it on Admin > Imports to load it"], uploaded_by)
-        date_field = {"pay_report": "work_date", "service_feedback": "feedback_date"}.get(kind, "period")
+        date_field = {"pay_report": "work_date", "service_feedback": "feedback_date", "qa_score": "week_start"}.get(kind, "period")
         dates = [r[date_field] for r in parsed.records]
         companies = sorted({r["company"] for r in parsed.records if r.get("company")})
         result = _log(cursor, None, kind, file_name, digest, origin, "loaded", parsed.rows_read, len(parsed.records), companies,
@@ -596,6 +672,8 @@ def load_file(conn: Any, file_name: str, content: bytes, *, kind: str | None = N
             _load_income_statement(cursor, result["import_file_id"], parsed.records)
         elif kind == "service_feedback":
             _load_service_feedback(cursor, result["import_file_id"], parsed.records)
+        elif kind == "qa_score":
+            _load_qa_scores(cursor, result["import_file_id"], parsed.records)
         else:
             _load_job_cost(cursor, result["import_file_id"], parsed.records, replace_months=layout == "job_cost_gl")
     conn.commit()

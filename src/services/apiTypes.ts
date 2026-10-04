@@ -1534,6 +1534,10 @@ export interface FeedbackOverview {
   }
 }
 
+/** GET /leadership/qa: weekly QA audit scores by site (migration 050); `weeks` are Mondays, oldest first. */
+export interface QaSite { site_code: string; site_name: string | null; company: string | null; job_number: string | null; scores: Record<string, number> }
+export interface LeadershipQaResponse { account: string; weeks: string[]; sites: QaSite[] }
+
 /** GET /leadership/budget: the account's monthly labor plan against actuals (migration 046). */
 export interface BudgetMonth {
   month: string; in_progress: boolean; details: Partial<Record<'school_days' | 'staff_days' | 'closure_days' | 'summer_days' | 'stat_holidays', number>>; supplies: number | null
@@ -1559,7 +1563,7 @@ export interface LeadershipVendorsResponse {
   lines: (LeadershipInvoiceLine & { company: string; job_number: string; site_name: string })[]
 }
 
-export type LeadershipImportKind = 'pay_report' | 'job_cost' | 'income_statement' | 'service_feedback'
+export type LeadershipImportKind = 'pay_report' | 'job_cost' | 'income_statement' | 'service_feedback' | 'qa_score'
 
 export interface LeadershipImportFile {
   import_file_id: number

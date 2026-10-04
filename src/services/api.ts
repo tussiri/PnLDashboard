@@ -1,6 +1,6 @@
 import type {
   FullSyncResult, LeadershipAccount, LeadershipAccountJob, LeadershipAccountPatch, LeadershipConfig, LeadershipImportFile, LeadershipImportKind,
-  LeadershipJobMapping, LeadershipRowsQuery, LeadershipRowsResponse, LeadershipSegment, LeadershipSiteResponse, LeadershipVendorsResponse, LeadershipFeedbackResponse, FeedbackOverview, LeadershipBudgetResponse, BudgetPlanRow, BudgetWeekRow, LeadershipMonthlyResponse, MailInboxStatus, MailInboxSetting, MailPollResult, CompanyResponse, LeadershipMonthResponse, AllocationStatus, AllocationSettings, AllocationMonth,
+  LeadershipJobMapping, LeadershipRowsQuery, LeadershipRowsResponse, LeadershipSegment, LeadershipSiteResponse, LeadershipVendorsResponse, LeadershipFeedbackResponse, FeedbackOverview, LeadershipQaResponse, LeadershipBudgetResponse, BudgetPlanRow, BudgetWeekRow, LeadershipMonthlyResponse, MailInboxStatus, MailInboxSetting, MailPollResult, CompanyResponse, LeadershipMonthResponse, AllocationStatus, AllocationSettings, AllocationMonth,
   PhotoValidationSyncResult, RebuildResult, StaffingJobResponse, SyncOptions, SyncRunsResponse, SystemStatus } from './apiTypes'
 
 /**
@@ -139,6 +139,7 @@ export const api = {
   saveBudget: (account: string, plan: { months?: BudgetPlanRow[]; weeks?: BudgetWeekRow[] }, signal?: AbortSignal) => request<{ account: string; months: BudgetPlanRow[] }>(`/leadership/budget/${encodeURIComponent(account)}`, { method: 'PUT', body: { months: plan.months ?? [], weeks: plan.weeks ?? [] }, admin: true, signal, rawRatios: true }),
   deleteBudget: (account: string, month?: string, signal?: AbortSignal, weeks = false) => request<{ account: string; removed: number }>(`/leadership/budget/${encodeURIComponent(account)}`, { method: 'DELETE', query: weeks ? { weeks: 'true' } : month ? { month } : undefined, admin: true, signal, rawRatios: true }),
   leadershipFeedbackOverview: (account: string, month: string | undefined, signal?: AbortSignal) => request<FeedbackOverview>('/leadership/feedback/overview', { query: { account, month }, signal, rawRatios: true }),
+  leadershipQa: (account: string, week: string | undefined, signal?: AbortSignal) => request<LeadershipQaResponse>('/leadership/qa', { query: { account, week, weeks: 16 }, signal, rawRatios: true }),
   leadershipFeedback: (account: string, months = 12, signal?: AbortSignal) => request<LeadershipFeedbackResponse>('/leadership/feedback', { query: { account, months }, signal, rawRatios: true }),
   leadershipVendors: (account: string, months = 6, signal?: AbortSignal) => request<LeadershipVendorsResponse>('/leadership/vendors', { query: { account, months }, signal, rawRatios: true }),
   leadershipMonthly: (account: string, months = 3, signal?: AbortSignal) => request<LeadershipMonthlyResponse>('/leadership/monthly', { query: { account, months }, signal, rawRatios: true }),

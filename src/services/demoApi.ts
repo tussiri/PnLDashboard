@@ -40,6 +40,7 @@ export function createDemoApi(options: DemoApiOptions = {}): DashboardApi {
     leadershipBudget: (account, signal) => settle(() => ({ account, months: [], weeks: [] }), signal),
     saveBudget: () => notAvailable('Budget'),
     deleteBudget: () => notAvailable('Budget'),
+    leadershipQa: (account, _week, signal) => settle(() => ({ account, weeks: [], sites: [] }), signal),
     leadershipFeedbackOverview: (account, month, signal) => settle(() => ({ account, month: `${month ?? ''}-01`, current: null, prior: null, months: [], year: { ratings: 0, average: null, since: '' }, low_sites: [], summary: { status: 'off' as const } }), signal),
     leadershipFeedback: (account, _months, signal) => settle(() => ({ account, since: '', lines: [], ratings: 0, average: null, low: 0, sites: 0, unmatched: 0, by_site: [] }), signal),
     leadershipMonthly: (account, _months, signal) => settle(() => demoLeadershipMonthly(account), signal),

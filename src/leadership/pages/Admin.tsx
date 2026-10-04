@@ -19,7 +19,7 @@ const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 /** Refresh every cached query after a change (configuration applies at read time). */
 const refreshAll = () => queryClient.invalidate()
 
-const FEED_NAME: Record<string, string> = { pay_report: 'Labor', job_cost: 'Job cost', income_statement: 'Income statement', service_feedback: 'Feedback' }
+const FEED_NAME: Record<string, string> = { pay_report: 'Labor', job_cost: 'Job cost', income_statement: 'Income statement', service_feedback: 'Feedback', qa_score: 'QA scores' }
 
 function useAction() {
   const { decision, redetect } = useLeadership()
@@ -267,7 +267,7 @@ function ImportsTab() {
       <div className="ct"><span>Upload</span></div>
       <form className="form-grid" onSubmit={(e) => { e.preventDefault(); if (file) void run(`Imported ${file.name}`, () => api.leadershipUpload(file, kind || undefined)) }}>
         <label className="field"><span>File (CSV or XLSX)</span><input type="file" accept=".csv,.xlsx,.xlsm" onChange={(e) => setFile(e.target.files?.[0] ?? null)} /></label>
-        <label className="field"><span>Feed</span><select value={kind} onChange={(e) => setKind(e.target.value as '' | LeadershipImportKind)}><option value="">Auto-detect</option><option value="pay_report">Timekeeping labor (Pay Report or labor summary)</option><option value="job_cost">Job Cost Analysis</option><option value="income_statement">Trend Income Statement</option><option value="service_feedback">Feedback and star ratings</option></select></label>
+        <label className="field"><span>Feed</span><select value={kind} onChange={(e) => setKind(e.target.value as '' | LeadershipImportKind)}><option value="">Auto-detect</option><option value="pay_report">Timekeeping labor (Pay Report or labor summary)</option><option value="job_cost">Job Cost Analysis</option><option value="income_statement">Trend Income Statement</option><option value="service_feedback">Feedback and star ratings</option><option value="qa_score">QA scores</option></select></label>
         <div className="field"><button type="submit" className="btn primary" disabled={!file || busy}>{busy ? 'Importing' : 'Import'}</button></div>
       </form>
       {view}
