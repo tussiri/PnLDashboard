@@ -9,15 +9,16 @@ not see (strip).
 
 Keys
     view.company        the Company page (every account; also needs an unlimited account scope)
-    view.analytics      the Analytics pages
+    view.analytics      the Portfolio pages (route #/portfolio; the key keeps its first name)
     tab.<account tab>   an account tab (sites, pallet, over-target, overtime, income-statement,
-                        subcontracted, map, vendors); Overview is always open
+                        subcontracted, map, vendors, feedback, budget); Overview is always open
     data.allocations    corporate allocations and margin after allocations
     data.month          the month-end rollup (the Week / Month switch)
     data.staffing       staffing requests on the site drawer
     data.invoices       vendor invoices on the site drawer
     data.photos         CompanyCam photos on the site drawer
     data.export         CSV downloads
+    data.qa             QA audit scores on the account Overview
 """
 from __future__ import annotations
 
@@ -31,7 +32,7 @@ from .auth import ROLES, User
 #: (key, group, label). Order is the matrix column order.
 CATALOG: tuple[tuple[str, str, str], ...] = (
     ("view.company", "Views", "Company"),
-    ("view.analytics", "Views", "Analytics"),
+    ("view.analytics", "Views", "Portfolio"),
     ("tab.sites", "Account tabs", "Sites"),
     ("tab.pallet", "Account tabs", "Pallet"),
     ("tab.over-target", "Account tabs", "Hours to cut"),
@@ -40,12 +41,15 @@ CATALOG: tuple[tuple[str, str, str], ...] = (
     ("tab.subcontracted", "Account tabs", "Subcontracted"),
     ("tab.map", "Account tabs", "Map"),
     ("tab.vendors", "Account tabs", "Vendors"),
+    ("tab.feedback", "Account tabs", "Feedback"),
+    ("tab.budget", "Account tabs", "Budget"),
     ("data.allocations", "Data", "Allocations and margin"),
     ("data.month", "Data", "Month rollup"),
     ("data.staffing", "Data", "Staffing requests"),
     ("data.invoices", "Data", "Vendor invoices"),
     ("data.photos", "Data", "Photos"),
     ("data.export", "Data", "CSV export"),
+    ("data.qa", "Data", "QA scores"),
 )
 KEYS: tuple[str, ...] = tuple(k for k, _, _ in CATALOG)
 

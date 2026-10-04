@@ -7,14 +7,14 @@ import type { AuthUser, Role } from './roles'
  */
 export type Permission =
   | 'view.company' | 'view.analytics'
-  | 'tab.sites' | 'tab.pallet' | 'tab.over-target' | 'tab.overtime' | 'tab.income-statement' | 'tab.subcontracted' | 'tab.map' | 'tab.vendors'
-  | 'data.allocations' | 'data.month' | 'data.staffing' | 'data.invoices' | 'data.photos' | 'data.export'
+  | 'tab.sites' | 'tab.pallet' | 'tab.over-target' | 'tab.overtime' | 'tab.income-statement' | 'tab.subcontracted' | 'tab.map' | 'tab.vendors' | 'tab.feedback' | 'tab.budget'
+  | 'data.allocations' | 'data.month' | 'data.staffing' | 'data.invoices' | 'data.photos' | 'data.export' | 'data.qa'
 
 export interface PermissionInfo { key: Permission; group: string; label: string }
 
 export const PERMISSIONS: readonly PermissionInfo[] = [
   { key: 'view.company', group: 'Views', label: 'Company' },
-  { key: 'view.analytics', group: 'Views', label: 'Analytics' },
+  { key: 'view.analytics', group: 'Views', label: 'Portfolio' },
   { key: 'tab.sites', group: 'Account tabs', label: 'Sites' },
   { key: 'tab.pallet', group: 'Account tabs', label: 'Pallet' },
   { key: 'tab.over-target', group: 'Account tabs', label: 'Hours to cut' },
@@ -23,12 +23,15 @@ export const PERMISSIONS: readonly PermissionInfo[] = [
   { key: 'tab.subcontracted', group: 'Account tabs', label: 'Subcontracted' },
   { key: 'tab.map', group: 'Account tabs', label: 'Map' },
   { key: 'tab.vendors', group: 'Account tabs', label: 'Vendors' },
+  { key: 'tab.feedback', group: 'Account tabs', label: 'Feedback' },
+  { key: 'tab.budget', group: 'Account tabs', label: 'Budget' },
   { key: 'data.allocations', group: 'Data', label: 'Allocations and margin' },
   { key: 'data.month', group: 'Data', label: 'Month rollup' },
   { key: 'data.staffing', group: 'Data', label: 'Staffing requests' },
   { key: 'data.invoices', group: 'Data', label: 'Vendor invoices' },
   { key: 'data.photos', group: 'Data', label: 'Photos' },
   { key: 'data.export', group: 'Data', label: 'CSV export' },
+  { key: 'data.qa', group: 'Data', label: 'QA scores' },
 ]
 export const PERMISSION_KEYS: readonly Permission[] = PERMISSIONS.map((p) => p.key)
 

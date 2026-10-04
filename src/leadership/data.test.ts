@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { LeadershipAccount, LeadershipRow } from '../services/apiTypes'
-import { closedMonths, prepareRows } from './data'
+import { closedMonths, isSubcontracted, monthRevenue, prepareRows, syncConcerns, weekBudgetOf, weekdaysIn } from './data'
 
 const row = (job: string, extra: Partial<LeadershipRow> = {}): LeadershipRow => ({
   week_start: '2026-09-14', week_end: '2026-09-20', company: 'Crane West', job_number: job, site_name: `Site ${job}`, parent_account: 'FedEx',
@@ -46,5 +46,65 @@ describe('closedMonths', () => {
     ] }
     // July: revenue in, labor 400 of 620 timekept (65%); August: carried by Relay billing. Subcontracted jobs are ignored.
     expect(closedMonths(data)).toEqual(['2026-06-01'])
+  })
+})
+
+describe('monthRevenue', () => {
+  const m = { revenue: 4030.48, relay_ar: 189143.5 } as never
+  it('takes Relay AR first for a subcontracted job, whose contract revenue has no job in job cost', () => {
+    expect(monthRevenue(m, true)).toBe(189143.5)
+    expect(monthRevenue({ revenue: 4030.48, relay_ar: 0 } as never, true)).toBe(4030.48)
+  })
+  it('takes job cost first for other jobs', () => {
+    expect(monthRevenue(m)).toBe(4030.48)
+    expect(monthRevenue({ revenue: 0, relay_ar: 900 } as never)).toBe(900)
+    expect(monthRevenue(undefined, true)).toBe(0)
+  })
+})
+
+describe('weekBudgetOf', () => {
+  const month = (m: string, total: number) => ({ month: `${m}-01`, in_progress: false, details: {}, supplies: null, actual: null, variance: null,
+    budget: { site: total, overhead: 0, total, revenue: null, labor_pct: null } })
+  const weeks = [{ week_end: '2026-09-13', site: 155691.58, overhead: 9578.54, holiday: 37069.42, details: { school_days: 4, stat_holidays: 1 } }]
+  it('uses the weekly calendar, holiday pay only when paid', () => {
+    expect(weekBudgetOf('2026-09-07', weeks, [], false)).toMatchObject({ labor: 165270.12, source: 'calendar' })
+    expect(weekBudgetOf('2026-09-07', weeks, [], true)!.labor).toBeCloseTo(202339.54, 2)
+  })
+  it('falls back to the monthly plan spread over weekdays (Crowley with a monthly plan only)', () => {
+    // September 2026 has 22 weekdays; the week of Sep 21 is five of them.
+    expect(weekdaysIn('2026-09')).toBe(22)
+    expect(weekBudgetOf('2026-09-21', undefined, [month('2026-09', 440000)], false)).toMatchObject({ labor: 100000, source: 'monthly' })
+    // A week across two months takes each day from its own month.
+    const b = weekBudgetOf('2026-09-28', undefined, [month('2026-09', 440000), month('2026-10', 460000)], false)!
+    expect(b.labor).toBeCloseTo(3 * 20000 + 2 * (460000 / 22), 2) // Sep 28-30 at 440K/22, Oct 1-2 at 460K/22
+    expect(weekBudgetOf('2026-09-21', undefined, [], false)).toBeNull()
+  })
+})
+
+describe('syncConcerns', () => {
+  const row = (company: string, extra: object = {}) => ({ company, revenue_month_basis: 'job_cost', sub_week_basis: null, ...extra }) as never
+  it('shows a Sarus or Relay failure only on accounts those systems feed', () => {
+    expect(syncConcerns('winteam_sarus', [row('Crane Southwest')])).toBe(false)
+    expect(syncConcerns('winteam_sarus', [row('Crane IFS'), row('Sarus')])).toBe(true)
+    expect(syncConcerns('relay', [row('Crane Southwest')])).toBe(false)
+    expect(syncConcerns('relay', [row('Crane IFS', { sub_week_basis: 'relay_ap' })])).toBe(true)
+    expect(syncConcerns('winteam_api', [row('Crane Southwest')])).toBe(true)
+    expect(syncConcerns('winteam_sarus', [])).toBe(true)
+  })
+})
+
+describe('isSubcontracted', () => {
+  const row = (extra: object) => ({ delivery_model: 'subcontracted', hours: 4471, sub_week: 2526, ...extra }) as never
+  it('Amazon: a site with Crane payroll hours is self-performed whatever the reference flag says', () => {
+    const amazon = { split_subcontracted: false } as never
+    expect(isSubcontracted(row({}), amazon)).toBe(false) // LGB3: 4,471 hours, $2,526 agency
+    expect(isSubcontracted(row({ hours: 0, sub_week: 7129 }), amazon)).toBe(true) // vendor cost only
+    expect(isSubcontracted(row({ hours: 0, sub_week: 0 }), amazon)).toBe(false)
+  })
+  it('FedEx: the delivery model (from Relay) decides', () => {
+    const fedex = { split_subcontracted: true } as never
+    expect(isSubcontracted(row({ hours: 12 }), fedex)).toBe(true)
+    expect(isSubcontracted(row({ delivery_model: 'self_perform' }), fedex)).toBe(false)
+    expect(isSubcontracted(row({ delivery_model: null, hours: 0 }), fedex)).toBe(true)
   })
 })

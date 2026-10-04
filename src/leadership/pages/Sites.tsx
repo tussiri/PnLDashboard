@@ -1,5 +1,6 @@
-import { useState } from 'react'
-import type { LeadershipAccount, LeadershipRow } from '../../services/apiTypes'
+import { useMemo, useState } from 'react'
+import type { LeadershipAccount, LeadershipFeedbackResponse, LeadershipRow } from '../../services/apiTypes'
+import { scoreTone, stars } from './Feedback'
 import { closedMonths, includesVendor, monthLaborPct, siteMonths, useMonthly, vendorLabel } from '../data'
 import { hours1, money, pct } from '../format'
 import { accountSummary, statusOf, type AccountSummary, type MetricOptions, type SiteMetrics } from '../metrics'
@@ -19,7 +20,9 @@ export const roleBadge = (r: Row) => (r.role === 'catch_all' ? <Badge status="no
  * the vendor column (accounts whose labor % counts agency or subcontractor cost). Prior closed months'
  * labor % come from job cost (sub counted at the account's factor), else the row's prior month.
  */
-export function Sites({ account, summary, options, selfOnly }: { account: LeadershipAccount; summary: AccountSummary<LeadershipRow>; options: MetricOptions; selfOnly: boolean }) {
+export function Sites({ account, summary, options, selfOnly, ratings }: { account: LeadershipAccount; summary: AccountSummary<LeadershipRow>; options: MetricOptions; selfOnly: boolean
+  /** Customer feedback by site over 12 months (Feedback tab data), when the account has any. */
+  ratings?: LeadershipFeedbackResponse['by_site'] }) {
   const { navigate, can } = useLeadership()
   const w = wordsFor(useVocab())
   const [filter, setFilter] = useState('All')
@@ -40,6 +43,11 @@ export function Sites({ account, summary, options, selfOnly }: { account: Leader
   const lpOf = (r: Row, m: string) => (monthly.data ? monthLaborPct(siteMonths(monthly.data.jobs, r.company, r.kids, r.job_number), m, factor) : null)
   const priorMonth = rows.find((r) => r.revenue_month)?.revenue_month ?? null
 
+  const ratingOf = useMemo(() => {
+    const m = new Map<string, { average: number | null; ratings: number }>()
+    for (const s of ratings ?? []) if (s.company && s.job_number) m.set(`${s.company}|${s.job_number}`, s)
+    return (r: Row) => m.get(`${r.company}|${r.job_number}`)
+  }, [ratings])
   const cols: Column<Row>[] = [
     { key: 'job', header: 'Job', left: true, value: (r) => Number(r.job_number) || r.job_number, render: (r) => <>{r.job_number}{(r.kids?.length ?? 1) > 1 && <span className="neutral"> +{r.kids!.slice(1).join(',')}</span>}</> },
     { key: 'name', header: 'Site', left: true, value: (r) => r.site_name, className: 'nm', render: (r) => <>{r.site_name}{r.labor > 0 && r.labor_basis !== 'pay_report' && <span className="warn"> ~</span>}</> },
@@ -66,6 +74,8 @@ export function Sites({ account, summary, options, selfOnly }: { account: Leader
     { key: 'oth', header: 'OT hrs', value: (r) => r.ot_hours, render: (r) => hours1(r.ot_hours) },
     { key: 'otp', header: 'OT %', value: (r) => r.otPct, render: (r) => <span className={r.otPct > 0.25 ? 'bad' : r.otPct > 0.15 ? 'warn' : ''}>{pct(r.otPct)}</span> },
     { key: 'over', header: w.hoursOverCol, value: (r) => r.overHours, render: (r) => (r.overHours > 0.5 ? <span className="bad">{hours1(r.overHours)}</span> : '–') },
+    ...(ratings?.length ? [{ key: 'rate', header: 'Rating', value: (r: Row) => ratingOf(r)?.average ?? null,
+      render: (r: Row) => { const x = ratingOf(r); return x ? <span className={scoreTone(x.average)} title={`${x.ratings} ratings, 12 months`}>{stars(x.average)}</span> : '–' } }] : []),
     { key: 'st', header: 'Status', value: (r) => r.measurePct, render: roleBadge, csv: (r) => (r.role === 'site' ? r.status : r.role) },
   ]
   const s = accountSummary(rows, options, []).all
@@ -78,7 +88,7 @@ export function Sites({ account, summary, options, selfOnly }: { account: Leader
     <td className={toneOf(statusOf(s.measurePct, options.target, options.watchBand))}>{pct(s.measurePct)}</td>{Array.from({ length: priorCols }, (_, i) => <td key={i} />)}
     <td className="neutral">{money(sum(budget))}</td><td className={totalVar > 0 ? 'bad' : 'ok'}>{money(totalVar)}</td>
     {allocated && <><td className="neutral">{money(s.allocation)}</td><td className={s.margin < 0 ? 'bad' : ''}>{money(s.margin)}</td></>}
-    <td>{hours1(s.hours)}</td><td>{hours1(s.otHours)}</td><td>{pct(s.otPct)}</td><td>{hours1(sum((r) => r.overHours))}</td><td></td></tr>
+    <td>{hours1(s.hours)}</td><td>{hours1(s.otHours)}</td><td>{pct(s.otPct)}</td><td>{hours1(sum((r) => r.overHours))}</td>{ratings?.length ? <td></td> : null}<td></td></tr>
   return <>
     <Pills label="Filter sites" options={groups.map((o) => ({ value: o, label: o }))} value={filter} onChange={setFilter} />
     <div className="card"><SortTable caption={`${account.name} sites`} rows={rows} columns={cols} defaultSort={{ key: 'lp', dir: -1 }} total={tot} pageSize={100}

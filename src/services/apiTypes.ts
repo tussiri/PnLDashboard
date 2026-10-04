@@ -241,11 +241,15 @@ export interface SyncRun {
   error_message: string | null
 }
 
-/** GET /integrations/mail: the records mailbox poller. */
+/** One mail rule: each non-empty list must match; exclude_subjects refuses a subject containing any. */
+export interface MailRule { name: string; senders: string[]; subjects: string[]; exclude_subjects: string[]; files: string[] }
+/** ops.app_setting 'mail_inbox' (PUT /settings/mail_inbox). Mail matching any rule is the dashboard's; no rules = all mail. */
+export interface MailInboxSetting { enabled: boolean; every_minutes: number; first_lookback_days: number; rules: MailRule[] }
+/** GET /integrations/mail: the reports mailbox poller. */
 export interface MailInboxStatus {
   configured: boolean
   mailbox: string | null
-  schedule: { enabled: boolean; every_minutes: number; first_lookback_days: number }
+  schedule: MailInboxSetting
   last_run: { status: string; started_at: string; completed_at: string | null; records_inserted: number | null; error_message: string | null } | null
   recent: {
     received_at: string; sender: string | null; subject: string | null; file_name: string
@@ -1498,7 +1502,55 @@ export interface LeadershipSiteResponse {
   /** Null when the user lacks the data.invoices / data.photos permission. */
   invoices: { since: string; vendor_type_ids: string[]; total: number; lines: LeadershipInvoiceLine[] } | null
   photos: { configured: boolean; project_id: string | null; items: LeadershipPhoto[] | null; error: string | null } | null
+  /** The site's ratings over 12 months; null without the tab.feedback permission. */
+  feedback?: LeadershipFeedbackLine[] | null
 }
+
+/** One customer rating (the ServiceChannel feedback export, migration 043); job fields are null when the location matches no site. */
+export interface LeadershipFeedbackLine {
+  wo_number: string; location_number: string; provider_name: string | null; trade: string | null; feedback: string | null
+  feedback_date: string; comment: string | null; score: number | null; company: string | null; job_number: string | null
+  site_name: string | null; account_slug: string | null; match_basis: 'relay' | 'job_name' | null
+}
+/** GET /leadership/feedback */
+export interface LeadershipFeedbackResponse {
+  account: string; since: string; lines: LeadershipFeedbackLine[]
+  ratings: number; average: number | null; low: number; sites: number; unmatched: number
+  by_site: { location_number: string; company: string | null; job_number: string | null; site_name: string | null; ratings: number; average: number | null
+    low: number; latest_date: string | null; latest_score: number | null; latest_comment: string | null }[]
+}
+
+export interface FeedbackMonth { month: string; ratings: number; scored: number; average: number | null; low: number }
+export type FeedbackSentiment = 'positive' | 'mixed' | 'negative'
+/** GET /leadership/feedback/overview: the Home feedback tile. Scores from SQL; `summary` is Claude's reading of the comments. */
+export interface FeedbackOverview {
+  account: string; month: string; current: FeedbackMonth | null; prior: FeedbackMonth | null; months: FeedbackMonth[]
+  year: { ratings: number; average: number | null; since: string }
+  low_sites: { location_number: string; site_name: string | null; company: string | null; job_number: string | null; score: number; feedback_date: string }[]
+  summary: {
+    status: 'off' | 'none' | 'pending' | 'ready' | 'failed'; stale?: boolean; window_days?: number; comments?: number
+    model?: string | null; generated_at?: string | null; error?: string | null
+    summary?: { sentiment: FeedbackSentiment; headline: string; themes: { theme: string; sentiment: FeedbackSentiment; mentions: number; locations: string[] }[]; served_by?: string } | null
+  }
+}
+
+/** GET /leadership/qa: weekly QA audit scores by site (migration 050); `weeks` are Mondays, oldest first. */
+export interface QaSite { site_code: string; site_name: string | null; company: string | null; job_number: string | null; scores: Record<string, number> }
+export interface LeadershipQaResponse { account: string; weeks: string[]; sites: QaSite[] }
+
+/** GET /leadership/budget: the account's monthly labor plan against actuals (migration 046). */
+export interface BudgetMonth {
+  month: string; in_progress: boolean; details: Partial<Record<'school_days' | 'staff_days' | 'closure_days' | 'summer_days' | 'stat_holidays', number>>; supplies: number | null
+  budget: { site: number; overhead: number; total: number; revenue: number | null; labor_pct: number | null }
+  actual: { site: number; overhead: number; events: number; total: number; revenue: number; basis: 'job_cost' | 'pay_report' | 'estimate'; labor_pct: number | null } | null
+  variance: { total: number; site: number; overhead: number; pct: number | null; points: number | null } | null
+}
+/** A week of the plan's day calendar; holiday is the week's stat-holiday pay (counted when the view pays stat holidays). */
+export interface BudgetWeek { week_end: string; site: number; overhead: number; holiday: number; details: BudgetMonth['details'] }
+export interface LeadershipBudgetResponse { account: string; months: BudgetMonth[]; weeks: BudgetWeek[] }
+export interface BudgetWeekRow { week_end: string; site_labor: number; overhead_labor: number; holiday_labor: number; details: Record<string, number> }
+/** PUT /leadership/budget/{slug}: what is saved. */
+export interface BudgetPlanRow { month: string; site_labor: number | null; overhead_labor: number | null; revenue: number | null; supplies: number | null; details: Record<string, number>; updated_at?: string; updated_by?: string | null }
 
 export interface LeadershipVendorsResponse {
   account: string
@@ -1511,7 +1563,7 @@ export interface LeadershipVendorsResponse {
   lines: (LeadershipInvoiceLine & { company: string; job_number: string; site_name: string })[]
 }
 
-export type LeadershipImportKind = 'pay_report' | 'job_cost' | 'income_statement'
+export type LeadershipImportKind = 'pay_report' | 'job_cost' | 'income_statement' | 'service_feedback' | 'qa_score'
 
 export interface LeadershipImportFile {
   import_file_id: number

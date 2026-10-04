@@ -102,7 +102,7 @@ export function Analytics() {
   const subtitle = [weekStart ? weekLabel(weekStart) : null, updatedLine(config.data)].filter(Boolean).join('. ')
   const set = (next: Parameters<typeof navigate>[0]) => navigate(next, { replace: true })
   return <>
-    <PageHeader title="Analytics" subtitle={subtitle} target={route.analyticsTab !== 'units'} />
+    <PageHeader title="Portfolio" subtitle={subtitle} target={route.analyticsTab !== 'units'} />
     <AnalyticsTabs />
     {route.analyticsTab === 'units' ? <AnalyticsUnits /> : <>
     {q.error ? <LoadError error={q.error} onRetry={q.refetch} /> : !q.data ? <Skeleton height={400} /> : !sites.length ? <Empty>No data for this week.</Empty> : <>

@@ -9,8 +9,8 @@ from decimal import Decimal
 import pytest
 from openpyxl import Workbook
 
-from app.imports import (coverage_windows, detect_kind, header_map, normalize_rows, parse_date, parse_number,
-                         parse_period, read_table)
+from app.imports import (coverage_windows, detect_kind, header_map, normalize_qa, normalize_rows, parse_date, parse_number,
+                         parse_period, qa_week, read_table)
 
 COMPANIES = {"1": "Crane IFS", "2": "Crane West", "3": "Crane Southwest"}
 
@@ -138,3 +138,116 @@ def test_job_cost_merge_accepts_overtime_hours():
     _load_job_cost(cursor, 1, [record, {**record, "revenue": Decimal(50), "overtime_hours": Decimal("1.5")}])
     inserted = cursor.params[-1]
     assert inserted[4] == Decimal(150) and inserted[14] == Decimal(5)
+
+
+TIMEKEEPING_QUERY = ["ExportRunDate", "ExportStartDate", "ExportEndDate", "TKHoursID", "JobNum", "JobDesc", "EmployeeNumber", "WorkDate", "Hours",
+                     "PayRate", "HoursTypeID", "HoursTypeDescription", "RegularHours", "OvertimeHours", "DoubletimeHours", "SupervisorDescription",
+                     "CompanyNumber", "CompanyName", "OTRate", "DTRate", "Dollars", "OTDollars", "DTDollars", "TotalLaborDollars", "JobNumber", "PaidByCheckID"]
+
+
+def test_the_scheduled_timekeeping_query_loads_as_the_pay_report():
+    """The WinTeam scheduled query (<Company>_timekeeping_recent_*.csv) as it arrives in the mailbox."""
+    from app.imports import detect_kind
+
+    values = ["9/30/2026 3:00:01 AM", "9/9/2026", "9/29/2026", "292700", "300", "Amazon - BDL3/7", "30548", "9/15/2026", "10.0000", "17.0000", "15",
+              "Ops/Regular", "8.0000", "2.0000", "0.0000", "Pat Lead", "1", "ServiceMaster by Sarus Co", "25.50000", "34.00000", "136.000000",
+              "51.000000", "0.000000", "187.000000", "300", "88123"]
+    assert detect_kind("Sarus_timekeeping_recent_20260930_0309.csv", TIMEKEEPING_QUERY) == "pay_report"
+    parsed = normalize_rows("pay_report", TIMEKEEPING_QUERY, [dict(zip(TIMEKEEPING_QUERY, values))], COMPANIES, {"ServiceMaster by Sarus Co": "Sarus"})
+    r = parsed.records[0]
+    assert parsed.errors == [] and r["company"] == "Sarus"  # by name: Sarus is company 1 in its own database
+    assert (r["total_hours"], r["total_dollars"], r["overtime_dollars"], r["regular_dollars"]) == (Decimal("10"), Decimal("187"), Decimal("51"), Decimal("136"))
+    assert r["work_date"].isoformat() == "2026-09-15" and r["paid_by_check_id"] == "88123"
+
+
+def test_a_filtered_export_is_recognized_as_partial():
+    """A mailed file carrying a slice of a company's jobs would replace the whole company's data."""
+    from app.imports import partial_export
+
+    class Cursor:
+        def __init__(self, have): self.have = have
+        def execute(self, sql, params): self.sql = sql
+        def fetchone(self): return {"n": self.have}
+
+    labor = [{"company": "Crane IFS", "job_number": str(j), "work_date": date(2026, 9, 14)} for j in range(3)]
+    assert "3 jobs where 40 are loaded" in partial_export(Cursor(40), "pay_report", labor, None)
+    assert partial_export(Cursor(5), "pay_report", labor, None) is None  # too little loaded to judge
+    assert partial_export(Cursor(4), "pay_report", labor * 1, None) is None
+    full = [{"company": "Crane IFS", "job_number": str(j), "work_date": date(2026, 9, 14)} for j in range(30)]
+    assert partial_export(Cursor(40), "pay_report", full, None) is None
+    cost = [{"company": "Crane West", "job_number": "39", "period": date(2026, 8, 1)}]
+    assert "1 jobs where 36 are loaded for 2026-08" in partial_export(Cursor(36), "job_cost", cost, None)
+
+
+FEEDBACK_HEADERS = ["Feedback", "WO Number", "Location Number", "Provider Name", "Trade", "Feed Back Date", "Star Ratings Comment", "Star Ratings Score"]
+FEEDBACK_ROWS = [
+    ["Satisfactory", "328967046", "3112", "ServiceMaster Facilities Maintenance", "JANITORIAL OFFICE", "2025-12-01",
+     "THE OFFICE HAS NOT BEEN THOROUGHLY CLEANED.", "1"],
+    ["Satisfactory", 350871868.0, "NIPA", "ServiceMaster Facilities Maintenance", "JANITORIAL DOCK", "2026-07-02", "'-", "1"],
+    ["Satisfactory", "'354023495", "NRBA", "ServiceMaster Facilities Maintenance", "JANITORIAL DOCK", "8/3/2026", "not cleaning fully", "1"],
+]
+
+
+def test_the_feedback_export_loads_as_service_feedback():
+    """FedEx's ServiceChannel feedback and star ratings export, as sent (no company column)."""
+    assert detect_kind("Feedback export.xlsx", FEEDBACK_HEADERS) == "service_feedback"
+    parsed = normalize_rows("service_feedback", FEEDBACK_HEADERS, [dict(zip(FEEDBACK_HEADERS, r)) for r in FEEDBACK_ROWS], COMPANIES)
+    assert parsed.errors == [] and len(parsed.records) == 3
+    first, second, third = parsed.records
+    assert (first["wo_number"], first["location_number"], first["trade"], first["feedback_date"], first["score"]) == \
+        ("328967046", "3112", "JANITORIAL OFFICE", date(2025, 12, 1), Decimal(1))
+    assert second["wo_number"] == "350871868" and second["comment"] is None  # Excel number, and "'-" is no comment
+    placeholder = normalize_rows("service_feedback", FEEDBACK_HEADERS, [dict(zip(FEEDBACK_HEADERS, ["Satisfactory", "1", "NIPA", "", "", "2026-05-04", "NO COMMENT", "2"]))], {})
+    assert placeholder.records[0]["comment"] is None
+    assert third["wo_number"] == "354023495" and third["feedback_date"] == date(2026, 8, 3) and third["company"] is None
+    missing = normalize_rows("service_feedback", FEEDBACK_HEADERS, [dict(zip(FEEDBACK_HEADERS, ["Good", "", "3112", "", "", "2026-01-01", "", "5"]))], {})
+    assert missing.records == [] and "wo_number is empty" in missing.errors[0]
+
+
+def test_unrated_work_orders_are_skipped_not_errors():
+    """The full export lists every work order; unrated ones read "No Feedback" / "NO FEEDBACK"."""
+    rows = [dict(zip(FEEDBACK_HEADERS, r)) for r in FEEDBACK_ROWS] + [
+        dict(zip(FEEDBACK_HEADERS, ["No Feedback", "332150643", "PGVA", "ServiceMaster Facilities Maintenance", "JANITORIAL DOCK", None, None, "NO FEEDBACK"])),
+        dict(zip(FEEDBACK_HEADERS, [None, "332150644", "0945", "ServiceMaster Facilities Maintenance", "JANITORIAL DOCK", None, None, "NO FEEDBACK"])),
+        dict(zip(FEEDBACK_HEADERS, ["Satisfactory", "332150645", "0920", "ServiceMaster Facilities Maintenance", "JANITORIAL DOCK", "2026-08-01", None, "NO FEEDBACK"])),
+    ]
+    parsed = normalize_rows("service_feedback", FEEDBACK_HEADERS, rows, {})
+    assert (len(parsed.records), parsed.skipped, parsed.errors) == (3, 3, [])
+
+
+def test_qa_scores_are_recognized_in_long_and_wide_layouts():
+    assert detect_kind("scores.csv", ["Week", "Site", "Score"]) == "qa_score"
+    assert detect_kind("Amazon QA 2026.xlsx", ["Week", "LGB3", "BDL3/7"]) == "qa_score"
+    assert detect_kind("quality.csv", ["Week", "LGB3", "BDL3/7"]) is None  # a wide file needs "qa" in its name
+    assert detect_kind("aqua.csv", ["Week", "LGB3"]) is None
+
+
+def test_a_qa_week_is_its_monday():
+    assert qa_week("2026-09-14", "Week") == date(2026, 9, 14)
+    assert qa_week("Week of Sep 16, 2026", "Week") == date(2026, 9, 14)
+    assert qa_week("September 14 2026", "Week of") == date(2026, 9, 14)
+    assert qa_week("9/20/2026", "Week ending") == date(2026, 9, 14)
+    assert qa_week(datetime(2026, 9, 15), "Week") == date(2026, 9, 14)
+    with pytest.raises(ValueError, match="no year"):
+        qa_week("Week of Jan 5", "Week")
+
+
+def test_qa_long_layout_upper_cases_codes_and_rejects_out_of_range_scores():
+    parsed = normalize_qa(["Week", "Site", "Score"], [
+        {"Week": "2026-09-14", "Site": "lgb3", "Score": "96.5"},
+        {"Week": "2026-09-14", "Site": "DET3", "Score": "120"},
+        {"Week": "2026-09-14", "Site": "SBN1", "Score": ""},
+    ])
+    assert [(r["site_code"], r["week_start"], r["score"]) for r in parsed.records] == [("LGB3", date(2026, 9, 14), Decimal("96.5"))]
+    assert len(parsed.errors) == 1 and "DET3" in parsed.errors[0]
+
+
+def test_qa_wide_layout_reads_one_column_per_site():
+    parsed = normalize_qa(["Week", "LGB3", "BDL3/7"], [
+        {"Week": "Week of Sep 14, 2026", "LGB3": 100, "BDL3/7": 88.5},
+        {"Week": "Week of Sep 21, 2026", "LGB3": 92, "BDL3/7": None},
+        {"Week": "Average", "LGB3": 96, "BDL3/7": 88.5},
+    ])
+    assert [(r["site_code"], r["week_start"].isoformat(), float(r["score"])) for r in parsed.records] == [
+        ("LGB3", "2026-09-14", 100.0), ("BDL3/7", "2026-09-14", 88.5), ("LGB3", "2026-09-21", 92.0)]
+    assert parsed.errors == [] and parsed.skipped == 1  # the Average row is not a week

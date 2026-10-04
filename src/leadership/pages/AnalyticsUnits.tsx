@@ -27,7 +27,7 @@ export function AnalyticsUnits() {
   const [delivery, setDelivery] = useState<Delivery>('all')
 
   const rows: Row[] = useMemo(() => (q.data?.rows ?? []).filter((r) => r.role !== 'non_billed' && (scope === 'all' || r.account_slug === scope)
-    && (delivery === 'all' || (delivery === 'sub') === isSubcontracted(r)))
+    && (delivery === 'all' || (delivery === 'sub') === isSubcontracted(r, accountBySlug(r.account_slug ?? undefined))))
     .map((r) => siteMetrics(r, optionsFor(accountBySlug(r.account_slug ?? undefined)))), [q.data, scope, delivery, optionsFor, accountBySlug])
   const weeks = q.data?.weeks ?? []
   const current = weekStart ?? weeks.at(-1)
@@ -40,8 +40,8 @@ export function AnalyticsUnits() {
     const before = inUnit.filter((r) => r.week_start === prevWeek)
     const nowRoll = rollup(now, 0)
     const target = nowRoll.invoice ? now.reduce((a, r) => a + r.target * r.invoice, 0) / nowRoll.invoice : 0.645
-    return { name, now: nowRoll, prev: before.length ? rollup(before, 0) : null, target, sites: now, subSites: now.filter(isSubcontracted).length }
-  }), [names, rows, current, prevWeek])
+    return { name, now: nowRoll, prev: before.length ? rollup(before, 0) : null, target, sites: now, subSites: now.filter((r) => isSubcontracted(r, accountBySlug(r.account_slug ?? undefined))).length }
+  }), [names, rows, current, prevWeek, accountBySlug])
 
   const series = useMemo(() => units.map((u, i) => {
     const byWeek = weeks.map((w) => rollup(rows.filter((r) => (r.company ?? 'Unassigned') === u.name && r.week_start === w), 0))
@@ -78,7 +78,7 @@ export function AnalyticsUnits() {
     <td>{money(rows.filter((r) => r.week_start === current).reduce((a, r) => a + (r.sub_week ?? 0), 0))}</td><td>{money(total.margin)}</td><td>{hours(total.hours)}</td><td>{hours(total.otHours)}</td></tr>
 
   interface Mix { key: string; unit: string; delivery: string; r: Rollup; vendor: number; count: number }
-  const mix: Mix[] = units.flatMap((u) => ([['Self-performed', u.sites.filter((r) => !isSubcontracted(r))], ['Subcontracted', u.sites.filter(isSubcontracted)]] as const)
+  const mix: Mix[] = units.flatMap((u) => ([['Self-performed', u.sites.filter((r) => !isSubcontracted(r, accountBySlug(r.account_slug ?? undefined)))], ['Subcontracted', u.sites.filter((r) => isSubcontracted(r, accountBySlug(r.account_slug ?? undefined)))]] as const)
     .filter(([, list]) => list.length).map(([label, list]) => ({ key: `${u.name}-${label}`, unit: u.name, delivery: label, r: rollup([...list], 0), vendor: list.reduce((a, r) => a + (r.sub_week ?? 0), 0), count: list.length })))
   const mixCols: Column<Mix>[] = [
     { key: 'unit', header: 'Business unit', left: true, value: (m) => m.unit },

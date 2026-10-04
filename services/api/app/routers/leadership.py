@@ -20,7 +20,8 @@ from pydantic import BaseModel, Field
 
 from .. import allocations, accounts, companycam, imports, marts
 from .. import month as month_module
-from .. import permissions
+from .. import budget as budget_module
+from .. import feedback_ai, permissions
 from ..common import allowed_accounts, current_user, jsonable, require_account, require_admin, source_block
 from ..db import connection
 
@@ -56,9 +57,14 @@ LEFT JOIN mart.v_job_cost_month_effective mw ON mw.job_number = w.job_number AND
 LEFT JOIN core.fact_job_cost_month vm ON vm.source = 'export_import' AND vm.company = w.company AND vm.job_number = w.job_number
                                      AND vm.month = w.revenue_month
 -- The 3-month run rate (the FedEx report's invoice basis): the revenue month and the two before it,
--- each month from job cost, else Relay AR where the week's revenue comes from Relay.
+-- each month from job cost, else Relay AR where the week's revenue comes from Relay. A subcontracted
+-- Relay site takes Relay AR for any month it has some: from July 2026 its contract revenue is booked to a
+-- GL line with no job, so its job cost carries only the OS (variable) line (mart.leadership_week does the same).
 LEFT JOIN LATERAL (
-  SELECT avg(coalesce(nullif(jc.revenue, 0), CASE WHEN w.revenue_month_basis LIKE 'relay%%' THEN r.ar_revenue END, 0)) AS revenue_run_rate,
+  -- A month with neither a job-cost row nor Relay AR (the site was not billing yet) is left out, not averaged in as 0.
+  SELECT avg(CASE WHEN w.delivery_model = 'subcontracted' AND coalesce(r.ar_revenue, 0) > 0 THEN r.ar_revenue
+                  WHEN jc.job_number IS NULL AND r.ar_revenue IS NULL THEN NULL
+                  ELSE coalesce(nullif(jc.revenue, 0), CASE WHEN w.revenue_month_basis LIKE 'relay%%' THEN r.ar_revenue END, 0) END) AS revenue_run_rate,
          avg(ex.revenue_variable) AS variable_run_rate
   FROM generate_series(w.revenue_month - interval '2 months', w.revenue_month, interval '1 month') AS g(m)
   LEFT JOIN mart.v_job_cost_month_effective jc ON jc.company = w.company AND jc.job_number = w.job_number AND jc.month = g.m::date
@@ -584,7 +590,14 @@ def leadership_site(company: str, job_number: str, weeks: int = Query(13, ge=1, 
         invoices = None
     if not permissions.allowed(user, "data.photos"):
         photos = None
-    return {"source": source_block(), "site": site_out, "weeks": permissions.strip(user, rows), "invoices": invoices, "photos": photos}
+    feedback = None
+    if permissions.allowed(user, "tab.feedback"):
+        with connection() as conn, conn.cursor() as cursor:
+            cursor.execute(FEEDBACK_SQL + " AND company = %(company)s AND job_number = %(job)s ORDER BY feedback_date DESC, wo_number",
+                           {"since": months_back(12), "company": company, "job": job_number})
+            feedback = [{**jsonable(dict(r)), "score": float(r["score"]) if r["score"] is not None else None} for r in cursor.fetchall()]
+    return {"source": source_block(), "site": site_out, "weeks": permissions.strip(user, rows), "invoices": invoices, "photos": photos,
+            "feedback": feedback}
 
 
 def subcontractor_type_ids(cursor: Any) -> list[str]:
@@ -672,6 +685,224 @@ def subcontractor_invoices(cursor: Any, job_key: int, months: int) -> dict[str, 
     cursor.execute(RELAY_LINES_SQL.format(join="", where="j.job_key = %(job_key)s"), {"since": since, "job_key": job_key})
     lines = merge_relay_lines(winteam, [jsonable(dict(r)) for r in cursor.fetchall()])
     return {"since": since.isoformat(), "vendor_type_ids": type_ids, "total": round(sum(l["amount"] or 0 for l in lines), 2), "lines": lines}
+
+
+FEEDBACK_SQL = """
+SELECT wo_number, location_number, provider_name, trade, feedback, feedback_date, comment, score, company, job_number,
+       site_name, account_slug, match_basis
+FROM mart.v_service_feedback
+WHERE feedback_date >= %(since)s
+"""
+
+
+def feedback_summary(lines: list[dict[str, Any]]) -> dict[str, Any]:
+    """Totals and one row per site (location): ratings, average score, low scores (1 or 2), the latest comment."""
+    scored = [l for l in lines if l["score"] is not None]
+    sites: dict[str, dict[str, Any]] = {}
+    for l in sorted(lines, key=lambda x: x["feedback_date"]):
+        s = sites.setdefault(l["location_number"], {"location_number": l["location_number"], "company": l["company"], "job_number": l["job_number"],
+                                                     "site_name": l["site_name"], "ratings": 0, "scored": 0, "total": 0.0, "low": 0,
+                                                     "latest_date": None, "latest_comment": None, "latest_score": None})
+        s["ratings"] += 1
+        if l["score"] is not None:
+            s["scored"] += 1; s["total"] += l["score"]; s["low"] += l["score"] <= 2
+        s["latest_date"], s["latest_score"] = l["feedback_date"], l["score"]
+        if l["comment"]:
+            s["latest_comment"] = l["comment"]
+    rows = [{**{k: v for k, v in s.items() if k not in ("total", "scored")}, "average": round(s["total"] / s["scored"], 2) if s["scored"] else None}
+            for s in sites.values()]
+    return {"ratings": len(lines), "average": round(sum(l["score"] for l in scored) / len(scored), 2) if scored else None,
+            "low": sum(1 for l in scored if l["score"] <= 2), "sites": len(sites), "unmatched": sum(1 for l in lines if l["job_number"] is None),
+            "by_site": sorted(rows, key=lambda r: (r["average"] if r["average"] is not None else 99, -r["ratings"]))}
+
+
+@router.get("/feedback", dependencies=[Depends(permissions.require_permission("tab.feedback"))])
+def leadership_feedback(account: str = Query(..., description="An account slug"), months: int = Query(12, ge=1, le=36),
+                        request: Request = None) -> dict[str, Any]:  # type: ignore[assignment]
+    """Customer feedback and star ratings (migration 043) at the account's sites over `months`, with totals and one
+    row per site. For FedEx, ratings whose location matches no site are included and counted as unmatched."""
+    if request is not None:
+        require_account(request, account)
+    since = months_back(months)
+    with connection() as conn, conn.cursor() as cursor:
+        cursor.execute("SELECT 1 FROM ops.account WHERE slug = %s", (account,))
+        if cursor.fetchone() is None:
+            raise HTTPException(status_code=404, detail=f"Unknown account {account!r}")
+        # The feed is FedEx's ServiceChannel export: a location matching no site still belongs to FedEx.
+        cursor.execute(FEEDBACK_SQL + " AND (account_slug = %(account)s OR (account_slug IS NULL AND %(account)s = 'fedex'))"
+                       " ORDER BY feedback_date DESC, wo_number", {"since": since, "account": account})
+        lines = [jsonable(dict(r)) for r in cursor.fetchall()]
+    for l in lines:
+        l["score"] = float(l["score"]) if l["score"] is not None else None
+    return {"account": account, "since": since.isoformat(), "lines": lines, **feedback_summary(lines)}
+
+
+FEEDBACK_MONTHS_SQL = """
+SELECT date_trunc('month', feedback_date)::date AS month, count(*) AS ratings, count(score) AS scored,
+       round(avg(score), 2) AS average, count(*) FILTER (WHERE score <= 2) AS low
+FROM mart.v_service_feedback
+WHERE feedback_date >= %(since)s AND feedback_date <= %(until)s
+  AND (account_slug = %(account)s OR (account_slug IS NULL AND %(account)s = 'fedex'))
+GROUP BY 1 ORDER BY 1
+"""
+
+
+@router.get("/feedback/overview", dependencies=[Depends(permissions.require_permission("tab.feedback"))])
+def leadership_feedback_overview(account: str = Query(..., description="An account slug"),
+                                 month: str | None = Query(None, description="YYYY-MM; default this month"),
+                                 request: Request = None) -> dict[str, Any]:  # type: ignore[assignment]
+    """The Home feedback tile: the month's ratings to date (average, count, 1-2 stars), the prior month,
+    the last 12 months by month, the 1-2 star locations this month, and the Claude summary of the last
+    90 days of comments (app/feedback_ai.py). Scores are computed here, never by the model."""
+    if request is not None:
+        require_account(request, account)
+    try:
+        first = date.fromisoformat(f"{month[:7]}-01") if month else date.today().replace(day=1)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="month must be YYYY-MM") from None
+    until = (first.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
+    since = first
+    for _ in range(11):
+        since = (since - timedelta(days=1)).replace(day=1)
+    with connection() as conn, conn.cursor() as cursor:
+        cursor.execute("SELECT 1 FROM ops.account WHERE slug = %s", (account,))
+        if cursor.fetchone() is None:
+            raise HTTPException(status_code=404, detail=f"Unknown account {account!r}")
+        cursor.execute(FEEDBACK_MONTHS_SQL, {"since": since, "until": until, "account": account})
+        months = [{**jsonable(dict(r)), "average": float(r["average"]) if r["average"] is not None else None} for r in cursor.fetchall()]
+        cursor.execute(FEEDBACK_SQL + " AND feedback_date <= %(until)s AND score <= 2 AND (account_slug = %(account)s OR (account_slug IS NULL AND %(account)s = 'fedex'))"
+                       " ORDER BY feedback_date DESC", {"since": first, "until": until, "account": account})
+        low = [jsonable(dict(r)) for r in cursor.fetchall()]
+        ai = feedback_ai.state(cursor, account)
+    by_month = {m["month"]: m for m in months}
+    prior = (first - timedelta(days=1)).replace(day=1).isoformat()
+    scored = sum(m["scored"] for m in months)
+    year_avg = round(sum((m["average"] or 0) * m["scored"] for m in months) / scored, 2) if scored else None
+    return {"account": account, "month": first.isoformat(), "current": by_month.get(first.isoformat()), "prior": by_month.get(prior),
+            "months": months, "year": {"ratings": sum(m["ratings"] for m in months), "average": year_avg, "since": since.isoformat()},
+            "low_sites": [{"location_number": l["location_number"], "site_name": l["site_name"], "company": l["company"], "job_number": l["job_number"],
+                           "score": float(l["score"]), "feedback_date": l["feedback_date"]} for l in low],
+            "summary": jsonable(ai)}
+
+
+QA_SQL = """
+SELECT site_code, week_start, score, company, job_number, site_name
+FROM mart.v_qa_score
+WHERE account_slug = %(account)s AND week_start > %(latest)s - %(weeks)s * 7 AND week_start <= %(latest)s
+ORDER BY week_start, site_code
+"""
+
+
+@router.get("/qa", dependencies=[Depends(permissions.require_permission("data.qa"))])
+def leadership_qa(account: str = Query(..., description="An account slug"), weeks: int = Query(16, ge=1, le=104),
+                  week: str | None = Query(None, description="YYYY-MM-DD; the last week shown is the one holding this day"),
+                  request: Request = None) -> dict[str, Any]:  # type: ignore[assignment]
+    """Weekly QA audit scores (migration 050) at the account's sites: the `weeks` QA weeks up to the one holding
+    `week` (default the latest loaded), one row per site with its scores by week (Monday)."""
+    if request is not None:
+        require_account(request, account)
+    try:
+        day = date.fromisoformat(week) if week else None
+    except ValueError:
+        raise HTTPException(status_code=422, detail="week must be YYYY-MM-DD") from None
+    with connection() as conn, conn.cursor() as cursor:
+        cursor.execute("SELECT 1 FROM ops.account WHERE slug = %s", (account,))
+        if cursor.fetchone() is None:
+            raise HTTPException(status_code=404, detail=f"Unknown account {account!r}")
+        cursor.execute("SELECT max(week_start) AS latest FROM mart.v_qa_score WHERE account_slug = %s", (account,))
+        latest = cursor.fetchone()["latest"]
+        if latest is not None and day is not None:
+            latest = min(latest, day - timedelta(days=day.weekday()))
+        rows = []
+        if latest is not None:
+            cursor.execute(QA_SQL, {"account": account, "latest": latest, "weeks": weeks})
+            rows = cursor.fetchall()
+    week_list = sorted({r["week_start"].isoformat() for r in rows})
+    sites: dict[str, dict[str, Any]] = {}
+    for r in rows:
+        s = sites.setdefault(r["site_code"], {"site_code": r["site_code"], "site_name": r["site_name"], "company": r["company"],
+                                              "job_number": r["job_number"], "scores": {}})
+        s["scores"][r["week_start"].isoformat()] = float(r["score"])
+    return {"account": account, "weeks": week_list, "sites": sorted(sites.values(), key=lambda s: s["site_code"])}
+
+
+class BudgetIn(BaseModel):
+    #: [{month: YYYY-MM, site_labor, overhead_labor, revenue, supplies, details}]
+    months: list[dict[str, Any]] = []
+    #: [{week_end: YYYY-MM-DD (a Sunday), site_labor, overhead_labor, holiday_labor, details}]
+    weeks: list[dict[str, Any]] = []
+
+
+@router.get("/budget", dependencies=[Depends(permissions.require_permission("tab.budget"))])
+def leadership_budget(account: str = Query(..., description="An account slug"), request: Request = None) -> dict[str, Any]:  # type: ignore[assignment]
+    """The account's monthly labor plan (migration 046) against actuals: site, overhead and events labor
+    from job cost, else the month rollup from timekeeping; variance and labor % (app/budget.py)."""
+    if request is not None:
+        require_account(request, account)
+    with connection() as conn, conn.cursor() as cursor:
+        cursor.execute("SELECT 1 FROM ops.account WHERE slug = %s", (account,))
+        if cursor.fetchone() is None:
+            raise HTTPException(status_code=404, detail=f"Unknown account {account!r}")
+        months = budget_module.report(cursor, account,
+                                      rollup=lambda m: month_module.rows_for(cursor, m.isoformat()[:7], allocate_parent_billing))
+        weeks = budget_module.weeks(cursor, account)
+    return {"account": account, "months": jsonable(months), "weeks": weeks}
+
+
+@router.put("/budget/{slug}", dependencies=[Depends(require_admin)])
+def update_budget(slug: str, body: BudgetIn, request: Request) -> dict[str, Any]:
+    """Admin: save plan months and / or weeks (upsert by month and by week); others are kept."""
+    if not body.months and not body.weeks:
+        raise HTTPException(status_code=422, detail="Send months, weeks or both")
+    try:
+        rows = budget_module.validate(body.months) if body.months else []
+        week_rows = budget_module.validate_weeks(body.weeks)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    with connection() as conn, conn.cursor() as cursor:
+        cursor.execute("SELECT 1 FROM ops.account WHERE slug = %s", (slug,))
+        if cursor.fetchone() is None:
+            raise HTTPException(status_code=404, detail=f"Unknown account {slug!r}")
+        budget_module.save(cursor, slug, rows, _actor(request))
+        budget_module.save_weeks(cursor, slug, week_rows, _actor(request))
+        conn.commit()
+        saved = budget_module.plan(cursor, slug)
+        saved_weeks = budget_module.weeks(cursor, slug)
+    return {"account": slug, "months": jsonable(saved), "weeks": saved_weeks}
+
+
+@router.post("/budget/read", dependencies=[Depends(require_admin)])
+async def read_budget_workbook(file: UploadFile = File(...)) -> dict[str, Any]:
+    """Admin: an uploaded labor budget workbook (.xlsx) as one tab-separated table per sheet. Nothing is
+    saved; the Budgets page parses the sheets, previews the monthly plan and weekly calendar, and saves."""
+    content = await file.read(MAX_UPLOAD_BYTES + 1)
+    if len(content) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="File is larger than 50 MB")
+    try:
+        sheets = budget_module.workbook_sheets(content)
+    except Exception as exc:  # noqa: BLE001 - not a readable workbook: say so plainly
+        raise HTTPException(status_code=422, detail=f"Could not read the workbook ({exc.__class__.__name__}); save it as .xlsx") from exc
+    return {"file": file.filename, "sheets": sheets}
+
+
+@router.delete("/budget/{slug}", dependencies=[Depends(require_admin)])
+def delete_budget(slug: str, month: str | None = Query(None, description="YYYY-MM; omit to clear the account's plan"),
+                  weeks: bool = Query(False, description="Clear only the weekly calendar")) -> dict[str, Any]:
+    with connection() as conn, conn.cursor() as cursor:
+        if weeks:
+            cursor.execute("DELETE FROM ops.account_budget_week WHERE account_slug = %s", (slug,))
+        elif month:
+            try:
+                first = date.fromisoformat(f"{month[:7]}-01")
+            except ValueError:
+                raise HTTPException(status_code=422, detail="month must be YYYY-MM") from None
+            cursor.execute("DELETE FROM ops.account_budget_month WHERE account_slug = %s AND month = %s", (slug, first))
+        else:
+            cursor.execute("DELETE FROM ops.account_budget_month WHERE account_slug = %s", (slug,))
+            cursor.execute("DELETE FROM ops.account_budget_week WHERE account_slug = %s", (slug,))
+        removed = cursor.rowcount
+        conn.commit()
+    return {"account": slug, "removed": removed}
 
 
 @router.get("/vendors", dependencies=[Depends(permissions.require_permission("tab.vendors"))])
@@ -859,7 +1090,10 @@ def map_job(company: str, job_number: str, body: JobMappingIn, request: Request)
         raise HTTPException(status_code=422, detail=f"role must be one of {accounts.ROLES}")
     with connection() as conn, conn.cursor() as cursor:
         if body.account_slug is None:
+            # Other, and kept there: auto-assignment would otherwise map it again from its parent account.
             cursor.execute("DELETE FROM ops.account_job WHERE company = %s AND job_number = %s", (company, job_number))
+            cursor.execute("INSERT INTO ops.account_job_exclusion (company, job_number, excluded_by) VALUES (%s, %s, 'admin') "
+                           "ON CONFLICT (company, job_number) DO UPDATE SET excluded_by = 'admin', excluded_at = now()", (company, job_number))
             conn.commit()
             return {"company": company, "job_number": job_number, "account_slug": None}
         cursor.execute("SELECT fallback_segment, array(SELECT name FROM ops.account_segment s WHERE s.account_slug = a.slug) AS segments "
@@ -870,6 +1104,7 @@ def map_job(company: str, job_number: str, body: JobMappingIn, request: Request)
         segment = None if body.role != "site" else (body.segment or account["fallback_segment"])
         if segment is not None and segment not in account["segments"]:
             raise HTTPException(status_code=422, detail=f"segment must be one of {account['segments']}")
+        cursor.execute("DELETE FROM ops.account_job_exclusion WHERE company = %s AND job_number = %s", (company, job_number))
         cursor.execute(
             """
             INSERT INTO ops.account_job (company, job_number, account_slug, segment, role, companycam_project_id, assigned_by,
@@ -920,4 +1155,6 @@ async def upload_import(request: Request, file: UploadFile = File(...), kind: st
     with connection() as conn:
         result = imports.load_file(conn, file.filename or "upload.csv", content, kind=kind, origin="upload", uploaded_by=_actor(request))
     marts_result = marts.rebuild_all("leadership-import") if rebuild and result["status"] == "loaded" else None
+    if result["kind"] == "service_feedback" and result["status"] == "loaded":
+        feedback_ai.warm()  # the comment summary is ready before anyone opens the page
     return {"file": jsonable({k: v for k, v in result.items() if k != "sha256"}), "marts": jsonable(marts_result)}

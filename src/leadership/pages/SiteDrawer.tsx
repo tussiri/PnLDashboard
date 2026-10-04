@@ -1,3 +1,4 @@
+import { groupVisits, scoreTone, stars, visitScores } from './Feedback'
 import { X } from 'lucide-react'
 import { useEffect, useMemo, useRef } from 'react'
 import { useApiQuery } from '../../hooks/useApiQuery'
@@ -40,6 +41,8 @@ function StaffingCard({ company, job }: { company: string; job: string }) {
       </>}
   </div>
 }
+
+const avgOf = (lines: { score: number | null }[]) => { const scored = lines.filter((l) => l.score != null); return scored.length ? scored.reduce((t, l) => t + l.score!, 0) / scored.length : null }
 
 /** Site detail drawer: this week's labor P&L, a 13-week trend, staffing requests, subcontractor invoices and CompanyCam photos. */
 export function SiteDrawer({ company, job }: { company: string; job: string }) {
@@ -89,6 +92,14 @@ export function SiteDrawer({ company, job }: { company: string; job: string }) {
           chart={<TrendChart labels={weeks.map((r) => weekTick(r.week_start))} values={weeks.map((r) => r.measurePct)} target={current?.target ?? options.target} label={m} />}
           table={<table><thead><tr><th className="nosort l">Week ending</th><th className="nosort">Invoicing</th><th className="nosort">Direct labor</th><th className="nosort">{m}</th><th className="nosort">Hours</th><th className="nosort">OT hrs</th></tr></thead>
             <tbody>{weeks.map((r) => <tr key={r.week_start}><td className="l">{weekTick(r.week_start)}</td><td>{money(r.invoice)}</td><td>{money(r.labor)}</td><td>{pct(r.measurePct)}</td><td>{hours1(r.hours)}</td><td>{hours1(r.ot_hours)}</td></tr>)}</tbody></table>} />}
+        {q.data.feedback && q.data.feedback.length > 0 && <div className="card">
+          <div className="ct"><span>Feedback, 12 months</span><span className={scoreTone(avgOf(q.data.feedback))}>{stars(avgOf(q.data.feedback))} avg, {q.data.feedback.length} ratings</span></div>
+          <div className="tw"><table><caption className="sr-only">Feedback and star ratings</caption>
+            <thead><tr><th className="nosort">Date</th><th className="nosort">Ratings</th><th className="nosort">Comment</th></tr></thead>
+            <tbody>{groupVisits(q.data.feedback).map((v) => <tr key={v.key}><td>{v.feedback_date}</td><td>{visitScores(v)}</td>
+              <td className="wrap">{v.comments.length ? v.comments.join(' / ') : '–'}</td></tr>)}</tbody>
+          </table></div>
+        </div>}
         {can('data.staffing') && <StaffingCard company={company} job={job} />}
         {q.data.invoices && <div className="card">
           <div className="ct"><span>{vendorLabel(account)} invoices since {monthLabel(q.data.invoices.since)}</span><span>{money(q.data.invoices.total)}</span></div>

@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { useApiQuery } from '../hooks/useApiQuery'
-import type { LeadershipAccount, LeadershipConfig, LeadershipMonth, LeadershipMonthlyJob, LeadershipMonthlyResponse, LeadershipMonthResponse, LeadershipRow, LeadershipRowsResponse } from '../services/apiTypes'
+import type { BudgetMonth, BudgetWeek, LeadershipAccount, LeadershipConfig, LeadershipMonth, LeadershipMonthlyJob, LeadershipMonthlyResponse, LeadershipMonthResponse, LeadershipRow, LeadershipRowsResponse } from '../services/apiTypes'
 import { queryKey } from '../services/queryClient'
 import { accountSummary, type AccountSummary, type MetricOptions } from './metrics'
 import { addDays } from './routes'
@@ -10,11 +10,11 @@ import { useLeadership } from './state'
  * Rows for `weeks` weeks ending at the selected week, for an account slug or a scope, shaped per
  * account (prepareRows): pallet jobs inside their site, report groups, subcontracted sites split out.
  */
-export function useRows(account: string | undefined, weeks = 1) {
+export function useRows(account: string | undefined, weeks = 1, { keepSubcontracted = false }: { keepSubcontracted?: boolean } = {}) {
   const { api, keyPrefix, weekStart, decision, accountBySlug } = useLeadership()
   const key = decision && account && weekStart ? queryKey(`${keyPrefix}/leadership/rows`, { account, week: weekStart, weeks }) : null
   const q = useApiQuery<LeadershipRowsResponse>(key, (signal) => api.leadershipRows({ account, week: weekStart, weeks }, signal), [api, account, weekStart, weeks])
-  const data = useMemo(() => (q.data ? { ...q.data, rows: prepareRows(q.data.rows, accountBySlug) } : q.data), [q.data, accountBySlug])
+  const data = useMemo(() => (q.data ? { ...q.data, rows: prepareRows(q.data.rows, accountBySlug, { keepSubcontracted }) } : q.data), [q.data, accountBySlug, keepSubcontracted])
   return { ...q, data }
 }
 
@@ -39,8 +39,17 @@ export const priorMonth = (month: string) => {
 /** Days in a month (YYYY-MM), for per-day figures in the month rollup. */
 export const daysInMonth = (month: string) => { const [y, m] = month.split('-').map(Number); return new Date(Date.UTC(y, m, 0)).getUTCDate() }
 
-/** Subcontracted: marked so, or no delivery model recorded and only vendor cost (no hours) this week. */
-export const isSubcontracted = (r: LeadershipRow) => r.delivery_model === 'subcontracted' || (r.delivery_model == null && !r.hours && (r.sub_week ?? 0) > 0)
+/**
+ * Subcontracted. An account that splits subcontracted sites out (FedEx: Relay knows which stations are
+ * subcontracted) uses the site's delivery model. Elsewhere (Amazon) agency labor is part of a site's
+ * labor, and the old reference flag marks any site with agency cost as subcontracted, so a site is
+ * subcontracted only when Crane has no payroll hours there and the week carries vendor cost.
+ */
+export const isSubcontracted = (r: LeadershipRow, account?: LeadershipAccount) => {
+  const vendorOnly = !(r.hours > 0) && (r.sub_week ?? 0) > 0
+  if (account?.split_subcontracted) return r.delivery_model === 'subcontracted' || (r.delivery_model == null && vendorOnly)
+  return vendorOnly
+}
 
 export const PALLET_GROUPS = ['Pallet sites', 'Janitorial only'] as const
 
@@ -73,7 +82,7 @@ export function prepareRows(rows: LeadershipRow[], accountBySlug: (slug: string 
   }
   return out.filter((r) => {
     const account = accountBySlug(r.account_slug ?? undefined)
-    if (account?.split_subcontracted && !keepSubcontracted && isSubcontracted(r)) return false
+    if (account?.split_subcontracted && !keepSubcontracted && isSubcontracted(r, account)) return false
     if (account?.group_by === 'pallet' && r.role === 'site') r.segment = (r.kids?.length ?? 1) > 1 ? PALLET_GROUPS[0] : PALLET_GROUPS[1]
     return true
   })
@@ -133,7 +142,7 @@ export function monthFlags(config: LeadershipConfig | undefined, month: string, 
   return {
     estimated: rows.some((r) => r.labor_basis !== 'pay_report' && r.labor > 0),
     revenueLag: null,
-    failedSyncs: dataFlags(config, undefined, []).failedSyncs,
+    failedSyncs: dataFlags(config, undefined, rows).failedSyncs,
     weekInProgress: false,
     month: {
       subsExpected: expected.length, subsReceived: expected.filter((r) => r.sub_received).length,
@@ -154,9 +163,19 @@ export function dataFlags(config: LeadershipConfig | undefined, weekStart: strin
   return {
     estimated: rows.some((r) => r.labor_basis !== 'pay_report' && r.labor > 0),
     revenueLag: revenueMonth && expected && revenueMonth < expected ? { revenueMonth, expectedMonth: expected } : null,
-    failedSyncs: (config?.status.syncs ?? []).filter((s) => s.status === 'failed' && (s.integration_name.startsWith('winteam') || ['nightly', 'relay', 'mail_inbox'].includes(s.integration_name))).map((s) => ({ integration: s.integration_name, at: s.completed_at ?? s.started_at })),
+    failedSyncs: (config?.status.syncs ?? []).filter((s) => s.status === 'failed' && (s.integration_name.startsWith('winteam') || ['nightly', 'relay', 'mail_inbox'].includes(s.integration_name))
+      && syncConcerns(s.integration_name, rows)).map((s) => ({ integration: s.integration_name, at: s.completed_at ?? s.started_at })),
     weekInProgress: Boolean(week?.in_progress),
   }
+}
+
+/** Whether a failed sync touches these rows: the Sarus database only accounts with Sarus jobs, Relay only accounts it
+ * bills or costs (FedEx). Other syncs feed every account. With no rows, every failure counts. */
+export function syncConcerns(integration: string, rows: LeadershipRow[]): boolean {
+  if (!rows.length) return true
+  if (integration === 'winteam_sarus') return rows.some((r) => r.company === 'Sarus')
+  if (integration === 'relay') return rows.some((r) => r.revenue_month_basis === 'relay_ar' || (r.sub_week_basis ?? '').startsWith('relay'))
+  return true
 }
 
 /** Closed months of one account (job cost and Relay AR / AP per job, and its income statement). */
@@ -166,8 +185,14 @@ export function useMonthly(account: string | undefined, months = 3) {
   return useApiQuery<LeadershipMonthlyResponse>(key, (signal) => api.leadershipMonthly(account!, months, signal), [api, account, months])
 }
 
-/** A month's billing for a job: job cost revenue, else Relay AR (FedEx months before job cost closes). */
-export const monthRevenue = (m: LeadershipMonth | undefined) => (m ? (m.revenue > 0 ? m.revenue : m.relay_ar) : 0)
+/**
+ * A month's billing for a job. A subcontracted job's contract revenue is booked to a GL line with no job
+ * (from July 2026), so its job cost carries only the OS revenue line: Relay AR, else job cost revenue.
+ * Other jobs: job cost revenue, else Relay AR (FedEx months before job cost closes).
+ */
+export const monthRevenue = (m: LeadershipMonth | undefined, subcontracted = false) =>
+  (!m ? 0 : subcontracted ? (m.relay_ar > 0 ? m.relay_ar : m.revenue) : m.revenue > 0 ? m.revenue : m.relay_ar)
+const isSub = (j: LeadershipMonthlyJob) => j.delivery_model === 'subcontracted'
 
 /** The jobs of a site (itself and any rolled-in pallet job) in the monthly response. */
 export function siteMonths(jobs: LeadershipMonthlyJob[], company: string | null, kids: string[] | undefined, job: string) {
@@ -180,7 +205,7 @@ export function monthLaborPct(jobs: LeadershipMonthlyJob[], month: string, vendo
   let revenue = 0, labor = 0
   for (const j of jobs) {
     const m = j.months[month]
-    revenue += monthRevenue(m)
+    revenue += monthRevenue(m, isSub(j))
     labor += (m?.direct_labor ?? 0) + (m?.subcontractors ?? 0) * vendorFactor
   }
   return revenue > 0 ? labor / revenue : null
@@ -204,4 +229,34 @@ export function closedMonths(data: LeadershipMonthlyResponse | undefined): strin
     }
     return billing > 0 && jobCost >= 0.5 * billing && (timekeeping === 0 || labor >= 0.7 * timekeeping)
   })
+}
+
+/**
+ * A week's budget labor from the account's plan: its weekly calendar row when there is one (site + overhead,
+ * plus stat-holiday labor when paid), else the monthly plan spread evenly over each month's weekdays (a plan
+ * loaded without a weekly calendar). Null when neither covers the week.
+ */
+export interface WeekBudget { labor: number; source: 'calendar' | 'monthly'; details: Partial<Record<string, number>>; holiday: number }
+export function weekBudgetOf(weekStart: string, weeks: BudgetWeek[] | undefined, months: BudgetMonth[] | undefined, payHolidays: boolean): WeekBudget | null {
+  const end = addDays(weekStart, 6)
+  const row = weeks?.find((x) => x.week_end === end)
+  if (row) return { labor: row.site + row.overhead + (payHolidays ? row.holiday : 0), source: 'calendar', details: row.details, holiday: row.holiday }
+  if (!months?.length) return null
+  const byMonth = new Map(months.map((m) => [m.month.slice(0, 7), m.budget.total]))
+  let labor = 0, covered = false
+  for (let i = 0; i < 5; i++) { // Monday to Friday
+    const day = addDays(weekStart, i), key = day.slice(0, 7), total = byMonth.get(key)
+    if (total == null) continue
+    covered = true
+    labor += total / weekdaysIn(key)
+  }
+  return covered ? { labor, source: 'monthly', details: {}, holiday: 0 } : null
+}
+
+/** Monday-to-Friday days in a month (YYYY-MM). */
+export function weekdaysIn(month: string): number {
+  const [y, m] = month.split('-').map(Number)
+  let n = 0
+  for (let d = 1; d <= new Date(Date.UTC(y, m, 0)).getUTCDate(); d++) { const w = new Date(Date.UTC(y, m - 1, d)).getUTCDay(); if (w !== 0 && w !== 6) n++ }
+  return n
 }

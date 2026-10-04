@@ -34,12 +34,12 @@ a demo banner. Queries are cached by `services/queryClient.ts`, keyed with the d
 ## Analytics suite (`src/suite/`)
 
 The Finance and Operations views of the retired reporting app, restored under Analytics for super
-administrators (`docs/auth-rbac.md`). Routes: `#/analytics/finance/<page>`,
-`#/analytics/operations/<page>` and `#/analytics/operations/jobs/<job number>` for a site.
+administrators (`docs/auth-rbac.md`), under Portfolio. Routes: `#/portfolio/finance/<page>`,
+`#/portfolio/operations/<page>` and `#/portfolio/operations/jobs/<job number>` for a site.
 
 | Path | Role |
 |---|---|
-| `suite/Suite.tsx` | Host: header, the Analytics tab row, the page pills, the filter bar, the view. Loaded with `React.lazy` from `App.tsx`, so the suite (and Recharts, which only it uses) is a separate chunk that other users never download. |
+| `suite/Suite.tsx` | Host: header, the Portfolio tab row, the page pills, the filter bar, the view. Loaded with `React.lazy` from `App.tsx`, so the suite (and Recharts, which only it uses) is a separate chunk that other users never download. |
 | `suite/pages.ts` | The twelve pages, their groups, labels and whether the filter bar applies. |
 | `suite/views/*`, `suite/components/*` | The views and their pieces (Recharts charts, `DataGrid`, KPI cards, the operations map), as they were. |
 | `suite/context/DashboardContext.tsx` | Period, scope and dimension filters (kept in localStorage), the reported range and source, toasts. Live or demo follows the leadership shell's decision. |
@@ -50,5 +50,5 @@ administrators (`docs/auth-rbac.md`). Routes: `#/analytics/finance/<page>`,
   the Finance and Operations tabs (`leadership/pages/AnalyticsTabs.tsx`) and the route in `App.tsx`.
   The API enforces the same on its routes.
 - The suite shares the query cache with the leadership views; its keys start with `suite/`.
-- Not carried over: the old Executive overview (now Analytics > Business units), Alerts, Reports,
+- Not carried over: the old Executive overview (now Portfolio > Business units), Alerts, Reports,
   Data dictionary and the old Administration page.

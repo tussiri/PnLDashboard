@@ -37,7 +37,7 @@ nobody, in every mode; the development `admin` user is a super administrator onl
 (`APP_SUPER_ADMINS=admin`). The variable is read at start-up, so restart the API after changing it.
 It is not editable in Admin > Users: an administrator cannot grant it to themselves.
 
-Super administrators see two more tabs under Analytics, **Finance** and **Operations**: the
+Super administrators see two more tabs under Portfolio, **Finance** and **Operations**: the
 portfolio views of the retired reporting app (`src/suite`, `docs/frontend.md`).
 
 | Group | Views |
@@ -52,16 +52,16 @@ portfolio views of the retired reporting app (`src/suite`, `docs/frontend.md`).
   else, administrators included. Their writes (`POST /forecasts/rebuild`) accept a valid
   `X-Admin-Token` or a super administrator session.
 - The browser hides the tabs and never requests the suite's code for anyone else; a suite URL
-  (`#/analytics/finance/revenue`) opened by another user shows the ordinary Analytics page or Home.
+  (`#/portfolio/finance/revenue`) opened by another user shows the ordinary Portfolio page or their account.
 - With no API reachable, a development build (`pnpm dev`) treats the demo `admin` sign-in as a super
   administrator so the suite can be explored on demo data; a production build does not.
 
 ## Permissions
 
 Roles are presets. Each user also carries a permission matrix (Admin > Users > Permissions):
-Company and Analytics views, each account tab, and data such as allocations and margin, the month
+Company and Portfolio views, each account tab, and data such as allocations and margin, the month
 rollup, staffing requests, vendor invoices, photos and CSV export. Defaults come from the role
-(executives lack Analytics and staffing requests; analysts lack Analytics); an administrator's
+(executives lack Portfolio and staffing requests; analysts lack Portfolio; the key is still `view.analytics`); an administrator's
 ticks that differ are stored as overrides in `ops.app_user.permissions` (migration 042) and Reset
 returns the role's defaults. Administrators hold everything. `APP_USERS_JSON` entries may carry a
 `"permissions": {"<key>": true|false}` object. The keys and what enforces each are listed in
@@ -85,10 +85,10 @@ A user can be limited to some accounts (Admin > Users > Accounts; `accounts` in 
 `ops.app_user.account_slugs`, migration 039). Nothing ticked means every account; administrators always
 see every account. A limited user:
 
-- sees only their accounts in the account list, on Home and in the Account pages;
+- lands on their account instead of Company and sees only their accounts in the account picker;
 - gets `403` on the leadership routes for any other account (rows, a site, vendors, monthly), and on
   `account=other`; `account=featured` and `all` narrow to their accounts;
-- gets `403` on every route that covers all accounts (Analytics, the retired reporting routes), which
+- gets `403` on every route that covers all accounts (Company, Portfolio, the retired reporting routes), which
   are not marked `scoped` in `require_role`.
 
 Limits are read from the user record on each request (like roles), so a change applies to sessions

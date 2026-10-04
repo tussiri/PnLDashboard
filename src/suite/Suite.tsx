@@ -66,7 +66,7 @@ function SuiteHeader({ page }: { page: SuitePage }) {
   const { mode, lastSource, systemStatus } = useDashboard()
   const asOf = asOfDate(lastSource, systemStatus)
   const subtitle = [page.title, mode === 'live' ? primarySourceOf(lastSource, systemStatus).label : null, mode === 'live' && asOf ? `As of ${fmtDate(asOf)}` : null].filter(Boolean).join('. ')
-  return <PageHeader title="Analytics" subtitle={subtitle} account={false} week={false} target={false} />
+  return <PageHeader title="Portfolio" subtitle={subtitle} account={false} week={false} target={false} />
 }
 
 function SuiteBody({ page }: { page: SuitePage }) {

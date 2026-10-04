@@ -44,3 +44,31 @@ def test_takes_the_subcontract_gl_range_as_parameters():
 def test_has_no_bare_percent_signs():
     """psycopg reads every % as a placeholder; a '90%' in a SQL comment broke the rebuild once."""
     assert not re.search(r"%(?!\(\w+\)s)", REBUILD_SQL)
+
+
+def test_feedback_summary_ranks_sites_lowest_first():
+    from datetime import date as d
+
+    from app.routers.leadership import feedback_summary
+
+    def line(wo, loc, when, score, comment=None, job="223"):
+        return {"wo_number": wo, "location_number": loc, "feedback_date": when, "score": score, "comment": comment,
+                "company": "Crane IFS" if job else None, "job_number": job, "site_name": f"FedEx - {loc}" if job else None}
+    lines = [line("1", "NIPA", d(2026, 7, 2), 1.0), line("2", "NIPA", d(2026, 8, 2), 5.0, "great"), line("3", "NRBA", d(2026, 8, 3), 1.0, "not cleaning fully"),
+             line("4", "ZZZZ", d(2026, 8, 4), None, job=None)]
+    s = feedback_summary(lines)
+    assert (s["ratings"], s["average"], s["low"], s["sites"], s["unmatched"]) == (4, 2.33, 2, 3, 1)
+    assert [r["location_number"] for r in s["by_site"]] == ["NRBA", "NIPA", "ZZZZ"]
+    nipa = s["by_site"][1]
+    assert (nipa["ratings"], nipa["average"], nipa["low"], nipa["latest_score"], nipa["latest_comment"]) == (2, 3.0, 1, 5.0, "great")
+
+
+def test_an_open_relay_month_projects_from_the_sites_billed_months():
+    """A month billed to the customer takes its payables; an open one is at least the recent billed months'
+    average (the contract covers fixed work only, so it understates a pallet site)."""
+    relay = REBUILD_SQL[REBUILD_SQL.index("relay AS ("):REBUILD_SQL.index("FROM assembled a")]
+    cases = relay.split("END AS relay_monthly")[0]
+    assert cases.index("a.relay_week_ar IS NOT NULL") < cases.index("a.relay_trail_ap") < cases.index("0.9 * a.relay_ap_monthly")
+    assert "'trailing_3mo_projection'" in relay
+    trail = REBUILD_SQL[REBUILD_SQL.index("relay_trail AS ("):REBUILD_SQL.index("ap_sub AS (")]
+    assert "t.ar_revenue IS NOT NULL" in trail and "t.month < m.month" in trail

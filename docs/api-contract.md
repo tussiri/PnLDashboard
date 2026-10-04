@@ -362,7 +362,7 @@ WinTeam sync cadence changed the same day: the worker runs one incremental sync 
 `nightly` (reported by `GET /leadership/config` `status.syncs`). Since 2026-09-29 it also runs a light
 timekeeping sync every `WINTEAM_SYNC_INTERVAL_MINUTES` (see "Staffing requests and the sync schedule").
 
-The leadership views (Home, Account, Analytics) read `mart.leadership_week` (migration 030, rules
+The leadership views (Company, Accounts, Portfolio) read `mart.leadership_week` (migration 030, rules
 in `services/api/app/leadership.py`) joined at read time with the account configuration
 (`ops.account`, `ops.account_segment`, `ops.account_job`, migration 028), so configuration edits
 apply without a rebuild. **Ratios in these payloads are fractions** (`target_labor_pct: 0.645`); the
@@ -430,9 +430,13 @@ and on demand. Settings `RELAY_BASE_URL`, `RELAY_EXPORT_TOKEN` (server-side only
 
 Effects on `mart.leadership_week` for the WinTeam jobs Relay covers (never Sarus):
 - `sub_week` = the week's service month (the month holding the week's Thursday) of Relay payables, excluding
-  self-perform legs, spread by days: actual when at least 90% of the site contract is invoiced or there is no
-  contract (`sub_week_basis` `relay_ap`), else the contract amount (`relay_contract`); Crane's own sites carry
-  none (`relay_self_perform`).
+  self-perform legs, spread by days: actual once the month is billed to the customer (Relay AR exists,
+  `sub_week_basis` `relay_ap`); while it is open, the greater of payables so far and the average payables of
+  the site's billed months among the three before it (`trailing_3mo_projection` unless payables so far are
+  higher; added 2026-10-03, since the contract covers fixed work only and a pallet site's invoices run above
+  it); with no billed month, actual when at least 90% of the site contract is invoiced or there is no
+  contract (`relay_ap`), else the contract amount (`relay_contract`); Crane's own sites carry none
+  (`relay_self_perform`).
 - `prior_sub` = the greater of job cost, WinTeam AP distributions and Relay payables (`prior_sub_basis` `relay_ap`).
 - `revenue_month_amount` / `prior_revenue` come from Relay AR when job cost does not cover the month
   (`revenue_month_basis` `relay_ar`).
@@ -463,7 +467,7 @@ where `permissions` are the user's effective values (see the permissions section
 ## Analytics suite access, added 2026-09-30
 
 The reporting, labor and forecast routes (the "Reporting", labor and forecast sections of this
-contract) are read by the analytics suite only (`src/suite`, Analytics > Finance and Operations).
+contract) are read by the analytics suite only (`src/suite`, Portfolio > Finance and Operations).
 Their shapes are unchanged. Reads answer to a super administrator session: `401` without a session,
 `403` otherwise. `POST /forecasts/rebuild` accepts a valid `X-Admin-Token` or a super administrator
 session. `docs/auth-rbac.md` (Super administrators and the analytics suite).
@@ -480,7 +484,9 @@ browser adds it into its parent site (`kids`, `pallet_labor`, `pallet_hours`, `p
 
 `GET /leadership/rows` rows add `parent_job_number`, `dt_hours` (inside `ot_hours`; the OT premium is
 ½ × OT + ½ × DT, so DT carries a full-time premium), `revenue_run_rate` (average monthly revenue over
-the revenue month and the two before it: job cost, else Relay AR for Relay-billed weeks),
+the revenue month and the two before it: job cost, else Relay AR for Relay-billed weeks; a subcontracted
+site takes Relay AR for any month it has some, since from July 2026 its job cost carries only the OS line;
+a month with neither job cost nor AR is left out rather than averaged as 0),
 `variable_run_rate` and `revenue_month_variable` (from the Job Cost Analysis revenue split).
 
 | Route | Response |
@@ -495,15 +501,16 @@ labor summary (loaded as kind `pay_report`, one Monday-Sunday week per file) and
 GL line (kind `job_cost`, GL accounts pivoted by the `job_cost_gl_map` ranges; a file replaces the
 imported months it covers).
 
-## Records mailbox, added 2026-09-29
+## Reports mailbox, added 2026-09-29
 
-Migration 038, docs/mail-inbox.md. The worker reads the records mailbox through Microsoft Graph
+Migration 038, docs/mail-inbox.md. The worker reads the reports mailbox through Microsoft Graph
 (read-only) and loads dashboard report exports through the importer (`ops.import_file.origin = 'mail'`).
 
 | Route | Response |
 |---|---|
-| `GET /integrations/mail` | `{configured, mailbox, schedule: {enabled, every_minutes, first_lookback_days}, last_run: {status, started_at, completed_at, records_inserted, error_message} \| null, recent: [{received_at, sender, subject, file_name, status: loaded\|duplicate\|failed\|ignored, reason, kind, rows_loaded}]}`. Never returns the client secret. |
+| `GET /integrations/mail` | `{configured, mailbox, schedule: {enabled, every_minutes, first_lookback_days, rules: [{name, senders, subjects, exclude_subjects, files}]}, last_run: {status, started_at, completed_at, records_inserted, error_message} \| null, recent: [{received_at, sender, subject, file_name, status: loaded\|duplicate\|failed\|ignored, reason, kind, rows_loaded}]}`. Never returns the client secret. |
 | `POST /integrations/mail/poll` | Admin. Check now: `{status, loaded, duplicate, failed, ignored, messages, rebuilt}` or `{status: 'failed', error}`. `409` when not configured. |
+| `PUT /settings/mail_inbox` | Admin. Body `{value: {enabled, every_minutes, first_lookback_days, rules}}` (at most 25 rules; each needs a sender, subject or file name); `422` for an unknown rule field, an empty rule or a value out of range. Mail matching any rule passes; no rules = all mail. The rules are checked before an attachment is downloaded; a refused one is `ignored` with the reason (`sender is not a dashboard sender`, `subject is excluded`, `subject is not a dashboard subject`, `file name is not a dashboard file`, or `matches none of the N mail rules`). A mailed pay report or job cost file carrying under half the jobs already loaded for a company over the same dates or months (10 or more loaded) is `failed` as a filtered export. |
 
 `GET /auth/me` returns `{user: {username, role, accounts}}`; `accounts` is null for every account. The leadership routes answer only for the user's accounts (docs/auth-rbac.md, Account access).
 
@@ -576,7 +583,7 @@ as `management_wages` (still inside `direct_labor`).
 ## Month-end rollup, added 2026-09-29
 
 app/month.py. FedEx invoices at month end, when its subcontractors are also due to have invoiced, so
-the Home and account views have a Week / Month switch (`period=month&month=YYYY-MM` on the route).
+the account views have a Week / Month switch (`period=month&month=YYYY-MM` on the route).
 The month view includes subcontracted sites (the weekly views leave them out for accounts with
 `split_subcontracted`).
 
@@ -608,7 +615,7 @@ separate and unchanged.
 | Key | Default off for | Enforced by |
 |---|---|---|
 | `view.company` | – | `403` on `GET /leadership/company`; the Company link |
-| `view.analytics` | executive, analyst | the Analytics link (its data is the user's own rows) |
+| `view.analytics` | executive, analyst | the Portfolio link (its data is the user's own rows) |
 | `tab.sites`, `tab.pallet`, `tab.over-target`, `tab.overtime`, `tab.income-statement`, `tab.subcontracted`, `tab.map` | – | the account tab |
 | `tab.vendors` | – | `403` on `GET /leadership/vendors`; the Vendors tab |
 | `data.allocations` | – | `alloc_management`, `alloc_burden`, `alloc_overhead` are dropped from the rows of `/leadership/rows`, `/leadership/month` and `/leadership/sites/…`; margin is hidden |
@@ -617,4 +624,91 @@ separate and unchanged.
 | `data.invoices` | – | `invoices: null` on `/leadership/sites/…` |
 | `data.photos` | – | `photos: null` on `/leadership/sites/…` |
 | `data.export` | – | the CSV buttons |
+| `data.qa` | – | `403` on `GET /leadership/qa`; the QA charts on the account Overview |
+
+## Customer feedback and star ratings, added 2026-10-02
+
+Migration 043. The ServiceChannel feedback export FedEx sends (Feedback, WO Number, Location Number,
+Provider Name, Trade, Feed Back Date, Star Ratings Comment, Star Ratings Score) imports as kind
+`service_feedback`, by upload or the reports mailbox, recognized by its columns. Rows are upserted by
+work order into `core.fact_service_feedback`. `mart.v_service_feedback` gives each row its WinTeam
+job: the Relay site whose ServiceChannel location id is the Location Number (janitorial first), else
+a FedEx job named `FedEx - <location>`; `match_basis` says which, null when none matched.
+
+| Route | Response |
+|---|---|
+| `GET /leadership/feedback?account=&months=12` | Permission `tab.feedback`, account scope. `{account, since, lines: [{wo_number, location_number, provider_name, trade, feedback, feedback_date, comment, score, company, job_number, site_name, account_slug, match_basis}], ratings, average, low, sites, unmatched, by_site: [{location_number, company, job_number, site_name, ratings, average, low, latest_date, latest_score, latest_comment}]}`. `low` counts scores of 1 or 2; `by_site` is lowest average first. For `fedex`, ratings whose location matched no site are included and counted in `unmatched`. |
+
+`GET /leadership/sites/{company}/{job}` adds `feedback`: the site's ratings over 12 months (null without `tab.feedback`).
+
+Migration 044: locations compare upper case without leading zeros (`core.feedback_location`), since
+the export zero-pads Ground stations (`0331`) and Relay does not (`331`); a Relay match never resolves
+to a Sarus job, and an inactive Crane job falls back to Relay's site name. The importer skips work
+orders not rated yet (Star Ratings Score `NO FEEDBACK`) instead of reporting them.
+
+| Route | Response |
+|---|---|
+| `GET /leadership/feedback/overview?account=&month=YYYY-MM` | Permission `tab.feedback`, account scope. The Home tile: `{account, month, current, prior, months: [{month, ratings, scored, average, low}], year: {ratings, average, since}, low_sites: [{location_number, site_name, company, job_number, score, feedback_date}], summary}`. `current` is the month to date, `months` the 12 months to it, `low_sites` its 1-2 star ratings. Scores are computed in SQL. `summary` is the Claude reading of the last 90 days of comments (app/feedback_ai.py, migration 045): `{status: off \| none \| pending \| ready \| failed, window_days, comments, model, generated_at, error, summary: {sentiment, headline, themes: [{theme, sentiment, mentions, locations}]}}`; `off` without `ANTHROPIC_API_KEY`. Cached in `ops.feedback_summary` under a digest of the comments, so Claude is called only when they change, in a background thread; `pending` until the first summary lands. The comments read are the 90 days up to the account's newest rating, not up to today, so between imports they, and the summary, do not change; a feedback import (upload or mailbox) starts the rebuild at once, before anyone opens the page. Migration 049 makes `mart.v_service_feedback` read in milliseconds (the job-name fallback runs per distinct location without a Relay match). |
+
+## QA scores, added 2026-10-03
+
+Migration 050. Weekly site QA audit scores (0 to 100) import as kind `qa_score`, by upload or the
+reports mailbox. Two layouts: long (Week, Site, Score) or wide (a Week column, then one column per
+site code; recognized by its columns when the file name starts `qa_score` or holds the word `qa`). A week
+cell is a date or "Week of Sep 14, 2026" (a label without a year is rejected); it is stored as the
+Monday the week starts, and a "Week ending" column's Sunday goes back to its Monday. Rows upsert by
+site code and week into `core.fact_qa_score`. `mart.v_qa_score` matches a site code to the job mapped
+to an account whose name ends in ` - <code>` ("Amazon - LGB3"); codes matching no job (sites run by
+another provider) are kept but appear on no account.
+
+| Route | Response |
+|---|---|
+| `GET /leadership/qa?account=&weeks=16&week=YYYY-MM-DD` | Permission `data.qa`, account scope. `{account, weeks: [YYYY-MM-DD], sites: [{site_code, site_name, company, job_number, scores: {week: score}}]}`. `weeks` are the Mondays of the last `weeks` QA weeks up to the one holding `week` (default the latest loaded), oldest first. |
+
+## Navigation, added 2026-10-02
+
+Company · Accounts · Portfolio · Admin. `#/` opens Company (the landing page); a user limited to some
+accounts, or without `view.company`, lands on their account. The Home page is retired: its feedback
+tile is on the account Overview tab, and old links (`#/?account=`, `#/home?account=`) open that
+account. Every account page has an account picker that keeps the tab. The Analytics pages are
+Portfolio at `#/portfolio` (`#/analytics` still opens them; the permission key stays
+`view.analytics`).
+
+## Account labor budget, added 2026-10-02
+
+Migration 046, app/budget.py. An account's monthly labor plan, pasted in Admin > Budgets from the
+account's budget workbook (tab-separated as Excel copies it, or CSV; columns found by header: Month,
+Site labor, Overhead labor, Revenue, Supplies, School / Staff / Closure / Summer days, Stat holidays;
+Total labor is checked against site + overhead; Year and Total rows are skipped). Stored in
+`ops.account_budget_month`, separate from WinTeam's job budgets.
+
+| Route | Response |
+|---|---|
+| `GET /leadership/budget?account=` | Permission `tab.budget`, account scope. `{account, months: [{month, in_progress, details, supplies, budget: {site, overhead, total, revenue, labor_pct}, actual: {site, overhead, events, total, revenue, basis, labor_pct} \| null, variance: {total, site, overhead, pct, points} \| null}]}`. Actual site labor is the account's site jobs, overhead its catch-all jobs, events its non-billed jobs (shown, left out of the total). Job cost when the month's site jobs carry job cost labor (`basis` job_cost), else the month rollup from timekeeping (`pay_report`, or `estimate` when any of it is estimated); none for months not started. A month still running (`in_progress`) has its actual to date and no variance. |
+| `PUT /leadership/budget/{slug}` | Admin. `{months: [{month: YYYY-MM, site_labor, overhead_labor, revenue, supplies, details}]}`, upserted by month; `422` for a bad month, a negative amount or a row with no labor. |
+| `DELETE /leadership/budget/{slug}?month=YYYY-MM` | Admin. One month; `weeks=true` the weekly calendar; neither, the account's whole plan. |
+| `POST /leadership/budget/read` | Admin. Multipart `file` (.xlsx): `{file, sheets: [{name, text}]}`, each non-empty sheet as tab-separated text (values, dates ISO, wrapped cells quoted). Nothing is saved; the Budgets page finds the monthly plan and the weekly calendar by their headers on any sheet, previews them and saves with the PUT. `422` for a file that is not a workbook. |
+
+**Weekly calendar** (migration 047, `ops.account_budget_week`): the plan's day calendar by week ending (a
+Sunday): site labor, overhead labor, stat-holiday labor and the day counts, pasted or uploaded with a
+Week ending header. `GET /leadership/budget` adds `weeks: [{week_end, site, overhead, holiday, details}]`
+and `PUT` accepts `weeks` beside `months`. On the account Overview, a week with a calendar row takes its
+target labor % from it: (site + overhead, plus the stat-holiday labor when Pay stat holidays is ticked,
+route `hol=paid`) ÷ the week's invoice, unless a target is typed in. An account with a monthly plan but
+no calendar row for a week takes that week's budget from the monthly plan spread evenly over each month's
+weekdays (labeled as from the monthly plan). The trend draws it as the stepped
+Weekly budget target line, and a Vs budget labor figure compares the week's labor without events.
+
+## Account job lists and exclusions, added 2026-10-03
+
+Migration 048 (`ops.account_job_exclusion`). A seed account may list `jobs` (mapped on every mart
+rebuild, replacing an automatic mapping, never an administrator's) and `exclude_jobs` (held out of
+every account, shown as Other). Auto-assignment skips excluded jobs, so `PUT /leadership/account-jobs/
+{company}/{job}` with `account_slug: null` now keeps a job in Other instead of it returning on the next
+rebuild; mapping it to an account removes the exclusion. Amazon lists the 14 Crane sites of the weekly
+Amazon report and excludes its project, management and closed jobs.
+
+In the views a site counts as subcontracted by its delivery model only for accounts that split
+subcontracted sites out (FedEx, from Relay); elsewhere only when Crane has no payroll hours there and the
+week carries vendor cost, since the restored reference flag marks any site with agency cost.
 

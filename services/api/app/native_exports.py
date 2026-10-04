@@ -86,6 +86,7 @@ def labor_summary(rows: list[dict[str, Any]], aliases: dict[str, str], numbers: 
     from .imports import clean_text, parse_date, parse_number
 
     windows: dict[str, tuple[date, date]] = {}
+    unsplit = 0
     for line, raw in enumerate(rows, start=2):
         r = Rows(raw)
         try:
@@ -129,6 +130,7 @@ def labor_summary(rows: list[dict[str, Any]], aliases: dict[str, str], numbers: 
                 if total_hours or dollars:
                     parsed.records.extend(spread([(start, Decimal(1))]))
             else:
+                unsplit += 1
                 raise ValueError("daily hours do not add up to TotalHours and the window spans more than one week: "
                                  "run the export for one Monday-Sunday week")
         except ValueError as exc:
@@ -136,6 +138,11 @@ def labor_summary(rows: list[dict[str, Any]], aliases: dict[str, str], numbers: 
             continue
         lo, hi = windows.get(company, (start, last))
         windows[company] = (min(lo, start), max(hi, last))
+    if unsplit:
+        # Loading the rows that did reconcile would mark the window covered with part of its labor.
+        parsed.records.clear()
+        parsed.errors.insert(0, f"{unsplit} row(s) cannot be split into weeks, so nothing was loaded: run the export for one Monday-Sunday week")
+        return {}
     return windows
 
 

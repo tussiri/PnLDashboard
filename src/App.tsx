@@ -5,7 +5,6 @@ import { Account } from './leadership/pages/Account'
 import { Admin } from './leadership/pages/Admin'
 import { Analytics } from './leadership/pages/Analytics'
 import { Company } from './leadership/pages/Company'
-import { Home } from './leadership/pages/Home'
 import { Shell } from './leadership/Shell'
 import { LeadershipProvider, useLeadership } from './leadership/state'
 import { Skeleton } from './leadership/ui'
@@ -16,13 +15,13 @@ const Suite = lazy(() => import('./suite/Suite'))
 function Page() {
   const { route, config, decision, user, can, unlimited, superAdmin } = useLeadership()
   if (!decision || (!config.data && !config.error)) return <Skeleton height={420} />
-  if (route.view === 'account') return <Account />
-  // Company and Analytics cover every account: users limited to some accounts see Home instead.
+  // Company (the landing page) and Portfolio cover every account: a user limited to some accounts, or without
+  // the permission, lands on their account instead.
   if (route.view === 'company' && unlimited && can('view.company')) return <Company />
   if (route.view === 'analytics' && route.suite && superAdmin) return <Suspense fallback={<Skeleton height={420} />}><Suite /></Suspense>
   if (route.view === 'analytics' && unlimited && can('view.analytics')) return <Analytics />
   if (route.view === 'admin') return <Admin />
-  return <Home />
+  return <Account />
 }
 
 function Gate() {

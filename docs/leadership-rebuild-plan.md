@@ -3,7 +3,7 @@
 Status: approved 2026-09-23. Decisions: nightly incremental WinTeam sync plus on demand; prior-month
 labor % includes subcontractor cost; retired views are deleted. Export feeds: `docs/export-feeds.md`.
 Amended 2026-09-30: the retired Finance and Operations views are back as the analytics suite under
-Analytics, for super administrators only (`docs/frontend.md`, `docs/auth-rbac.md`).
+Portfolio, for super administrators only (`docs/frontend.md`, `docs/auth-rbac.md`).
 Reference: `PlanoISD_Labor_PL_Dashboard_WE_Sep20.html` (86 Plano jobs, week ending Sun 2026-09-20,
 August 2026 revenue ÷ 4.33, target 64.5%).
 

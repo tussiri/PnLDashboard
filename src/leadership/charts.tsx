@@ -11,12 +11,12 @@ import { useLeadership } from './state'
 
 ChartJS.register(BarController, BarElement, CategoryScale, LinearScale, LineController, LineElement, PointElement, Tooltip, Legend, Filler)
 
-export interface Tokens { text: string; text2: string; text3: string; border: string; ok: string; warn: string; bad: string; accent: string; accent2: string; muted: string; bg: string }
+export interface Tokens { text: string; text2: string; text3: string; border: string; ok: string; warn: string; bad: string; accent: string; accent2: string; muted: string; bg: string; tgt: string }
 
 function readTokens(): Tokens {
   const css = getComputedStyle(document.documentElement)
   const v = (n: string) => css.getPropertyValue(n).trim()
-  return { text: v('--text'), text2: v('--text2'), text3: v('--text3'), border: v('--border'), ok: v('--ok'), warn: v('--warn'), bad: v('--bad'), accent: v('--accent'), accent2: v('--accent2'), muted: v('--muted'), bg: v('--bg') }
+  return { text: v('--text'), text2: v('--text2'), text3: v('--text3'), border: v('--border'), ok: v('--ok'), warn: v('--warn'), bad: v('--bad'), accent: v('--accent'), accent2: v('--accent2'), muted: v('--muted'), bg: v('--bg'), tgt: v('--tgt') }
 }
 
 /** Token colors, re-read when the theme or the system color scheme changes. */
@@ -53,8 +53,10 @@ function base(t: Tokens): ChartOptions<'bar'> {
 const bar = { borderRadius: 4, borderSkipped: 'start' as const, maxBarThickness: 24, categoryPercentage: 0.7, barPercentage: 0.9 }
 
 /** Measure % by segment: this week (colored by status) against the prior month, with the target line. */
-export function SegmentMeasureChart({ labels, week, weekTones, prior, target, weekLabel, priorLabel }: {
+export function SegmentMeasureChart({ labels, week, weekTones, prior, target, weekLabel, priorLabel, targetColor }: {
   labels: string[]; week: (number | null)[]; weekTones: ('ok' | 'warn' | 'bad' | 'neutral')[]; prior: (number | null)[]; target: number; weekLabel: string; priorLabel: string
+  /** The target line's color (the budget green when the target comes from the weekly budget). */
+  targetColor?: string
 }) {
   const t = useTokens()
   const o = base(t)
@@ -63,7 +65,9 @@ export function SegmentMeasureChart({ labels, week, weekTones, prior, target, we
     datasets: [
       { type: 'bar' as const, label: weekLabel, data: week.map((v) => (v == null ? null : v * 100)), backgroundColor: weekTones.map((tone) => statusColor(t, tone)), ...bar },
       { type: 'bar' as const, label: priorLabel, data: prior.map((v) => (v == null ? null : v * 100)), backgroundColor: t.muted, ...bar },
-      { type: 'line' as const, label: 'Target', data: labels.map(() => target * 100), borderColor: t.text, borderDash: [5, 4], borderWidth: 1.5, pointRadius: 0, pointHitRadius: 0 },
+      targetColor
+        ? { type: 'line' as const, label: 'Week target', data: labels.map(() => target * 100), borderColor: targetColor, borderWidth: 3, pointRadius: 0, pointHitRadius: 0, order: -1 }
+        : { type: 'line' as const, label: 'Target', data: labels.map(() => target * 100), borderColor: t.text, borderDash: [5, 4], borderWidth: 1.5, pointRadius: 0, pointHitRadius: 0 },
     ],
   }
   const options = { ...o, scales: { ...o.scales, y: { ...o.scales!.y, beginAtZero: true, ticks: { color: t.text2, callback: (v: string | number) => `${v}%` } }, x: { ...o.scales!.x, grid: { display: false } } },
@@ -147,6 +151,32 @@ export function SiteLpChart({ labels, values, tones, target, details }: { labels
   return <Chart type="bar" data={data} options={options} aria-label={`Labor % by site against a ${pct(target)} target`} role="img" />
 }
 
+/** QA score against budget variance by site: bars are labor vs budget dollars (colored by the QA score, edged by
+ * group), diamonds the QA score on the right axis, with the pass and warn lines. */
+export function QaVarianceChart({ labels, variance, scores, groups, pass, warn }: { labels: string[]; variance: (number | null)[]; scores: (number | null)[]; groups: string[]; pass: number; warn: number }) {
+  const t = useTokens()
+  const o = base(t)
+  const qaTone = (v: number | null) => (v == null ? t.text3 : v >= pass ? t.ok : v >= warn ? t.warn : t.bad)
+  const edge = [t.accent, t.accent2, t.tgt, t.muted]
+  const groupNames = [...new Set(groups)]
+  const data = { labels, datasets: [
+    { type: 'bar' as const, label: 'Vs budget', data: variance.map((v) => (v == null ? null : v * 100)), backgroundColor: scores.map(qaTone),
+      borderColor: groups.map((g) => edge[groupNames.indexOf(g) % edge.length]), borderWidth: groupNames.length > 1 ? 2 : 0, yAxisID: 'y', order: 2, ...bar, borderSkipped: false },
+    { type: 'line' as const, label: 'QA score', data: scores, showLine: false, pointStyle: 'rectRot', pointRadius: 6, pointHoverRadius: 7,
+      pointBackgroundColor: t.bg, pointBorderColor: t.text, pointBorderWidth: 2, yAxisID: 'y2', order: 0 },
+    { type: 'line' as const, label: `Pass ${pass}`, data: labels.map(() => pass), borderColor: t.ok, borderDash: [5, 4], borderWidth: 1.5, pointRadius: 0, pointHitRadius: 0, yAxisID: 'y2', order: 1 },
+    { type: 'line' as const, label: `Warn ${warn}`, data: labels.map(() => warn), borderColor: t.warn, borderDash: [5, 4], borderWidth: 1.5, pointRadius: 0, pointHitRadius: 0, yAxisID: 'y2', order: 1 },
+  ] } as unknown as ChartData<'bar'>
+  const options = { ...o,
+    scales: { x: { ...o.scales!.x, grid: { display: false }, ticks: { color: t.text2, autoSkip: false, maxRotation: 60, font: { size: 10 } } },
+      y: { ...o.scales!.y, ticks: { color: t.text2, callback: (v: string | number) => `${v}%` }, title: { display: true, text: 'Vs budget', color: t.text3 } },
+      y2: { position: 'right' as const, min: 60, max: 105, grid: { display: false }, border: { display: false }, ticks: { color: t.text2, stepSize: 10 }, title: { display: true, text: 'QA score', color: t.text3 } } },
+    plugins: { ...o.plugins, tooltip: { ...o.plugins!.tooltip, filter: (c: { datasetIndex: number }) => c.datasetIndex < 2,
+      callbacks: { label: (c: { datasetIndex: number; parsed: { y: number | null } }) => (c.datasetIndex === 0
+        ? `Vs budget: ${c.parsed.y == null ? 'no budget' : `${c.parsed.y >= 0 ? '+' : ''}${c.parsed.y.toFixed(1)}%`}` : `QA score: ${c.parsed.y == null ? 'none' : c.parsed.y.toFixed(1)}`) } } } }
+  return <Chart type="bar" data={data} options={options as unknown as ChartOptions<'bar'>} aria-label="QA score and labor against budget by site" role="img" />
+}
+
 /** Weekly invoice against core, pallet and sub labor by group (the FedEx report's "where the labor dollars went"). */
 export function LaborMixChart({ labels, invoice, core, pallet, sub, subLabel, directLabel = 'Core labor', invoiceLabel = 'Weekly invoice' }: { labels: string[]; invoice: number[]; core: number[]; pallet: number[]; sub: number[]; subLabel: string; directLabel?: string; invoiceLabel?: string }) {
   const t = useTokens()
@@ -164,21 +194,51 @@ export function LaborMixChart({ labels, invoice, core, pallet, sub, subLabel, di
 }
 
 /** Closed months (weekly equivalent) then weeks: labor dollars as bars, invoice and labor % as lines, target dashed. */
-export function MonthWeekTrendChart({ labels, labor, invoice, lp, target, weekFrom, current }: { labels: string[]; labor: (number | null)[]; invoice: (number | null)[]; lp: (number | null)[]; target: number; weekFrom: number; current: number }) {
+export function MonthWeekTrendChart({ labels, labor, invoice, lp, target, weekFrom, current, weekTargets, onPick, sitesLp }: { labels: string[]; labor: (number | null)[]; invoice: (number | null)[]; lp: (number | null)[]; target: number; weekFrom: number; current: number
+  /** Each point's budget target (the weekly budget calendar): drawn as the green stepped line in place of the flat target. */
+  weekTargets?: (number | null)[]
+  /** Click a point to open it. */
+  onPick?: (index: number) => void
+  /** Sites-only labor % (without catch-all and non-billed jobs), drawn beside the account's. */
+  sitesLp?: (number | null)[] }) {
   const t = useTokens()
   const o = base(t) as unknown as ChartOptions<'bar'>
   const data = { labels, datasets: [
     { type: 'bar' as const, label: 'Labor (weekly equiv.)', data: labor, backgroundColor: labels.map((_, i) => (i === current ? t.accent : i >= weekFrom ? t.accent2 : t.muted)), yAxisID: 'y', order: 3, ...bar },
     { type: 'line' as const, label: 'Invoice (weekly equiv.)', data: invoice, borderColor: t.text2, borderDash: [4, 3], borderWidth: 1.5, pointRadius: 2, yAxisID: 'y', order: 2 },
     { type: 'line' as const, label: 'Labor %', data: lp.map((v) => (v == null ? null : v * 100)), borderColor: t.bad, backgroundColor: t.bad, borderWidth: 2, pointRadius: 3, yAxisID: 'y1', order: 1 },
-    { type: 'line' as const, label: 'Target', data: labels.map(() => target * 100), borderColor: t.ok, borderDash: [5, 4], borderWidth: 1, pointRadius: 0, yAxisID: 'y1', order: 0 },
+    ...(sitesLp ? [{ type: 'line' as const, label: 'Sites-only labor %', data: sitesLp.map((v) => (v == null ? null : v * 100)), borderColor: t.warn, backgroundColor: t.warn, borderWidth: 2, pointRadius: 3, yAxisID: 'y1', order: 1 }] : []),
+    weekTargets
+      ? { type: 'line' as const, label: 'Weekly budget target', data: weekTargets.map((v) => (v == null ? null : v * 100)), borderColor: t.tgt, backgroundColor: t.tgt, borderWidth: 4,
+        stepped: 'middle', pointRadius: 4, pointHoverRadius: 7, pointBackgroundColor: t.tgt, pointBorderColor: t.bg, pointBorderWidth: 1.5, yAxisID: 'y1', order: -1 }
+      : { type: 'line' as const, label: 'Target', data: labels.map(() => target * 100), borderColor: t.ok, borderDash: [5, 4], borderWidth: 1, pointRadius: 0, yAxisID: 'y1', order: 0 },
   ] } as unknown as ChartData<'bar'>
   const options = { ...o, interaction: { mode: 'index', intersect: false },
+    onClick: (_e: unknown, els: { index: number }[]) => { if (onPick && els.length) onPick(els[0].index) },
+    onHover: (e: { native?: { target?: EventTarget | null } }, els: unknown[]) => { const el = e.native?.target as HTMLElement | null; if (el && onPick) el.style.cursor = els.length ? 'pointer' : 'default' },
     scales: { x: { ...o.scales!.x, grid: { display: false } }, y: { ...o.scales!.y, beginAtZero: true, ticks: { color: t.text2, callback: (v: number | string) => `$${Number(v) / 1000}K` } },
       y1: { position: 'right', beginAtZero: true, suggestedMax: 90, grid: { display: false }, ticks: { color: t.text2, callback: (v: number | string) => `${v}%` } } },
     plugins: { ...o.plugins, tooltip: { ...o.plugins!.tooltip, callbacks: { label: (c: { dataset: { label?: string; yAxisID?: string }; parsed: { y: number | null } }) =>
       c.dataset.yAxisID === 'y1' ? `${c.dataset.label}: ${c.parsed.y == null ? '–' : `${c.parsed.y.toFixed(1)}%`}` : `${c.dataset.label}: ${money(c.parsed.y)}` } } } } as unknown as ChartOptions<'bar'>
   return <Chart type="bar" data={data} options={options} aria-label="Labor against invoice by closed month and by week, with labor % and the target" role="img" />
+}
+
+/** OT by week: OT hours as bars (the selected week highlighted) and OT % of hours as a line; click a week to open it. */
+export function OtWeekChart({ labels, otHours, otPct, otDollars, current, onPick }: { labels: string[]; otHours: number[]; otPct: (number | null)[]; otDollars: number[]; current: number; onPick?: (index: number) => void }) {
+  const t = useTokens()
+  const o = base(t) as unknown as ChartOptions<'bar'>
+  const data = { labels, datasets: [
+    { type: 'bar' as const, label: 'OT hours', data: otHours, backgroundColor: labels.map((_, i) => (i === current ? t.warn : t.muted)), yAxisID: 'y', order: 2, ...bar },
+    { type: 'line' as const, label: 'OT % of hours', data: otPct.map((v) => (v == null ? null : v * 100)), borderColor: t.bad, backgroundColor: t.bad, borderWidth: 2, pointRadius: 3, yAxisID: 'y1', order: 1 },
+  ] } as unknown as ChartData<'bar'>
+  const options = { ...o, interaction: { mode: 'index', intersect: false },
+    onClick: (_e: unknown, els: { index: number }[]) => { if (onPick && els.length) onPick(els[0].index) },
+    onHover: (e: { native?: { target?: EventTarget | null } }, els: unknown[]) => { const el = e.native?.target as HTMLElement | null; if (el && onPick) el.style.cursor = els.length ? 'pointer' : 'default' },
+    scales: { x: { ...o.scales!.x, grid: { display: false } }, y: { ...o.scales!.y, beginAtZero: true, ticks: { color: t.text2, callback: (v: number | string) => fmtHours(Number(v)) } },
+      y1: { position: 'right', beginAtZero: true, grid: { display: false }, ticks: { color: t.text2, callback: (v: number | string) => `${v}%` } } },
+    plugins: { ...o.plugins, tooltip: { ...o.plugins!.tooltip, callbacks: { label: (c: { dataset: { yAxisID?: string }; dataIndex: number; parsed: { y: number | null } }) =>
+      c.dataset.yAxisID === 'y1' ? `OT %: ${c.parsed.y == null ? '–' : `${c.parsed.y.toFixed(1)}%`}` : `OT hours: ${fmtHours(c.parsed.y ?? 0)} (${money(otDollars[c.dataIndex])})` } } } } as unknown as ChartOptions<'bar'>
+  return <Chart type="bar" data={data} options={options} aria-label="Overtime hours and OT percent by week" role="img" />
 }
 
 /** Margin by site, worst first (AR − AP). */

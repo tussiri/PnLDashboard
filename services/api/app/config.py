@@ -190,6 +190,9 @@ class Settings:
     graph_client_secret: str
     graph_mailbox: str
     graph_timeout_seconds: int
+    # Claude API for the feedback comment summary (app/feedback_ai.py). Server-side only.
+    anthropic_api_key: str
+    feedback_summary_model: str
     companycam_match_rule: str
     ingestion_idle_in_transaction_timeout_seconds: int
     mart_rebuild_lock_timeout_seconds: int
@@ -280,6 +283,10 @@ class Settings:
             graph_client_secret=_text(env, "GRAPH_CLIENT_SECRET"),
             graph_mailbox=_text(env, "GRAPH_MAILBOX"),
             graph_timeout_seconds=_integer(env, "GRAPH_TIMEOUT_SECONDS", 60, maximum=600),
+            # The feedback comment summary calls the Claude API with this key; absent = no summary.
+            # Server-side only; never give it a VITE_ prefix.
+            anthropic_api_key=_text(env, "ANTHROPIC_API_KEY"),
+            feedback_summary_model=_text(env, "FEEDBACK_SUMMARY_MODEL", "claude-opus-5-5"),
             # How a CompanyCam project is matched to a WinTeam job. Unset until the production data
             # has been probed: job_number_in_name | address | project_map.
             companycam_match_rule=_text(env, "COMPANYCAM_MATCH_RULE"),
