@@ -57,9 +57,14 @@ LEFT JOIN mart.v_job_cost_month_effective mw ON mw.job_number = w.job_number AND
 LEFT JOIN core.fact_job_cost_month vm ON vm.source = 'export_import' AND vm.company = w.company AND vm.job_number = w.job_number
                                      AND vm.month = w.revenue_month
 -- The 3-month run rate (the FedEx report's invoice basis): the revenue month and the two before it,
--- each month from job cost, else Relay AR where the week's revenue comes from Relay.
+-- each month from job cost, else Relay AR where the week's revenue comes from Relay. A subcontracted
+-- Relay site takes Relay AR for any month it has some: from July 2026 its contract revenue is booked to a
+-- GL line with no job, so its job cost carries only the OS (variable) line (mart.leadership_week does the same).
 LEFT JOIN LATERAL (
-  SELECT avg(coalesce(nullif(jc.revenue, 0), CASE WHEN w.revenue_month_basis LIKE 'relay%%' THEN r.ar_revenue END, 0)) AS revenue_run_rate,
+  -- A month with neither a job-cost row nor Relay AR (the site was not billing yet) is left out, not averaged in as 0.
+  SELECT avg(CASE WHEN w.delivery_model = 'subcontracted' AND coalesce(r.ar_revenue, 0) > 0 THEN r.ar_revenue
+                  WHEN jc.job_number IS NULL AND r.ar_revenue IS NULL THEN NULL
+                  ELSE coalesce(nullif(jc.revenue, 0), CASE WHEN w.revenue_month_basis LIKE 'relay%%' THEN r.ar_revenue END, 0) END) AS revenue_run_rate,
          avg(ex.revenue_variable) AS variable_run_rate
   FROM generate_series(w.revenue_month - interval '2 months', w.revenue_month, interval '1 month') AS g(m)
   LEFT JOIN mart.v_job_cost_month_effective jc ON jc.company = w.company AND jc.job_number = w.job_number AND jc.month = g.m::date
