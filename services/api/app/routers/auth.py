@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 
 from .. import permissions, users
 from ..auth import COOKIE_NAME, SESSION_TTL_SECONDS, User, get_auth_settings, sign_session
-from ..common import current_user
+from ..common import current_user, is_super_admin
 
 router = APIRouter()
 
@@ -68,10 +68,10 @@ def login(body: LoginBody, request: Request, response: Response) -> dict[str, An
 
 
 def user_payload(user: User) -> dict[str, Any]:
-    """The browser's view of a user: role, the accounts it may see (null = every account) and its
-    effective permissions (app/permissions.py)."""
+    """The browser's view of a user: role, the accounts it may see (null = every account), its
+    effective permissions (app/permissions.py) and whether it is a super administrator."""
     return {**user.as_dict(), "accounts": list(user.accounts) if user.accounts and user.role != "admin" else None,
-            "permissions": permissions.effective(user.role, user.permissions)}
+            "permissions": permissions.effective(user.role, user.permissions), "super_admin": is_super_admin(user)}
 
 
 def setup_needed() -> bool:

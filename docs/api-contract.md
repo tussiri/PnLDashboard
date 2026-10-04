@@ -456,8 +456,17 @@ Sign-in itself (`/auth/login`, `/auth/logout`, `/auth/me`, `/auth/mode`) is desc
 | `POST /users` | Admin. Body `{username, role, password, accounts?, permissions?}`; `201 {user}`. `409` when the name exists (any case) or is an environment user; `422` for an unknown permission key. |
 | `PATCH /users/{username}` | Admin. Body any of `{role, active, password, accounts, permissions}` (`accounts: []` = every account; `permissions: {}` = the role's defaults, otherwise the whole override set); `{user}`. `409` for an environment user or when the change would leave no active administrator; `404` for an unknown user. A password reset refuses every session issued before it (the administrator resetting their own password gets a fresh cookie). |
 
-`/auth/login`, `/auth/setup` and `/auth/me` answer `{user: {username, role, accounts, permissions}}`
-where `permissions` are the user's effective values (see the permissions section below).
+`/auth/login`, `/auth/setup` and `/auth/me` answer `{user: {username, role, accounts, permissions, super_admin}}`
+where `permissions` are the user's effective values (see the permissions section below) and
+`super_admin` is true for an administrator listed in `APP_SUPER_ADMINS` (added 2026-09-30).
+
+## Analytics suite access, added 2026-09-30
+
+The reporting, labor and forecast routes (the "Reporting", labor and forecast sections of this
+contract) are read by the analytics suite only (`src/suite`, Analytics > Finance and Operations).
+Their shapes are unchanged. Reads answer to a super administrator session: `401` without a session,
+`403` otherwise. `POST /forecasts/rebuild` accepts a valid `X-Admin-Token` or a super administrator
+session. `docs/auth-rbac.md` (Super administrators and the analytics suite).
 
 ## Report parity: FedEx and Amazon weekly reports, added 2026-09-29
 

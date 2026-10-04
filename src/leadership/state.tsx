@@ -4,7 +4,8 @@ import type { LeadershipAccount, LeadershipConfig } from '../services/apiTypes'
 import { apiFor, detectMode, type DashboardApi, type ModeDecision } from '../services/dataSource'
 import { queryKey } from '../services/queryClient'
 import { can as canOf, type Permission } from '../auth/permissions'
-import type { AuthUser } from '../auth/roles'
+import { isSuperAdmin, type AuthUser } from '../auth/roles'
+import { useAuth } from '../auth/useAuth'
 import type { InvoiceBasis, MetricOptions } from './metrics'
 import { formatRoute, parseRoute, weekEndOf, weekStartOf, type Route } from './routes'
 import { CanExport } from './ui'
@@ -18,6 +19,8 @@ export interface LeadershipState {
   can: (key: Permission) => boolean
   /** Users limited to some accounts cannot open the every-account views. */
   unlimited: boolean
+  /** Super administrators see the analytics suite (src/suite) under Analytics. */
+  superAdmin: boolean
   signOut: () => void
   decision: ModeDecision | null
   api: DashboardApi
@@ -141,6 +144,8 @@ export function LeadershipProvider({ user, signOut, children, forcedDecision }: 
   const weekStart = route.week ? weekStartOf(route.week) : defaultWeek
   const can = useCallback((key: Permission) => canOf(user, key), [user])
   const unlimited = user.role === 'admin' || !user.accounts?.length
+  const { backend } = useAuth()
+  const superAdmin = isSuperAdmin(user, { demo: backend === 'demo' && import.meta.env.DEV })
   const monthMode = route.period === 'month' && can('data.month')
   // The month defaults to the one the selected week ends in.
   const month = route.month ?? (weekStart ? weekStart.slice(0, 7) : undefined)
@@ -148,7 +153,7 @@ export function LeadershipProvider({ user, signOut, children, forcedDecision }: 
   const optionsFor = useCallback((account: LeadershipAccount | undefined) => optionsForAccount(account, targetOverride, route.basis), [targetOverride, route.basis])
 
   const value: LeadershipState = {
-    user, can, unlimited, signOut, decision, api, keyPrefix, adminApi, adminKeyPrefix, adminConfig, apiReachable, redetect, config, route, navigate, featured, accountBySlug, selectedAccount,
+    user, can, unlimited, superAdmin, signOut, decision, api, keyPrefix, adminApi, adminKeyPrefix, adminConfig, apiReachable, redetect, config, route, navigate, featured, accountBySlug, selectedAccount,
     weekStart, monthMode, month, targetOverride, optionsFor, theme, setTheme: setThemeState,
   }
   return <Ctx.Provider value={value}><CanExport.Provider value={value.can('data.export')}>{children}</CanExport.Provider></Ctx.Provider>

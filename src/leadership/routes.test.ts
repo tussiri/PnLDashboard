@@ -14,6 +14,9 @@ describe('leadership routes', () => {
       { view: 'company', week: '2026-09-20' },
       { view: 'account', account: 'fedex', tab: 'sites', period: 'month', month: '2026-08' },
       { view: 'analytics', analyticsTab: 'units', week: '2026-09-20' },
+      { view: 'analytics', suite: { group: 'finance' } },
+      { view: 'analytics', suite: { group: 'finance', page: 'revenue' }, week: '2026-09-20' },
+      { view: 'analytics', suite: { group: 'operations', page: 'jobs', job: '800' } },
     ]
     for (const route of routes) expect(parseRoute(formatRoute(route))).toEqual(route)
   })
@@ -22,6 +25,7 @@ describe('leadership routes', () => {
     expect(formatRoute({ view: 'home', account: 'plano-isd', week: '2026-09-20', target: 64.5 })).toBe('#/home?account=plano-isd&week=2026-09-20&target=64.5')
     expect(formatRoute({ view: 'account', account: 'plano-isd', tab: 'over-target' })).toBe('#/account/plano-isd/over-target')
     expect(formatRoute({ view: 'admin', adminTab: 'accounts', week: '2026-09-20' })).toBe('#/admin')
+    expect(formatRoute({ view: 'analytics', suite: { group: 'operations', page: 'jobs', job: '800' } })).toBe('#/analytics/operations/jobs/800')
   })
 
   it('falls back safely on unknown or malformed input', () => {
@@ -29,6 +33,8 @@ describe('leadership routes', () => {
     expect(parseRoute('#/overview')).toEqual({ view: 'home' })
     expect(parseRoute('#/account/amazon/nonsense?week=Sept&target=abc')).toEqual({ view: 'account', account: 'amazon', tab: 'overview' })
     expect(parseRoute('#/admin/unknown')).toEqual({ view: 'admin', adminTab: 'accounts' })
+    expect(parseRoute('#/analytics/unknown/revenue')).toEqual({ view: 'analytics' })
+    expect(parseRoute('#/analytics/finance?q=x&status=over').suite).toEqual({ group: 'finance' })
     expect(parseRoute('#/home?site=noseparator').site).toBeUndefined()
     expect(parseRoute('#/home?site=Crane%20IFS~12~A').site).toEqual({ company: 'Crane IFS~12', job: 'A' })
   })

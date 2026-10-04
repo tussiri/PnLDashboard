@@ -6,6 +6,7 @@
  *   #/account/plano-isd/sites?week=2026-09-20&site=Crane%20Southwest~801
  *   #/account/fedex/sites?delivery=self      (subcontracted sites hidden)
  *   #/analytics?week=2026-09-20&account=other&status=over&q=elementary
+ *   #/analytics/operations/jobs/800          (analytics suite, super administrators; src/suite)
  *   #/admin/imports
  *
  * `week` is the week-ending Sunday the views display (the API maps any date to its Monday week);
@@ -18,6 +19,9 @@ export type AccountTab = (typeof ACCOUNT_TABS)[number]
 export const ADMIN_TABS = ['accounts', 'jobs', 'allocations', 'imports', 'data', 'users'] as const
 export const ANALYTICS_TABS = ['accounts', 'units'] as const
 export type AnalyticsTab = (typeof ANALYTICS_TABS)[number]
+/** Analytics suite groups (super administrators only). The pages of each group live in src/suite/pages.tsx. */
+export const SUITE_GROUPS = ['finance', 'operations'] as const
+export type SuiteGroup = (typeof SUITE_GROUPS)[number]
 export type AdminTab = (typeof ADMIN_TABS)[number]
 
 export interface Route {
@@ -27,6 +31,8 @@ export interface Route {
   adminTab?: AdminTab
   /** Analytics: the drill-down (accounts) or the business units overview (units). */
   analyticsTab?: AnalyticsTab
+  /** Analytics suite: the group, its page (the group's first page when absent) and an open site (job number). */
+  suite?: { group: SuiteGroup; page?: string; job?: string }
   week?: string
   target?: number
   /** Site drawer: company and job number. */
@@ -53,7 +59,7 @@ export function parseRoute(hash: string): Route {
   const parts = path.split('/').filter(Boolean).map(decodeURIComponent)
   const params = new URLSearchParams(query)
   const route: Route = { view: 'home' }
-  const [first, second, third] = parts
+  const [first, second, third, fourth] = parts
   if (first === 'account') {
     route.view = 'account'
     if (second) route.account = second
@@ -61,6 +67,11 @@ export function parseRoute(hash: string): Route {
   } else if (first === 'analytics') {
     route.view = 'analytics'
     if (second === 'units') route.analyticsTab = 'units'
+    else if ((SUITE_GROUPS as readonly string[]).includes(second ?? '')) {
+      route.suite = { group: second as SuiteGroup }
+      if (third) route.suite.page = third
+      if (third && fourth) route.suite.job = fourth
+    }
   } else if (first === 'company') route.view = 'company'
   else if (first === 'admin') {
     route.view = 'admin'
@@ -95,13 +106,14 @@ export function formatRoute(route: Route): string {
     ? `account/${encodeURIComponent(route.account ?? '')}${route.tab && route.tab !== 'overview' ? `/${route.tab}` : ''}`
     : route.view === 'admin'
       ? `admin${route.adminTab && route.adminTab !== 'accounts' ? `/${route.adminTab}` : ''}`
-      : route.view === 'analytics' && route.analyticsTab === 'units' ? 'analytics/units' : route.view
+      : route.view === 'analytics' && route.suite ? ['analytics', route.suite.group, ...(route.suite.page ? [route.suite.page, ...(route.suite.job ? [route.suite.job] : [])] : [])].map(encodeURIComponent).join('/')
+        : route.view === 'analytics' && route.analyticsTab === 'units' ? 'analytics/units' : route.view
   const params = new URLSearchParams()
   if (route.account && route.view !== 'account' && route.view !== 'admin') params.set('account', route.account)
   if (route.week && route.view !== 'admin') params.set('week', route.week)
   if (route.target != null && route.view !== 'admin') params.set('target', String(route.target))
   if (route.site && route.view !== 'admin') params.set('site', `${route.site.company}${SITE_SEP}${route.site.job}`)
-  if (route.view === 'analytics') for (const key of ['q', 'status', 'segment'] as const) if (route[key]) params.set(key, route[key]!)
+  if (route.view === 'analytics' && !route.suite) for (const key of ['q', 'status', 'segment'] as const) if (route[key]) params.set(key, route[key]!)
   if (route.view === 'account' && route.selfOnly) params.set('delivery', 'self')
   if (route.basis && route.view !== 'admin') params.set('basis', route.basis)
   if (route.period === 'month' && (route.view === 'home' || route.view === 'account')) {

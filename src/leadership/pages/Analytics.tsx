@@ -3,12 +3,13 @@ import type { LeadershipAccount, LeadershipRow } from '../../services/apiTypes'
 import { includesVendor, rowsOfWeek, segmentLabel, segmentOrder, useRows, inSentence, vendorLabel } from '../data'
 import { hours, hours1, money, pct } from '../format'
 import { accountSummary, statusOf, type MetricOptions, type Rollup, type SiteMetrics as Metrics } from '../metrics'
-import { ANALYTICS_TABS, weekLabel } from '../routes'
+import { weekLabel } from '../routes'
 import { PageHeader, updatedLine } from '../Shell'
 import { useLeadership } from '../state'
 import { Badge, Empty, LoadError, Pills, Skeleton, SortTable, STATUS_LABEL, toneOf, type Column } from '../ui'
 import { roleBadge } from './Sites'
 import { SiteDrawer } from './SiteDrawer'
+import { AnalyticsTabs } from './AnalyticsTabs'
 import { AnalyticsUnits } from './AnalyticsUnits'
 
 type Site = Metrics<LeadershipRow> & { accountName: string; groupName: string; measureName: string }
@@ -102,10 +103,7 @@ export function Analytics() {
   const set = (next: Parameters<typeof navigate>[0]) => navigate(next, { replace: true })
   return <>
     <PageHeader title="Analytics" subtitle={subtitle} target={route.analyticsTab !== 'units'} />
-    <nav className="tabs" role="tablist" aria-label="Analytics views">
-      {ANALYTICS_TABS.map((tab) => <button key={tab} type="button" role="tab" className="tab" aria-selected={(route.analyticsTab ?? 'accounts') === tab}
-        onClick={() => navigate({ view: 'analytics', analyticsTab: tab === 'units' ? 'units' : undefined })}>{tab === 'units' ? 'Business units' : 'Accounts'}</button>)}
-    </nav>
+    <AnalyticsTabs />
     {route.analyticsTab === 'units' ? <AnalyticsUnits /> : <>
     {q.error ? <LoadError error={q.error} onRetry={q.refetch} /> : !q.data ? <Skeleton height={400} /> : !sites.length ? <Empty>No data for this week.</Empty> : <>
       <div className="card">

@@ -45,7 +45,8 @@ on the Plano ISD reference dashboard, dynamic by account.
 - **Account**: one layout for every account, in its weekly report's words (`vocabulary`): Overview, Sites, Pallet (accounts with pallet jobs), Hours to cut / Over Target, Overtime, Income Statement (loaded or split accounts), Subcontracted Sites (accounts with subcontracted sites; AR vs AP), Map and the vendor invoice tab; a site row opens a drawer
   with the site's weekly P&L, a 13-week trend, subcontractor invoices and CompanyCam photos.
 - **Analytics**: every account including Other, drilled account -> segment (Other: account group)
-  -> site, with filters, sorting and CSV.
+  -> site, with filters, sorting and CSV. Super administrators (`APP_SUPER_ADMINS`) also get the
+  **Finance** and **Operations** tabs: the portfolio views of the retired reporting app (`src/suite`).
 - **Admin** (admin role): accounts, segments and targets; job mapping (review queue, Other, role,
   CompanyCam project); export imports; sync runs and on-demand sync.
 

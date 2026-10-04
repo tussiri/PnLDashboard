@@ -70,6 +70,8 @@ x-api-environment: &api-environment
   APP_SESSION_SECRET: ${APP_SESSION_SECRET:-}
   APP_USERS_JSON: '${APP_USERS_JSON:-[]}'
   APP_SETUP_TOKEN: ${APP_SETUP_TOKEN:-}
+  # Administrators who also see the analytics suite (Analytics > Finance, Operations). Empty = nobody.
+  APP_SUPER_ADMINS: ${APP_SUPER_ADMINS:-}
   LOG_LEVEL: ${LOG_LEVEL:-INFO}
 
 services:

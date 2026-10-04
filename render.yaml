@@ -71,6 +71,9 @@ services:
       # Optional environment users (a way back in); leave empty.
       - key: APP_USERS_JSON
         sync: false
+      # Administrators who also see the analytics suite (comma-separated usernames); empty = nobody.
+      - key: APP_SUPER_ADMINS
+        sync: false
       - key: INGESTION_ADMIN_TOKEN
         generateValue: true
       # WINTEAM_ENABLED and WINTEAM_SARUS_ENABLED are true, so the API will not start without the
