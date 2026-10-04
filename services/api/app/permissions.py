@@ -18,6 +18,7 @@ Keys
     data.invoices       vendor invoices on the site drawer
     data.photos         CompanyCam photos on the site drawer
     data.export         CSV downloads
+    data.qa             QA audit scores on the account Overview
 """
 from __future__ import annotations
 
@@ -48,6 +49,7 @@ CATALOG: tuple[tuple[str, str, str], ...] = (
     ("data.invoices", "Data", "Vendor invoices"),
     ("data.photos", "Data", "Photos"),
     ("data.export", "Data", "CSV export"),
+    ("data.qa", "Data", "QA scores"),
 )
 KEYS: tuple[str, ...] = tuple(k for k, _, _ in CATALOG)
 

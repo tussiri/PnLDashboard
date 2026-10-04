@@ -780,6 +780,47 @@ def leadership_feedback_overview(account: str = Query(..., description="An accou
             "summary": jsonable(ai)}
 
 
+QA_SQL = """
+SELECT site_code, week_start, score, company, job_number, site_name
+FROM mart.v_qa_score
+WHERE account_slug = %(account)s AND week_start > %(latest)s - %(weeks)s * 7 AND week_start <= %(latest)s
+ORDER BY week_start, site_code
+"""
+
+
+@router.get("/qa", dependencies=[Depends(permissions.require_permission("data.qa"))])
+def leadership_qa(account: str = Query(..., description="An account slug"), weeks: int = Query(16, ge=1, le=104),
+                  week: str | None = Query(None, description="YYYY-MM-DD; the last week shown is the one holding this day"),
+                  request: Request = None) -> dict[str, Any]:  # type: ignore[assignment]
+    """Weekly QA audit scores (migration 050) at the account's sites: the `weeks` QA weeks up to the one holding
+    `week` (default the latest loaded), one row per site with its scores by week (Monday)."""
+    if request is not None:
+        require_account(request, account)
+    try:
+        day = date.fromisoformat(week) if week else None
+    except ValueError:
+        raise HTTPException(status_code=422, detail="week must be YYYY-MM-DD") from None
+    with connection() as conn, conn.cursor() as cursor:
+        cursor.execute("SELECT 1 FROM ops.account WHERE slug = %s", (account,))
+        if cursor.fetchone() is None:
+            raise HTTPException(status_code=404, detail=f"Unknown account {account!r}")
+        cursor.execute("SELECT max(week_start) AS latest FROM mart.v_qa_score WHERE account_slug = %s", (account,))
+        latest = cursor.fetchone()["latest"]
+        if latest is not None and day is not None:
+            latest = min(latest, day - timedelta(days=day.weekday()))
+        rows = []
+        if latest is not None:
+            cursor.execute(QA_SQL, {"account": account, "latest": latest, "weeks": weeks})
+            rows = cursor.fetchall()
+    week_list = sorted({r["week_start"].isoformat() for r in rows})
+    sites: dict[str, dict[str, Any]] = {}
+    for r in rows:
+        s = sites.setdefault(r["site_code"], {"site_code": r["site_code"], "site_name": r["site_name"], "company": r["company"],
+                                              "job_number": r["job_number"], "scores": {}})
+        s["scores"][r["week_start"].isoformat()] = float(r["score"])
+    return {"account": account, "weeks": week_list, "sites": sorted(sites.values(), key=lambda s: s["site_code"])}
+
+
 class BudgetIn(BaseModel):
     #: [{month: YYYY-MM, site_labor, overhead_labor, revenue, supplies, details}]
     months: list[dict[str, Any]] = []
