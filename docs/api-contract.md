@@ -430,9 +430,13 @@ and on demand. Settings `RELAY_BASE_URL`, `RELAY_EXPORT_TOKEN` (server-side only
 
 Effects on `mart.leadership_week` for the WinTeam jobs Relay covers (never Sarus):
 - `sub_week` = the week's service month (the month holding the week's Thursday) of Relay payables, excluding
-  self-perform legs, spread by days: actual when at least 90% of the site contract is invoiced or there is no
-  contract (`sub_week_basis` `relay_ap`), else the contract amount (`relay_contract`); Crane's own sites carry
-  none (`relay_self_perform`).
+  self-perform legs, spread by days: actual once the month is billed to the customer (Relay AR exists,
+  `sub_week_basis` `relay_ap`); while it is open, the greater of payables so far and the average payables of
+  the site's billed months among the three before it (`trailing_3mo_projection` unless payables so far are
+  higher; added 2026-10-03, since the contract covers fixed work only and a pallet site's invoices run above
+  it); with no billed month, actual when at least 90% of the site contract is invoiced or there is no
+  contract (`relay_ap`), else the contract amount (`relay_contract`); Crane's own sites carry none
+  (`relay_self_perform`).
 - `prior_sub` = the greater of job cost, WinTeam AP distributions and Relay payables (`prior_sub_basis` `relay_ap`).
 - `revenue_month_amount` / `prior_revenue` come from Relay AR when job cost does not cover the month
   (`revenue_month_basis` `relay_ar`).
@@ -471,7 +475,9 @@ browser adds it into its parent site (`kids`, `pallet_labor`, `pallet_hours`, `p
 
 `GET /leadership/rows` rows add `parent_job_number`, `dt_hours` (inside `ot_hours`; the OT premium is
 ½ × OT + ½ × DT, so DT carries a full-time premium), `revenue_run_rate` (average monthly revenue over
-the revenue month and the two before it: job cost, else Relay AR for Relay-billed weeks),
+the revenue month and the two before it: job cost, else Relay AR for Relay-billed weeks; a subcontracted
+site takes Relay AR for any month it has some, since from July 2026 its job cost carries only the OS line;
+a month with neither job cost nor AR is left out rather than averaged as 0),
 `variable_run_rate` and `revenue_month_variable` (from the Job Cost Analysis revenue split).
 
 | Route | Response |

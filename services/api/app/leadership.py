@@ -25,9 +25,12 @@ stored: routers/leadership.py joins ops.account_job at read time.
   revenue month, the weights routers/leadership.py uses to spread a parent-billed account's
   revenue over its sites at read time (account setting revenue_allocation, migration 033).
 * Relay (FedEx, migration 034) takes precedence for the jobs it covers: the week's vendor cost is
-  Relay's payables for the week's service month (the month holding the week's Thursday), or the
-  site contract when that month is under 90% invoiced (basis relay_ap / relay_contract; Crane's own
-  sites carry none, relay_self_perform); prior_sub also considers Relay's payables; revenue comes
+  Relay's payables for the week's service month (the month holding the week's Thursday) once that
+  month is billed to the customer (Relay AR exists); while it is open, the greater of its payables so
+  far and the average payables of the site's billed months among the three before it (basis
+  trailing_3mo_projection; the contract covers only fixed work, so a pallet site's invoices run above
+  it); with no billed month, the payables when at least 90% of the contract, else the contract (basis
+  relay_ap / relay_contract; Crane's own sites carry none, relay_self_perform); prior_sub also considers Relay's payables; revenue comes
   from Relay's AR (supersession applied) when the job-cost export does not cover the month, and
   always for a subcontracted Relay site with AR that month, whose contract revenue is booked to a GL
   line with no job from July 2026, so its job cost carries only the OS revenue line
@@ -90,6 +93,16 @@ keys AS (
   UNION SELECT job_key, week_start FROM pr
   UNION SELECT m.job_key, wm.week_start FROM week_month wm JOIN mart.job_month m ON m.month = wm.revenue_month AND m.revenue <> 0
 ),
+relay_jm AS MATERIALIZED (
+  SELECT job_number, month, ap_amount, ar_revenue FROM mart.v_relay_job_month
+),
+relay_trail AS (
+  -- Per site and service month: the average payables of its billed months (AR exists) among the three before it.
+  SELECT m.month, t.job_number, avg(t.ap_amount) AS ap
+  FROM (SELECT DISTINCT date_trunc('month', week_start + 3)::date AS month FROM all_weeks) m
+  JOIN relay_jm t ON t.month >= m.month - interval '3 months' AND t.month < m.month AND t.ap_amount > 0 AND t.ar_revenue IS NOT NULL
+  GROUP BY 1, 2
+),
 ap_sub AS (
   SELECT v.job_key, v.month, sum(v.amount) AS amount
   FROM mart.v_ap_distribution_month v
@@ -137,7 +150,8 @@ assembled AS (
          date_trunc('month', k.week_start + 3)::date AS week_month,
          rc.job_number IS NOT NULL OR coalesce(rw.ap_amount, 0) > 0 AS relay_covered,
          coalesce(rc.self_perform, false) AS relay_self_perform, rc.ap_monthly AS relay_ap_monthly,
-         rw.ap_amount AS relay_week_ap, rp.ap_amount AS relay_rm_ap, rp.ar_revenue AS relay_rm_ar
+         rw.ap_amount AS relay_week_ap, rw.ar_revenue AS relay_week_ar, rt.ap AS relay_trail_ap,
+         rp.ap_amount AS relay_rm_ap, rp.ar_revenue AS relay_rm_ar
   FROM keys k
   JOIN jobs jb ON jb.job_key = k.job_key
   LEFT JOIN mart.job_week jw ON jw.job_key = k.job_key AND jw.week_start = k.week_start
@@ -155,20 +169,28 @@ assembled AS (
          AND rw.month = date_trunc('month', k.week_start + 3)::date
   LEFT JOIN mart.v_relay_job_month rp ON rp.job_number = jb.job_number AND jb.company IS DISTINCT FROM 'Sarus'
          AND rp.month = wm.revenue_month
+  LEFT JOIN relay_trail rt ON rt.job_number = jb.job_number AND jb.company IS DISTINCT FROM 'Sarus'
+         AND rt.month = date_trunc('month', k.week_start + 3)::date
 ),
 relay AS (
-  -- Vendor cost for the week's service month from Relay: actual payables when the month is at
-  -- least 90 percent invoiced against the contract (or there is no contract), else the contract amount
-  -- (vendors bill in arrears, so the current month is usually partial); Crane's own sites carry none.
+  -- Vendor cost for the week's service month from Relay: actual payables once the month is billed to
+  -- the customer; while open, the greater of payables so far and the site's recent billed months
+  -- (vendors bill in arrears, and a pallet site's invoices run above its fixed contract); with no history,
+  -- actual payables when at least 90 percent of the contract, else the contract. Crane's own sites carry none.
   SELECT a.*,
          CASE WHEN NOT a.relay_covered THEN NULL
               WHEN a.relay_self_perform THEN 0
+              WHEN a.relay_week_ar IS NOT NULL AND coalesce(a.relay_week_ap, 0) > 0 THEN a.relay_week_ap
+              WHEN coalesce(a.relay_trail_ap, 0) > 0 THEN greatest(coalesce(a.relay_week_ap, 0), a.relay_trail_ap)
               WHEN coalesce(a.relay_week_ap, 0) > 0
                    AND (coalesce(a.relay_ap_monthly, 0) = 0 OR a.relay_week_ap >= 0.9 * a.relay_ap_monthly) THEN a.relay_week_ap
               WHEN coalesce(a.relay_ap_monthly, 0) > 0 THEN greatest(coalesce(a.relay_week_ap, 0), a.relay_ap_monthly)
          END AS relay_monthly,
          CASE WHEN NOT a.relay_covered THEN NULL
               WHEN a.relay_self_perform THEN 'relay_self_perform'
+              WHEN a.relay_week_ar IS NOT NULL AND coalesce(a.relay_week_ap, 0) > 0 THEN 'relay_ap'
+              WHEN coalesce(a.relay_trail_ap, 0) > 0
+                THEN CASE WHEN coalesce(a.relay_week_ap, 0) >= a.relay_trail_ap THEN 'relay_ap' ELSE 'trailing_3mo_projection' END
               WHEN coalesce(a.relay_week_ap, 0) > 0
                    AND (coalesce(a.relay_ap_monthly, 0) = 0 OR a.relay_week_ap >= 0.9 * a.relay_ap_monthly) THEN 'relay_ap'
               WHEN coalesce(a.relay_ap_monthly, 0) > 0 THEN 'relay_contract'

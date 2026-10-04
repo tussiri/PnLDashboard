@@ -10,11 +10,11 @@ import { useLeadership } from './state'
  * Rows for `weeks` weeks ending at the selected week, for an account slug or a scope, shaped per
  * account (prepareRows): pallet jobs inside their site, report groups, subcontracted sites split out.
  */
-export function useRows(account: string | undefined, weeks = 1) {
+export function useRows(account: string | undefined, weeks = 1, { keepSubcontracted = false }: { keepSubcontracted?: boolean } = {}) {
   const { api, keyPrefix, weekStart, decision, accountBySlug } = useLeadership()
   const key = decision && account && weekStart ? queryKey(`${keyPrefix}/leadership/rows`, { account, week: weekStart, weeks }) : null
   const q = useApiQuery<LeadershipRowsResponse>(key, (signal) => api.leadershipRows({ account, week: weekStart, weeks }, signal), [api, account, weekStart, weeks])
-  const data = useMemo(() => (q.data ? { ...q.data, rows: prepareRows(q.data.rows, accountBySlug) } : q.data), [q.data, accountBySlug])
+  const data = useMemo(() => (q.data ? { ...q.data, rows: prepareRows(q.data.rows, accountBySlug, { keepSubcontracted }) } : q.data), [q.data, accountBySlug, keepSubcontracted])
   return { ...q, data }
 }
 

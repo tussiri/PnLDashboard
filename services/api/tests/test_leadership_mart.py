@@ -61,3 +61,14 @@ def test_feedback_summary_ranks_sites_lowest_first():
     assert [r["location_number"] for r in s["by_site"]] == ["NRBA", "NIPA", "ZZZZ"]
     nipa = s["by_site"][1]
     assert (nipa["ratings"], nipa["average"], nipa["low"], nipa["latest_score"], nipa["latest_comment"]) == (2, 3.0, 1, 5.0, "great")
+
+
+def test_an_open_relay_month_projects_from_the_sites_billed_months():
+    """A month billed to the customer takes its payables; an open one is at least the recent billed months'
+    average (the contract covers fixed work only, so it understates a pallet site)."""
+    relay = REBUILD_SQL[REBUILD_SQL.index("relay AS ("):REBUILD_SQL.index("FROM assembled a")]
+    cases = relay.split("END AS relay_monthly")[0]
+    assert cases.index("a.relay_week_ar IS NOT NULL") < cases.index("a.relay_trail_ap") < cases.index("0.9 * a.relay_ap_monthly")
+    assert "'trailing_3mo_projection'" in relay
+    trail = REBUILD_SQL[REBUILD_SQL.index("relay_trail AS ("):REBUILD_SQL.index("ap_sub AS (")]
+    assert "t.ar_revenue IS NOT NULL" in trail and "t.month < m.month" in trail
