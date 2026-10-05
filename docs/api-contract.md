@@ -496,6 +496,10 @@ imported months it covers).
 
 Migration 038, docs/mail-inbox.md. The worker reads the reports mailbox through Microsoft Graph
 (read-only) and loads dashboard report exports through the importer (`ops.import_file.origin = 'mail'`).
+Added 2026-10-05 (migration 051): an account's labor budget workbook (monthly plan and / or weekly
+calendar, read as Admin > Budgets reads it; app/budget_file.py) is saved to the account named in the
+file name, else the subject, and logged in `ops.import_file` as kind `budget` (`companies` = the account
+slug, `period_from` / `period_to` = its first and last month). `rebuilt` is true only when a feed loaded.
 
 | Route | Response |
 |---|---|

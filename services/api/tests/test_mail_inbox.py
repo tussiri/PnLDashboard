@@ -187,3 +187,27 @@ def test_mail_matching_any_rule_is_the_dashboards():
     assert mail_inbox.rules_refusal(rules, "tussiri@smcraneifs.com", "Active Discount", "Crane_timekeeping_recent_1.csv") == "matches none of the 2 mail rules"
     assert mail_inbox.rules_refusal([timekeeping], "x@other.com", "", "Crane_timekeeping_recent_1.csv") == "sender is not a dashboard sender"
     assert mail_inbox.rules_refusal([], None, None, "anything.csv") is None
+
+
+BUDGET_TSV = ("Week ending\tSite labor\tOverhead labor\tStat holiday labor\tSchool days\n"
+              "2026-09-13\t155691.58\t9578.54\t37069.42\t4\n2026-09-20\t194614.48\t9578.54\t0\t5\n").encode()
+
+
+def test_a_mailed_budget_is_saved_without_a_rebuild(setup, monkeypatch):
+    from app import budget_file
+
+    _db, loads, rebuilds = setup
+    saved: list[tuple[str, str | None]] = []
+    monkeypatch.setattr(budget_file, "load_file", lambda conn, name, content, subject=None, origin="mail", uploaded_by=None:
+                        saved.append((name, subject)) or {"status": "loaded", "import_file_id": 9, "errors": []})
+    graph = mail_inbox.Graph(httpx.Client(transport=graph_transport(
+        [message("m5", "Plano ISD FY27 budget")], {"m5": [{"id": "c1", "name": "Plano_ISD_FY27_weekly_budget.csv", "size": 200}]}, {"c1": BUDGET_TSV}, [])))
+    result = mail_inbox.poll(graph)
+    assert result["loaded"] == 1 and result["rebuilt"] is False and rebuilds == [] and loads == []
+    assert saved == [("Plano_ISD_FY27_weekly_budget.csv", "Plano ISD FY27 budget")]
+
+
+def test_recognize_tells_a_budget_from_a_feed():
+    assert mail_inbox.recognize("Plano_budget.csv", BUDGET_TSV) == "budget"
+    assert mail_inbox.recognize("Crane_job_cost.csv", JOB_COST) == "job_cost"
+    assert mail_inbox.recognize("ar_aging.csv", OTHER_REPORT) is None

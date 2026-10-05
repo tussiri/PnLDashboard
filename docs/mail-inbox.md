@@ -12,10 +12,15 @@ left alone.
   (docs/export-feeds.md): the Pay Report or timekeeping labor summary, the Job Cost Analysis (either
   layout) or the Trend Income Statement. It goes through the same importer as an upload, so the
   import history, duplicate check and errors in Admin > Imports apply.
+- An account's **labor budget workbook** (the file Admin > Budgets reads: a monthly plan with Month and
+  Site labor / Overhead labor, and / or a weekly calendar with Week ending) is saved as that account's
+  budget. The account is the one named in the file name, else the subject (`Plano_ISD_FY27_labor_budget.xlsx`
+  is Plano ISD). Months and weeks in the file replace the same months and weeks; others are kept. It is
+  logged in Admin > Imports as Budget; a file naming no account fails with that reason.
 - Any other attachment (other reports, PDFs, images) is recorded as **ignored** with the reason and
   never loaded or downloaded more than once.
-- Each attachment is handled once (`ops.mail_attachment`). When anything loaded, the marts are
-  rebuilt.
+- Each attachment is handled once (`ops.mail_attachment`). When a feed loaded, the marts are
+  rebuilt (a budget is read live and needs none).
 - **Read-only.** It lists messages and downloads attachments; it never moves, flags, marks read,
   deletes or sends mail.
 
