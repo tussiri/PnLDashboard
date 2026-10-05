@@ -27,7 +27,7 @@ function StaffingCard({ company, job }: { company: string; job: string }) {
     <div className="ct"><span>Staffing requests</span>{q.data?.as_of && <span className="ks">PhotoValidation {new Date(q.data.as_of).toLocaleDateString('en-US')}</span>}</div>
     {q.error ? <LoadError error={q.error} onRetry={q.refetch} /> : !q.data ? <Skeleton height={120} />
       : !q.data.configured && !q.data.lines.length ? <Empty>PhotoValidation is not connected.</Empty> : <>
-        <div className="kpi-lg">
+        <div className="kpi-lg pair">
           <Kpi small label="Requested" value={q.data.requested_headcount ?? '–'} sub="Approved or posted" />
           <Kpi small label="Pending" value={q.data.pending_requested_headcount ?? '–'} sub="Awaiting approval" />
         </div>
@@ -94,10 +94,10 @@ export function SiteDrawer({ company, job }: { company: string; job: string }) {
             <tbody>{weeks.map((r) => <tr key={r.week_start}><td className="l">{weekTick(r.week_start)}</td><td>{money(r.invoice)}</td><td>{money(r.labor)}</td><td>{pct(r.measurePct)}</td><td>{hours1(r.hours)}</td><td>{hours1(r.ot_hours)}</td></tr>)}</tbody></table>} />}
         {q.data.feedback && q.data.feedback.length > 0 && <div className="card">
           <div className="ct"><span>Feedback, 12 months</span><span className={scoreTone(avgOf(q.data.feedback))}>{stars(avgOf(q.data.feedback))} avg, {q.data.feedback.length} ratings</span></div>
-          <div className="tw"><table><caption className="sr-only">Feedback and star ratings</caption>
-            <thead><tr><th className="nosort">Date</th><th className="nosort">Ratings</th><th className="nosort">Comment</th></tr></thead>
-            <tbody>{groupVisits(q.data.feedback).map((v) => <tr key={v.key}><td>{v.feedback_date}</td><td>{visitScores(v)}</td>
-              <td className="wrap">{v.comments.length ? v.comments.join(' / ') : '–'}</td></tr>)}</tbody>
+          <div className="tw"><table className="visits"><caption className="sr-only">Feedback and star ratings</caption>
+            <thead><tr><th className="nosort l">Date</th><th className="nosort l">Ratings</th><th className="nosort l">Comment</th></tr></thead>
+            <tbody>{groupVisits(q.data.feedback).map((v) => <tr key={v.key}><td className="l">{v.feedback_date}</td><td className="l">{visitScores(v)}</td>
+              <td className={`l wrap${v.comments.length ? '' : ' none'}`}>{v.comments.length ? v.comments.join(' / ') : '–'}</td></tr>)}</tbody>
           </table></div>
         </div>}
         {can('data.staffing') && <StaffingCard company={company} job={job} />}

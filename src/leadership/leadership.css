@@ -94,8 +94,8 @@ input[type=search]{min-width:200px}
 /* KPIs */
 .kpi-lg{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}
 /* Rows balance by card count instead of leaving one card alone on a second row. */
-@media(min-width:1000px){.kpi-lg:has(>:nth-child(5):last-child){grid-template-columns:repeat(5,minmax(0,1fr))}.kpi-lg:has(>:nth-child(6):last-child){grid-template-columns:repeat(6,minmax(0,1fr))}.kpi-lg:has(>:nth-child(7):last-child){grid-template-columns:repeat(7,minmax(0,1fr))}.kpi-lg:has(>:nth-child(8):last-child){grid-template-columns:repeat(4,minmax(0,1fr))}}
-@media(min-width:600px) and (max-width:999px){.kpi-lg:has(>:nth-child(5):last-child),.kpi-lg:has(>:nth-child(6):last-child){grid-template-columns:repeat(3,minmax(0,1fr))}.kpi-lg:has(>:nth-child(7):last-child),.kpi-lg:has(>:nth-child(8):last-child){grid-template-columns:repeat(4,minmax(0,1fr))}}
+@media(min-width:1000px){.kpi-lg:where(:has(>:nth-child(5):last-child)){grid-template-columns:repeat(5,minmax(0,1fr))}.kpi-lg:where(:has(>:nth-child(6):last-child)){grid-template-columns:repeat(6,minmax(0,1fr))}.kpi-lg:where(:has(>:nth-child(7):last-child)){grid-template-columns:repeat(7,minmax(0,1fr))}.kpi-lg:where(:has(>:nth-child(8):last-child)){grid-template-columns:repeat(4,minmax(0,1fr))}}
+@media(min-width:600px) and (max-width:999px){.kpi-lg:where(:has(>:nth-child(5):last-child)),.kpi-lg:where(:has(>:nth-child(6):last-child)){grid-template-columns:repeat(3,minmax(0,1fr))}.kpi-lg:where(:has(>:nth-child(7):last-child)),.kpi-lg:where(:has(>:nth-child(8):last-child)){grid-template-columns:repeat(4,minmax(0,1fr))}}
 .kpi{background:var(--bg);border:0.5px solid var(--border);border-radius:var(--r);padding:10px 12px;min-width:0;container-type:inline-size}
 .kpi.sm{background:var(--bg2);border:none}
 .kl{font-size:11px;color:var(--text3);margin-bottom:3px}
@@ -215,9 +215,25 @@ tr.dim td{color:var(--text3)}
 
 /* Drawer */
 .scrim{position:fixed;inset:0;background:rgba(0,0,0,.28);z-index:40;border:none}
-.drawer{position:fixed;top:0;right:0;bottom:0;width:min(640px,100vw);background:var(--bg3);z-index:41;overflow-y:auto;box-shadow:var(--shadow);padding:18px 20px 40px}
+.drawer{position:fixed;top:0;right:0;bottom:0;width:min(640px,100vw);background:var(--bg3);z-index:41;overflow-y:auto;overflow-x:hidden;box-shadow:var(--shadow);padding:18px 20px 40px;container-type:inline-size}
 .drawer__hdr{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:14px}
-.drawer .kpi-lg{grid-template-columns:repeat(3,1fr)}
+.drawer__hdr>div{min-width:0}
+.drawer__hdr h1{overflow-wrap:anywhere}
+.drawer__hdr .iconbtn{flex:none}
+/* KPI tiles size to the drawer, not the window: four across at full width, two on a phone. */
+.drawer .kpi-lg{grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:8px}
+.drawer .kpi-lg.pair{grid-template-columns:repeat(auto-fill,minmax(160px,1fr))}
+.drawer .ks{overflow-wrap:anywhere}
+.drawer .ct{flex-wrap:wrap;row-gap:4px}
+.drawer .ct>span{min-width:0}
+/* On a narrow drawer each visit stacks: date and ratings, then the comment across the full width. */
+@container (max-width:520px){
+  .drawer table.visits thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+  .drawer table.visits tr{display:grid;grid-template-columns:auto 1fr;column-gap:10px;padding:6px 0;border-bottom:0.5px solid var(--border)}
+  .drawer table.visits td{border:none;padding:2px 0;white-space:normal}
+  .drawer table.visits td.none{display:none}
+  .drawer table.visits td.wrap{grid-column:1/-1;min-width:0;max-width:none}
+}
 .photos{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
 .photos a{display:block;aspect-ratio:1;border-radius:var(--r);overflow:hidden;background:var(--bg2)}
 .photos img{width:100%;height:100%;object-fit:cover;display:block}
@@ -283,7 +299,7 @@ tr.dim td{color:var(--text3)}
 
 /* Narrow screens: these follow every component rule so they win the cascade. */
 @media(max-width:900px){.charts2{grid-template-columns:1fr}.topbar__in{gap:10px}.user{display:none}.navbtn{width:32px;padding:0;justify-content:center;font-size:0;gap:0}}
-@media(max-width:520px){.map{height:clamp(420px,65vh,640px)}header.page>.ctrl{display:grid;grid-template-columns:auto 1fr;gap:6px 10px;width:100%;align-items:center}header.page>.ctrl select,header.page>.ctrl input{width:100%}.nav a{padding:6px 8px}.topbar__in{gap:8px}.shell{padding:16px}.topbar__in{padding:0 16px}.kv{font-size:18px}.notes>div{grid-template-columns:1fr;gap:2px}.drawer .kpi-lg{grid-template-columns:repeat(2,1fr)}input[type=search]{min-width:0;width:100%}}
+@media(max-width:520px){.map{height:clamp(420px,65vh,640px)}header.page>.ctrl{display:grid;grid-template-columns:auto 1fr;gap:6px 10px;width:100%;align-items:center}header.page>.ctrl select,header.page>.ctrl input{width:100%}.nav a{padding:6px 8px}.topbar__in{gap:8px}.shell{padding:16px}.topbar__in{padding:0 16px}.kv{font-size:18px}.notes>div{grid-template-columns:1fr;gap:2px}input[type=search]{min-width:0;width:100%}}
 
 /* Score grids (QA scores, star ratings by site): cells tinted by their tone. */
 .heat-grid td.heat{font-weight:500}
