@@ -8,3 +8,11 @@ describe('percent axis cap', () => {
     expect(pctAxisMax([], 100)).toBeUndefined()
   })
 })
+
+describe('withAlpha', () => {
+  it('turns a hex token into rgba and leaves other colors alone', async () => {
+    const { withAlpha } = await import('./charts')
+    expect(withAlpha('#8fb3d6', 0.35)).toBe('rgba(143, 179, 214, 0.35)')
+    expect(withAlpha('rgb(1, 2, 3)', 0.5)).toBe('rgb(1, 2, 3)')
+  })
+})
