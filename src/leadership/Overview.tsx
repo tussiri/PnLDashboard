@@ -63,7 +63,7 @@ export const laborJobs = (account: LeadershipAccount, jobs: LeadershipMonthlyJob
   jobs.filter((j) => j.role !== 'non_billed' && !(account.split_subcontracted && j.delivery_model === 'subcontracted'))
 
 /** Every account's overview: headline figures, notes, one card per group, the trend, labor % by site and where the labor dollars went. */
-export function Overview({ account, rows, summary, options, flags, headline = true, afterGroups, budgetWeeks, budgetMonths, payHolidays = false }: { account: LeadershipAccount; rows: LeadershipRow[]; summary: AccountSummary<LeadershipRow>; options: MetricOptions; flags: DataFlags; headline?: boolean
+export function Overview({ account, rows, summary, options, flags, headline = true, afterGroups, budgetWeeks, budgetMonths, payHolidays = false, footer }: { account: LeadershipAccount; rows: LeadershipRow[]; summary: AccountSummary<LeadershipRow>; options: MetricOptions; flags: DataFlags; headline?: boolean
   /** Rendered after the group cards (the account page puts customer feedback here). */
   afterGroups?: ReactNode
   /** The account's weekly budget calendar (Admin > Budgets): budget labor and target per week. */
@@ -71,7 +71,9 @@ export function Overview({ account, rows, summary, options, flags, headline = tr
   /** The monthly plan: a week without a calendar row takes its budget from it, spread over weekdays. */
   budgetMonths?: BudgetMonth[]
   /** Count each week's stat-holiday pay in its budget. */
-  payHolidays?: boolean }) {
+  payHolidays?: boolean
+  /** Rendered last (the account page puts the star rating matrix here). */
+  footer?: ReactNode }) {
   const t = useTokens()
   const vocab = useVocab()
   const w = wordsFor(vocab)
@@ -219,6 +221,7 @@ export function Overview({ account, rows, summary, options, flags, headline = tr
           <tbody>{mix.map((x) => <tr key={x.name}><td className="l">{x.name}</td><td>{money(sum(x.list, (r) => r.invoice))}</td><td>{money(sum(x.list, directOf))}</td><td>{money(sum(x.list, palletOf))}</td><td>{money(sum(x.list, (r) => r.vendor))}</td></tr>)}</tbody></table>} />
     </div>}
     {can('data.qa') && <QaCards account={account} sites={sites} weekStart={period === 'week' ? weekStart ?? null : null} />}
+    {footer}
   </>
 }
 

@@ -285,8 +285,11 @@ tr.dim td{color:var(--text3)}
 @media(max-width:900px){.charts2{grid-template-columns:1fr}.topbar__in{gap:10px}.user{display:none}.navbtn{width:32px;padding:0;justify-content:center;font-size:0;gap:0}}
 @media(max-width:520px){.map{height:clamp(420px,65vh,640px)}header.page>.ctrl{display:grid;grid-template-columns:auto 1fr;gap:6px 10px;width:100%;align-items:center}header.page>.ctrl select,header.page>.ctrl input{width:100%}.nav a{padding:6px 8px}.topbar__in{gap:8px}.shell{padding:16px}.topbar__in{padding:0 16px}.kv{font-size:18px}.notes>div{grid-template-columns:1fr;gap:2px}.drawer .kpi-lg{grid-template-columns:repeat(2,1fr)}input[type=search]{min-width:0;width:100%}}
 
-/* QA scores by site: the score cells tinted by pass (90+), warn (85+) and fail. */
-.qa-grid td.qa{font-weight:500}
-.qa-grid td.qa.ok{background:color-mix(in srgb,var(--ok) 12%,transparent)}
-.qa-grid td.qa.warn{background:color-mix(in srgb,var(--warn) 16%,transparent)}
-.qa-grid td.qa.bad{background:color-mix(in srgb,var(--bad) 16%,transparent)}
+/* Score grids (QA scores, star ratings by site): cells tinted by their tone. */
+.heat-grid td.heat{font-weight:500}
+.heat-grid td.heat.ok{background:color-mix(in srgb,var(--ok) 12%,transparent)}
+.heat-grid td.heat.warn{background:color-mix(in srgb,var(--warn) 16%,transparent)}
+.heat-grid td.heat.bad{background:color-mix(in srgb,var(--bad) 16%,transparent)}
+.heat-grid tbody tr.click{cursor:pointer}
+.heat-grid tbody tr.click:hover td{background-image:linear-gradient(color-mix(in srgb,var(--text) 5%,transparent),color-mix(in srgb,var(--text) 5%,transparent))}
+.more-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-top:10px;font-size:12px;color:var(--text2)}

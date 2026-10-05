@@ -2,7 +2,7 @@ import { lazy, Suspense, useMemo } from 'react'
 import type { LeadershipAccount, LeadershipRow } from '../../services/apiTypes'
 import { ChartCard, Swatch } from '../ui'
 import { OtHoursChart, OtWeekChart, useTokens } from '../charts'
-import { Feedback, FeedbackTile } from './Feedback'
+import { Feedback, FeedbackTile, RatingMatrix } from './Feedback'
 import { BudgetTab } from './Budget'
 import { useApiQuery } from '../../hooks/useApiQuery'
 import { queryKey } from '../../services/queryClient'
@@ -141,7 +141,9 @@ export function Account() {
     subcontracted={(monthMode ? rows : rowsOfWeek(fullWeek.data?.rows, weekStart)).filter((r) => isSubcontracted(r, account))} />
   else if (tab === 'overview' || !tabs.includes(tab)) body = <Overview account={account} rows={rows} summary={summary} options={options} flags={flags}
     budgetWeeks={budgetWeeks} budgetMonths={budgetMonths} payHolidays={payHolidays}
-    afterGroups={can('tab.feedback') && <FeedbackTile account={account} month={monthMode ? month : weekStart ? weekEndOf(weekStart).slice(0, 7) : undefined} />} />
+    afterGroups={can('tab.feedback') && <FeedbackTile account={account} month={monthMode ? month : weekStart ? weekEndOf(weekStart).slice(0, 7) : undefined} />}
+    footer={can('tab.feedback') && feedback.data && feedback.data.lines.length > 0 && <RatingMatrix lines={feedback.data.lines} since={feedback.data.since}
+      action={<button type="button" className="linkbtn" onClick={() => setTab('feedback')}>All feedback</button>} />} />
   else if (tab === 'sites') body = <Sites account={account} summary={summary} options={options} selfOnly={selfOnly} ratings={feedback.data?.by_site} />
   else if (tab === 'over-target') body = <HoursToCut account={account} summary={summary} options={options} />
   else if (tab === 'overtime') body = <OvertimeTab account={account} summary={summary} />
