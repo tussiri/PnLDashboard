@@ -160,8 +160,8 @@ export function Overview({ account, rows, summary, options, flags, headline = tr
 
   return <>
     {headline && <div className="kpi-lg">
-      <Kpi label={invoiceLabel(w, vocab, period)} value={money(summary.all.invoice)} sub={basis || undefined} />
       <Kpi label={w.labor} value={money(a.cost)} sub={join(laborParts, change(a.cost, prev?.cost, money)) || undefined} />
+      <Kpi label={invoiceLabel(w, vocab, period)} value={money(summary.all.invoice)} sub={basis || undefined} />
       <Kpi label={w.accountLaborPct} value={pct(a.measurePct)} tone={toneOf(accountStatus)}
         sub={join(`Target ${pct(target)}`, lastClosed ? `${monthLabel(lastClosed)} actual ${pct(actual)}` : null,
           a.measurePct != null && prev?.measurePct != null ? weekChange(a.measurePct - prev.measurePct, vocab, period) : null)} />
@@ -192,8 +192,9 @@ export function Overview({ account, rows, summary, options, flags, headline = tr
     </div>
     {afterGroups}
     {trend.length > 1 && <ChartCard title={w.trendTitle} height={260}
-      legend={<><Swatch color={t.muted} label="Closed month" /><Swatch color={t.accent2} label="Week" /><Swatch color={t.bad} label="Labor %" />{sitesLp && <Swatch color={t.warn} label="Sites-only labor %" />}
-        {weekTargets ? <Swatch color={t.tgt} label="Weekly budget target" /> : <Swatch line label={`Target ${pct(target)}`} />}</>}
+      legend={<><Swatch color={t.muted} label="Closed month" /><Swatch color={t.accent2} label="Week" /><Swatch line color={t.text2} label={invoiceLabel(w, vocab, period)} />
+        <Swatch color={t.bad} label="Labor %" />{sitesLp && <Swatch color={t.warn} label="Sites-only labor %" />}
+        {weekTargets ? <Swatch color={t.tgt} label="Weekly budget target" /> : <Swatch line color={t.ok} label={`Target ${pct(target)}`} />}</>}
       chart={<MonthWeekTrendChart labels={trend.map((x) => x.label)} labor={trend.map((x) => x.labor)} invoice={trend.map((x) => x.invoice)} lp={trend.map((x) => x.lp)} target={target} weekFrom={trend.length - weeks.length}
         current={period === 'week' && weekStart ? closed.length + weeks.findIndex((x) => x.week === weekStart) : trend.length - 1} weekTargets={weekTargets} sitesLp={sitesLp}
         onPick={(i) => { const wk = weeks[i - closed.length]; if (wk) navigate({ week: weekEndOf(wk.week), period: undefined, month: undefined }, { replace: true }) }} />}
@@ -231,8 +232,8 @@ function GroupCard({ name, sub, badge, invoice, invoiceSub, labor, laborSub, lp,
   return <div className="card">
     <div className="seg-hdr"><div><div className="seg-name">{name}</div><div className="seg-sub">{sub}</div></div>{badge}</div>
     <div className="kpi4">
-      <Kpi small label={w.invoiceCol} value={moneyK(invoice)} sub={invoiceSub} />
       <Kpi small label={w.labor} value={moneyK(labor)} sub={laborSub} />
+      <Kpi small label={w.invoiceCol} value={moneyK(invoice)} sub={invoiceSub} />
       <Kpi small label="Labor %" value={pct(lp)} tone={lpTone} sub={lpSub} />
       <Kpi small label="OT %" value={pct(otPct)} sub={`${hours(otHours)} hrs`} tone={otPct > 0.15 ? 'bad' : otPct > 0.1 ? 'warn' : ''} />
     </div>

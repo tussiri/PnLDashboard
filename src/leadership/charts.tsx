@@ -101,16 +101,25 @@ export function OtHoursChart({ labels, values, tones, details }: { labels: strin
 }
 
 /** Weekly measure % trend against the target (one axis, percent). */
-export function TrendChart({ labels, values, target, label }: { labels: string[]; values: (number | null)[]; target: number; label: string }) {
+export function TrendChart({ labels, values, target, label, targets }: { labels: string[]; values: (number | null)[]; target: number; label: string
+  /** Each week's budget target (the account's weekly budget calendar): the green stepped line in place of the flat target. */
+  targets?: (number | null)[] }) {
   const t = useTokens()
   const o = base(t) as unknown as ChartOptions<'line'>
   const data = { labels, datasets: [
     { label, data: values.map((v) => (v == null ? null : v * 100)), borderColor: t.accent, backgroundColor: t.accent, borderWidth: 2, pointRadius: 3, pointHoverRadius: 5, pointBorderColor: t.bg, pointBorderWidth: 2, spanGaps: false, tension: 0 },
-    { label: 'Target', data: labels.map(() => target * 100), borderColor: t.text, borderDash: [5, 4], borderWidth: 1.5, pointRadius: 0, pointHitRadius: 0 },
+    targets
+      ? { label: 'Weekly budget target', data: targets.map((v) => (v == null ? null : v * 100)), borderColor: t.tgt, backgroundColor: t.tgt, borderWidth: 3, stepped: 'middle' as const,
+        pointRadius: 3, pointHoverRadius: 5, pointBackgroundColor: t.tgt, pointBorderColor: t.bg, pointBorderWidth: 1.5 }
+      : { label: 'Target', data: labels.map(() => target * 100), borderColor: t.text, borderDash: [5, 4], borderWidth: 1.5, pointRadius: 0, pointHitRadius: 0 },
   ] }
+  // A budget week whose invoice is tiny (school out) can target thousands of percent; keep the axis on the site's own range
+  // and let that stretch run off the top (the table shows it).
+  const top = Math.max(target * 100, ...values.filter((v): v is number => v != null).map((v) => v * 100))
+  const capped = targets?.some((v) => v != null && v * 100 > top * 2) ? Math.ceil((top * 1.3) / 20) * 20 : undefined
   const options: ChartOptions<'line'> = { ...o,
     interaction: { mode: 'index', intersect: false },
-    scales: { x: { ...o.scales!.x, grid: { display: false } }, y: { ...o.scales!.y, beginAtZero: true, ticks: { color: t.text2, callback: (v) => `${v}%` } } },
+    scales: { x: { ...o.scales!.x, grid: { display: false } }, y: { ...o.scales!.y, beginAtZero: true, max: capped, ticks: { color: t.text2, callback: (v) => `${v}%` } } },
     plugins: { ...o.plugins, tooltip: { ...o.plugins!.tooltip, callbacks: { label: (c) => `${c.dataset.label}: ${c.parsed.y == null ? 'no billing' : `${c.parsed.y.toFixed(1)}%`}` } } } }
   return <Line data={data} options={options} aria-label={`${label} by week against a ${pct(target)} target`} role="img" />
 }

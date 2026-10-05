@@ -2,12 +2,12 @@ import { groupVisits, scoreTone, stars, visitScores } from './Feedback'
 import { X } from 'lucide-react'
 import { useEffect, useMemo, useRef } from 'react'
 import { useApiQuery } from '../../hooks/useApiQuery'
-import type { LeadershipSiteResponse, StaffingJobResponse, StaffingRequestLine } from '../../services/apiTypes'
+import type { LeadershipBudgetResponse, LeadershipSiteResponse, StaffingJobResponse, StaffingRequestLine } from '../../services/apiTypes'
 import { queryKey } from '../../services/queryClient'
 import { TrendChart } from '../charts'
-import { includesVendor, inSentence, vendorLabel } from '../data'
+import { includesVendor, inSentence, rowsOfWeek, segmentOrder, useRows, vendorLabel, weekBudgetOf } from '../data'
 import { hours, hours1, money, pct, pts, rate } from '../format'
-import { siteMetrics } from '../metrics'
+import { accountSummary, siteMetrics } from '../metrics'
 import { monthLabel, weekLabel, weekTick } from '../routes'
 import { useLeadership } from '../state'
 import { Badge, ChartCard, Empty, Kpi, LoadError, Skeleton, Swatch, toneOf, VocabContext } from '../ui'
@@ -46,7 +46,7 @@ const avgOf = (lines: { score: number | null }[]) => { const scored = lines.filt
 
 /** Site detail drawer: this week's labor P&L, a 13-week trend, staffing requests, subcontractor invoices and CompanyCam photos. */
 export function SiteDrawer({ company, job }: { company: string; job: string }) {
-  const { api, keyPrefix, decision, weekStart, navigate, accountBySlug, optionsFor, can } = useLeadership()
+  const { api, keyPrefix, decision, weekStart, navigate, accountBySlug, optionsFor, can, route } = useLeadership()
   const t = useTokens()
   const panel = useRef<HTMLDivElement>(null)
   const close = () => navigate({ site: undefined })
@@ -64,7 +64,26 @@ export function SiteDrawer({ company, job }: { company: string; job: string }) {
 
   const account = accountBySlug(q.data?.site.account_slug ?? undefined)
   const options = useMemo(() => optionsFor(account), [optionsFor, account])
-  const weeks = useMemo(() => (q.data?.weeks ?? []).map((r) => siteMetrics(r, options)), [q.data, options])
+  // The account's weekly budget target (as on the account page): each week's budget labor over the account's invoice.
+  const budget = useApiQuery<LeadershipBudgetResponse>(decision && account && can('tab.budget') ? queryKey(`${keyPrefix}/leadership/budget`, { account: account.slug }) : null,
+    (signal) => api.leadershipBudget(account!.slug, signal), [api, account?.slug])
+  const hasBudget = Boolean(budget.data?.weeks.length || budget.data?.months.length) && route.target == null
+  const accountWeeks = useRows(hasBudget ? account?.slug : undefined, 13)
+  const targetOf = useMemo(() => {
+    const cache = new Map<string, number | null>()
+    return (week: string): number | null => {
+      if (!hasBudget || !account || !accountWeeks.data) return null
+      if (!cache.has(week)) {
+        const b = weekBudgetOf(week, budget.data?.weeks, budget.data?.months, Boolean(route.payHolidays))
+        const rows = rowsOfWeek(accountWeeks.data.rows, week)
+        const invoice = b && rows.length ? accountSummary(rows, options, segmentOrder(account)).all.invoice : 0
+        cache.set(week, b && invoice > 0 ? b.labor / invoice : null)
+      }
+      return cache.get(week)!
+    }
+  }, [hasBudget, account, accountWeeks.data, budget.data, route.payHolidays, options])
+  const weeks = useMemo(() => (q.data?.weeks ?? []).map((r) => { const wt = targetOf(r.week_start); return siteMetrics(r, wt == null ? options : { ...options, target: wt }) }), [q.data, options, targetOf])
+  const weekTargets = hasBudget && weeks.some((r) => targetOf(r.week_start) != null) ? weeks.map((r) => targetOf(r.week_start)) : undefined
   const current = weeks.find((r) => r.week_start === weekStart)
   const site = q.data?.site
   const m = 'Labor %'
@@ -79,8 +98,8 @@ export function SiteDrawer({ company, job }: { company: string; job: string }) {
       </div>
       {q.error ? <LoadError error={q.error} onRetry={q.refetch} /> : !q.data ? <Skeleton height={400} /> : <>
         {current ? <div className="kpi-lg">
-          <Kpi label="Invoicing" value={money(current.invoice)} sub={current.revenue_allocated ? `Incl. ${money(current.revenue_allocated / (options.divisor ?? 4.33))} spread from parent` : `${monthLabel(current.revenue_month)} revenue`} />
           <Kpi label="Direct labor" value={money(current.labor)} sub={current.labor_basis === 'pay_report' ? 'Pay report' : 'Estimated'} tone={current.labor_basis === 'pay_report' ? '' : 'warn'} />
+          <Kpi label="Invoicing" value={money(current.invoice)} sub={current.revenue_allocated ? `Incl. ${money(current.revenue_allocated / (options.divisor ?? 4.33))} spread from parent` : `${monthLabel(current.revenue_month)} revenue`} />
           <Kpi label={m} value={pct(current.measurePct)} tone={toneOf(current.status)} sub={`${current.measurePct == null ? '' : `${pts(current.measurePct - current.target)} vs ${pct(current.target)} target; `}${monthLabel(current.revenue_month)} ${pct(current.priorLaborPct)}`} />
           <Kpi label="Hours" value={hours1(current.hours)} sub={`${hours1(current.ot_hours)} OT (${pct(current.otPct)})`} />
           <Kpi label="Hours to cut" value={<>{hours1(current.overHours / 7)}<span className="of">/day</span></>} tone={current.overHours > 0.5 ? 'bad' : 'ok'} sub={`${hours1(current.overHours)}h this week; base rate ${rate(current.baseRate)}`} />
@@ -88,10 +107,10 @@ export function SiteDrawer({ company, job }: { company: string; job: string }) {
           {(includesVendor(account) || (current.sub_week ?? 0) > 0) && <Kpi label={vendorLabel(account)} value={money(current.sub_week)} sub={includesVendor(account) ? `Total labor ${money(current.cost)}` : undefined} />}
         </div> : <Empty>No data for this week.</Empty>}
         {weeks.length > 1 && <ChartCard title={`${m} by week`} height={200}
-          legend={<><Swatch color={t.accent} label={m} /><Swatch line label={`Target ${pct(options.target)}`} /></>}
-          chart={<TrendChart labels={weeks.map((r) => weekTick(r.week_start))} values={weeks.map((r) => r.measurePct)} target={current?.target ?? options.target} label={m} />}
-          table={<table><thead><tr><th className="nosort l">Week ending</th><th className="nosort">Invoicing</th><th className="nosort">Direct labor</th><th className="nosort">{m}</th><th className="nosort">Hours</th><th className="nosort">OT hrs</th></tr></thead>
-            <tbody>{weeks.map((r) => <tr key={r.week_start}><td className="l">{weekTick(r.week_start)}</td><td>{money(r.invoice)}</td><td>{money(r.labor)}</td><td>{pct(r.measurePct)}</td><td>{hours1(r.hours)}</td><td>{hours1(r.ot_hours)}</td></tr>)}</tbody></table>} />}
+          legend={<><Swatch color={t.accent} label={m} />{weekTargets ? <Swatch color={t.tgt} label="Weekly budget target" /> : <Swatch line label={`Target ${pct(options.target)}`} />}</>}
+          chart={<TrendChart labels={weeks.map((r) => weekTick(r.week_start))} values={weeks.map((r) => r.measurePct)} target={current?.target ?? options.target} label={m} targets={weekTargets} />}
+          table={<table><thead><tr><th className="nosort l">Week ending</th><th className="nosort">Invoicing</th><th className="nosort">Direct labor</th><th className="nosort">{m}</th>{weekTargets && <th className="nosort">Budget target</th>}<th className="nosort">Hours</th><th className="nosort">OT hrs</th></tr></thead>
+            <tbody>{weeks.map((r, i) => <tr key={r.week_start}><td className="l">{weekTick(r.week_start)}</td><td>{money(r.invoice)}</td><td>{money(r.labor)}</td><td>{pct(r.measurePct)}</td>{weekTargets && <td>{pct(weekTargets[i])}</td>}<td>{hours1(r.hours)}</td><td>{hours1(r.ot_hours)}</td></tr>)}</tbody></table>} />}
         {q.data.feedback && q.data.feedback.length > 0 && <div className="card">
           <div className="ct"><span>Feedback, 12 months</span><span className={scoreTone(avgOf(q.data.feedback))}>{stars(avgOf(q.data.feedback))} avg, {q.data.feedback.length} ratings</span></div>
           <div className="tw"><table className="visits"><caption className="sr-only">Feedback and star ratings</caption>
