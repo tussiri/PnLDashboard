@@ -2,7 +2,7 @@ import { useMemo, type ReactNode } from 'react'
 import type { BudgetMonth, BudgetWeek, LeadershipAccount, LeadershipMonthlyJob, LeadershipRow } from '../services/apiTypes'
 import { Badge, ChartCard, Kpi, Skeleton, Swatch, toneOf, useVocab } from './ui'
 import { LaborMixChart, MonthWeekTrendChart, SegmentTrendChart, SiteLpChart, useTokens } from './charts'
-import { closedMonths, includesVendor, inSentence, monthLaborPct, monthRevenue, priorMonth, rowsOfWeek, segmentLabel, segmentOrder, siteMonths, useMonthly, useMonthRows, useRows, vendorLabel, weekBudgetOf, type DataFlags, type WeekBudget } from './data'
+import { closedMonths, includesVendor, inSentence, isSubcontracted, monthLaborPct, monthRevenue, priorMonth, rowsOfWeek, segmentLabel, segmentOrder, siteMonths, useMonthly, useMonthRows, useRows, vendorLabel, weekBudgetOf, type DataFlags, type WeekBudget } from './data'
 import { hours, hours1, money, moneyK, pct } from './format'
 import { accountSummary, statusOf, type AccountNote, type AccountSummary, type MetricOptions, type SiteMetrics } from './metrics'
 import { addDays, monthLabel, monthShort, TREND_WEEKS_DEFAULT, TREND_WEEKS_MAX, TREND_WEEKS_MIN, weekEndOf, weekTick } from './routes'
@@ -176,7 +176,10 @@ export function Overview({ account, rows, summary, options, flags, headline = tr
   const budgetWeek = thisWeekBudget?.labor ?? null
   const exEvents = summary.sites.filter((r) => r.role !== 'non_billed').reduce((x, r) => x + r.cost, 0)
   const dayText = (b: WeekBudget | null) => (!b ? '' : b.source === 'monthly' ? 'from the monthly plan' : Object.entries(b.details).filter(([, v]) => v).map(([k, v]) => `${v} ${({ school_days: 'school', staff_days: 'staff', closure_days: 'closure', summer_days: 'summer', stat_holidays: 'holiday' } as Record<string, string>)[k] ?? k}`).join(', '))
-  const sorted = [...billed].sort((x, y) => (y.measurePct ?? 0) - (x.measurePct ?? 0))
+  // Labor % by site lists self-performed sites only: a subcontracted site has no labor of ours, just the subcontractor's
+  // invoice (its AR against AP is on the Subcontracted tab). The month rollup carries them; the week view splits them out.
+  const subSites = billed.filter((r) => isSubcontracted(r, account)).length
+  const sorted = billed.filter((r) => !isSubcontracted(r, account)).sort((x, y) => (y.measurePct ?? 0) - (x.measurePct ?? 0))
   const mix = [...groups.map((g) => ({ name: g.name, list: g.list })), ...catchJobs.map((r) => ({ name: `Job ${r.job_number} catch-all`, list: [r] })), ...nonBilled.map((r) => ({ name: `Job ${r.job_number} non-billed`, list: [r] }))]
   const sum = (list: Row[], f: (r: Row) => number) => list.reduce((x, r) => x + f(r), 0)
   const groupLp = (list: Row[]) => (monthly.data && lastClosed ? monthLaborPct(list.flatMap((r) => siteMonths(monthly.data!.jobs, r.company, r.kids, r.job_number)), lastClosed, factor) : null)
@@ -237,7 +240,7 @@ export function Overview({ account, rows, summary, options, flags, headline = tr
         <tbody>{trend.map((x, i) => <tr key={x.key}><td className="l">{x.label}</td>{segSeries.map((s) => <td key={s.name} className={toneOf(statusOf(s.values[i], s.target, options.watchBand))}>{pct(s.values[i])}</td>)}
           {weekTargets && <td>{pct(weekTargets[i])}</td>}</tr>)}</tbody></table></div>} />}
     {billed.length > 0 && <div className="charts2">
-      <ChartCard title={`Labor % by site this ${period}`} height={Math.max(200, sorted.length * 16 + 60)}
+      <ChartCard title={`Labor % by ${subSites ? 'self-performed ' : ''}site this ${period}`} height={Math.max(200, sorted.length * 16 + 60)}
         legend={<><Swatch color={t.ok} label={vocab === 'fedex' ? 'On target' : 'On track'} /><Swatch color={t.warn} label="Watch" /><Swatch color={t.bad} label={vocab === 'fedex' ? 'Over' : 'High'} /><Swatch line label={`Target ${pct(target)}`} /></>}
         chart={<SiteLpChart labels={sorted.map((r) => short(r.site_name))} values={sorted.map((r) => r.measurePct)} tones={sorted.map((r) => toneOf(r.status))} target={target}
           details={sorted.map((r) => `${pct(r.measurePct)} (${money(r.cost)} / ${money(r.invoice)})`)} />}
