@@ -6,6 +6,7 @@ import { closedMonths, includesVendor, inSentence, isSubcontracted, monthLaborPc
 import { hours, hours1, money, moneyK, pct } from './format'
 import { accountSummary, statusOf, type AccountNote, type AccountSummary, type MetricOptions, type SiteMetrics } from './metrics'
 import { addDays, monthLabel, monthShort, TREND_WEEKS_DEFAULT, TREND_WEEKS_MAX, TREND_WEEKS_MIN, weekEndOf, weekTick } from './routes'
+import { projectRecentWeeks, PROJECTION_BASE_WEEKS } from './projection'
 import { QaCards } from './Qa'
 import { useLeadership } from './state'
 import { billingSources, invoiceLabel, weekChange, wordsFor } from './vocab'
@@ -16,7 +17,9 @@ const TREND_LOAD = 26
 const SYNC_NAME: Record<string, string> = { winteam_sarus: 'Sarus', nightly: 'Nightly', relay: 'Relay', mail_inbox: 'Reports inbox' }
 
 /** Facts that qualify the week's numbers: catch-all and non-billed jobs, estimates, allocation, stale or failed data. */
-export function Notes({ summary, account, flags, options, revenueMonth }: { summary: AccountSummary<LeadershipRow>; account: LeadershipAccount; flags: DataFlags; options: MetricOptions; revenueMonth: string | null }) {
+export function Notes({ summary, account, flags, options, revenueMonth, extra = [] }: { summary: AccountSummary<LeadershipRow>; account: LeadershipAccount; flags: DataFlags; options: MetricOptions; revenueMonth: string | null
+  /** Facts the caller adds (the overview: a selected week whose labor is not in yet). */
+  extra?: { tone: '' | 'warn' | 'bad'; key: string; label: string; body: ReactNode }[] }) {
   const items: { tone: '' | 'warn' | 'bad'; key: string; label: string; body: ReactNode }[] = []
   const add = (tone: '' | 'warn' | 'bad', key: string, label: string, body: ReactNode) => items.push({ tone, key, label, body })
   const effort = (labor: number, hrs: number, ot: number) => `${money(labor)}, ${hours(hrs)} hrs, ${hours(ot)} OT`
@@ -32,6 +35,7 @@ export function Notes({ summary, account, flags, options, revenueMonth }: { summ
   if (flags.revenueLag) add('bad', 'lag', 'Invoicing month', `${monthLabel(flags.revenueLag.revenueMonth)}; ${monthLabel(flags.revenueLag.expectedMonth)} job cost not loaded`)
   for (const s of flags.failedSyncs) add('bad', `s${s.integration}`, `${SYNC_NAME[s.integration] ?? 'WinTeam'} sync failed`, s.at ? s.at.slice(0, 10) : '')
   if (flags.weekInProgress) add('warn', 'prog', 'Week in progress', 'Partial hours and labor')
+  for (const x of extra) add(x.tone, x.key, x.label, x.body)
   if (flags.month?.inProgress) add('warn', 'mprog', 'Month in progress', 'Partial hours and labor')
   if (flags.month?.subsExpected) add(flags.month.subsReceived < flags.month.subsExpected ? 'warn' : '', 'subs', 'Sub invoices', `${flags.month.subsReceived} of ${flags.month.subsExpected} received`)
   if (flags.month?.notInvoiced) add('warn', 'noinv', 'Not yet invoiced', `${siteWord(flags.month.notInvoiced)}; contract or prior month`)
@@ -81,7 +85,7 @@ export function Overview({ account, rows, summary, options, flags, headline = tr
   const w = wordsFor(vocab)
   const target = options.target
   const factor = options.vendorFactor ?? 1
-  const { optionsFor, monthMode, month, can, navigate, weekStart, route } = useLeadership()
+  const { optionsFor, monthMode, month, can, navigate, weekStart, route, config } = useLeadership()
   const hasBudget = Boolean(budgetWeeks?.length || budgetMonths?.length)
   const budgetOf = (weekStartIso: string): WeekBudget | null => weekBudgetOf(weekStartIso, budgetWeeks, budgetMonths, payHolidays)
   const period = options.period ?? 'week'
@@ -144,7 +148,18 @@ export function Overview({ account, rows, summary, options, flags, headline = tr
   const changeWord = period === 'month' ? (vocab === 'fedex' ? 'vs prior month' : 'MoM') : vocab === 'fedex' ? 'vs prior wk' : 'WoW'
   // The trend: weeks in the week view (the last trendWeeks up to the selected week); closed months, as monthly
   // totals, in the month rollup (up to the selected month).
-  const shownWeeks = useMemo(() => weeks.filter((x) => !weekStart || x.week <= weekStart).slice(-trendWeeks), [weeks, weekStart, trendWeeks])
+  // The latest weeks while their labor is still arriving are drawn as a projection (projection.ts), labeled as such.
+  const projected = useMemo(() => {
+    const known = config.data?.weeks ?? []
+    const latest = known.reduce((m, w) => (w.week_start > m ? w.week_start : m), '')
+    const inProgress = new Set(known.filter((w) => w.in_progress).map((w) => w.week_start))
+    return projectRecentWeeks(weeks.map((x) => ({ week: x.week, cost: x.s?.cost ?? null, invoice: x.s?.invoice ?? null, lp: x.s?.measurePct ?? null, sitesLp: x.sitesLp, segs: x.segs })),
+      inProgress, latest ? (wk) => wk >= addDays(latest, -7) : undefined)
+  }, [weeks, config.data])
+  const shownWeeks = useMemo(() => projected.filter((x) => !weekStart || x.week <= weekStart).slice(-trendWeeks), [projected, weekStart, trendWeeks])
+  const anyProjected = !monthMode && shownWeeks.some((x) => x.projected)
+  const selectedProjected = !monthMode && shownWeeks.some((x) => x.week === weekStart && x.projected)
+  const projectedFlags = anyProjected ? shownWeeks.map((x) => x.projected) : undefined
   const trendMonths = useMemo(() => (monthMode ? closed.filter((m) => !month || m.slice(0, 7) <= month) : []), [monthMode, closed, month])
   const monthTotals = (m: string, jobs: typeof scopeJobs) => {
     const inv = jobs.reduce((x, j) => x + monthRevenue(j.months[m], j.delivery_model === 'subcontracted'), 0)
@@ -153,11 +168,11 @@ export function Overview({ account, rows, summary, options, flags, headline = tr
   }
   const trend = monthMode
     ? trendMonths.map((m) => { const t = monthTotals(m, scopeJobs); return { key: m, label: monthShort(m), labor: t.lab, invoice: t.inv, lp: t.lp } })
-    : shownWeeks.map((x) => ({ key: x.week, label: weekTick(x.week), labor: x.s?.cost ?? null, invoice: x.s?.invoice ?? null, lp: x.s?.measurePct ?? null }))
+    : shownWeeks.map((x) => ({ key: x.week, label: weekTick(x.week), labor: x.cost, invoice: x.invoice, lp: x.lp, projected: x.projected }))
   // The budget target: each week's budget labor over its invoice; each month's plan over its billing.
   const weekTargets = !hasBudget ? undefined : monthMode
     ? trendMonths.map((m, i) => { const b = budgetMonths?.find((x) => x.month.slice(0, 7) === m.slice(0, 7)); return b && trend[i].invoice ? b.budget.total / trend[i].invoice! : null })
-    : shownWeeks.map((x) => { const b = budgetOf(x.week); return b && x.s?.invoice ? b.labor / x.s.invoice : null })
+    : shownWeeks.map((x) => { const b = budgetOf(x.week); return b && x.invoice ? b.labor / x.invoice : null })
   // Sites only: the billed sites without the catch-all and non-billed jobs (shown when the account has those).
   const sitesLp = !(catchJobs.length || nonBilled.length) ? undefined : monthMode
     ? trendMonths.map((m) => monthTotals(m, scopeJobs.filter((j) => j.role === 'site')).lp)
@@ -201,7 +216,8 @@ export function Overview({ account, rows, summary, options, flags, headline = tr
       <Kpi label={w.hoursOver} value={hours(over)} tone={over > 0 ? 'bad' : 'ok'}
         sub={join(`${hours1(over / perDay)}/day`, w.over(summary.billed.over, billed.length))} />
     </div>}
-    <Notes summary={summary} account={account} flags={flags} options={options} revenueMonth={revenueMonth} />
+    <Notes summary={summary} account={account} flags={flags} options={options} revenueMonth={revenueMonth}
+      extra={selectedProjected && !flags.weekInProgress ? [{ tone: 'warn', key: 'proj', label: 'Labor not in yet', body: `Trend projected from the ${PROJECTION_BASE_WEEKS} weeks before` }] : []} />
     <div className="seg-grid">
       {groups.map((g) => {
         const s = accountSummary(g.list, options, []).billed
@@ -223,21 +239,23 @@ export function Overview({ account, rows, summary, options, flags, headline = tr
       action={weeksSlider}
       legend={<><Swatch color={t.accent2} label={monthMode ? 'Month' : 'Week'} /><Swatch color={t.accent} label={monthMode ? 'Selected month' : 'Selected week'} /><Swatch line color={t.text2} label={invoiceLabel(w, vocab, period)} />
         <Swatch color={t.bad} label="Labor %" />{sitesLp && <Swatch color={t.warn} label="Sites-only labor %" />}
-        {weekTargets ? <Swatch color={t.tgt} label={monthMode ? 'Monthly budget target' : 'Weekly budget target'} /> : <Swatch line color={t.ok} label={`Target ${pct(target)}`} />}</>}
+        {weekTargets ? <Swatch color={t.tgt} label={monthMode ? 'Monthly budget target' : 'Weekly budget target'} /> : <Swatch line color={t.ok} label={`Target ${pct(target)}`} />}
+        {anyProjected && <Swatch line color={t.text3} label="Projected" />}</>}
       chart={trend.length ? <MonthWeekTrendChart labels={trend.map((x) => x.label)} labor={trend.map((x) => x.labor)} invoice={trend.map((x) => x.invoice)} lp={trend.map((x) => x.lp)} target={target} weekFrom={0}
-        current={trendCurrent} weekTargets={weekTargets} sitesLp={sitesLp} unit={monthMode ? 'month' : 'week'}
+        current={trendCurrent} weekTargets={weekTargets} sitesLp={sitesLp} unit={monthMode ? 'month' : 'week'} projected={projectedFlags}
         onPick={pickPoint} /> : <Skeleton height={240} />}
       table={<table><thead><tr><th className="nosort l">{monthMode ? 'Month' : 'Week ending'}</th><th className="nosort">{w.invoiceCol}</th><th className="nosort">{w.laborCol}</th><th className="nosort">Labor %</th>{sitesLp && <th className="nosort">Sites only</th>}{weekTargets && <th className="nosort">Budget target</th>}</tr></thead>
-        <tbody>{trend.map((x, i) => <tr key={x.label}><td className="l">{x.label}</td><td>{money(x.invoice)}</td><td>{money(x.labor)}</td><td>{pct(x.lp)}</td>{sitesLp && <td>{pct(sitesLp[i])}</td>}{weekTargets && <td>{pct(weekTargets[i])}</td>}</tr>)}</tbody></table>} />}
+        <tbody>{trend.map((x, i) => <tr key={x.label}><td className="l">{x.label}{projectedFlags?.[i] ? ' (projected)' : ''}</td><td>{money(x.invoice)}</td><td>{money(x.labor)}</td><td>{pct(x.lp)}</td>{sitesLp && <td>{pct(sitesLp[i])}</td>}{weekTargets && <td>{pct(weekTargets[i])}</td>}</tr>)}</tbody></table>} />}
     {groups.length > 1 && <ChartCard title={`Labor % by ${segmentLabel(account).toLowerCase()}, ${monthMode ? 'by month' : `last ${trendWeeks} weeks`}`} height={280}
       action={weeksSlider}
       legend={<>{segSeries.map((s, i) => <Swatch key={s.name} color={t.series[i % t.series.length]} label={s.name} />)}
         {weekTargets ? <Swatch color={t.tgt} label="Budget target" />
           : segSeries.every((s) => s.target === segSeries[0].target) ? <Swatch line color={t.text2} label={`Target ${pct(segSeries[0].target)}`} />
-            : <Swatch line color={t.text2} label="Group targets" />}</>}
-      chart={trend.length ? <SegmentTrendChart labels={trend.map((x) => x.label)} series={segSeries} current={trendCurrent} budgetTargets={weekTargets} onPick={pickPoint} /> : <Skeleton height={260} />}
+            : <Swatch line color={t.text2} label="Group targets" />}
+        {anyProjected && <Swatch line color={t.text3} label="Projected" />}</>}
+      chart={trend.length ? <SegmentTrendChart labels={trend.map((x) => x.label)} series={segSeries} current={trendCurrent} budgetTargets={weekTargets} onPick={pickPoint} projected={projectedFlags} /> : <Skeleton height={260} />}
       table={<div className="tw"><table><thead><tr><th className="nosort l">{monthMode ? 'Month' : 'Week ending'}</th>{segSeries.map((s) => <th key={s.name} className="nosort">{s.name}</th>)}{weekTargets && <th className="nosort">Budget target</th>}</tr></thead>
-        <tbody>{trend.map((x, i) => <tr key={x.key}><td className="l">{x.label}</td>{segSeries.map((s) => <td key={s.name} className={toneOf(statusOf(s.values[i], s.target, options.watchBand))}>{pct(s.values[i])}</td>)}
+        <tbody>{trend.map((x, i) => <tr key={x.key}><td className="l">{x.label}{projectedFlags?.[i] ? ' (projected)' : ''}</td>{segSeries.map((s) => <td key={s.name} className={toneOf(statusOf(s.values[i], s.target, options.watchBand))}>{pct(s.values[i])}</td>)}
           {weekTargets && <td>{pct(weekTargets[i])}</td>}</tr>)}</tbody></table></div>} />}
     {billed.length > 0 && <div className="charts2">
       <ChartCard title={`Labor % by ${subSites ? 'self-performed ' : ''}site this ${period}`} height={Math.max(200, sorted.length * 16 + 60)}

@@ -65,6 +65,20 @@ export function pctAxisMax(values: (number | null | undefined)[], floor: number)
   return v[v.length - 1] > cap ? cap : undefined
 }
 
+/** Styling for projected points (projection.ts): hollow points, a dashed line into them, "(projected)" in the tooltip. */
+export const projectedLine = (projected: boolean[] | undefined, color: string, bg: string) => (projected?.some(Boolean)
+  ? { pointBackgroundColor: projected.map((p) => (p ? bg : color)), pointBorderColor: color, pointBorderWidth: projected.map((p) => (p ? 2 : 1)),
+      segment: { borderDash: (ctx: { p1DataIndex: number }) => (projected[ctx.p1DataIndex] ? [5, 4] : undefined) } }
+  : {})
+/** '#8fb3d6' at an alpha, as rgba (canvas fill styles need a plain color); other color strings pass through. */
+export const withAlpha = (color: string, alpha: number) => {
+  const m = /^#([0-9a-f]{6})$/i.exec(color.trim())
+  if (!m) return color
+  const n = parseInt(m[1], 16)
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`
+}
+const projectedSuffix = (projected: boolean[] | undefined, i: number) => (projected?.[i] ? ' (projected)' : '')
+
 const bar = { borderRadius: 4, borderSkipped: 'start' as const, maxBarThickness: 24, categoryPercentage: 0.7, barPercentage: 0.9 }
 
 /** Percent ticks for a logarithmic axis: round values only, so 50% to 100% reads the same height as 400% to 800%. */
@@ -74,9 +88,11 @@ const LOG_PCT_TICKS = [5, 10, 25, 50, 100, 200, 500, 1000, 2000, 5000, 10000]
  * target dashed in its color (one line when all share it), or the account's budget target as the green stepped line.
  * The axis is logarithmic, so a spike (a summer week at several hundred percent) stays on the chart without flattening
  * the ordinary weeks. */
-export function SegmentTrendChart({ labels, series, current, budgetTargets, onPick }: {
+export function SegmentTrendChart({ labels, series, current, budgetTargets, onPick, projected }: {
   labels: string[]; series: { name: string; values: (number | null)[]; target: number }[]; current: number
   budgetTargets?: (number | null)[]; onPick?: (index: number) => void
+  /** Points that are projections: hollow, with a dashed line into them. */
+  projected?: boolean[]
 }) {
   const t = useTokens()
   const o = base(t) as unknown as ChartOptions<'line'>
@@ -89,7 +105,7 @@ export function SegmentTrendChart({ labels, series, current, budgetTargets, onPi
   const yMax = all.length ? (LOG_PCT_TICKS.find((v) => v >= Math.max(...all) * 1.1) ?? Math.max(...all) * 1.2) : 200
   const data = { labels, datasets: [
     ...series.map((s, i) => ({ label: s.name, data: s.values.map((v) => (v == null ? null : v * 100)), borderColor: color(i), backgroundColor: color(i),
-      borderWidth: 2, pointRadius: point, pointHoverRadius: 6, pointBorderColor: t.bg, pointBorderWidth: 1.5, tension: 0, spanGaps: true })),
+      borderWidth: 2, pointRadius: point, pointHoverRadius: 6, pointBorderColor: t.bg, pointBorderWidth: 1.5, tension: 0, spanGaps: true, ...projectedLine(projected, color(i), t.bg) })),
     ...(budgetTargets
       ? [{ label: 'Budget target', data: budgetTargets.map((v) => (v == null ? null : v * 100)), borderColor: t.tgt, backgroundColor: t.tgt, borderWidth: 3,
         stepped: 'middle' as const, pointRadius: 0, pointHitRadius: 0 }]
@@ -103,7 +119,7 @@ export function SegmentTrendChart({ labels, series, current, budgetTargets, onPi
     scales: { x: { ...o.scales!.x, grid: { display: false } },
       y: { ...o.scales!.y, type: 'logarithmic', min: yMin, max: yMax, ticks: { color: t.text2, callback: (v: string | number) => `${v}%` },
         afterBuildTicks: (axis: { ticks: { value: number }[]; min: number; max: number }) => { axis.ticks = LOG_PCT_TICKS.filter((v) => v >= axis.min && v <= axis.max).map((value) => ({ value })) } } },
-    plugins: { ...o.plugins, tooltip: { ...o.plugins!.tooltip, callbacks: { label: (c: { dataset: { label?: string }; parsed: { y: number | null } }) => `${c.dataset.label}: ${c.parsed.y == null ? 'no billing' : `${c.parsed.y.toFixed(1)}%`}` } } } }
+    plugins: { ...o.plugins, tooltip: { ...o.plugins!.tooltip, callbacks: { label: (c: { dataset: { label?: string }; parsed: { y: number | null }; dataIndex: number }) => `${c.dataset.label}: ${c.parsed.y == null ? 'no billing' : `${c.parsed.y.toFixed(1)}%`}${/target/i.test(c.dataset.label ?? '') ? '' : projectedSuffix(projected, c.dataIndex)}` } } } }
   return <Line data={data} options={options as unknown as ChartOptions<'line'>} aria-label={`Labor % by group: ${series.map((s) => s.name).join(', ')}`} role="img" />
 }
 
@@ -235,7 +251,9 @@ export function LaborMixChart({ labels, invoice, core, pallet, sub, subLabel, di
 }
 
 /** Labor dollars by period as bars (muted before weekFrom, the current one highlighted), invoice and labor % as lines, target dashed. */
-export function MonthWeekTrendChart({ labels, labor, invoice, lp, target, weekFrom, current, weekTargets, onPick, sitesLp, unit = 'week' }: { labels: string[]; labor: (number | null)[]; invoice: (number | null)[]; lp: (number | null)[]; target: number; weekFrom: number; current: number
+export function MonthWeekTrendChart({ labels, labor, invoice, lp, target, weekFrom, current, weekTargets, onPick, sitesLp, unit = 'week', projected }: { labels: string[]; labor: (number | null)[]; invoice: (number | null)[]; lp: (number | null)[]; target: number; weekFrom: number; current: number
+  /** Points whose labor is a projection (the latest weeks while timekeeping arrives): lighter bars, hollow points. */
+  projected?: boolean[]
   /** The period each point is: names the series in the tooltip. */
   unit?: 'week' | 'month'
   /** Each point's budget target (the weekly budget calendar): drawn as the green stepped line in place of the flat target. */
@@ -247,10 +265,12 @@ export function MonthWeekTrendChart({ labels, labor, invoice, lp, target, weekFr
   const t = useTokens()
   const o = base(t) as unknown as ChartOptions<'bar'>
   const data = { labels, datasets: [
-    { type: 'bar' as const, label: unit === 'month' ? 'Labor, month' : 'Labor, week', data: labor, backgroundColor: labels.map((_, i) => (i === current ? t.accent : i >= weekFrom ? t.accent2 : t.muted)), yAxisID: 'y', order: 3, ...bar },
+    { type: 'bar' as const, label: unit === 'month' ? 'Labor, month' : 'Labor, week', data: labor, yAxisID: 'y', order: 3, ...bar,
+      backgroundColor: labels.map((_, i) => { const c = i === current ? t.accent : i >= weekFrom ? t.accent2 : t.muted; return projected?.[i] ? withAlpha(c, 0.35) : c }),
+      borderColor: labels.map((_, i) => (i === current ? t.accent : t.accent2)), borderWidth: labels.map((_, i) => (projected?.[i] ? 1.5 : 0)), borderSkipped: false },
     { type: 'line' as const, label: unit === 'month' ? 'Invoice, month' : 'Invoice, week', data: invoice, borderColor: t.text2, borderDash: [4, 3], borderWidth: 1.5, pointRadius: 2, yAxisID: 'y', order: 2 },
-    { type: 'line' as const, label: 'Labor %', data: lp.map((v) => (v == null ? null : v * 100)), borderColor: t.bad, backgroundColor: t.bad, borderWidth: 2, pointRadius: 3, yAxisID: 'y1', order: 1 },
-    ...(sitesLp ? [{ type: 'line' as const, label: 'Sites-only labor %', data: sitesLp.map((v) => (v == null ? null : v * 100)), borderColor: t.warn, backgroundColor: t.warn, borderWidth: 2, pointRadius: 3, yAxisID: 'y1', order: 1 }] : []),
+    { type: 'line' as const, label: 'Labor %', data: lp.map((v) => (v == null ? null : v * 100)), borderColor: t.bad, backgroundColor: t.bad, borderWidth: 2, pointRadius: 3, yAxisID: 'y1', order: 1, ...projectedLine(projected, t.bad, t.bg) },
+    ...(sitesLp ? [{ type: 'line' as const, label: 'Sites-only labor %', data: sitesLp.map((v) => (v == null ? null : v * 100)), borderColor: t.warn, backgroundColor: t.warn, borderWidth: 2, pointRadius: 3, yAxisID: 'y1', order: 1, ...projectedLine(projected, t.warn, t.bg) }] : []),
     weekTargets
       ? { type: 'line' as const, label: 'Weekly budget target', data: weekTargets.map((v) => (v == null ? null : v * 100)), borderColor: t.tgt, backgroundColor: t.tgt, borderWidth: 4,
         stepped: 'middle', pointRadius: 4, pointHoverRadius: 7, pointBackgroundColor: t.tgt, pointBorderColor: t.bg, pointBorderWidth: 1.5, yAxisID: 'y1', order: -1 }
@@ -261,8 +281,9 @@ export function MonthWeekTrendChart({ labels, labor, invoice, lp, target, weekFr
     onHover: (e: { native?: { target?: EventTarget | null } }, els: unknown[]) => { const el = e.native?.target as HTMLElement | null; if (el && onPick) el.style.cursor = els.length ? 'pointer' : 'default' },
     scales: { x: { ...o.scales!.x, grid: { display: false } }, y: { ...o.scales!.y, beginAtZero: true, ticks: { color: t.text2, callback: (v: number | string) => `$${Number(v) / 1000}K` } },
       y1: { position: 'right', beginAtZero: true, suggestedMax: 90, max: pctAxisMax([...lp, ...(sitesLp ?? []), ...(weekTargets ?? [])].map((v) => (v == null ? null : v * 100)), Math.max(target * 100, 100)), grid: { display: false }, ticks: { color: t.text2, callback: (v: number | string) => `${v}%` } } },
-    plugins: { ...o.plugins, tooltip: { ...o.plugins!.tooltip, callbacks: { label: (c: { dataset: { label?: string; yAxisID?: string }; parsed: { y: number | null } }) =>
-      c.dataset.yAxisID === 'y1' ? `${c.dataset.label}: ${c.parsed.y == null ? '–' : `${c.parsed.y.toFixed(1)}%`}` : `${c.dataset.label}: ${money(c.parsed.y)}` } } } } as unknown as ChartOptions<'bar'>
+    plugins: { ...o.plugins, tooltip: { ...o.plugins!.tooltip, callbacks: { label: (c: { dataset: { label?: string; yAxisID?: string }; parsed: { y: number | null }; dataIndex: number }) =>
+      (c.dataset.yAxisID === 'y1' ? `${c.dataset.label}: ${c.parsed.y == null ? '–' : `${c.parsed.y.toFixed(1)}%`}` : `${c.dataset.label}: ${money(c.parsed.y)}`)
+        + (c.dataset.label?.startsWith('Invoice') || /target/i.test(c.dataset.label ?? '') ? '' : projectedSuffix(projected, c.dataIndex)) } } } } as unknown as ChartOptions<'bar'>
   return <Chart type="bar" data={data} options={options} aria-label={`Labor against invoice by ${unit}, with labor % and the target`} role="img" />
 }
 

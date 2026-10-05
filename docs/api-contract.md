@@ -383,7 +383,7 @@ are Monday-based; the views label them by the week-ending Sunday. Any date in a 
 | `PUT /leadership/account-jobs/{company}/{job_number}` (admin) body `{account_slug \| null, segment, role, companycam_project_id}` | the mapping row (`assigned_by: 'admin'`, `needs_review: false`); `account_slug: null` unmaps the job (Other) |
 | `POST /leadership/accounts/seed` (admin) | `{added: {accounts, segments, jobs}}`: adds what `config/accounts/seed.json` has and the database lacks; never overwrites |
 | `GET /leadership/imports?limit=25` (admin) | `{files: [LeadershipImportFile]}` |
-| `POST /leadership/imports` (admin, multipart `file`, optional `kind` = `pay_report` \| `job_cost`, `rebuild` = true) | `{file: LeadershipImportFile, marts: RebuildResult \| null}`; formats in `docs/export-feeds.md`. A file already loaded comes back `status: 'duplicate'`. |
+| `POST /leadership/imports` (admin, multipart `file`, optional `kind` = `pay_report` \| `job_cost`, `rebuild` = true) | `{file: LeadershipImportFile, marts: RebuildResult \| null}`; formats in `docs/export-feeds.md`. A file already loaded comes back `status: 'duplicate'`. With no `kind`, a file that is no feed but an account's labor budget workbook (the reports mailbox rule, app/budget_file.py; added 2026-10-05) is saved as the budget of the account named in its file name, logged as kind `budget`, with no rebuild (`marts: null`). |
 
 ```
 LeadershipAccount = { slug, name, featured, sort, target_labor_pct, watch_band, revenue_method: 'monthly_div'|'weekly_billing'|'per_visit',
@@ -681,7 +681,7 @@ Total labor is checked against site + overhead; Year and Total rows are skipped)
 |---|---|
 | `GET /leadership/budget?account=` | Permission `tab.budget`, account scope. `{account, months: [{month, in_progress, details, supplies, budget: {site, overhead, total, revenue, labor_pct}, actual: {site, overhead, events, total, revenue, basis, labor_pct} \| null, variance: {total, site, overhead, pct, points} \| null}]}`. Actual site labor is the account's site jobs, overhead its catch-all jobs, events its non-billed jobs (shown, left out of the total). Job cost when the month's site jobs carry job cost labor (`basis` job_cost), else the month rollup from timekeeping (`pay_report`, or `estimate` when any of it is estimated); none for months not started. A month still running (`in_progress`) has its actual to date and no variance. |
 | `PUT /leadership/budget/{slug}` | Admin. `{months: [{month: YYYY-MM, site_labor, overhead_labor, revenue, supplies, details}]}`, upserted by month; `422` for a bad month, a negative amount or a row with no labor. |
-| `DELETE /leadership/budget/{slug}?month=YYYY-MM` | Admin. One month; `weeks=true` the weekly calendar; neither, the account's whole plan. |
+| `DELETE /leadership/budget/{slug}?month=YYYY-MM` | Admin. One month and the calendar weeks overlapping it (`{account, removed, removed_weeks}`, added 2026-10-05); `weeks=true` the weekly calendar; neither, the account's whole plan. |
 | `POST /leadership/budget/read` | Admin. Multipart `file` (.xlsx): `{file, sheets: [{name, text}]}`, each non-empty sheet as tab-separated text (values, dates ISO, wrapped cells quoted). Nothing is saved; the Budgets page finds the monthly plan and the weekly calendar by their headers on any sheet, previews them and saves with the PUT. `422` for a file that is not a workbook. |
 
 **Weekly calendar** (migration 047, `ops.account_budget_week`): the plan's day calendar by week ending (a

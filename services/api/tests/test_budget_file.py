@@ -54,3 +54,33 @@ def test_parsers_match_the_browser():
     assert [budget_file.parse_month(v) for v in ("Jul 2026", "July 2026", "2026-07", "7/2026", "07/01/2026", "Total")] == ["2026-07"] * 5 + [None]
     assert [budget_file.parse_day(v) for v in ("2026-09-13", "9/13/2026", "Sep 13, 2026", "Average")] == ["2026-09-13"] * 3 + [None]
     assert [budget_file.parse_amount(v) for v in ("$1,026,956", "(1,200)", "67.6%", "")] == [1026956.0, -1200.0, 67.6, None]
+
+
+def test_an_upload_on_imports_that_is_a_budget_goes_to_the_budget_loader(monkeypatch):
+    """Admin > Imports with auto-detect: a budget workbook is saved as a budget, not failed as an unknown feed."""
+    import asyncio
+    from contextlib import contextmanager
+
+    from app import imports
+    from app.routers import leadership
+
+    calls: list[tuple[str, str]] = []
+    monkeypatch.setattr(budget_file, "load_file", lambda conn, name, content, subject=None, origin="mail", uploaded_by=None:
+                        calls.append((name, origin)) or {"kind": "budget", "status": "loaded", "import_file_id": 3, "sha256": "x"})
+    monkeypatch.setattr(imports, "load_file", lambda *a, **k: (_ for _ in ()).throw(AssertionError("not a feed")))
+    monkeypatch.setattr(leadership, "_actor", lambda request: "admin")
+
+    @contextmanager
+    def fake_connection():
+        yield object()
+
+    monkeypatch.setattr(leadership, "connection", fake_connection)
+
+    class Upload:
+        filename = "Plano_ISD_FY27_weekly_budget.csv"
+        async def read(self, n):
+            return b"Week ending,Site labor,Overhead labor\n2026-09-20,194614.48,9578.54\n"
+
+    out = asyncio.run(leadership.upload_import(request=None, file=Upload(), kind=None, rebuild=True))
+    assert calls == [("Plano_ISD_FY27_weekly_budget.csv", "upload")]
+    assert out == {"file": {"kind": "budget", "status": "loaded", "import_file_id": 3}, "marts": None}
