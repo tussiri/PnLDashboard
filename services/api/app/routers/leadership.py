@@ -897,6 +897,12 @@ def delete_budget(slug: str, month: str | None = Query(None, description="YYYY-M
             except ValueError:
                 raise HTTPException(status_code=422, detail="month must be YYYY-MM") from None
             cursor.execute("DELETE FROM ops.account_budget_month WHERE account_slug = %s AND month = %s", (slug, first))
+            removed_month = cursor.rowcount
+            # The month's calendar weeks go with it: every week overlapping the month (a straddle week included).
+            cursor.execute("DELETE FROM ops.account_budget_week WHERE account_slug = %s AND week_end >= %s AND week_end - 6 < (%s::date + interval '1 month')",
+                           (slug, first, first))
+            conn.commit()
+            return {"account": slug, "removed": removed_month, "removed_weeks": cursor.rowcount}
         else:
             cursor.execute("DELETE FROM ops.account_budget_month WHERE account_slug = %s", (slug,))
             cursor.execute("DELETE FROM ops.account_budget_week WHERE account_slug = %s", (slug,))
