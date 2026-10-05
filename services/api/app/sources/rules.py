@@ -346,6 +346,10 @@ def ap_buckets(row: Mapping[str, Any]) -> dict[str, float]:
 
 # ── trailing job labor rate ──────────────────────────────────────────────────
 TRAILING_RATE_MONTHS = 3
+#: A job's trailing rate above this multiple of its company's rate is not a wage: the job cost carries labor
+#: dollars with almost no hours (a flat-paid or salaried worker, hours booked to another job), e.g. job 34
+#: at $203/h and job 6325 at $232/h against Crane IFS's $21/h. Such a job is priced at the company rate.
+MAX_JOB_RATE_RATIO = 3.0
 
 
 def trailing_rate(
@@ -356,8 +360,8 @@ def trailing_rate(
     months: int = TRAILING_RATE_MONTHS,
 ) -> tuple[float | None, str]:
     """(rate, basis) for a job: sum(direct_labor) / sum(actual_hours) over its last `months`
-    closed job-cost months with hours > 0 and labor > 0; else the company average computed the
-    same way; else the portfolio average; else None.
+    closed job-cost months with hours > 0 and labor > 0, unless that is above MAX_JOB_RATE_RATIO x the
+    company rate; else the company average computed the same way; else the portfolio average; else None.
 
     `job_months` rows carry month, direct_labor, actual_hours, closed.
     """
@@ -369,7 +373,7 @@ def trailing_rate(
     recent = usable[:months]
     hours = sum(parse_number(r.get("actual_hours")) or 0 for r in recent)
     labor = sum(parse_number(r.get("direct_labor")) or 0 for r in recent)
-    if hours > 0 and labor > 0:
+    if hours > 0 and labor > 0 and not (company_rate and labor / hours > MAX_JOB_RATE_RATIO * company_rate):
         return labor / hours, "job"
     if company_rate and company_rate > 0:
         return company_rate, "company"

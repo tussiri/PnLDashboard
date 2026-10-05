@@ -71,7 +71,9 @@ Derived fields (disclosed honestly)
   SAME rule the reference loader applies to the export lines (sources/rules.trailing_rate): the
   job's sum(direct_labor) / sum(actual_hours) over its last TRAILING_RATE_MONTHS closed job-cost
   months (core.fact_job_cost_month, month end + close_lag_days in the past, hours and labor > 0),
-  else the company's pooled rate over its last closed months, else the portfolio rate. Such rows
+  unless that is above rules.MAX_JOB_RATE_RATIO x the company rate (labor dollars with almost no
+  hours, not a wage), else the company's pooled rate over its last closed months, else the portfolio
+  rate. Punches of any source already priced at such a rate are re-priced at the company rate. Such rows
   carry labor_cost_basis 'trailing_job_rate' and `rate` = the imputed rate (so the overtime premium
   estimate uses it too); a punch with no usable rate at all keeps labor_cost NULL with basis 'none'
   so a missing wage is never reported as free labor. The pure mirror `trailing_rates` /
@@ -762,9 +764,12 @@ portfolio_rate AS (
   SELECT sum(direct_labor) / sum(actual_hours) AS rate FROM portfolio_recent WHERE recency <= %(months)s
 ),
 unpriced AS (
+  -- A job rate above max_ratio x its company's rate is labor dollars with almost no hours, not a wage
+  -- (rules.MAX_JOB_RATE_RATIO): such a job takes the company rate.
   SELECT t.timekeeping_key,
-         coalesce(jr.rate, cr.rate, pr.rate) AS rate,
-         CASE WHEN jr.rate IS NOT NULL THEN 'job' WHEN cr.rate IS NOT NULL THEN 'company' WHEN pr.rate IS NOT NULL THEN 'portfolio' END AS basis
+         CASE WHEN jr.rate IS NOT NULL AND (cr.rate IS NULL OR jr.rate <= %(max_ratio)s * cr.rate) THEN jr.rate ELSE coalesce(cr.rate, pr.rate, jr.rate) END AS rate,
+         CASE WHEN jr.rate IS NOT NULL AND (cr.rate IS NULL OR jr.rate <= %(max_ratio)s * cr.rate) THEN 'job'
+              WHEN cr.rate IS NOT NULL THEN 'company' WHEN pr.rate IS NOT NULL THEN 'portfolio' END AS basis
   FROM core.fact_timekeeping t
   -- The rate belongs to the job the punch resolved to: a raw number shared by both WinTeam
   -- databases (401, 6325, 99999) is a different job in each, keyed 'Crane:<n>' on one side.
@@ -785,6 +790,28 @@ RETURNING u.basis
 """
 
 
+# Punches of any source already priced at a trailing job rate above max_ratio x the company rate (priced before
+# the guard, or by the reference load) are re-priced at the company rate. Idempotent: a re-priced punch is at
+# the company rate, so it no longer matches.
+REPRICE_IMPLAUSIBLE_SQL = """
+WITH closed AS (
+  SELECT company, month, direct_labor, actual_hours
+  FROM mart.v_job_cost_month_effective
+  WHERE (month + interval '1 month' - interval '1 day')::date + %(lag_days)s::int < current_date
+    AND coalesce(actual_hours, 0) > 0 AND coalesce(direct_labor, 0) > 0 AND company IS NOT NULL
+),
+company_rate AS (
+  SELECT company, sum(direct_labor) / sum(actual_hours) AS rate
+  FROM (SELECT *, dense_rank() OVER (PARTITION BY company ORDER BY month DESC) AS recency FROM closed) c
+  WHERE recency <= %(months)s GROUP BY company
+)
+UPDATE core.fact_timekeeping t
+SET rate = round(cr.rate, 4), labor_cost = round(coalesce(t.hours, 0) * cr.rate, 2)
+FROM company_rate cr
+WHERE t.company = cr.company AND t.labor_cost_basis = %(basis)s AND t.rate > %(max_ratio)s * cr.rate
+"""
+
+
 def _close_lag_days(conn: Any) -> int:
     try:
         return max(0, int(_setting(conn, "close_lag_days", 5)))
@@ -799,10 +826,15 @@ def price_unpriced_punches(conn: Any, source: str = SOURCE) -> dict[str, int]:
     The API `rate` is the base pay rate (~8% below the all-in payroll rate the job-cost P&L and the
     executives' figures use), so pricing live punches at it understated labor inside the API window.
     Idempotent: punches already on the trailing basis are skipped."""
-    params = {"source": source, "lag_days": _close_lag_days(conn), "months": TRAILING_RATE_MONTHS, "basis": TRAILING_JOB_RATE_BASIS}
+    params = {"source": source, "lag_days": _close_lag_days(conn), "months": TRAILING_RATE_MONTHS, "basis": TRAILING_JOB_RATE_BASIS,
+              "max_ratio": rules.MAX_JOB_RATE_RATIO}
     with conn.cursor() as cursor:
         cursor.execute(PRICE_UNPRICED_SQL, params)
         rows = cursor.fetchall() or []
+        cursor.execute(REPRICE_IMPLAUSIBLE_SQL, params)
+        repriced = cursor.rowcount
+    if repriced:
+        logger.info("re-priced %s punch(es) whose trailing job rate was above %sx the company rate", repriced, rules.MAX_JOB_RATE_RATIO)
     counts: dict[str, int] = {}
     for row in rows:
         basis = row.get("basis") if isinstance(row, Mapping) else None
@@ -848,7 +880,10 @@ def price_punch(punch: Mapping[str, Any], rates: Mapping[str, Any]) -> tuple[flo
     rate = punch.get("rate")
     if rate is not None and float(rate) > 0:
         return round(hours * float(rate), 2), float(rate), "hours_x_rate"
-    imputed = rates["job"].get(punch.get("job_number")) or rates["company"].get(punch.get("company")) or rates.get("portfolio")
+    job, company = rates["job"].get(punch.get("job_number")), rates["company"].get(punch.get("company"))
+    if job and company and job > rules.MAX_JOB_RATE_RATIO * company:
+        job = None  # labor dollars with almost no hours, not a wage
+    imputed = job or company or rates.get("portfolio")
     if imputed:
         return round(hours * imputed, 2), round(imputed, 4), TRAILING_JOB_RATE_BASIS
     return None, (float(rate) if rate is not None else None), "none"
