@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field
 from .. import allocations, accounts, companycam, imports, marts
 from .. import month as month_module
 from .. import budget as budget_module
-from .. import feedback_ai, permissions
+from .. import budget_file, feedback_ai, mail_inbox, permissions
 from ..common import allowed_accounts, current_user, jsonable, require_account, require_admin, source_block
 from ..db import connection
 
@@ -1146,14 +1146,19 @@ def list_imports(limit: int = Query(25, ge=1, le=200)) -> dict[str, Any]:
 @router.post("/imports", dependencies=[Depends(require_admin)])
 async def upload_import(request: Request, file: UploadFile = File(...), kind: str | None = Form(None),
                         rebuild: bool = Form(True)) -> dict[str, Any]:
-    """Load one Pay Report or Job Cost export (CSV/XLSX), then rebuild the marts so the views use it."""
+    """Load one export (CSV/XLSX), then rebuild the marts so the views use it. With no kind, a file that is no feed
+    but an account's labor budget workbook is saved as that account's budget (app/budget_file.py; no rebuild)."""
     if kind is not None and kind not in imports.KINDS:
         raise HTTPException(status_code=422, detail=f"kind must be one of {imports.KINDS}")
     content = await file.read(MAX_UPLOAD_BYTES + 1)
     if len(content) > MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=413, detail="File is larger than 50 MB")
+    name = file.filename or "upload.csv"
     with connection() as conn:
-        result = imports.load_file(conn, file.filename or "upload.csv", content, kind=kind, origin="upload", uploaded_by=_actor(request))
+        if kind is None and mail_inbox.recognize(name, content) == budget_file.KIND:
+            result = budget_file.load_file(conn, name, content, origin="upload", uploaded_by=_actor(request))
+            return {"file": jsonable({k: v for k, v in result.items() if k != "sha256"}), "marts": None}
+        result = imports.load_file(conn, name, content, kind=kind, origin="upload", uploaded_by=_actor(request))
     marts_result = marts.rebuild_all("leadership-import") if rebuild and result["status"] == "loaded" else None
     if result["kind"] == "service_feedback" and result["status"] == "loaded":
         feedback_ai.warm()  # the comment summary is ready before anyone opens the page
