@@ -202,8 +202,10 @@ export function LaborMixChart({ labels, invoice, core, pallet, sub, subLabel, di
   return <Bar data={data} options={options} aria-label="Weekly invoice against core, pallet and sub labor by group" role="img" />
 }
 
-/** Closed months (weekly equivalent) then weeks: labor dollars as bars, invoice and labor % as lines, target dashed. */
-export function MonthWeekTrendChart({ labels, labor, invoice, lp, target, weekFrom, current, weekTargets, onPick, sitesLp }: { labels: string[]; labor: (number | null)[]; invoice: (number | null)[]; lp: (number | null)[]; target: number; weekFrom: number; current: number
+/** Labor dollars by period as bars (muted before weekFrom, the current one highlighted), invoice and labor % as lines, target dashed. */
+export function MonthWeekTrendChart({ labels, labor, invoice, lp, target, weekFrom, current, weekTargets, onPick, sitesLp, unit = 'week' }: { labels: string[]; labor: (number | null)[]; invoice: (number | null)[]; lp: (number | null)[]; target: number; weekFrom: number; current: number
+  /** The period each point is: names the series in the tooltip. */
+  unit?: 'week' | 'month'
   /** Each point's budget target (the weekly budget calendar): drawn as the green stepped line in place of the flat target. */
   weekTargets?: (number | null)[]
   /** Click a point to open it. */
@@ -213,8 +215,8 @@ export function MonthWeekTrendChart({ labels, labor, invoice, lp, target, weekFr
   const t = useTokens()
   const o = base(t) as unknown as ChartOptions<'bar'>
   const data = { labels, datasets: [
-    { type: 'bar' as const, label: 'Labor (weekly equiv.)', data: labor, backgroundColor: labels.map((_, i) => (i === current ? t.accent : i >= weekFrom ? t.accent2 : t.muted)), yAxisID: 'y', order: 3, ...bar },
-    { type: 'line' as const, label: 'Invoice (weekly equiv.)', data: invoice, borderColor: t.text2, borderDash: [4, 3], borderWidth: 1.5, pointRadius: 2, yAxisID: 'y', order: 2 },
+    { type: 'bar' as const, label: unit === 'month' ? 'Labor, month' : 'Labor, week', data: labor, backgroundColor: labels.map((_, i) => (i === current ? t.accent : i >= weekFrom ? t.accent2 : t.muted)), yAxisID: 'y', order: 3, ...bar },
+    { type: 'line' as const, label: unit === 'month' ? 'Invoice, month' : 'Invoice, week', data: invoice, borderColor: t.text2, borderDash: [4, 3], borderWidth: 1.5, pointRadius: 2, yAxisID: 'y', order: 2 },
     { type: 'line' as const, label: 'Labor %', data: lp.map((v) => (v == null ? null : v * 100)), borderColor: t.bad, backgroundColor: t.bad, borderWidth: 2, pointRadius: 3, yAxisID: 'y1', order: 1 },
     ...(sitesLp ? [{ type: 'line' as const, label: 'Sites-only labor %', data: sitesLp.map((v) => (v == null ? null : v * 100)), borderColor: t.warn, backgroundColor: t.warn, borderWidth: 2, pointRadius: 3, yAxisID: 'y1', order: 1 }] : []),
     weekTargets
@@ -229,7 +231,7 @@ export function MonthWeekTrendChart({ labels, labor, invoice, lp, target, weekFr
       y1: { position: 'right', beginAtZero: true, suggestedMax: 90, grid: { display: false }, ticks: { color: t.text2, callback: (v: number | string) => `${v}%` } } },
     plugins: { ...o.plugins, tooltip: { ...o.plugins!.tooltip, callbacks: { label: (c: { dataset: { label?: string; yAxisID?: string }; parsed: { y: number | null } }) =>
       c.dataset.yAxisID === 'y1' ? `${c.dataset.label}: ${c.parsed.y == null ? '–' : `${c.parsed.y.toFixed(1)}%`}` : `${c.dataset.label}: ${money(c.parsed.y)}` } } } } as unknown as ChartOptions<'bar'>
-  return <Chart type="bar" data={data} options={options} aria-label="Labor against invoice by closed month and by week, with labor % and the target" role="img" />
+  return <Chart type="bar" data={data} options={options} aria-label={`Labor against invoice by ${unit}, with labor % and the target`} role="img" />
 }
 
 /** OT by week: OT hours as bars (the selected week highlighted) and OT % of hours as a line; click a week to open it. */
