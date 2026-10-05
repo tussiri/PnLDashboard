@@ -151,4 +151,4 @@ export function ChartCard({ title, legend, height, chart, table, action }: { tit
 }
 
 export const Swatch = ({ color, label, line }: { color?: string; label: string; line?: boolean }) =>
-  <span><i className={line ? 'line' : ''} style={line ? undefined : { background: color }} aria-hidden="true" />{label}</span>
+  <span><i className={line ? 'line' : ''} style={line ? (color ? { borderTopColor: color } : undefined) : { background: color }} aria-hidden="true" />{label}</span>
