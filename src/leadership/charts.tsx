@@ -3,13 +3,13 @@
  * target line, recessive gridlines, colors read from the CSS tokens so light and dark themes each get
  * their own steps. Every chart sits in a ChartCard with a table view of the same numbers.
  */
-import { BarController, BarElement, CategoryScale, Chart as ChartJS, Filler, Legend, LinearScale, LineController, LineElement, PointElement, Tooltip, type ChartData, type ChartOptions } from 'chart.js'
+import { BarController, BarElement, CategoryScale, Chart as ChartJS, Filler, Legend, LinearScale, LogarithmicScale, LineController, LineElement, PointElement, Tooltip, type ChartData, type ChartOptions } from 'chart.js'
 import { useEffect, useState } from 'react'
 import { Bar, Chart, Line } from 'react-chartjs-2'
 import { hours as fmtHours, money, pct } from './format'
 import { useLeadership } from './state'
 
-ChartJS.register(BarController, BarElement, CategoryScale, LinearScale, LineController, LineElement, PointElement, Tooltip, Legend, Filler)
+ChartJS.register(BarController, BarElement, CategoryScale, LinearScale, LogarithmicScale, LineController, LineElement, PointElement, Tooltip, Legend, Filler)
 
 export interface Tokens { text: string; text2: string; text3: string; border: string; ok: string; warn: string; bad: string; accent: string; accent2: string; muted: string; bg: string; tgt: string
   /** Categorical series colors (--s1..--s6), for one line per group. */
@@ -67,8 +67,13 @@ export function pctAxisMax(values: (number | null | undefined)[], floor: number)
 
 const bar = { borderRadius: 4, borderSkipped: 'start' as const, maxBarThickness: 24, categoryPercentage: 0.7, barPercentage: 0.9 }
 
+/** Percent ticks for a logarithmic axis: round values only, so 50% to 100% reads the same height as 400% to 800%. */
+const LOG_PCT_TICKS = [5, 10, 25, 50, 100, 200, 500, 1000, 2000, 5000, 10000]
+
 /** Labor % by group over time: one line per group in its series color, the selected point enlarged; each group's
- * target dashed in its color (one line when all share it), or the account's budget target as the green stepped line. */
+ * target dashed in its color (one line when all share it), or the account's budget target as the green stepped line.
+ * The axis is logarithmic, so a spike (a summer week at several hundred percent) stays on the chart without flattening
+ * the ordinary weeks. */
 export function SegmentTrendChart({ labels, series, current, budgetTargets, onPick }: {
   labels: string[]; series: { name: string; values: (number | null)[]; target: number }[]; current: number
   budgetTargets?: (number | null)[]; onPick?: (index: number) => void
@@ -78,7 +83,10 @@ export function SegmentTrendChart({ labels, series, current, budgetTargets, onPi
   const color = (i: number) => t.series[i % t.series.length]
   const sharedTarget = series.every((s) => s.target === series[0]?.target)
   const point = labels.map((_, j) => (j === current ? 5 : 2.5))
-  const yMax = pctAxisMax([...series.flatMap((s) => s.values), ...(budgetTargets ?? [])].map((v) => (v == null ? null : v * 100)), Math.max(...series.map((s) => s.target * 100), 100))
+  // The axis fits the groups' lines and targets; a summer budget target far above them runs off the top.
+  const all = [...series.flatMap((s) => s.values), ...series.map((s) => s.target)].filter((v): v is number => v != null && v > 0).map((v) => v * 100)
+  const yMin = all.length ? Math.max(5, [...LOG_PCT_TICKS].reverse().find((v) => v <= Math.min(...all) * 0.9) ?? 5) : 10
+  const yMax = all.length ? (LOG_PCT_TICKS.find((v) => v >= Math.max(...all) * 1.1) ?? Math.max(...all) * 1.2) : 200
   const data = { labels, datasets: [
     ...series.map((s, i) => ({ label: s.name, data: s.values.map((v) => (v == null ? null : v * 100)), borderColor: color(i), backgroundColor: color(i),
       borderWidth: 2, pointRadius: point, pointHoverRadius: 6, pointBorderColor: t.bg, pointBorderWidth: 1.5, tension: 0, spanGaps: true })),
@@ -92,7 +100,9 @@ export function SegmentTrendChart({ labels, series, current, budgetTargets, onPi
   const options = { ...o, interaction: { mode: 'index', intersect: false },
     onClick: (_e: unknown, els: { index: number }[]) => { if (onPick && els.length) onPick(els[0].index) },
     onHover: (e: { native?: { target?: EventTarget | null } }, els: unknown[]) => { const el = e.native?.target as HTMLElement | null; if (el && onPick) el.style.cursor = els.length ? 'pointer' : 'default' },
-    scales: { x: { ...o.scales!.x, grid: { display: false } }, y: { ...o.scales!.y, beginAtZero: true, max: yMax, ticks: { color: t.text2, callback: (v: string | number) => `${v}%` } } },
+    scales: { x: { ...o.scales!.x, grid: { display: false } },
+      y: { ...o.scales!.y, type: 'logarithmic', min: yMin, max: yMax, ticks: { color: t.text2, callback: (v: string | number) => `${v}%` },
+        afterBuildTicks: (axis: { ticks: { value: number }[]; min: number; max: number }) => { axis.ticks = LOG_PCT_TICKS.filter((v) => v >= axis.min && v <= axis.max).map((value) => ({ value })) } } },
     plugins: { ...o.plugins, tooltip: { ...o.plugins!.tooltip, callbacks: { label: (c: { dataset: { label?: string }; parsed: { y: number | null } }) => `${c.dataset.label}: ${c.parsed.y == null ? 'no billing' : `${c.parsed.y.toFixed(1)}%`}` } } } }
   return <Line data={data} options={options as unknown as ChartOptions<'line'>} aria-label={`Labor % by group: ${series.map((s) => s.name).join(', ')}`} role="img" />
 }
