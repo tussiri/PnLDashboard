@@ -197,6 +197,19 @@ def test_price_punch_prefers_api_rate_then_job_then_company_then_portfolio() -> 
     assert normalize.price_punch({"job_number": "777", "company": None, "hours": 2, "rate": 0}, {"job": {}, "company": {}, "portfolio": None}) == (None, 0.0, "none")
 
 
+def test_price_punch_takes_the_company_rate_when_the_job_rate_is_not_a_wage() -> None:
+    rates = {"job": {"34": 203.31}, "company": {"Crane IFS": 21.4}, "portfolio": 20.0}
+    assert normalize.price_punch({"job_number": "34", "company": "Crane IFS", "hours": 10, "rate": None}, rates) == (214.0, 21.4, "trailing_job_rate")
+
+
+def test_the_pricing_sql_guards_and_reprices_implausible_job_rates() -> None:
+    assert "%(max_ratio)s * cr.rate" in normalize.PRICE_UNPRICED_SQL
+    assert "t.rate > %(max_ratio)s * cr.rate" in normalize.REPRICE_IMPLAUSIBLE_SQL
+    import re
+    for sql in (normalize.PRICE_UNPRICED_SQL, normalize.REPRICE_IMPLAUSIBLE_SQL):
+        assert not re.search(r"%(?!\(\w+\)s)", sql)  # psycopg reads every % as a placeholder
+
+
 class RecordingCursor:
     def __init__(self, conn: "RecordingConn") -> None:
         self.conn = conn
@@ -230,13 +243,14 @@ def test_timekeeping_normalization_prices_api_rows_at_trailing_rate() -> None:
     conn = RecordingConn()
     normalize.normalize_timekeeping(conn)
     pricing = [(flat(sql), params) for sql, params in conn.statements if "labor_cost_basis = %(basis)s" in sql]
-    assert len(pricing) == 1
+    assert len(pricing) == 2  # price the unpriced, then re-price implausible job rates (any source)
     text, params = pricing[0]
-    assert params == {"source": "winteam_api", "lag_days": 5, "months": 3, "basis": "trailing_job_rate"}
+    assert params == {"source": "winteam_api", "lag_days": 5, "months": 3, "basis": "trailing_job_rate", "max_ratio": 3.0}
+    assert "t.rate > %(max_ratio)s * cr.rate" in pricing[1][0]
     assert "FROM mart.v_job_cost_month_effective" in text
     assert "WHERE t.source = %(source)s AND t.labor_cost_basis IS DISTINCT FROM %(basis)s" in text
     assert re.search(r"UPDATE core\.fact_timekeeping t SET .* WHERE u\.timekeeping_key = t\.timekeeping_key AND t\.source = %\(source\)s AND u\.rate IS NOT NULL", text)
-    assert "coalesce(jr.rate, cr.rate, pr.rate)" in text
+    assert "jr.rate <= %(max_ratio)s * cr.rate" in text and "coalesce(cr.rate, pr.rate, jr.rate)" in text
     assert "recency <= %(months)s" in text
     # the upsert itself still prices rate > 0 rows as hours x rate and leaves the others NULL / 'none'
     upsert = flat(next(sql for sql, _ in conn.statements if "INSERT INTO core.fact_timekeeping" in sql))
@@ -244,7 +258,7 @@ def test_timekeeping_normalization_prices_api_rows_at_trailing_rate() -> None:
     assert "CASE WHEN x.rate > 0 THEN 'hours_x_rate' ELSE 'none' END" in upsert
     # ordering: upsert, overtime derivation, then pricing
     order = [i for i, (sql, _) in enumerate(conn.statements) if "INSERT INTO core.fact_timekeeping" in sql or "labor_cost_basis = %(basis)s" in sql]
-    assert order == sorted(order) and len(order) == 2
+    assert order == sorted(order) and len(order) == 3
 
 
 # ── 3. reset scope of the reference loader ───────────────────────────────────

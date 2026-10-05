@@ -223,3 +223,11 @@ def test_reset_scope_and_tier_map() -> None:
 def test_labor_cost_definition_follows_primary_source() -> None:
     assert "trailing" in labor_cost_definition("finance_reference")
     assert labor_cost_definition("winteam_api") == labor_cost_definition(None)
+
+
+def test_a_job_rate_far_above_the_company_rate_is_not_a_wage() -> None:
+    """Job cost with labor dollars but almost no hours (Norcross, job 34: $2,174 over 7.96 h) prices at the company rate."""
+    rows = [_month_row(date(2026, 3, 1), 2173.98, 7.96)]
+    assert rules.trailing_rate(rows, company_rate=21.4, portfolio_rate=20.0) == (21.4, "company")
+    plausible = [_month_row(date(2026, 3, 1), 6000, 100)]  # $60/h: under 3x, kept
+    assert rules.trailing_rate(plausible, company_rate=21.4, portfolio_rate=20.0) == (60.0, "job")
