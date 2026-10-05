@@ -1,7 +1,7 @@
 import { useMemo, type ReactNode } from 'react'
 import type { BudgetMonth, BudgetWeek, LeadershipAccount, LeadershipMonthlyJob, LeadershipRow } from '../services/apiTypes'
 import { Badge, ChartCard, Kpi, Skeleton, Swatch, toneOf, useVocab } from './ui'
-import { LaborMixChart, MonthWeekTrendChart, SegmentMeasureChart, SiteLpChart, useTokens } from './charts'
+import { LaborMixChart, MonthWeekTrendChart, SegmentTrendChart, SiteLpChart, useTokens } from './charts'
 import { closedMonths, includesVendor, inSentence, monthLaborPct, monthRevenue, priorMonth, rowsOfWeek, segmentLabel, segmentOrder, siteMonths, useMonthly, useMonthRows, useRows, vendorLabel, weekBudgetOf, type DataFlags, type WeekBudget } from './data'
 import { hours, hours1, money, moneyK, pct } from './format'
 import { accountSummary, statusOf, type AccountNote, type AccountSummary, type MetricOptions, type SiteMetrics } from './metrics'
@@ -113,7 +113,8 @@ export function Overview({ account, rows, summary, options, flags, headline = tr
   const weeks = useMemo(() => [...new Set([...(older.data?.weeks ?? []), ...(history.data?.weeks ?? [])])].sort().map((wk) => {
     const wr = rowsOfWeek(loadedRows, wk)
     const sum = wr.length ? accountSummary(wr, weekOptions, segmentOrder(account)) : null
-    return { week: wk, rows: wr, s: sum?.account ?? null, sitesLp: sum?.billed.measurePct ?? null }
+    return { week: wk, rows: wr, s: sum?.account ?? null, sitesLp: sum?.billed.measurePct ?? null,
+      segs: Object.fromEntries((sum?.segments ?? []).map((g) => [g.segment, g.rollup.measurePct])) as Record<string, number | null> }
   }), [older.data, history.data, loadedRows, weekOptions, account])
   const prevMonthRows = priorMonthQuery.data?.rows
   const prevWeek = weeks.find((x) => weekStart && x.week === addDays(weekStart, -7))
@@ -161,6 +162,15 @@ export function Overview({ account, rows, summary, options, flags, headline = tr
   const sitesLp = !(catchJobs.length || nonBilled.length) ? undefined : monthMode
     ? trendMonths.map((m) => monthTotals(m, scopeJobs.filter((j) => j.role === 'site')).lp)
     : shownWeeks.map((x) => x.sitesLp)
+  // Labor % by group over the same points as the trend: each week's segment rollup, or each month's job cost.
+  const segSeries = groups.map((g) => ({ name: g.name, target: g.target, values: monthMode
+    ? trendMonths.map((m) => (monthly.data ? monthLaborPct(g.list.flatMap((r) => siteMonths(monthly.data!.jobs, r.company, r.kids, r.job_number)), m, factor) : null))
+    : shownWeeks.map((x) => x.segs[g.name] ?? null) }))
+  const pickPoint = (i: number) => { const x = trend[i]; if (!x) return; navigate(monthMode ? { period: 'month', month: x.key.slice(0, 7) } : { week: weekEndOf(x.key) }, { replace: true }) }
+  const weeksSlider = !monthMode && <label className="slider"><span>Weeks</span>
+    <input type="range" min={TREND_WEEKS_MIN} max={TREND_WEEKS_MAX} step={1} value={trendWeeks} aria-label="Weeks in the trends"
+      onChange={(e) => { const n = Number(e.target.value); navigate({ trendWeeks: n === TREND_WEEKS_DEFAULT ? undefined : n }, { replace: true }) }} />
+    <output>{trendWeeks}</output></label>
   const trendCurrent = monthMode ? trend.findIndex((x) => month && x.key.slice(0, 7) === month) : trend.findIndex((x) => x.key === weekStart)
   const thisWeekBudget = period === 'week' && weekStart ? budgetOf(weekStart) : null
   const budgetWeek = thisWeekBudget?.labor ?? null
@@ -207,25 +217,25 @@ export function Overview({ account, rows, summary, options, flags, headline = tr
     </div>
     {afterGroups}
     {(trend.length > 1 || !monthMode) && <ChartCard title={monthMode ? `${w.trendTitle} by month` : `${w.trendTitle}, last ${trendWeeks} weeks`} height={260}
-      action={!monthMode && <label className="slider"><span>Weeks</span>
-        <input type="range" min={TREND_WEEKS_MIN} max={TREND_WEEKS_MAX} step={1} value={trendWeeks} aria-label="Weeks in the trend"
-          onChange={(e) => { const n = Number(e.target.value); navigate({ trendWeeks: n === TREND_WEEKS_DEFAULT ? undefined : n }, { replace: true }) }} />
-        <output>{trendWeeks}</output></label>}
+      action={weeksSlider}
       legend={<><Swatch color={t.accent2} label={monthMode ? 'Month' : 'Week'} /><Swatch color={t.accent} label={monthMode ? 'Selected month' : 'Selected week'} /><Swatch line color={t.text2} label={invoiceLabel(w, vocab, period)} />
         <Swatch color={t.bad} label="Labor %" />{sitesLp && <Swatch color={t.warn} label="Sites-only labor %" />}
         {weekTargets ? <Swatch color={t.tgt} label={monthMode ? 'Monthly budget target' : 'Weekly budget target'} /> : <Swatch line color={t.ok} label={`Target ${pct(target)}`} />}</>}
       chart={trend.length ? <MonthWeekTrendChart labels={trend.map((x) => x.label)} labor={trend.map((x) => x.labor)} invoice={trend.map((x) => x.invoice)} lp={trend.map((x) => x.lp)} target={target} weekFrom={0}
         current={trendCurrent} weekTargets={weekTargets} sitesLp={sitesLp} unit={monthMode ? 'month' : 'week'}
-        onPick={(i) => { const x = trend[i]; if (!x) return; navigate(monthMode ? { period: 'month', month: x.key.slice(0, 7) } : { week: weekEndOf(x.key) }, { replace: true }) }} /> : <Skeleton height={240} />}
+        onPick={pickPoint} /> : <Skeleton height={240} />}
       table={<table><thead><tr><th className="nosort l">{monthMode ? 'Month' : 'Week ending'}</th><th className="nosort">{w.invoiceCol}</th><th className="nosort">{w.laborCol}</th><th className="nosort">Labor %</th>{sitesLp && <th className="nosort">Sites only</th>}{weekTargets && <th className="nosort">Budget target</th>}</tr></thead>
         <tbody>{trend.map((x, i) => <tr key={x.label}><td className="l">{x.label}</td><td>{money(x.invoice)}</td><td>{money(x.labor)}</td><td>{pct(x.lp)}</td>{sitesLp && <td>{pct(sitesLp[i])}</td>}{weekTargets && <td>{pct(weekTargets[i])}</td>}</tr>)}</tbody></table>} />}
-    {summary.segments.length > 1 && <ChartCard title={`Labor % by ${segmentLabel(account).toLowerCase()}: this ${period} vs ${lastClosed ? `${monthLabel(lastClosed)} actual` : 'prior month'}`} height={260}
-      legend={<><Swatch color={t.ok} label={`This ${period}`} /><Swatch color={t.muted} label={lastClosed ? `${monthShort(lastClosed)} actual` : 'Prior month'} />{weekTargets ? <Swatch color={t.tgt} label={`Week target ${pct(target)}`} /> : <Swatch line label={`Target ${pct(target)}`} />}</>}
-      chart={<SegmentMeasureChart labels={groups.map((g) => g.name)} week={groups.map((g) => summary.segments.find((s) => s.segment === g.name)?.rollup.measurePct ?? null)}
-        weekTones={groups.map((g) => { const s = summary.segments.find((x) => x.segment === g.name); return s ? (toneOf(s.status) || 'neutral') as 'ok' | 'warn' | 'bad' | 'neutral' : 'neutral' })}
-        prior={groups.map((g) => groupLp(g.list))} target={target} weekLabel={`This ${period}`} priorLabel={lastClosed ? `${monthShort(lastClosed)} actual` : 'Prior month'} targetColor={weekTargets ? t.tgt : undefined} />}
-      table={<table><thead><tr><th className="nosort l">{segmentLabel(account)}</th><th className="nosort">This {period}</th><th className="nosort">{lastClosed ? `${monthShort(lastClosed)} actual` : 'Prior month'}</th></tr></thead>
-        <tbody>{groups.map((g) => <tr key={g.name}><td className="l">{g.name}</td><td>{pct(summary.segments.find((s) => s.segment === g.name)?.rollup.measurePct ?? null)}</td><td>{pct(groupLp(g.list))}</td></tr>)}</tbody></table>} />}
+    {groups.length > 1 && <ChartCard title={`Labor % by ${segmentLabel(account).toLowerCase()}, ${monthMode ? 'by month' : `last ${trendWeeks} weeks`}`} height={280}
+      action={weeksSlider}
+      legend={<>{segSeries.map((s, i) => <Swatch key={s.name} color={t.series[i % t.series.length]} label={s.name} />)}
+        {weekTargets ? <Swatch color={t.tgt} label="Budget target" />
+          : segSeries.every((s) => s.target === segSeries[0].target) ? <Swatch line color={t.text2} label={`Target ${pct(segSeries[0].target)}`} />
+            : <Swatch line color={t.text2} label="Group targets" />}</>}
+      chart={trend.length ? <SegmentTrendChart labels={trend.map((x) => x.label)} series={segSeries} current={trendCurrent} budgetTargets={weekTargets} onPick={pickPoint} /> : <Skeleton height={260} />}
+      table={<div className="tw"><table><thead><tr><th className="nosort l">{monthMode ? 'Month' : 'Week ending'}</th>{segSeries.map((s) => <th key={s.name} className="nosort">{s.name}</th>)}{weekTargets && <th className="nosort">Budget target</th>}</tr></thead>
+        <tbody>{trend.map((x, i) => <tr key={x.key}><td className="l">{x.label}</td>{segSeries.map((s) => <td key={s.name} className={toneOf(statusOf(s.values[i], s.target, options.watchBand))}>{pct(s.values[i])}</td>)}
+          {weekTargets && <td>{pct(weekTargets[i])}</td>}</tr>)}</tbody></table></div>} />}
     {billed.length > 0 && <div className="charts2">
       <ChartCard title={`Labor % by site this ${period}`} height={Math.max(200, sorted.length * 16 + 60)}
         legend={<><Swatch color={t.ok} label={vocab === 'fedex' ? 'On target' : 'On track'} /><Swatch color={t.warn} label="Watch" /><Swatch color={t.bad} label={vocab === 'fedex' ? 'Over' : 'High'} /><Swatch line label={`Target ${pct(target)}`} /></>}
