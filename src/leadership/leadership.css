@@ -7,6 +7,7 @@
   --border:rgba(0,0,0,0.1);--border2:rgba(0,0,0,0.2);
   --tgt:#0d8f82;--ok:#2d7a3a;--ok-bg:#eaf3de;--warn:#85510b;--warn-bg:#faeeda;--bad:#a32d2d;--bad-bg:#fcebeb;
   --accent:#1f4e79;--accent2:#8fb3d6;--muted:#c9c9c3;
+  --s1:#2f6db3;--s2:#c0601a;--s3:#7a4fb0;--s4:#b0368a;--s5:#5b7f1e;--s6:#6b6b66;
   --r:8px;--rl:12px;
   --shadow:0 8px 28px rgba(0,0,0,.14);
   color-scheme:light;
@@ -17,6 +18,7 @@
   --border:rgba(255,255,255,0.1);--border2:rgba(255,255,255,0.2);
   --tgt:#33e8d0;--ok:#7fc98a;--ok-bg:#1a2e1d;--warn:#f0c060;--warn-bg:#2e2510;--bad:#e88080;--bad-bg:#2e1515;
   --accent:#8fb3d6;--accent2:#3d6a94;--muted:#4a4a46;
+  --s1:#7fb0e8;--s2:#f0a060;--s3:#b394e8;--s4:#e38cc6;--s5:#a6cf6a;--s6:#b5b3ab;
   --shadow:0 8px 28px rgba(0,0,0,.5);
   color-scheme:dark;
 }}
@@ -26,6 +28,7 @@
   --border:rgba(255,255,255,0.1);--border2:rgba(255,255,255,0.2);
   --tgt:#33e8d0;--ok:#7fc98a;--ok-bg:#1a2e1d;--warn:#f0c060;--warn-bg:#2e2510;--bad:#e88080;--bad-bg:#2e1515;
   --accent:#8fb3d6;--accent2:#3d6a94;--muted:#4a4a46;
+  --s1:#7fb0e8;--s2:#f0a060;--s3:#b394e8;--s4:#e38cc6;--s5:#a6cf6a;--s6:#b5b3ab;
   --shadow:0 8px 28px rgba(0,0,0,.5);
   color-scheme:dark;
 }
@@ -309,3 +312,8 @@ tr.dim td{color:var(--text3)}
 .heat-grid tbody tr.click{cursor:pointer}
 .heat-grid tbody tr.click:hover td{background-image:linear-gradient(color-mix(in srgb,var(--text) 5%,transparent),color-mix(in srgb,var(--text) 5%,transparent))}
 .more-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-top:10px;font-size:12px;color:var(--text2)}
+
+/* The trend's weeks slider, in a card title row. */
+.slider{display:inline-flex;align-items:center;gap:8px;font-weight:400;color:var(--text2);font-size:12px}
+.slider input[type=range]{width:clamp(90px,18vw,180px);accent-color:var(--accent)}
+.slider output{min-width:2ch;text-align:right;font-variant-numeric:tabular-nums;color:var(--text)}

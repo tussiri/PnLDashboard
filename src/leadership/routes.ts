@@ -46,7 +46,13 @@ export interface Route {
   period?: 'month'
   /** The month shown in the month-end rollup (YYYY-MM); the selected week's month when absent. */
   month?: string
+  /** Account overview: weeks in the trend (TREND_WEEKS_DEFAULT when absent). */
+  trendWeeks?: number
 }
+
+export const TREND_WEEKS_MIN = 4
+export const TREND_WEEKS_MAX = 52
+export const TREND_WEEKS_DEFAULT = 13
 
 const ISO = /^\d{4}-\d{2}-\d{2}$/
 const SITE_SEP = '~'
@@ -88,6 +94,8 @@ export function parseRoute(hash: string): Route {
   }
   if (route.view === 'account' && params.get('delivery') === 'self') route.selfOnly = true
   if (route.view === 'account' && params.get('hol') === 'paid') route.payHolidays = true
+  const tw = Number(params.get('tw'))
+  if (route.view === 'account' && Number.isInteger(tw) && tw >= TREND_WEEKS_MIN && tw <= TREND_WEEKS_MAX && tw !== TREND_WEEKS_DEFAULT) route.trendWeeks = tw
   const basis = params.get('basis')
   if (basis === 'run_rate_3m' || basis === 'last_month') route.basis = basis
   if (params.get('period') === 'month' && route.view === 'account') route.period = 'month'
@@ -110,6 +118,7 @@ export function formatRoute(route: Route): string {
   if (route.view === 'analytics') for (const key of ['q', 'status', 'segment'] as const) if (route[key]) params.set(key, route[key]!)
   if (route.view === 'account' && route.selfOnly) params.set('delivery', 'self')
   if (route.view === 'account' && route.payHolidays) params.set('hol', 'paid')
+  if (route.view === 'account' && route.trendWeeks) params.set('tw', String(route.trendWeeks))
   if (route.basis && route.view !== 'admin') params.set('basis', route.basis)
   if (route.period === 'month' && route.view === 'account') {
     params.set('period', 'month')

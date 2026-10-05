@@ -70,14 +70,14 @@ const WORDS: Record<Vocabulary, Words> = {
     invoice: 'Invoicing', invoiceCol: 'Invoicing', labor: 'Total labor', laborCol: 'Total labor', direct: 'Direct', directCol: 'Direct labor',
     accountLaborPct: 'Labor %', hours: 'Hours', hoursOver: 'Hours to cut', hoursOverCol: 'Hrs to cut',
     over: (n, of) => `${n} of ${of} over`, prior: (m) => `${m} actual`,
-    trendTitle: 'Total labor vs invoicing: closed months (weekly equivalent) and weeks',
+    trendTitle: 'Total labor vs invoicing',
     subCol: (label) => label,
   },
   fedex: {
     invoice: 'Weekly invoice', invoiceCol: 'Invoice', labor: 'Labor', laborCol: 'Labor $', direct: 'Core', directCol: 'Core $',
     accountLaborPct: 'Account labor %', hours: 'Hours paid', hoursOver: 'Hours over target', hoursOverCol: 'Hrs over',
     over: (n, of) => `${n} of ${of} billed sites over`, prior: (m) => `${m} LP`,
-    trendTitle: 'Labor vs invoice: monthly actuals (weekly equivalent) and weekly timekeeping',
+    trendTitle: 'Labor vs invoice',
     subCol: () => 'Sub ~$',
   },
 }
