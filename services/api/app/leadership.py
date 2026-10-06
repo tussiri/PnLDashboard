@@ -9,8 +9,11 @@ stored: routers/leadership.py joins ops.account_job at read time.
   far). Covered weeks take hours, overtime hours (OT + DT), labor and overtime dollars (full pay)
   from core.fact_pay_report; others take mart.job_week's hours and its trailing-rate labor, with
   overtime dollars estimated at 1.5x the straight-time rate labor / (hours + 0.5 x OT hours).
-* revenue_month = the latest month with job-cost revenue (mart.job_month.revenue_basis = 'job_cost')
-  before the month the week ends in. revenue_month_amount = the job's mart.job_month revenue for it.
+* revenue_month = the week's own month (the month holding its Thursday) once it has job-cost revenue
+  (mart.job_month.revenue_basis = 'job_cost'), else the latest month before it that has: a closed month
+  invoices its own weeks (Plano's July weeks read July's billing, not June's end-of-contract stub), and
+  the weeks of a month not yet closed read the last closed month (changed 2026-10-05; it was always the
+  month before the week's). revenue_month_amount = the job's mart.job_month revenue for it.
 * Keys also include every job with revenue in the week's revenue month, so a site billed but not
   worked that week still carries its invoice (the reference's "billed but no labor").
 * prior_revenue = the same month's mart.job_month revenue; prior_labor = the month's pay report
@@ -85,7 +88,7 @@ all_weeks AS (
 ),
 week_month AS (
   SELECT w.week_start,
-         (SELECT max(m.month) FROM jc_months m WHERE m.month < date_trunc('month', w.week_start + 6)::date) AS revenue_month
+         (SELECT max(m.month) FROM jc_months m WHERE m.month <= date_trunc('month', w.week_start + 3)::date) AS revenue_month
   FROM (SELECT DISTINCT week_start FROM all_weeks) w
 ),
 keys AS (

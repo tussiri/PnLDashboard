@@ -475,3 +475,12 @@ def test_standalone_account_grouping_still_opens_its_own_connection(monkeypatch)
     monkeypatch.setattr(normalize, "connection", fake_connection)
     assert normalize.apply_account_groups() == {"jobs_regrouped": 3, "groups": 1}
     assert opened == [True] and conn.commits == 1
+
+
+def test_the_overtime_split_counts_earlier_hours_of_the_pay_week_from_another_source() -> None:
+    """The API joining a pay week mid-week (its backfill start): the reference export's earlier days count toward 40 hours."""
+    conn = RecordingConn()
+    normalize.derive_overtime(conn)
+    sql = flat(next(s for s, _ in conn.statements if "weekly_threshold" in s))
+    assert "o.source <> %(source)s AND o.work_date >= f.pay_week AND o.work_date < f.first_day" in sql
+    assert "coalesce(c.h, 0) + sum(a.h) OVER" in sql

@@ -81,7 +81,9 @@ Derived fields (disclosed honestly)
   Regular/overtime split: if ops.app_setting.overtime_category_detail_ids is non-empty, hours in
   those categories are overtime (overtime_basis = 'category'); otherwise hours beyond
   overtime_weekly_threshold_hours per (employee, Sunday-based pay week) are allocated to overtime
-  in work-date order (overtime_basis = 'weekly_threshold'). Negative adjustment rows keep their
+  in work-date order (overtime_basis = 'weekly_threshold'); hours another source holds for the same
+  employee earlier in that pay week (the reference export, before the API's first day of it) count
+  toward the threshold. Negative adjustment rows keep their
   signed `hours` but contribute 0 to the split because the 001 constraints require non-negative
   components.
 * fact_ar_invoice.service_month = month of billingPeriodFrom, else invoiceDate. open_balance is a
@@ -925,16 +927,34 @@ def derive_overtime(conn: Any, source: str = SOURCE) -> None:
             return
         cursor.execute(
             """
-            WITH ranked AS MATERIALIZED (
-              SELECT timekeeping_key,
-                     greatest(coalesce(hours, 0), 0) AS h,
-                     sum(greatest(coalesce(hours, 0), 0)) OVER (
-                       PARTITION BY employee_source_id, pay_week_start
-                       ORDER BY work_date, in_time NULLS LAST, timekeeping_key
-                       ROWS UNBOUNDED PRECEDING
-                     ) AS cumulative
+            WITH api AS MATERIALIZED (
+              SELECT timekeeping_key, employee_source_id, company, work_date, in_time,
+                     coalesce(pay_week_start, work_date - extract(dow FROM work_date)::int) AS pay_week,
+                     greatest(coalesce(hours, 0), 0) AS h
               FROM core.fact_timekeeping
               WHERE employee_source_id IS NOT NULL AND source = %(source)s
+            ),
+            first_day AS (
+              SELECT employee_source_id, company, pay_week, min(work_date) AS first_day FROM api GROUP BY 1, 2, 3
+            ),
+            -- A pay week the API joins mid-week (its backfill start) already has the employee's earlier days from another
+            -- source (the reference export): those hours count toward the threshold, or the week loses its overtime.
+            carried AS MATERIALIZED (
+              SELECT f.employee_source_id, f.company, f.pay_week, sum(greatest(coalesce(o.hours, 0), 0)) AS h
+              FROM first_day f
+              JOIN core.fact_timekeeping o ON o.employee_source_id = f.employee_source_id AND o.company IS NOT DISTINCT FROM f.company
+                AND o.source <> %(source)s AND o.work_date >= f.pay_week AND o.work_date < f.first_day
+              GROUP BY 1, 2, 3
+            ),
+            ranked AS MATERIALIZED (
+              SELECT a.timekeeping_key, a.h,
+                     coalesce(c.h, 0) + sum(a.h) OVER (
+                       PARTITION BY a.employee_source_id, a.company, a.pay_week
+                       ORDER BY a.work_date, a.in_time NULLS LAST, a.timekeeping_key
+                       ROWS UNBOUNDED PRECEDING
+                     ) AS cumulative
+              FROM api a
+              LEFT JOIN carried c ON c.employee_source_id = a.employee_source_id AND c.company IS NOT DISTINCT FROM a.company AND c.pay_week = a.pay_week
             ),
             split AS MATERIALIZED (
               SELECT timekeeping_key, h, greatest(0, least(h, cumulative - %(threshold)s::numeric)) AS ot FROM ranked
