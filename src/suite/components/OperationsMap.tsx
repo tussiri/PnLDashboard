@@ -15,7 +15,9 @@ const marginOf = (job: JobRow) => (job.gross_margin_pct ?? (job.revenue ? (job.g
 
 type MapMode = 'sites' | 'revenue' | 'labor' | 'margin'
 const modeLabels: Record<MapMode,string> = { sites:'Site clusters', revenue:'Revenue heat', labor:'Labor variance heat', margin:'Margin risk heat' }
-const markerColor = (status:JobRow['status']) => status==='Critical'?'#d64b5d':status==='Watch'?'#e59b2f':'#198a68'
+/** The site's tokens as concrete colors: Leaflet draws on canvas and cannot read CSS variables. */
+const token = (name: string, fallback: string) => (typeof window === 'undefined' ? fallback : getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback)
+const markerColor = (status:JobRow['status']) => status==='Critical'?token('--bad','#a32d2d'):status==='Watch'?token('--warn','#85510b'):token('--ok','#2d7a3a')
 
 // Both plugins are distributed as Leaflet extensions that expect a browser-global
 // `L`. Static ESM imports can be hoisted ahead of Leaflet in optimized production
@@ -71,8 +73,8 @@ export function OperationsMap({jobs,selected,onSelect,onOpenDetail,compact=false
           });clusters.addTo(activeMap)
         }else{
           const points=jobs.map(job=>[job.latitude,job.longitude,Math.min(1,Math.max(.08,metricWeight(job,mode,jobs)))] as [number,number,number])
-          L.heatLayer(points,{radius:34,blur:26,maxZoom:8,minOpacity:.28,gradient:{.2:'#b9d4ff',.45:'#4f86ef',.7:'#f0ac3f',1:'#d64b5d'}}).addTo(activeMap)
-          jobs.forEach(job=>L.circleMarker([job.latitude,job.longitude],{radius:4,weight:1,color:'#fff',fillColor:'#172033',fillOpacity:.8}).on('click',()=>onSelect(job)).addTo(activeMap))
+          L.heatLayer(points,{radius:34,blur:26,maxZoom:8,minOpacity:.28,gradient:{.2:token('--accent2','#8fb3d6'),.45:token('--accent','#1f4e79'),.7:token('--warn','#85510b'),1:token('--bad','#a32d2d')}}).addTo(activeMap)
+          jobs.forEach(job=>L.circleMarker([job.latitude,job.longitude],{radius:4,weight:1,color:token('--bg','#ffffff'),fillColor:token('--text','#1a1a18'),fillOpacity:.8}).on('click',()=>onSelect(job)).addTo(activeMap))
         }
         activeMap.fitBounds(L.latLngBounds(jobs.map(job=>[job.latitude,job.longitude] as [number,number])).pad(compact?.12:.2),{animate:false,maxZoom:compact?4:5})
         resizeObserver=new ResizeObserver(()=>activeMap.invalidateSize({pan:false,animate:false}))

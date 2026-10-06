@@ -13,7 +13,7 @@ import { fmtDate, money, moneyFull, number, percent, sum } from '../utils'
 import { DemoNotice, JobLink, Note, ScopeLine, useReportingParams, useReportQuery } from './shared'
 
 const PAGE = 25
-const bucketColors: Record<AgingBucketKey, string> = { current: series.primary, d30: series.secondary, d60: series.warn, d90: series.bad, d90_plus: '#9b2c3a' }
+const bucketColors: Record<AgingBucketKey, string> = { current: series.primary, d30: series.secondary, d60: series.warn, d90: series.bad, d90_plus: 'var(--bad)' }
 const bucketKeys: AgingBucketKey[] = ['current', 'd30', 'd60', 'd90', 'd90_plus']
 
 export function Billing() {

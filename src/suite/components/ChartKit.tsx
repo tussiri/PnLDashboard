@@ -4,9 +4,9 @@ import { monthLabel } from '../services/period'
 /** Restrained series palette (CSS tokens defined in styles.css). */
 export const series = {
   primary: 'var(--blue)', primarySoft: 'var(--blue-soft)', secondary: 'var(--purple)', good: 'var(--green)', warn: 'var(--amber)', bad: 'var(--red)',
-  navy: 'var(--navy)', teal: 'var(--teal)', muted: '#b6c0d0', grid: 'var(--grid)', text: 'var(--text)', mutedText: 'var(--muted)',
+  navy: 'var(--navy)', teal: 'var(--teal)', muted: 'var(--text3)', grid: 'var(--grid)', text: 'var(--text)', mutedText: 'var(--muted)',
 }
-export const categorical = ['var(--blue)', 'var(--purple)', 'var(--teal)', 'var(--amber)', 'var(--green)', 'var(--navy)', 'var(--red)', '#8a94a6']
+export const categorical = ['var(--s1)', 'var(--s2)', 'var(--s3)', 'var(--s4)', 'var(--s5)', 'var(--s6)', 'var(--red)', 'var(--text3)']
 
 export const xAxisProps = { tickLine: false, axisLine: false, tick: { fill: 'var(--muted)', fontSize: 11 }, minTickGap: 18 } as const
 export const yAxisProps = { tickLine: false, axisLine: false, tick: { fill: 'var(--muted)', fontSize: 11 }, width: 56 } as const

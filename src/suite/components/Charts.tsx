@@ -61,7 +61,7 @@ export function MarginScatter({ jobs, onSelect, target = 25, highlight, onHover 
 }
 
 export function AgingBars({ buckets, onSelect, active }: { buckets: AgingBucket[]; onSelect?: (bucket: AgingBucket['bucket'] | null) => void; active?: AgingBucket['bucket'] | null }) {
-  const colors: Record<AgingBucket['bucket'], string> = { current: series.primary, d30: series.secondary, d60: series.warn, d90: series.bad, d90_plus: '#9b2c3a' }
+  const colors: Record<AgingBucket['bucket'], string> = { current: series.primary, d30: series.secondary, d60: series.warn, d90: series.bad, d90_plus: 'var(--bad)' }
   return <ResponsiveContainer width="100%" height="100%"><BarChart data={buckets} margin={{ top: 18, right: 8, left: 0, bottom: 0 }}>
     <CartesianGrid {...gridProps} />
     <XAxis dataKey="label" {...xAxisProps} />
