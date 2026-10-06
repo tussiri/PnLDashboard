@@ -246,13 +246,14 @@ unit, labor % of invoicing vs BU target) for every account. Weeks are Monday-bas
               "carry_forward_source": null,                   // "job_cost" | "ar_invoice" when carried forward, else null (migration 010)
               "hours": 0, "ot_hours": 0, "dt_hours": 0, "budget_hours": 0, "budget_dollars": 0, "budget_basis": "daily_budget" | "hbc" | "none",
               "direct_dollars": 0, "ot_dollars": 0, "sub_dollars": 0, "sub_estimated": false, "total_dollars": 0,
-              "labor_cost_basis": "trailing_job_rate" | "job_cost" , "days_with_labor": 7,
+              "labor_cost_basis": "hours_x_rate" | "employee_rate" | "trailing_job_rate" | "job_cost" , "days_with_labor": 7,  // hours_x_rate / employee_rate added 2026-10-06
               "requested_headcount": 2, "pending_requested_headcount": 1 } ],  // added 2026-09-29, null before the PhotoValidation feed loads
   "qa": null,                                          // QA scores are not in the warehouse; always null for now
   "notes": ["Invoicing = closed-month job-cost revenue apportioned to weeks by calendar days ...", ...] }
 ```
-Rules: `hours` = timekeeping total hours; `ot_hours`/`dt_hours` from timekeeping; `direct_dollars` = straight-time
-labor (hours × job rate); `ot_dollars` = ot_hours × rate × 0.5 premium + dt_hours × rate × 1.0 (estimate, labelled);
+Rules: `hours` = timekeeping total hours; `ot_hours`/`dt_hours` from timekeeping; `direct_dollars` = labor at each
+punch's own WinTeam rate at full pay (rate × (hours + ½ OT + DT), as the Pay Report's TotalLaborDollars), else
+the employee's latest rate, else hours × the job's trailing rate (changed 2026-10-06; it was always the trailing rate); `ot_dollars` = ot_hours × rate × 0.5 premium + dt_hours × rate × 1.0 (estimate, labelled);
 `sub_dollars` = the site's monthly subcontract cost apportioned by calendar days (sub_estimated = true when the month
 is not closed and the latest closed month's rate is carried forward); `invoicing` = closed-month job-cost revenue
 apportioned by calendar days, else contract billing x 12/53 x day-share, else AR invoices for the service month
