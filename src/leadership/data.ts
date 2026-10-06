@@ -7,11 +7,12 @@ import { addDays } from './routes'
 import { useLeadership } from './state'
 
 /**
- * Rows for `weeks` weeks ending at the selected week, for an account slug or a scope, shaped per
- * account (prepareRows): pallet jobs inside their site, report groups, subcontracted sites split out.
+ * Rows for `weeks` weeks ending at the selected week (or at `week`, a week start), for an account slug or a
+ * scope, shaped per account (prepareRows): pallet jobs inside their site, report groups, subcontracted sites split out.
  */
-export function useRows(account: string | undefined, weeks = 1, { keepSubcontracted = false }: { keepSubcontracted?: boolean } = {}) {
-  const { api, keyPrefix, weekStart, decision, accountBySlug } = useLeadership()
+export function useRows(account: string | undefined, weeks = 1, { keepSubcontracted = false, week }: { keepSubcontracted?: boolean; week?: string } = {}) {
+  const { api, keyPrefix, weekStart: selected, decision, accountBySlug } = useLeadership()
+  const weekStart = week ?? selected
   const key = decision && account && weekStart ? queryKey(`${keyPrefix}/leadership/rows`, { account, week: weekStart, weeks }) : null
   const q = useApiQuery<LeadershipRowsResponse>(key, (signal) => api.leadershipRows({ account, week: weekStart, weeks }, signal), [api, account, weekStart, weeks])
   const data = useMemo(() => (q.data ? { ...q.data, rows: prepareRows(q.data.rows, accountBySlug, { keepSubcontracted }) } : q.data), [q.data, accountBySlug, keepSubcontracted])
@@ -140,7 +141,7 @@ export function monthFlags(config: LeadershipConfig | undefined, month: string, 
   const expected = sites.filter((r) => r.sub_expected)
   const today = new Date().toISOString().slice(0, 10)
   return {
-    estimated: rows.some((r) => r.labor_basis !== 'pay_report' && r.labor > 0),
+    estimated: rows.some((r) => r.labor_basis === 'trailing_rate_estimate' && r.labor > 0),
     revenueLag: null,
     failedSyncs: dataFlags(config, undefined, rows).failedSyncs,
     weekInProgress: false,
@@ -161,7 +162,7 @@ export function dataFlags(config: LeadershipConfig | undefined, weekStart: strin
   const expected = prev ? prev.toISOString().slice(0, 10) : null
   const revenueMonth = rows.find((r) => r.revenue_month)?.revenue_month ?? week?.revenue_month ?? null
   return {
-    estimated: rows.some((r) => r.labor_basis !== 'pay_report' && r.labor > 0),
+    estimated: rows.some((r) => r.labor_basis === 'trailing_rate_estimate' && r.labor > 0),
     revenueLag: revenueMonth && expected && revenueMonth < expected ? { revenueMonth, expectedMonth: expected } : null,
     failedSyncs: (config?.status.syncs ?? []).filter((s) => s.status === 'failed' && (s.integration_name.startsWith('winteam') || ['nightly', 'relay', 'mail_inbox'].includes(s.integration_name))
       && syncConcerns(s.integration_name, rows)).map((s) => ({ integration: s.integration_name, at: s.completed_at ?? s.started_at })),

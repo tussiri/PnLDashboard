@@ -19,7 +19,7 @@ const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 /** Refresh every cached query after a change (configuration applies at read time). */
 const refreshAll = () => queryClient.invalidate()
 
-const FEED_NAME: Record<string, string> = { pay_report: 'Labor', job_cost: 'Job cost', income_statement: 'Income statement', service_feedback: 'Feedback', qa_score: 'QA scores' }
+const FEED_NAME: Record<string, string> = { pay_report: 'Labor', job_cost: 'Job cost', income_statement: 'Income statement', service_feedback: 'Feedback', qa_score: 'QA scores', budget: 'Budget' }
 
 function useAction() {
   const { decision, redetect } = useLeadership()

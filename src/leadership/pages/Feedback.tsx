@@ -1,8 +1,8 @@
-import { useEffect } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useApiQuery } from '../../hooks/useApiQuery'
 import type { FeedbackOverview, FeedbackSentiment, LeadershipAccount, LeadershipFeedbackResponse } from '../../services/apiTypes'
 import { queryKey } from '../../services/queryClient'
-import { formatRoute, monthLabel } from '../routes'
+import { formatRoute, monthLabel, monthShort } from '../routes'
 import { useLeadership } from '../state'
 import { Empty, Kpi, LoadError, Skeleton, SortTable, type Column } from '../ui'
 
@@ -47,6 +47,79 @@ export function groupVisits(lines: Line[]): Visit[] {
 }
 export const visitScores = (v: Visit) => v.ratings.map((r) => <span key={r.wo_number} className={`vs ${scoreTone(r.score)}`}>{tradeName(r.trade)} {stars(r.score)}</span>)
 
+/** A site's star ratings by month: average, ratings and 1-2 star ratings per month, and over the whole window. */
+export interface MatrixSite {
+  key: string; name: string; location_number: string; company: string | null; job_number: string | null
+  months: Record<string, { average: number; ratings: number; low: number }>; average: number | null; ratings: number; low: number
+}
+
+/** The months from `since` (YYYY-MM-DD) through the month of the newest rating, oldest first, as YYYY-MM-01. */
+export function matrixMonths(since: string, lines: { feedback_date: string }[]): string[] {
+  const last = lines.reduce((m, l) => (l.feedback_date > m ? l.feedback_date : m), since).slice(0, 7)
+  const out: string[] = []
+  let [y, m] = since.slice(0, 7).split('-').map(Number)
+  while (`${y}-${String(m).padStart(2, '0')}` <= last) {
+    out.push(`${y}-${String(m).padStart(2, '0')}-01`)
+    if (++m > 12) { m = 1; y++ }
+  }
+  return out
+}
+
+/** One row per site (its WinTeam job, else its ServiceChannel location), lowest average first. Every rating counts. */
+export function ratingMatrix(lines: Line[]): MatrixSite[] {
+  const sites = new Map<string, MatrixSite & { total: number; scored: number }>()
+  for (const l of lines) {
+    const key = l.company && l.job_number ? `${l.company}|${l.job_number}` : `loc|${l.location_number}`
+    const s = sites.get(key) ?? { key, name: l.site_name ?? `Location ${l.location_number}`, location_number: l.location_number, company: l.company,
+      job_number: l.job_number, months: {}, average: null, ratings: 0, low: 0, total: 0, scored: 0 }
+    sites.set(key, s)
+    s.ratings++
+    if (l.score == null) continue
+    const month = `${l.feedback_date.slice(0, 7)}-01`
+    const cell = s.months[month] ?? { average: 0, ratings: 0, low: 0 }
+    cell.average = (cell.average * cell.ratings + l.score) / (cell.ratings + 1)
+    cell.ratings++; cell.low += l.score <= 2 ? 1 : 0
+    s.months[month] = cell
+    s.total += l.score; s.scored++; s.low += l.score <= 2 ? 1 : 0
+  }
+  return [...sites.values()].map(({ total, scored, ...s }) => ({ ...s, average: scored ? total / scored : null }))
+    .sort((a, b) => (a.average ?? 99) - (b.average ?? 99) || b.ratings - a.ratings || a.name.localeCompare(b.name))
+}
+
+/** Star rating by site and month, worst first. Shows `initial` sites and adds `step` more per click; the filter searches every site. */
+export function RatingMatrix({ lines, since, initial = 15, step = 25, title = 'Star rating by site', action }: {
+  lines: Line[]; since: string; initial?: number; step?: number; title?: string; action?: ReactNode
+}) {
+  const { navigate } = useLeadership()
+  const [shown, setShown] = useState(initial)
+  const [filter, setFilter] = useState('')
+  const months = useMemo(() => matrixMonths(since, lines), [since, lines])
+  const all = useMemo(() => ratingMatrix(lines), [lines])
+  const q = filter.trim().toLowerCase()
+  const rows = q ? all.filter((s) => s.name.toLowerCase().includes(q) || s.location_number.toLowerCase().includes(q) || (s.job_number ?? '').includes(q)) : all
+  const visible = rows.slice(0, shown)
+  const open = (s: MatrixSite) => s.company && s.job_number && navigate({ site: { company: s.company, job: s.job_number } })
+  if (!all.length) return null
+  return <div className="card">
+    <div className="ct"><span>{title}, {months.length === 1 ? monthLabel(months[0]) : `${monthLabel(months[0])} to ${monthLabel(months.at(-1)!)}`}</span>
+      <span className="ctrl">{action}<label htmlFor="rm-q" className="sr-only">Search sites</label>
+        <input id="rm-q" type="search" placeholder="Search site or location" value={filter} onChange={(e) => { setFilter(e.target.value); setShown(initial) }} /></span></div>
+    <div className="tw"><table className="heat-grid">
+      <thead><tr><th className="nosort l">Site</th><th className="nosort l">Location</th>{months.map((m) => <th key={m} className="nosort">{monthShort(m)}</th>)}
+        <th className="nosort">Average</th><th className="nosort">Ratings</th><th className="nosort">1-2 stars</th></tr></thead>
+      <tbody>{visible.map((s) => <tr key={s.key} className={s.job_number ? 'click' : undefined} onClick={() => open(s)}
+        tabIndex={s.job_number ? 0 : undefined} onKeyDown={(e) => { if (e.key === 'Enter') open(s) }}>
+        <td className="l nm" title={s.name}>{s.name}</td><td className="l">{s.location_number}</td>
+        {months.map((m) => { const c = s.months[m]; return <td key={m} className={c ? `heat ${scoreTone(c.average)}` : 'neutral'}
+          title={c ? `${c.ratings} rating${c.ratings === 1 ? '' : 's'}${c.low ? `, ${c.low} at 1-2 stars` : ''}` : undefined}>{c ? c.average.toFixed(1) : '–'}</td> })}
+        <td className={scoreTone(s.average)}><b>{s.average == null ? '–' : s.average.toFixed(2)}</b></td><td>{s.ratings}</td><td className={s.low ? 'bad' : ''}>{s.low}</td>
+      </tr>)}</tbody>
+    </table></div>
+    <div className="more-row"><span>{visible.length} of {rows.length} sites</span>
+      {rows.length > visible.length && <button type="button" className="linkbtn" onClick={() => setShown((n) => n + step)}>Show {Math.min(step, rows.length - visible.length)} more</button>}</div>
+  </div>
+}
+
 /** Customer feedback and star ratings at the account's sites (the ServiceChannel feedback export). */
 export function Feedback({ account }: { account: LeadershipAccount }) {
   const { api, keyPrefix, decision, navigate } = useLeadership()
@@ -84,6 +157,7 @@ export function Feedback({ account }: { account: LeadershipAccount }) {
       <Kpi label="1-2 stars" value={d.low.toLocaleString('en-US')} tone={d.low ? 'bad' : 'ok'} sub={d.ratings ? `${Math.round((d.low / d.ratings) * 100)}% of ratings` : undefined} />
       <Kpi label="Unmatched locations" value={d.unmatched.toLocaleString('en-US')} tone={d.unmatched ? 'warn' : ''} sub="No WinTeam job" />
     </div>
+    <RatingMatrix lines={d.lines} since={d.since} initial={50} step={50} />
     <div className="card"><div className="ct"><span>By site</span></div>
       <SortTable caption="Feedback by site" rows={d.by_site} columns={siteCols} defaultSort={{ key: 'avg', dir: 1 }} pageSize={25}
         onRowClick={open} rowLabel={(r) => `Open ${siteName(r)}`} csvName={`${account.slug}-feedback-by-site`} /></div>

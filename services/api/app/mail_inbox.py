@@ -8,8 +8,10 @@ Each poll lists inbox messages with attachments received since the last one hand
 overlap; ops.mail_attachment remembers every attachment, so each is handled once). CSV and Excel
 attachments are downloaded and loaded only when their columns match a dashboard feed (the Pay
 Report or timekeeping labor summary, the Job Cost Analysis, the Trend Income Statement) through the
-same importer as uploads (origin 'mail'). Everything else in the mailbox is recorded as 'ignored' and
-never loaded. When anything loaded, the marts are rebuilt once. Each poll is a run of integration
+same importer as uploads (origin 'mail'), or when it is an account's labor budget workbook (a monthly
+plan or weekly calendar; app/budget_file.py, saved to the account named in the file name or subject).
+Everything else in the mailbox is recorded as 'ignored' and never loaded. When a feed loaded, the
+marts are rebuilt once (a budget needs no rebuild). Each poll is a run of integration
 'mail_inbox' in ops.integration_sync_run.
 
 Schedule: ops.app_setting 'mail_inbox' = {"enabled", "every_minutes", "first_lookback_days"}; the
@@ -195,15 +197,20 @@ class Graph:
 
 
 def recognize(file_name: str, content: bytes) -> str | None:
-    """The dashboard feed an attachment is, from its columns (or a feed file name), else None."""
-    from . import imports, native_exports
+    """The dashboard feed an attachment is, from its columns (or a feed file name), 'budget' for a labor
+    budget workbook, else None."""
+    from . import budget_file, imports, native_exports
 
     try:
         headers, _rows = imports.read_table(file_name, content)
     except Exception:  # noqa: BLE001 - an unreadable spreadsheet is simply not a dashboard report
-        return None
-    layout = native_exports.native_layout(headers)
-    return native_exports.LAYOUT_KIND[layout] if layout else imports.detect_kind(file_name, headers)
+        headers = None
+    if headers is not None:
+        layout = native_exports.native_layout(headers)
+        kind = native_exports.LAYOUT_KIND[layout] if layout else imports.detect_kind(file_name, headers)
+        if kind:
+            return kind
+    return budget_file.KIND if budget_file.looks_like(file_name, content) else None
 
 
 def _parse_time(value: str) -> datetime:
@@ -229,12 +236,13 @@ def _remember(cursor: Any, message: dict[str, Any], attachment: dict[str, Any], 
 
 def poll(graph: Graph | None = None, rebuild: bool = True) -> dict[str, Any]:
     """Read the mailbox once. Returns counts per status and whether the marts were rebuilt."""
-    from . import imports, marts
+    from . import budget_file, imports, marts
 
     if not configured():
         raise MailError("The reports mailbox is not configured (GRAPH_TENANT_ID, GRAPH_CLIENT_ID, GRAPH_CLIENT_SECRET, GRAPH_MAILBOX)")
     graph = graph or Graph()
     counts = {"loaded": 0, "duplicate": 0, "failed": 0, "ignored": 0, "messages": 0}
+    feeds_loaded = 0
     with connection() as conn:
         with conn.cursor() as cursor:
             cursor.execute("SELECT max(received_at) AS last FROM ops.mail_attachment")
@@ -263,18 +271,23 @@ def poll(graph: Graph | None = None, rebuild: bool = True) -> dict[str, Any]:
                     if kind is None:
                         reason = "not a dashboard report"
                     else:
-                        result = imports.load_file(conn, name, content, kind=kind, origin="mail",
-                                                   uploaded_by=f"mail:{sender or 'unknown'}")
+                        if kind == budget_file.KIND:
+                            result = budget_file.load_file(conn, name, content, subject=message.get("subject"), origin="mail",
+                                                           uploaded_by=f"mail:{sender or 'unknown'}")
+                        else:
+                            result = imports.load_file(conn, name, content, kind=kind, origin="mail",
+                                                       uploaded_by=f"mail:{sender or 'unknown'}")
+                            feeds_loaded += result["status"] == "loaded"
                         status, file_id = result["status"], result["import_file_id"]
                         reason = "; ".join(result.get("errors") or [])[:500] or None
                 counts[status] += 1
                 with conn.cursor() as cursor:
                     _remember(cursor, message, attachment, status, reason, file_id)
                 conn.commit()
-    rebuilt = bool(rebuild and counts["loaded"])
+    rebuilt = bool(rebuild and feeds_loaded)
     if rebuilt:
         marts.rebuild_all(initiated_by="mail-inbox")
-    if counts["loaded"]:
+    if feeds_loaded:
         from . import feedback_ai
 
         feedback_ai.warm()  # rebuilds a feedback summary only when a mailed file changed its comments

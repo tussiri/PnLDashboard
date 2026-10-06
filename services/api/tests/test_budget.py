@@ -88,3 +88,33 @@ def test_a_workbook_reads_as_one_table_per_sheet():
     assert "Aug 2026\t15\t653907\t40230\t1026956" in sheets[0]["text"]
     assert "2026-09-01\t21\t817385.5\t42146\t1026956" in sheets[0]["text"]
     assert sheets[1]["text"].splitlines()[1] == "2026-09-13\t155691.58\t9578.54"
+
+
+def test_removing_a_month_clears_the_calendar_weeks_overlapping_it(monkeypatch):
+    from contextlib import contextmanager
+
+    from app.routers import leadership
+
+    executed: list[tuple[str, tuple]] = []
+
+    class Cursor:
+        rowcount = 0
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def execute(self, sql, params=None):
+            executed.append((" ".join(sql.split()), params)); self.rowcount = 1 if "budget_month" in sql else 5
+
+    class Conn:
+        def cursor(self): return Cursor()
+        def commit(self): pass
+
+    @contextmanager
+    def fake():
+        yield Conn()
+
+    monkeypatch.setattr(leadership, "connection", fake)
+    out = leadership.delete_budget("plano-isd", month="2026-07", weeks=False)
+    assert out == {"account": "plano-isd", "removed": 1, "removed_weeks": 5}
+    weeks_sql, params = executed[1]
+    assert "DELETE FROM ops.account_budget_week" in weeks_sql and "week_end >= %s AND week_end - 6 < (%s::date + interval '1 month')" in weeks_sql
+    assert params == ("plano-isd", date(2026, 7, 1), date(2026, 7, 1))

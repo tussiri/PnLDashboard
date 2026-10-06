@@ -246,13 +246,14 @@ unit, labor % of invoicing vs BU target) for every account. Weeks are Monday-bas
               "carry_forward_source": null,                   // "job_cost" | "ar_invoice" when carried forward, else null (migration 010)
               "hours": 0, "ot_hours": 0, "dt_hours": 0, "budget_hours": 0, "budget_dollars": 0, "budget_basis": "daily_budget" | "hbc" | "none",
               "direct_dollars": 0, "ot_dollars": 0, "sub_dollars": 0, "sub_estimated": false, "total_dollars": 0,
-              "labor_cost_basis": "trailing_job_rate" | "job_cost" , "days_with_labor": 7,
+              "labor_cost_basis": "hours_x_rate" | "employee_rate" | "trailing_job_rate" | "job_cost" , "days_with_labor": 7,  // hours_x_rate / employee_rate added 2026-10-06
               "requested_headcount": 2, "pending_requested_headcount": 1 } ],  // added 2026-09-29, null before the PhotoValidation feed loads
   "qa": null,                                          // QA scores are not in the warehouse; always null for now
   "notes": ["Invoicing = closed-month job-cost revenue apportioned to weeks by calendar days ...", ...] }
 ```
-Rules: `hours` = timekeeping total hours; `ot_hours`/`dt_hours` from timekeeping; `direct_dollars` = straight-time
-labor (hours × job rate); `ot_dollars` = ot_hours × rate × 0.5 premium + dt_hours × rate × 1.0 (estimate, labelled);
+Rules: `hours` = timekeeping total hours; `ot_hours`/`dt_hours` from timekeeping; `direct_dollars` = labor at each
+punch's own WinTeam rate at full pay (rate × (hours + ½ OT + DT), as the Pay Report's TotalLaborDollars), else
+the employee's latest rate, else hours × the job's trailing rate (changed 2026-10-06; it was always the trailing rate); `ot_dollars` = ot_hours × rate × 0.5 premium + dt_hours × rate × 1.0 (estimate, labelled);
 `sub_dollars` = the site's monthly subcontract cost apportioned by calendar days (sub_estimated = true when the month
 is not closed and the latest closed month's rate is carried forward); `invoicing` = closed-month job-cost revenue
 apportioned by calendar days, else contract billing x 12/53 x day-share, else AR invoices for the service month
@@ -383,7 +384,7 @@ are Monday-based; the views label them by the week-ending Sunday. Any date in a 
 | `PUT /leadership/account-jobs/{company}/{job_number}` (admin) body `{account_slug \| null, segment, role, companycam_project_id}` | the mapping row (`assigned_by: 'admin'`, `needs_review: false`); `account_slug: null` unmaps the job (Other) |
 | `POST /leadership/accounts/seed` (admin) | `{added: {accounts, segments, jobs}}`: adds what `config/accounts/seed.json` has and the database lacks; never overwrites |
 | `GET /leadership/imports?limit=25` (admin) | `{files: [LeadershipImportFile]}` |
-| `POST /leadership/imports` (admin, multipart `file`, optional `kind` = `pay_report` \| `job_cost`, `rebuild` = true) | `{file: LeadershipImportFile, marts: RebuildResult \| null}`; formats in `docs/export-feeds.md`. A file already loaded comes back `status: 'duplicate'`. |
+| `POST /leadership/imports` (admin, multipart `file`, optional `kind` = `pay_report` \| `job_cost`, `rebuild` = true) | `{file: LeadershipImportFile, marts: RebuildResult \| null}`; formats in `docs/export-feeds.md`. A file already loaded comes back `status: 'duplicate'`. With no `kind`, a file that is no feed but an account's labor budget workbook (the reports mailbox rule, app/budget_file.py; added 2026-10-05) is saved as the budget of the account named in its file name, logged as kind `budget`, with no rebuild (`marts: null`). |
 
 ```
 LeadershipAccount = { slug, name, featured, sort, target_labor_pct, watch_band, revenue_method: 'monthly_div'|'weekly_billing'|'per_visit',
@@ -391,7 +392,7 @@ LeadershipAccount = { slug, name, featured, sort, target_labor_pct, watch_band, 
   fallback_segment, revenue_allocation: 'none'|'budget_hours', cost_basis: 'labor'|'labor_plus_vendor', segment_label, vendor_label,
   segments: [{name, sort, target_labor_pct|null}], sites, needs_review, updated_at, updated_by }
 LeadershipRow = { week_start, week_end, company, job_number, site_name, parent_account, account_slug|null (Other), segment, role: 'site'|'catch_all'|'non_billed',
-  needs_review, hours, ot_hours, labor, labor_basis: 'pay_report'|'trailing_rate_estimate', ot_dollars (full 1.5x pay), budget_hours, budget_dollars,
+  needs_review, hours, ot_hours, labor, labor_basis: 'pay_report'|'payroll_rate'|'trailing_rate_estimate' (payroll_rate: WinTeam hours at their WinTeam pay rates, added 2026-10-06), ot_dollars (full 1.5x pay), budget_hours, budget_dollars,
   employees, days_with_labor, revenue_month, revenue_month_amount, revenue_allocated, revenue_month_basis, invoice_week, prior_revenue, prior_labor,
   prior_labor_basis: 'pay_report'|'job_cost', prior_sub, prior_sub_basis: 'job_cost'|'ap_distribution', delivery_model, sub_week, sub_week_basis,
   consumables_cost|null, consumables_basis|null, latitude, longitude, city, state_province }
@@ -401,8 +402,9 @@ LeadershipImportFile = { import_file_id, kind, file_name, origin: 'upload'|'inbo
 
 Row rules (`mart.leadership_week`): labor, hours, OT hours and OT dollars come from the imported Pay
 Report when it covers every passed day of the company's week, else from `mart.job_week` (trailing-rate
-labor; OT dollars estimated at 1.5x the straight-time rate). `revenue_month` = the latest month with
-job-cost revenue before the month the week ends in; `revenue_month_amount` its revenue for the job.
+labor; OT dollars estimated at 1.5x the straight-time rate). `revenue_month` = the week's own month (the
+month holding its Thursday) once it has job-cost revenue, else the latest month before it that has
+(changed 2026-10-05; it was always the month before the week's); `revenue_month_amount` its revenue for the job.
 `prior_labor` = the Pay Report total when it covers the whole month, else job-cost labor;
 `prior_sub` = the greater of the job-cost subcontract line and AP distributions in the subcontract GL
 range. A job with revenue in the revenue month has a row even without labor that week. `sub_week` is
@@ -505,6 +507,10 @@ imported months it covers).
 
 Migration 038, docs/mail-inbox.md. The worker reads the reports mailbox through Microsoft Graph
 (read-only) and loads dashboard report exports through the importer (`ops.import_file.origin = 'mail'`).
+Added 2026-10-05 (migration 051): an account's labor budget workbook (monthly plan and / or weekly
+calendar, read as Admin > Budgets reads it; app/budget_file.py) is saved to the account named in the
+file name, else the subject, and logged in `ops.import_file` as kind `budget` (`companies` = the account
+slug, `period_from` / `period_to` = its first and last month). `rebuilt` is true only when a feed loaded.
 
 | Route | Response |
 |---|---|
@@ -686,7 +692,7 @@ Total labor is checked against site + overhead; Year and Total rows are skipped)
 |---|---|
 | `GET /leadership/budget?account=` | Permission `tab.budget`, account scope. `{account, months: [{month, in_progress, details, supplies, budget: {site, overhead, total, revenue, labor_pct}, actual: {site, overhead, events, total, revenue, basis, labor_pct} \| null, variance: {total, site, overhead, pct, points} \| null}]}`. Actual site labor is the account's site jobs, overhead its catch-all jobs, events its non-billed jobs (shown, left out of the total). Job cost when the month's site jobs carry job cost labor (`basis` job_cost), else the month rollup from timekeeping (`pay_report`, or `estimate` when any of it is estimated); none for months not started. A month still running (`in_progress`) has its actual to date and no variance. |
 | `PUT /leadership/budget/{slug}` | Admin. `{months: [{month: YYYY-MM, site_labor, overhead_labor, revenue, supplies, details}]}`, upserted by month; `422` for a bad month, a negative amount or a row with no labor. |
-| `DELETE /leadership/budget/{slug}?month=YYYY-MM` | Admin. One month; `weeks=true` the weekly calendar; neither, the account's whole plan. |
+| `DELETE /leadership/budget/{slug}?month=YYYY-MM` | Admin. One month and the calendar weeks overlapping it (`{account, removed, removed_weeks}`, added 2026-10-05); `weeks=true` the weekly calendar; neither, the account's whole plan. |
 | `POST /leadership/budget/read` | Admin. Multipart `file` (.xlsx): `{file, sheets: [{name, text}]}`, each non-empty sheet as tab-separated text (values, dates ISO, wrapped cells quoted). Nothing is saved; the Budgets page finds the monthly plan and the weekly calendar by their headers on any sheet, previews them and saves with the PUT. `422` for a file that is not a workbook. |
 
 **Weekly calendar** (migration 047, `ops.account_budget_week`): the plan's day calendar by week ending (a

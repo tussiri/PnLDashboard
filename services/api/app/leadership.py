@@ -7,10 +7,14 @@ stored: routers/leadership.py joins ops.account_job at read time.
 * Pay report coverage: a company's week counts as covered when core.pay_report_coverage spans each
   of its days that have passed (a nightly export window through yesterday covers the current week so
   far). Covered weeks take hours, overtime hours (OT + DT), labor and overtime dollars (full pay)
-  from core.fact_pay_report; others take mart.job_week's hours and its trailing-rate labor, with
+  from core.fact_pay_report; others take mart.job_week's hours and labor (labor_basis payroll_rate when the
+  punches are priced at their WinTeam pay rates, else trailing_rate_estimate), with
   overtime dollars estimated at 1.5x the straight-time rate labor / (hours + 0.5 x OT hours).
-* revenue_month = the latest month with job-cost revenue (mart.job_month.revenue_basis = 'job_cost')
-  before the month the week ends in. revenue_month_amount = the job's mart.job_month revenue for it.
+* revenue_month = the week's own month (the month holding its Thursday) once it has job-cost revenue
+  (mart.job_month.revenue_basis = 'job_cost'), else the latest month before it that has: a closed month
+  invoices its own weeks (Plano's July weeks read July's billing, not June's end-of-contract stub), and
+  the weeks of a month not yet closed read the last closed month (changed 2026-10-05; it was always the
+  month before the week's). revenue_month_amount = the job's mart.job_month revenue for it.
 * Keys also include every job with revenue in the week's revenue month, so a site billed but not
   worked that week still carries its invoice (the reference's "billed but no labor").
 * prior_revenue = the same month's mart.job_month revenue; prior_labor = the month's pay report
@@ -85,7 +89,7 @@ all_weeks AS (
 ),
 week_month AS (
   SELECT w.week_start,
-         (SELECT max(m.month) FROM jc_months m WHERE m.month < date_trunc('month', w.week_start + 6)::date) AS revenue_month
+         (SELECT max(m.month) FROM jc_months m WHERE m.month <= date_trunc('month', w.week_start + 3)::date) AS revenue_month
   FROM (SELECT DISTINCT week_start FROM all_weeks) w
 ),
 keys AS (
@@ -140,7 +144,7 @@ assembled AS (
          pr.hours AS pr_hours, pr.ot_hours AS pr_ot, pr.labor AS pr_labor, pr.ot_dollars AS pr_ot_dollars,
          coalesce(pr.employees, te.employees, 0) AS employees,
          coalesce(pr.days, jw.days_with_labor, 0) AS days_with_labor,
-         coalesce(jw.budget_hours, 0) AS budget_hours, coalesce(jw.budget_dollars, 0) AS budget_dollars,
+         coalesce(jw.budget_hours, 0) AS budget_hours, coalesce(jw.budget_dollars, 0) AS budget_dollars, jw.labor_cost_basis AS jw_cost_basis,
          jw.invoicing AS invoice_week,
          wm.revenue_month,
          rm.revenue AS rm_revenue, rm.revenue_basis AS rm_basis, rm.labor_cost AS rm_labor, rm.subcontract_cost AS rm_sub,
@@ -205,7 +209,9 @@ SELECT
   CASE WHEN a.covered THEN a.pr_hours ELSE coalesce(a.jw_hours, 0) END,
   CASE WHEN a.covered THEN a.pr_ot ELSE a.jw_ot END,
   CASE WHEN a.covered THEN a.pr_labor ELSE coalesce(a.jw_labor, 0) END,
-  CASE WHEN a.covered THEN 'pay_report' ELSE 'trailing_rate_estimate' END,
+  -- labor_basis: payroll_rate when the punches are priced at their WinTeam pay rates (normalize.price_punches)
+  -- and trailing_rate_estimate at the job's job-cost rate (reference-export weeks or punches with no rate known)
+  CASE WHEN a.covered THEN 'pay_report' WHEN a.jw_cost_basis IN ('hours_x_rate', 'employee_rate') THEN 'payroll_rate' ELSE 'trailing_rate_estimate' END,
   CASE WHEN a.covered THEN a.pr_ot_dollars
        WHEN coalesce(a.jw_hours, 0) > 0
          THEN round(a.jw_ot * 1.5 * coalesce(a.jw_labor, 0) / (a.jw_hours + 0.5 * a.jw_ot), 2)

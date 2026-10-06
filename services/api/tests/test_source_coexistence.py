@@ -141,7 +141,7 @@ def test_overtime_derivation_only_touches_api_rows() -> None:
             assert text.count("source = %(source)s") >= 2 or "employee_source_id IS NULL AND source" in text
         if not settings["overtime_category_detail_ids"]:
             # the window scan must be materialized once, not re-planned per updated row (97 s -> 0.6 s on 15k punches)
-            assert any("WITH ranked AS MATERIALIZED" in text for text, _ in updates)
+            assert any("WITH api AS MATERIALIZED" in text and "ranked AS MATERIALIZED" in text for text, _ in updates)
 
 
 def test_ar_invoices_use_api_amount_paid_and_treatment_rules() -> None:

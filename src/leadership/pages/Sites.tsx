@@ -50,7 +50,7 @@ export function Sites({ account, summary, options, selfOnly, ratings }: { accoun
   }, [ratings])
   const cols: Column<Row>[] = [
     { key: 'job', header: 'Job', left: true, value: (r) => Number(r.job_number) || r.job_number, render: (r) => <>{r.job_number}{(r.kids?.length ?? 1) > 1 && <span className="neutral"> +{r.kids!.slice(1).join(',')}</span>}</> },
-    { key: 'name', header: 'Site', left: true, value: (r) => r.site_name, className: 'nm', render: (r) => <>{r.site_name}{r.labor > 0 && r.labor_basis !== 'pay_report' && <span className="warn"> ~</span>}</> },
+    { key: 'name', header: 'Site', left: true, value: (r) => r.site_name, className: 'nm', render: (r) => <>{r.site_name}{r.labor > 0 && r.labor_basis === 'trailing_rate_estimate' && <span className="warn"> ~</span>}</> },
     ...(hasVariable ? [
       { key: 'fix', header: 'Fixed inv', value: fixed, render: (r: Row) => money(fixed(r)) },
       { key: 'var', header: 'Var inv', value: (r: Row) => variableWk(r, options), render: (r: Row) => (variableWk(r, options) ? money(variableWk(r, options)) : '–') },

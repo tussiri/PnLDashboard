@@ -72,3 +72,8 @@ def test_an_open_relay_month_projects_from_the_sites_billed_months():
     assert "'trailing_3mo_projection'" in relay
     trail = REBUILD_SQL[REBUILD_SQL.index("relay_trail AS ("):REBUILD_SQL.index("ap_sub AS (")]
     assert "t.ar_revenue IS NOT NULL" in trail and "t.month < m.month" in trail
+
+
+def test_a_closed_month_invoices_its_own_weeks():
+    """The week's revenue month is its own (the month of its Thursday) once closed, else the last closed before it."""
+    assert "m.month <= date_trunc('month', w.week_start + 3)::date" in REBUILD_SQL

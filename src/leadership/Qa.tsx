@@ -51,13 +51,13 @@ export function QaCards({ account, sites, weekStart }: { account: LeadershipAcco
           <td>{p.row?.budget_dollars ? money(p.row.budget_dollars) : '–'}</td><td className={p.variance == null ? '' : p.variance > 0 ? 'bad' : 'ok'}>{signed(p.variance)}</td></tr>)}</tbody></table>} />}
     <div className="card">
       <div className="ct"><span>QA scores by site, last {d.weeks.length} weeks</span></div>
-      <div className="tw"><table className="qa-grid">
+      <div className="tw"><table className="heat-grid">
         <thead><tr><th className="nosort l">Site</th>{d.weeks.map((wk) => <th key={wk} className="nosort">{weekTick(wk)}</th>)}<th className="nosort">Average</th></tr></thead>
         <tbody>{d.sites.map((s) => {
           const vals = d.weeks.map((wk) => s.scores[wk]).filter((v): v is number => v != null)
           const mean = vals.length ? vals.reduce((x, v) => x + v, 0) / vals.length : null
           return <tr key={s.site_code}><td className="l" title={s.site_name ?? undefined}>{s.site_code}</td>
-            {d.weeks.map((wk) => <td key={wk} className={`qa ${qaTone(s.scores[wk])}`}>{s.scores[wk] == null ? '–' : s.scores[wk].toFixed(0)}</td>)}
+            {d.weeks.map((wk) => <td key={wk} className={`heat ${qaTone(s.scores[wk])}`}>{s.scores[wk] == null ? '–' : s.scores[wk].toFixed(0)}</td>)}
             <td className={qaTone(mean)}><b>{mean == null ? '–' : mean.toFixed(1)}</b></td></tr>
         })}</tbody>
       </table></div>

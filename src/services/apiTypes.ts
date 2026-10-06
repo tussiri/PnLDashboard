@@ -1063,7 +1063,8 @@ export interface TrackRecordQuery {
 
 export type InvoicingBasis = 'job_cost_month_prorated' | 'ar_invoice_prorated' | 'contract' | 'carry_forward' | 'none'
 export type BudgetBasis = 'daily_budget' | 'hbc' | 'none'
-export type LaborCostBasis = 'trailing_job_rate' | 'job_cost'
+/** How a week's labor dollars were priced: the punches' own WinTeam rate, the employee's latest rate, the job's trailing rate, or job cost. */
+export type LaborCostBasis = 'hours_x_rate' | 'employee_rate' | 'trailing_job_rate' | 'job_cost'
 
 export interface ExecutiveBusinessUnit {
   key: string
@@ -1289,7 +1290,7 @@ export interface LeadershipStatus {
   rebuilt_at: string | null
   leadership_rebuilt_at: string | null
   syncs: { integration_name: string; status: string; completed_at: string | null; started_at: string }[]
-  imports: Partial<Record<LeadershipImportKind, { kind: LeadershipImportKind; file_name: string; status: string; period_from: string | null; period_to: string | null; rows_loaded: number; loaded_at: string }>>
+  imports: Partial<Record<LeadershipImportLogKind, { kind: LeadershipImportLogKind; file_name: string; status: string; period_from: string | null; period_to: string | null; rows_loaded: number; loaded_at: string }>>
   pay_report_through: { company: string; through: string }[]
 }
 
@@ -1564,10 +1565,12 @@ export interface LeadershipVendorsResponse {
 }
 
 export type LeadershipImportKind = 'pay_report' | 'job_cost' | 'income_statement' | 'service_feedback' | 'qa_score'
+/** A row of the import log: the upload kinds, and 'budget' for a labor budget mailed to the reports mailbox. */
+export type LeadershipImportLogKind = LeadershipImportKind | 'budget'
 
 export interface LeadershipImportFile {
   import_file_id: number
-  kind: LeadershipImportKind
+  kind: LeadershipImportLogKind
   file_name: string
   origin: 'upload' | 'inbox'
   status: 'loaded' | 'failed' | 'duplicate'

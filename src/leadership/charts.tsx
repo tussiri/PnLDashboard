@@ -3,20 +3,23 @@
  * target line, recessive gridlines, colors read from the CSS tokens so light and dark themes each get
  * their own steps. Every chart sits in a ChartCard with a table view of the same numbers.
  */
-import { BarController, BarElement, CategoryScale, Chart as ChartJS, Filler, Legend, LinearScale, LineController, LineElement, PointElement, Tooltip, type ChartData, type ChartOptions } from 'chart.js'
+import { BarController, BarElement, CategoryScale, Chart as ChartJS, Filler, Legend, LinearScale, LogarithmicScale, LineController, LineElement, PointElement, Tooltip, type ChartData, type ChartOptions } from 'chart.js'
 import { useEffect, useState } from 'react'
 import { Bar, Chart, Line } from 'react-chartjs-2'
 import { hours as fmtHours, money, pct } from './format'
 import { useLeadership } from './state'
 
-ChartJS.register(BarController, BarElement, CategoryScale, LinearScale, LineController, LineElement, PointElement, Tooltip, Legend, Filler)
+ChartJS.register(BarController, BarElement, CategoryScale, LinearScale, LogarithmicScale, LineController, LineElement, PointElement, Tooltip, Legend, Filler)
 
-export interface Tokens { text: string; text2: string; text3: string; border: string; ok: string; warn: string; bad: string; accent: string; accent2: string; muted: string; bg: string; tgt: string }
+export interface Tokens { text: string; text2: string; text3: string; border: string; ok: string; warn: string; bad: string; accent: string; accent2: string; muted: string; bg: string; tgt: string
+  /** Categorical series colors (--s1..--s6), for one line per group. */
+  series: string[] }
 
 function readTokens(): Tokens {
   const css = getComputedStyle(document.documentElement)
   const v = (n: string) => css.getPropertyValue(n).trim()
-  return { text: v('--text'), text2: v('--text2'), text3: v('--text3'), border: v('--border'), ok: v('--ok'), warn: v('--warn'), bad: v('--bad'), accent: v('--accent'), accent2: v('--accent2'), muted: v('--muted'), bg: v('--bg'), tgt: v('--tgt') }
+  return { text: v('--text'), text2: v('--text2'), text3: v('--text3'), border: v('--border'), ok: v('--ok'), warn: v('--warn'), bad: v('--bad'), accent: v('--accent'), accent2: v('--accent2'), muted: v('--muted'), bg: v('--bg'), tgt: v('--tgt'),
+    series: [1, 2, 3, 4, 5, 6].map((i) => v(`--s${i}`)) }
 }
 
 /** Token colors, re-read when the theme or the system color scheme changes. */
@@ -50,29 +53,74 @@ function base(t: Tokens): ChartOptions<'bar'> {
   } as ChartOptions<'bar'>
 }
 
+/**
+ * A percent axis that ignores outliers: when the largest value is far above the bulk (summer weeks with a
+ * tiny invoice reach thousands of percent), the axis tops out at twice the median, never below
+ * `floor`, and those points run off the chart (the table view shows them). Undefined when nothing is that far out.
+ */
+export function pctAxisMax(values: (number | null | undefined)[], floor: number): number | undefined {
+  const v = values.filter((x): x is number => x != null && Number.isFinite(x)).sort((a, b) => a - b)
+  if (!v.length) return undefined
+  const cap = Math.ceil(Math.max(v[Math.floor((v.length - 1) / 2)] * 2, floor) / 20) * 20
+  return v[v.length - 1] > cap ? cap : undefined
+}
+
+/** Styling for projected points (projection.ts): hollow points, a dashed line into them, "(projected)" in the tooltip. */
+export const projectedLine = (projected: boolean[] | undefined, color: string, bg: string) => (projected?.some(Boolean)
+  ? { pointBackgroundColor: projected.map((p) => (p ? bg : color)), pointBorderColor: color, pointBorderWidth: projected.map((p) => (p ? 2 : 1)),
+      segment: { borderDash: (ctx: { p1DataIndex: number }) => (projected[ctx.p1DataIndex] ? [5, 4] : undefined) } }
+  : {})
+/** '#8fb3d6' at an alpha, as rgba (canvas fill styles need a plain color); other color strings pass through. */
+export const withAlpha = (color: string, alpha: number) => {
+  const m = /^#([0-9a-f]{6})$/i.exec(color.trim())
+  if (!m) return color
+  const n = parseInt(m[1], 16)
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`
+}
+const projectedSuffix = (projected: boolean[] | undefined, i: number) => (projected?.[i] ? ' (projected)' : '')
+
 const bar = { borderRadius: 4, borderSkipped: 'start' as const, maxBarThickness: 24, categoryPercentage: 0.7, barPercentage: 0.9 }
 
-/** Measure % by segment: this week (colored by status) against the prior month, with the target line. */
-export function SegmentMeasureChart({ labels, week, weekTones, prior, target, weekLabel, priorLabel, targetColor }: {
-  labels: string[]; week: (number | null)[]; weekTones: ('ok' | 'warn' | 'bad' | 'neutral')[]; prior: (number | null)[]; target: number; weekLabel: string; priorLabel: string
-  /** The target line's color (the budget green when the target comes from the weekly budget). */
-  targetColor?: string
+/** Percent ticks for a logarithmic axis: round values only, so 50% to 100% reads the same height as 400% to 800%. */
+const LOG_PCT_TICKS = [5, 10, 25, 50, 100, 200, 500, 1000, 2000, 5000, 10000]
+
+/** Labor % by group over time: one line per group in its series color, the selected point enlarged; each group's
+ * target dashed in its color (one line when all share it), or the account's budget target as the green stepped line.
+ * The axis is logarithmic, so a spike (a summer week at several hundred percent) stays on the chart without flattening
+ * the ordinary weeks. */
+export function SegmentTrendChart({ labels, series, current, budgetTargets, onPick, projected }: {
+  labels: string[]; series: { name: string; values: (number | null)[]; target: number }[]; current: number
+  budgetTargets?: (number | null)[]; onPick?: (index: number) => void
+  /** Points that are projections: hollow, with a dashed line into them. */
+  projected?: boolean[]
 }) {
   const t = useTokens()
-  const o = base(t)
-  const data = {
-    labels,
-    datasets: [
-      { type: 'bar' as const, label: weekLabel, data: week.map((v) => (v == null ? null : v * 100)), backgroundColor: weekTones.map((tone) => statusColor(t, tone)), ...bar },
-      { type: 'bar' as const, label: priorLabel, data: prior.map((v) => (v == null ? null : v * 100)), backgroundColor: t.muted, ...bar },
-      targetColor
-        ? { type: 'line' as const, label: 'Week target', data: labels.map(() => target * 100), borderColor: targetColor, borderWidth: 3, pointRadius: 0, pointHitRadius: 0, order: -1 }
-        : { type: 'line' as const, label: 'Target', data: labels.map(() => target * 100), borderColor: t.text, borderDash: [5, 4], borderWidth: 1.5, pointRadius: 0, pointHitRadius: 0 },
-    ],
-  }
-  const options = { ...o, scales: { ...o.scales, y: { ...o.scales!.y, beginAtZero: true, ticks: { color: t.text2, callback: (v: string | number) => `${v}%` } }, x: { ...o.scales!.x, grid: { display: false } } },
-    plugins: { ...o.plugins, tooltip: { ...o.plugins!.tooltip, callbacks: { label: (c: { dataset: { label?: string }; parsed: { y: number | null } }) => `${c.dataset.label}: ${c.parsed.y == null ? 'no billing' : `${c.parsed.y.toFixed(1)}%`}` } } } }
-  return <Chart type="bar" data={data as unknown as ChartData<'bar', (number | null)[], string>} options={options as ChartOptions<'bar'>} aria-label={`${weekLabel} and ${priorLabel} by segment against a ${pct(target)} target`} role="img" />
+  const o = base(t) as unknown as ChartOptions<'line'>
+  const color = (i: number) => t.series[i % t.series.length]
+  const sharedTarget = series.every((s) => s.target === series[0]?.target)
+  const point = labels.map((_, j) => (j === current ? 5 : 2.5))
+  // The axis fits the groups' lines and targets; a summer budget target far above them runs off the top.
+  const all = [...series.flatMap((s) => s.values), ...series.map((s) => s.target)].filter((v): v is number => v != null && v > 0).map((v) => v * 100)
+  const yMin = all.length ? Math.max(5, [...LOG_PCT_TICKS].reverse().find((v) => v <= Math.min(...all) * 0.9) ?? 5) : 10
+  const yMax = all.length ? (LOG_PCT_TICKS.find((v) => v >= Math.max(...all) * 1.1) ?? Math.max(...all) * 1.2) : 200
+  const data = { labels, datasets: [
+    ...series.map((s, i) => ({ label: s.name, data: s.values.map((v) => (v == null ? null : v * 100)), borderColor: color(i), backgroundColor: color(i),
+      borderWidth: 2, pointRadius: point, pointHoverRadius: 6, pointBorderColor: t.bg, pointBorderWidth: 1.5, tension: 0, spanGaps: true, ...projectedLine(projected, color(i), t.bg) })),
+    ...(budgetTargets
+      ? [{ label: 'Budget target', data: budgetTargets.map((v) => (v == null ? null : v * 100)), borderColor: t.tgt, backgroundColor: t.tgt, borderWidth: 3,
+        stepped: 'middle' as const, pointRadius: 0, pointHitRadius: 0 }]
+      : sharedTarget
+        ? [{ label: 'Target', data: labels.map(() => (series[0]?.target ?? 0) * 100), borderColor: t.text2, borderDash: [5, 4], borderWidth: 1.5, pointRadius: 0, pointHitRadius: 0 }]
+        : series.map((s, i) => ({ label: `${s.name} target`, data: labels.map(() => s.target * 100), borderColor: color(i), borderDash: [5, 4], borderWidth: 1, pointRadius: 0, pointHitRadius: 0 }))),
+  ] }
+  const options = { ...o, interaction: { mode: 'index', intersect: false },
+    onClick: (_e: unknown, els: { index: number }[]) => { if (onPick && els.length) onPick(els[0].index) },
+    onHover: (e: { native?: { target?: EventTarget | null } }, els: unknown[]) => { const el = e.native?.target as HTMLElement | null; if (el && onPick) el.style.cursor = els.length ? 'pointer' : 'default' },
+    scales: { x: { ...o.scales!.x, grid: { display: false } },
+      y: { ...o.scales!.y, type: 'logarithmic', min: yMin, max: yMax, ticks: { color: t.text2, callback: (v: string | number) => `${v}%` },
+        afterBuildTicks: (axis: { ticks: { value: number }[]; min: number; max: number }) => { axis.ticks = LOG_PCT_TICKS.filter((v) => v >= axis.min && v <= axis.max).map((value) => ({ value })) } } },
+    plugins: { ...o.plugins, tooltip: { ...o.plugins!.tooltip, callbacks: { label: (c: { dataset: { label?: string }; parsed: { y: number | null }; dataIndex: number }) => `${c.dataset.label}: ${c.parsed.y == null ? 'no billing' : `${c.parsed.y.toFixed(1)}%`}${/target/i.test(c.dataset.label ?? '') ? '' : projectedSuffix(projected, c.dataIndex)}` } } } }
+  return <Line data={data} options={options as unknown as ChartOptions<'line'>} aria-label={`Labor % by group: ${series.map((s) => s.name).join(', ')}`} role="img" />
 }
 
 /** Horizontal paired bars: weekly invoice against cost (labor, plus vendor under cost %). */
@@ -101,16 +149,25 @@ export function OtHoursChart({ labels, values, tones, details }: { labels: strin
 }
 
 /** Weekly measure % trend against the target (one axis, percent). */
-export function TrendChart({ labels, values, target, label }: { labels: string[]; values: (number | null)[]; target: number; label: string }) {
+export function TrendChart({ labels, values, target, label, targets }: { labels: string[]; values: (number | null)[]; target: number; label: string
+  /** Each week's budget target (the account's weekly budget calendar): the green stepped line in place of the flat target. */
+  targets?: (number | null)[] }) {
   const t = useTokens()
   const o = base(t) as unknown as ChartOptions<'line'>
   const data = { labels, datasets: [
     { label, data: values.map((v) => (v == null ? null : v * 100)), borderColor: t.accent, backgroundColor: t.accent, borderWidth: 2, pointRadius: 3, pointHoverRadius: 5, pointBorderColor: t.bg, pointBorderWidth: 2, spanGaps: false, tension: 0 },
-    { label: 'Target', data: labels.map(() => target * 100), borderColor: t.text, borderDash: [5, 4], borderWidth: 1.5, pointRadius: 0, pointHitRadius: 0 },
+    targets
+      ? { label: 'Weekly budget target', data: targets.map((v) => (v == null ? null : v * 100)), borderColor: t.tgt, backgroundColor: t.tgt, borderWidth: 3, stepped: 'middle' as const,
+        pointRadius: 3, pointHoverRadius: 5, pointBackgroundColor: t.tgt, pointBorderColor: t.bg, pointBorderWidth: 1.5 }
+      : { label: 'Target', data: labels.map(() => target * 100), borderColor: t.text, borderDash: [5, 4], borderWidth: 1.5, pointRadius: 0, pointHitRadius: 0 },
   ] }
+  // A budget week whose invoice is tiny (school out) can target thousands of percent; keep the axis on the site's own range
+  // and let that stretch run off the top (the table shows it).
+  const top = Math.max(target * 100, ...values.filter((v): v is number => v != null).map((v) => v * 100))
+  const capped = targets?.some((v) => v != null && v * 100 > top * 2) ? Math.ceil((top * 1.3) / 20) * 20 : undefined
   const options: ChartOptions<'line'> = { ...o,
     interaction: { mode: 'index', intersect: false },
-    scales: { x: { ...o.scales!.x, grid: { display: false } }, y: { ...o.scales!.y, beginAtZero: true, ticks: { color: t.text2, callback: (v) => `${v}%` } } },
+    scales: { x: { ...o.scales!.x, grid: { display: false } }, y: { ...o.scales!.y, beginAtZero: true, max: capped, ticks: { color: t.text2, callback: (v) => `${v}%` } } },
     plugins: { ...o.plugins, tooltip: { ...o.plugins!.tooltip, callbacks: { label: (c) => `${c.dataset.label}: ${c.parsed.y == null ? 'no billing' : `${c.parsed.y.toFixed(1)}%`}` } } } }
   return <Line data={data} options={options} aria-label={`${label} by week against a ${pct(target)} target`} role="img" />
 }
@@ -193,8 +250,12 @@ export function LaborMixChart({ labels, invoice, core, pallet, sub, subLabel, di
   return <Bar data={data} options={options} aria-label="Weekly invoice against core, pallet and sub labor by group" role="img" />
 }
 
-/** Closed months (weekly equivalent) then weeks: labor dollars as bars, invoice and labor % as lines, target dashed. */
-export function MonthWeekTrendChart({ labels, labor, invoice, lp, target, weekFrom, current, weekTargets, onPick, sitesLp }: { labels: string[]; labor: (number | null)[]; invoice: (number | null)[]; lp: (number | null)[]; target: number; weekFrom: number; current: number
+/** Labor dollars by period as bars (muted before weekFrom, the current one highlighted), invoice and labor % as lines, target dashed. */
+export function MonthWeekTrendChart({ labels, labor, invoice, lp, target, weekFrom, current, weekTargets, onPick, sitesLp, unit = 'week', projected }: { labels: string[]; labor: (number | null)[]; invoice: (number | null)[]; lp: (number | null)[]; target: number; weekFrom: number; current: number
+  /** Points whose labor is a projection (the latest weeks while timekeeping arrives): lighter bars, hollow points. */
+  projected?: boolean[]
+  /** The period each point is: names the series in the tooltip. */
+  unit?: 'week' | 'month'
   /** Each point's budget target (the weekly budget calendar): drawn as the green stepped line in place of the flat target. */
   weekTargets?: (number | null)[]
   /** Click a point to open it. */
@@ -204,10 +265,12 @@ export function MonthWeekTrendChart({ labels, labor, invoice, lp, target, weekFr
   const t = useTokens()
   const o = base(t) as unknown as ChartOptions<'bar'>
   const data = { labels, datasets: [
-    { type: 'bar' as const, label: 'Labor (weekly equiv.)', data: labor, backgroundColor: labels.map((_, i) => (i === current ? t.accent : i >= weekFrom ? t.accent2 : t.muted)), yAxisID: 'y', order: 3, ...bar },
-    { type: 'line' as const, label: 'Invoice (weekly equiv.)', data: invoice, borderColor: t.text2, borderDash: [4, 3], borderWidth: 1.5, pointRadius: 2, yAxisID: 'y', order: 2 },
-    { type: 'line' as const, label: 'Labor %', data: lp.map((v) => (v == null ? null : v * 100)), borderColor: t.bad, backgroundColor: t.bad, borderWidth: 2, pointRadius: 3, yAxisID: 'y1', order: 1 },
-    ...(sitesLp ? [{ type: 'line' as const, label: 'Sites-only labor %', data: sitesLp.map((v) => (v == null ? null : v * 100)), borderColor: t.warn, backgroundColor: t.warn, borderWidth: 2, pointRadius: 3, yAxisID: 'y1', order: 1 }] : []),
+    { type: 'bar' as const, label: unit === 'month' ? 'Labor, month' : 'Labor, week', data: labor, yAxisID: 'y', order: 3, ...bar,
+      backgroundColor: labels.map((_, i) => { const c = i === current ? t.accent : i >= weekFrom ? t.accent2 : t.muted; return projected?.[i] ? withAlpha(c, 0.35) : c }),
+      borderColor: labels.map((_, i) => (i === current ? t.accent : t.accent2)), borderWidth: labels.map((_, i) => (projected?.[i] ? 1.5 : 0)), borderSkipped: false },
+    { type: 'line' as const, label: unit === 'month' ? 'Invoice, month' : 'Invoice, week', data: invoice, borderColor: t.text2, borderDash: [4, 3], borderWidth: 1.5, pointRadius: 2, yAxisID: 'y', order: 2 },
+    { type: 'line' as const, label: 'Labor %', data: lp.map((v) => (v == null ? null : v * 100)), borderColor: t.bad, backgroundColor: t.bad, borderWidth: 2, pointRadius: 3, yAxisID: 'y1', order: 1, ...projectedLine(projected, t.bad, t.bg) },
+    ...(sitesLp ? [{ type: 'line' as const, label: 'Sites-only labor %', data: sitesLp.map((v) => (v == null ? null : v * 100)), borderColor: t.warn, backgroundColor: t.warn, borderWidth: 2, pointRadius: 3, yAxisID: 'y1', order: 1, ...projectedLine(projected, t.warn, t.bg) }] : []),
     weekTargets
       ? { type: 'line' as const, label: 'Weekly budget target', data: weekTargets.map((v) => (v == null ? null : v * 100)), borderColor: t.tgt, backgroundColor: t.tgt, borderWidth: 4,
         stepped: 'middle', pointRadius: 4, pointHoverRadius: 7, pointBackgroundColor: t.tgt, pointBorderColor: t.bg, pointBorderWidth: 1.5, yAxisID: 'y1', order: -1 }
@@ -217,10 +280,11 @@ export function MonthWeekTrendChart({ labels, labor, invoice, lp, target, weekFr
     onClick: (_e: unknown, els: { index: number }[]) => { if (onPick && els.length) onPick(els[0].index) },
     onHover: (e: { native?: { target?: EventTarget | null } }, els: unknown[]) => { const el = e.native?.target as HTMLElement | null; if (el && onPick) el.style.cursor = els.length ? 'pointer' : 'default' },
     scales: { x: { ...o.scales!.x, grid: { display: false } }, y: { ...o.scales!.y, beginAtZero: true, ticks: { color: t.text2, callback: (v: number | string) => `$${Number(v) / 1000}K` } },
-      y1: { position: 'right', beginAtZero: true, suggestedMax: 90, grid: { display: false }, ticks: { color: t.text2, callback: (v: number | string) => `${v}%` } } },
-    plugins: { ...o.plugins, tooltip: { ...o.plugins!.tooltip, callbacks: { label: (c: { dataset: { label?: string; yAxisID?: string }; parsed: { y: number | null } }) =>
-      c.dataset.yAxisID === 'y1' ? `${c.dataset.label}: ${c.parsed.y == null ? '–' : `${c.parsed.y.toFixed(1)}%`}` : `${c.dataset.label}: ${money(c.parsed.y)}` } } } } as unknown as ChartOptions<'bar'>
-  return <Chart type="bar" data={data} options={options} aria-label="Labor against invoice by closed month and by week, with labor % and the target" role="img" />
+      y1: { position: 'right', beginAtZero: true, suggestedMax: 90, max: pctAxisMax([...lp, ...(sitesLp ?? []), ...(weekTargets ?? [])].map((v) => (v == null ? null : v * 100)), Math.max(target * 100, 100)), grid: { display: false }, ticks: { color: t.text2, callback: (v: number | string) => `${v}%` } } },
+    plugins: { ...o.plugins, tooltip: { ...o.plugins!.tooltip, callbacks: { label: (c: { dataset: { label?: string; yAxisID?: string }; parsed: { y: number | null }; dataIndex: number }) =>
+      (c.dataset.yAxisID === 'y1' ? `${c.dataset.label}: ${c.parsed.y == null ? '–' : `${c.parsed.y.toFixed(1)}%`}` : `${c.dataset.label}: ${money(c.parsed.y)}`)
+        + (c.dataset.label?.startsWith('Invoice') || /target/i.test(c.dataset.label ?? '') ? '' : projectedSuffix(projected, c.dataIndex)) } } } } as unknown as ChartOptions<'bar'>
+  return <Chart type="bar" data={data} options={options} aria-label={`Labor against invoice by ${unit}, with labor % and the target`} role="img" />
 }
 
 /** OT by week: OT hours as bars (the selected week highlighted) and OT % of hours as a line; click a week to open it. */

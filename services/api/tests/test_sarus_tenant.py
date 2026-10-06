@@ -125,9 +125,9 @@ def test_primary_normalizers_are_unchanged_by_the_tenant_parameter() -> None:
 
 
 def test_punches_are_priced_by_the_job_they_resolved_to() -> None:
-    text = flat(normalize.PRICE_UNPRICED_SQL)
-    assert "LEFT JOIN core.dim_job dj ON dj.job_key = t.job_key" in text
-    assert "jr.job_number = coalesce(dj.job_number, t.job_number)" in text
+    text = flat(normalize.PRICE_PUNCHES_SQL)
+    assert "LEFT JOIN core.dim_job dj ON dj.job_key = p.job_key" in text
+    assert "jr.job_number = coalesce(dj.job_number, p.job_number)" in text
 
 
 def test_sarus_promotes_no_jobs_and_is_refused_resources_it_does_not_read() -> None:
