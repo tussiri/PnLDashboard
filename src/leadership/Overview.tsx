@@ -28,10 +28,12 @@ export function Notes({ summary, account, flags, options, revenueMonth, extra = 
     if (n.kind === 'non_billed') add('warn', `n${n.job_number}`, `Job ${n.job_number} non-billed`, `${effort(n.labor, n.hours, n.otHours)}. All-in labor % ${pct(n.allInLaborPct)}`)
     if (n.kind === 'billed_no_labor') add('', 'nolab', 'Billed, no cost', `${n.jobs.slice(0, 8).map((j) => `${j.job_number} ${j.site_name}`).join(', ')}${n.jobs.length > 8 ? `, ${n.jobs.length - 8} more` : ''}`)
     if (n.kind === 'budget_unreliable') add('', 'budget', 'Budget hours', `${pct(n.ratio)} of actual; reference only`)
-    if (n.kind === 'labor_estimated') add('warn', 'est', 'Labor estimated', `${money(n.labor)} at ${siteWord(n.jobs)}; no pay report`)
+    if (n.kind === 'labor_estimated') add('warn', 'est', 'Labor estimated', `${money(n.labor)} at ${siteWord(n.jobs)}; job-cost rate, no WinTeam pay rate`)
     if (n.kind === 'vendor_projected') add('warn', 'vproj', `${vendorLabel(account)} projected`, `${money(n.amount)} at ${siteWord(n.jobs)}; from contract or prior month`)
     if (n.kind === 'revenue_allocated') add('', 'alloc', 'Parent billing spread', `${money(n.amount)} over ${siteWord(n.jobs)} by ${n.weight === 'actual_hours' ? `${monthLabel(revenueMonth)} hours worked` : n.weight === 'week_hours' ? 'week hours' : `${monthLabel(revenueMonth)} budget hours`}`)
   }
+  const payroll = summary.sites.filter((r) => r.labor > 0 && r.labor_basis === 'payroll_rate')
+  if (payroll.length) add('', 'payroll', 'Labor source', `WinTeam hours at WinTeam pay rates, ${siteWord(payroll.length)}`)
   if (flags.revenueLag) add('bad', 'lag', 'Invoicing month', `${monthLabel(flags.revenueLag.revenueMonth)}; ${monthLabel(flags.revenueLag.expectedMonth)} job cost not loaded`)
   for (const s of flags.failedSyncs) add('bad', `s${s.integration}`, `${SYNC_NAME[s.integration] ?? 'WinTeam'} sync failed`, s.at ? s.at.slice(0, 10) : '')
   if (flags.weekInProgress) add('warn', 'prog', 'Week in progress', 'Partial hours and labor')

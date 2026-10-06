@@ -392,7 +392,7 @@ LeadershipAccount = { slug, name, featured, sort, target_labor_pct, watch_band, 
   fallback_segment, revenue_allocation: 'none'|'budget_hours', cost_basis: 'labor'|'labor_plus_vendor', segment_label, vendor_label,
   segments: [{name, sort, target_labor_pct|null}], sites, needs_review, updated_at, updated_by }
 LeadershipRow = { week_start, week_end, company, job_number, site_name, parent_account, account_slug|null (Other), segment, role: 'site'|'catch_all'|'non_billed',
-  needs_review, hours, ot_hours, labor, labor_basis: 'pay_report'|'trailing_rate_estimate', ot_dollars (full 1.5x pay), budget_hours, budget_dollars,
+  needs_review, hours, ot_hours, labor, labor_basis: 'pay_report'|'payroll_rate'|'trailing_rate_estimate' (payroll_rate: WinTeam hours at their WinTeam pay rates, added 2026-10-06), ot_dollars (full 1.5x pay), budget_hours, budget_dollars,
   employees, days_with_labor, revenue_month, revenue_month_amount, revenue_allocated, revenue_month_basis, invoice_week, prior_revenue, prior_labor,
   prior_labor_basis: 'pay_report'|'job_cost', prior_sub, prior_sub_basis: 'job_cost'|'ap_distribution', delivery_model, sub_week, sub_week_basis,
   consumables_cost|null, consumables_basis|null, latitude, longitude, city, state_province }
