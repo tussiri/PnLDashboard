@@ -401,8 +401,9 @@ LeadershipImportFile = { import_file_id, kind, file_name, origin: 'upload'|'inbo
 
 Row rules (`mart.leadership_week`): labor, hours, OT hours and OT dollars come from the imported Pay
 Report when it covers every passed day of the company's week, else from `mart.job_week` (trailing-rate
-labor; OT dollars estimated at 1.5x the straight-time rate). `revenue_month` = the latest month with
-job-cost revenue before the month the week ends in; `revenue_month_amount` its revenue for the job.
+labor; OT dollars estimated at 1.5x the straight-time rate). `revenue_month` = the week's own month (the
+month holding its Thursday) once it has job-cost revenue, else the latest month before it that has
+(changed 2026-10-05; it was always the month before the week's); `revenue_month_amount` its revenue for the job.
 `prior_labor` = the Pay Report total when it covers the whole month, else job-cost labor;
 `prior_sub` = the greater of the job-cost subcontract line and AP distributions in the subcontract GL
 range. A job with revenue in the revenue month has a row even without labor that week. `sub_week` is
