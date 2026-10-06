@@ -5,7 +5,7 @@ Three things are pinned without a database:
 1. the day / invoice grain precedence rule (migration 011 views) through the pure mirror functions
    in marts.py, plus string assertions on the migration and on the SQL every consumer emits (no
    consumer reads core.fact_timekeeping / fact_ar_invoice / fact_ap_invoice directly any more);
-2. the pricing of API punches that arrive without a rate (normalize.price_unpriced_punches and its
+2. the pricing of API punches (normalize.price_punches: own rate, employee's latest, trailing; and its
    pure mirror trailing_rates / price_punch: the reference loader's trailing job-rate rule);
 3. the scope of the finance_reference reset: only rows of that source, never the raw landings,
    watermarks or anything the API wrote.
@@ -197,16 +197,26 @@ def test_price_punch_prefers_api_rate_then_job_then_company_then_portfolio() -> 
     assert normalize.price_punch({"job_number": "777", "company": None, "hours": 2, "rate": 0}, {"job": {}, "company": {}, "portfolio": None}) == (None, 0.0, "none")
 
 
+def test_price_punch_pays_overtime_at_time_and_a_half_and_falls_back_to_the_employee_rate() -> None:
+    rates = {"job": {"34": 19.0}, "company": {"Crane IFS": 21.4}, "portfolio": 20.0}
+    # 10 hours, 2 of them OT, at $18: 10 x 18 + 0.5 x 2 x 18
+    assert normalize.price_punch({"job_number": "34", "company": "Crane IFS", "hours": 10, "overtime_hours": 2, "rate": 18.0}, rates) == (198.0, 18.0, "hours_x_rate")
+    employee = {("10321", "Crane IFS"): 17.5}
+    punch = {"job_number": "34", "company": "Crane IFS", "employee_source_id": "10321", "hours": 8, "rate": None}
+    assert normalize.price_punch(punch, rates, employee) == (140.0, 17.5, "employee_rate")
+    assert normalize.price_punch(punch, rates) == (152.0, 19.0, "trailing_job_rate")  # no employee rate known
+
+
 def test_price_punch_takes_the_company_rate_when_the_job_rate_is_not_a_wage() -> None:
     rates = {"job": {"34": 203.31}, "company": {"Crane IFS": 21.4}, "portfolio": 20.0}
     assert normalize.price_punch({"job_number": "34", "company": "Crane IFS", "hours": 10, "rate": None}, rates) == (214.0, 21.4, "trailing_job_rate")
 
 
 def test_the_pricing_sql_guards_and_reprices_implausible_job_rates() -> None:
-    assert "%(max_ratio)s * cr.rate" in normalize.PRICE_UNPRICED_SQL
+    assert "%(max_ratio)s * cr.rate" in normalize.PRICE_PUNCHES_SQL
     assert "t.rate > %(max_ratio)s * cr.rate" in normalize.REPRICE_IMPLAUSIBLE_SQL
     import re
-    for sql in (normalize.PRICE_UNPRICED_SQL, normalize.REPRICE_IMPLAUSIBLE_SQL):
+    for sql in (normalize.PRICE_PUNCHES_SQL, normalize.REPRICE_IMPLAUSIBLE_SQL):
         assert not re.search(r"%(?!\(\w+\)s)", sql)  # psycopg reads every % as a placeholder
 
 
@@ -239,25 +249,29 @@ class RecordingConn:
         return RecordingCursor(self)
 
 
-def test_timekeeping_normalization_prices_api_rows_at_trailing_rate() -> None:
+def test_timekeeping_normalization_prices_api_rows_at_their_rate_then_employee_then_trailing() -> None:
     conn = RecordingConn()
     normalize.normalize_timekeeping(conn)
-    pricing = [(flat(sql), params) for sql, params in conn.statements if "labor_cost_basis = %(basis)s" in sql]
-    assert len(pricing) == 2  # price the unpriced, then re-price implausible job rates (any source)
+    is_pricing = lambda sql: "WITH closed AS" in sql and "fact_timekeeping" in sql  # noqa: E731
+    pricing = [(flat(sql), params) for sql, params in conn.statements if is_pricing(sql)]
+    assert len(pricing) == 2  # price every API punch, then re-price implausible trailing rates (any source)
     text, params = pricing[0]
     assert params == {"source": "winteam_api", "lag_days": 5, "months": 3, "basis": "trailing_job_rate", "max_ratio": 3.0}
-    assert "t.rate > %(max_ratio)s * cr.rate" in pricing[1][0]
-    assert "FROM mart.v_job_cost_month_effective" in text
-    assert "WHERE t.source = %(source)s AND t.labor_cost_basis IS DISTINCT FROM %(basis)s" in text
-    assert re.search(r"UPDATE core\.fact_timekeeping t SET .* WHERE u\.timekeeping_key = t\.timekeeping_key AND t\.source = %\(source\)s AND u\.rate IS NOT NULL", text)
-    assert "jr.rate <= %(max_ratio)s * cr.rate" in text and "coalesce(cr.rate, pr.rate, jr.rate)" in text
-    assert "recency <= %(months)s" in text
+    assert "t.rate > %(max_ratio)s * cr.rate" in pricing[1][1] or "t.rate > %(max_ratio)s * cr.rate" in pricing[1][0]
+    assert "FROM mart.v_job_cost_month_effective" in text and "recency <= %(months)s" in text
+    # own rate, then the employee's latest, then the guarded trailing rate
+    assert "CASE WHEN p.api_rate > 0 THEN p.api_rate WHEN er.rate > 0 THEN er.rate WHEN jr.rate IS NOT NULL AND (cr.rate IS NULL OR jr.rate <= %(max_ratio)s * cr.rate) THEN jr.rate" in text
+    assert "SELECT DISTINCT ON (employee_source_id, company) employee_source_id, company, api_rate AS rate" in text
+    # full pay at a pay rate; the trailing payroll rate prices hours only
+    assert "CASE WHEN basis = %(basis)s THEN hours * rate ELSE (hours + 0.5 * ot + dt) * rate END" in text
+    # idempotent: only punches whose cost changes are written
+    assert "t.labor_cost IS DISTINCT FROM c.labor_cost" in text and "WHERE t.source = %(source)s" in text
     # the upsert itself still prices rate > 0 rows as hours x rate and leaves the others NULL / 'none'
     upsert = flat(next(sql for sql, _ in conn.statements if "INSERT INTO core.fact_timekeeping" in sql))
     assert "CASE WHEN x.rate > 0 THEN round(coalesce(x.hours, 0) * x.rate, 2) END" in upsert
     assert "CASE WHEN x.rate > 0 THEN 'hours_x_rate' ELSE 'none' END" in upsert
     # ordering: upsert, overtime derivation, then pricing
-    order = [i for i, (sql, _) in enumerate(conn.statements) if "INSERT INTO core.fact_timekeeping" in sql or "labor_cost_basis = %(basis)s" in sql]
+    order = [i for i, (sql, _) in enumerate(conn.statements) if "INSERT INTO core.fact_timekeeping" in sql or is_pricing(sql)]
     assert order == sorted(order) and len(order) == 3
 
 

@@ -1063,7 +1063,8 @@ export interface TrackRecordQuery {
 
 export type InvoicingBasis = 'job_cost_month_prorated' | 'ar_invoice_prorated' | 'contract' | 'carry_forward' | 'none'
 export type BudgetBasis = 'daily_budget' | 'hbc' | 'none'
-export type LaborCostBasis = 'trailing_job_rate' | 'job_cost'
+/** How a week's labor dollars were priced: the punches' own WinTeam rate, the employee's latest rate, the job's trailing rate, or job cost. */
+export type LaborCostBasis = 'hours_x_rate' | 'employee_rate' | 'trailing_job_rate' | 'job_cost'
 
 export interface ExecutiveBusinessUnit {
   key: string
