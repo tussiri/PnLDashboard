@@ -97,9 +97,9 @@ export function CompanyStory({ months, accountNames, week, budgets, budgetsLoadi
     : ''
 
   return <div className="story">
-    <Section id="revenue" wide title="Revenue" subtitle={`Job cost revenue by month, ${range}`}
+    <Section id="revenue" wide title="Revenue" subtitle={`Revenue by month, ${range}`}
       figures={[
-        { metric: 'storyRevenue', value: money(rev.revenue), detail: `${rev.closedMonths} closed months` },
+        { metric: 'storyRevenue', value: money(rev.revenue), detail: `${rev.closedMonths} closed months${rev.yearToDate && rev.yearToDate.months < rev.closedMonths ? `; ${compact(rev.yearToDate.revenue)} in ${rev.yearToDate.year}` : ''}` },
         { metric: 'storyRevenueTrend', value: signed(rev.trend?.change ?? null), tone: rev.trend?.change == null ? '' : rev.trend.change < 0 ? 'bad' : 'ok',
           detail: rev.trend ? `${monthShort(rev.trend.recentFrom)} to ${monthShort(rev.trend.recentTo)} against the 3 before` : 'Needs 6 closed months' },
         { metric: 'storyGrossMargin', value: pct(rev.margin), detail: rev.grossProfit == null ? undefined : `${money(rev.grossProfit)} gross profit` },

@@ -39,6 +39,13 @@ describe('storyWindow and revenueStory', () => {
     expect(r.margin).toBeCloseTo(0.2)
     expect(r.laborPct).toBeCloseTo(0.6)
     expect(r.openMonths).toEqual(['2026-09-01'])
+    expect(r.yearToDate).toEqual({ year: '2026', revenue: 800, months: 8 })
+  })
+  it('gives the calendar-year part of a window that spans two years', () => {
+    const months = [month('2025-11', { revenue: 50 }), month('2025-12', { revenue: 50 }), month('2026-01', { revenue: 100 }), month('2026-02', { revenue: 100, closed: false })]
+    const r = revenueStory(storyWindow(months))
+    expect(r.revenue).toBe(200)
+    expect(r.yearToDate).toEqual({ year: '2026', revenue: 100, months: 1 })
   })
   it('compares the latest three closed months with the three before', () => {
     const r = revenueStory(storyWindow(series(6, (i) => ({ revenue: i < 3 ? 100 : 110 }))))

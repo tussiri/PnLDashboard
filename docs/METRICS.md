@@ -26,7 +26,7 @@ Revenue of every account over the closed months of the last 12 months the job co
 sum(revenue) over closed months in the window
 ```
 
-Job-cost-closed months only: a month is closed when it has revenue and its job cost direct labor is at least 70% of timekeeping labor (or there is no timekeeping), and cost on jobs with no revenue that month is under 20% of revenue. Open months are shown but not counted.
+The year to date under Supporting detail is the calendar-year part of this window; the figure gives it beside the total. Job-cost-closed months only: a month is closed when it has revenue and its job cost direct labor is at least 70% of timekeeping labor (or there is no timekeeping), and cost on jobs with no revenue that month is under 20% of revenue. Open months are shown but not counted.
 
 ### Last 3 months
 

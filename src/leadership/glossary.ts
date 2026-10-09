@@ -19,7 +19,7 @@ export const GLOSSARY = {
     term: 'Revenue',
     definition: 'Revenue of every account over the closed months of the last 12 months the job cost covers: job cost revenue, or Relay AR for a subcontracted FedEx site.',
     formula: 'sum(revenue) over closed months in the window',
-    caveat: CLOSED,
+    caveat: 'The year to date under Supporting detail is the calendar-year part of this window; the figure gives it beside the total. ' + CLOSED,
   },
   storyRevenueTrend: {
     term: 'Last 3 months',

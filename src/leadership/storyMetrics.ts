@@ -43,6 +43,8 @@ export interface RevenueStory {
   closedMonths: number
   /** Revenue of the latest TREND closed months against the TREND closed months before them; null without both. */
   trend: { recent: number; prior: number; change: number | null; recentFrom: string; recentTo: string } | null
+  /** The closed months of the latest closed month's year: what Supporting detail calls the year to date. */
+  yearToDate: { year: string; revenue: number; months: number } | null
   openMonths: string[]
   flagged: { month: string; flags: CompanyMonth['flags'] }[]
 }
@@ -58,6 +60,8 @@ export function revenueStory(w: StoryWindow, trendSize = TREND): RevenueStory {
     : null
   if (trend) trend.change = trend.prior > 0 ? trend.recent / trend.prior - 1 : null
   const known = w.closed.length > 0
+  const year = w.closed.at(-1)?.month.slice(0, 4)
+  const ytd = year ? w.closed.filter((m) => m.month.startsWith(year)) : []
   return {
     revenue: known ? revenue : null,
     grossProfit: known ? profit : null,
@@ -65,6 +69,7 @@ export function revenueStory(w: StoryWindow, trendSize = TREND): RevenueStory {
     laborPct: ratio(labor, revenue),
     closedMonths: w.closed.length,
     trend,
+    yearToDate: year && ytd.length ? { year, revenue: sum(ytd, (m) => m.revenue), months: ytd.length } : null,
     openMonths: w.months.filter((m) => !m.closed && m.revenue > 0).map((m) => m.month),
     flagged: w.closed.filter((m) => m.flags.length).map((m) => ({ month: m.month, flags: m.flags })),
   }
