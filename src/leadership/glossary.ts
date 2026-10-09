@@ -12,12 +12,12 @@ export interface MetricDefinition {
   caveat?: string
 }
 
-const CLOSED = 'Job-cost-closed months only: a month is closed when it has revenue and its job cost direct labor is at least 70% of timekeeping labor (or there is no timekeeping). Open months are shown but not counted.'
+const CLOSED = 'Job-cost-closed months only: a month is closed when it has revenue and its job cost direct labor is at least 70% of timekeeping labor (or there is no timekeeping), and cost on jobs with no revenue that month is under 20% of revenue. Open months are shown but not counted.'
 
 export const GLOSSARY = {
   storyRevenue: {
     term: 'Revenue',
-    definition: 'Job cost revenue of every account over the closed months of the last 12 months the job cost covers.',
+    definition: 'Revenue of every account over the closed months of the last 12 months the job cost covers: job cost revenue, or Relay AR for a subcontracted FedEx site.',
     formula: 'sum(revenue) over closed months in the window',
     caveat: CLOSED,
   },

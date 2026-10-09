@@ -5,7 +5,7 @@ import { accountsStory, allocationsStory, largestRemainder, per100, planStory, r
 const money = { revenue: 0, direct_labor: 0, management_wages: 0, subcontractors: 0, payroll_taxes: 0, gross_profit: 0 }
 function month(m: string, v: Partial<CompanyMonth> = {}): CompanyMonth {
   return {
-    ...money, month: `${m}-01`, closed: true, timekeeping_labor: 0, by_company: {}, by_account: {}, statement: {},
+    ...money, month: `${m}-01`, closed: true, timekeeping_labor: 0, unbilled_cost: 0, by_company: {}, by_account: {}, statement: {},
     allocations: { management_wages: 0, burden: 0, overhead: 0, burden_rate: null, burden_source: null, overhead_source: null }, flags: [], ...v,
   }
 }

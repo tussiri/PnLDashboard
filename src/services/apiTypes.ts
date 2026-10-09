@@ -1378,6 +1378,8 @@ export interface CompanyMonth extends CompanyMoney {
   month: string
   closed: boolean
   timekeeping_labor: number
+  /** Job cost on jobs with no revenue that month; 20% of revenue or more leaves the month open. */
+  unbilled_cost: number
   by_company: Record<string, CompanyMoney>
   by_account: Record<string, CompanyMoney>
   statement: Record<string, number>

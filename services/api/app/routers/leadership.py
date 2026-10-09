@@ -403,18 +403,36 @@ tk AS (
 )
 SELECT months.month, jc.company, jc.account, sum(jc.revenue) AS revenue, sum(jc.direct_labor) AS direct_labor,
        sum(jc.management_wages) AS management_wages, sum(jc.subcontractors) AS subcontractors,
-       sum(jc.payroll_taxes_insurance) AS payroll_taxes, sum(jc.gross_profit) AS gross_profit, max(tk.labor) AS timekeeping_labor
+       sum(jc.payroll_taxes_insurance) AS payroll_taxes, sum(jc.gross_profit) AS gross_profit, max(tk.labor) AS timekeeping_labor,
+       sum(jc.revenue - jc.gross_profit) FILTER (WHERE coalesce(jc.revenue, 0) = 0) AS unbilled_cost
 FROM months LEFT JOIN jc USING (month) LEFT JOIN tk USING (month)
 GROUP BY months.month, jc.company, jc.account
 ORDER BY months.month
 """
 MONEY = ("revenue", "direct_labor", "management_wages", "subcontractors", "payroll_taxes", "gross_profit")
 
+# A month is closed when its job cost labor is at least CLOSED_LABOR_SHARE of timekeeping labor and the
+# cost booked to jobs with no revenue that month (after the Relay AR rule) is under UNBILLED_COST_SHARE of
+# revenue. Catch-all and overhead jobs carry 4-6% of revenue in a normal month and up to about 15% in a summer
+# month (school districts); without Relay AR, Jul 2026 carried 51% and Aug 28% (FedEx subcontracted sites
+# with their subcontract cost and no revenue), which read as a loss rather than as an open month.
+CLOSED_LABOR_SHARE = 0.7
+UNBILLED_COST_SHARE = 0.20
+
+
+def is_closed(m: dict[str, Any]) -> bool:
+    """Whether a /leadership/company month's job cost is complete enough to count."""
+    if not m["revenue"] > 0:
+        return False
+    if m["timekeeping_labor"] and m["direct_labor"] < CLOSED_LABOR_SHARE * m["timekeeping_labor"]:
+        return False
+    return m["unbilled_cost"] < UNBILLED_COST_SHARE * m["revenue"]
+
 
 @router.get("/company", dependencies=[Depends(permissions.require_permission("view.company"))])
 def leadership_company(request: Request, months: int = Query(14, ge=1, le=36)) -> dict[str, Any]:
     """Company health by month: job cost totals by business unit and by account, whether each month is
-    closed (job cost labor at least 70% of timekeeping labor), the company income statement, and the
+    closed (is_closed: job cost labor posted and little cost on jobs without revenue), the company income statement, and the
     month's allocations. A subcontracted Relay (FedEx) site's revenue is Relay AR, as in the leadership mart.
     Every account, so a user limited to accounts is refused."""
     if allowed_accounts(request) is not None:
@@ -429,12 +447,14 @@ def leadership_company(request: Request, months: int = Query(14, ge=1, le=36)) -
         by_month: dict[date, dict[str, Any]] = {}
         for r in cursor.fetchall():
             m = by_month.setdefault(r["month"], {"month": r["month"].isoformat(), **{k: 0.0 for k in MONEY},
-                                                 "timekeeping_labor": float(r["timekeeping_labor"] or 0), "by_company": {}, "by_account": {}})
+                                                 "timekeeping_labor": float(r["timekeeping_labor"] or 0), "unbilled_cost": 0.0,
+                                                 "by_company": {}, "by_account": {}})
             if r["company"] is None and r["account"] is None and not r["revenue"]:
                 continue
             values = {k: float(r[k] or 0) for k in MONEY}
             for k, v in values.items():
                 m[k] += v
+            m["unbilled_cost"] += float(r["unbilled_cost"] or 0)
             for key, group in ((r["company"] or "Unassigned", "by_company"), (r["account"] or "other", "by_account")):
                 slot = m[group].setdefault(key, {k: 0.0 for k in MONEY})
                 for k, v in values.items():
@@ -447,7 +467,7 @@ def leadership_company(request: Request, months: int = Query(14, ge=1, le=36)) -
         for key in month_keys:
             m = by_month[key]
             fig = figures[key.isoformat()]
-            m["closed"] = bool(m["revenue"] > 0 and (m["timekeeping_labor"] == 0 or m["direct_labor"] >= 0.7 * m["timekeeping_labor"]))
+            m["closed"] = is_closed(m)
             m["statement"] = lines.get(key, {})
             m["allocations"] = {
                 "management_wages": m["management_wages"] if cfg["management_wages"]["enabled"] else 0.0,
