@@ -89,7 +89,13 @@ export function largestRemainder(values: number[], total = 100): number[] {
 
 export type Per100Key = 'labor' | 'subcontractors' | 'taxes' | 'other' | 'profit'
 export interface Per100Part { key: Per100Key; label: string; amount: number; squares: number }
-export interface Per100Story { revenue: number; parts: Per100Part[] }
+export interface Per100Story {
+  revenue: number
+  /** Lines with an amount, in this order: labor, subcontractors, taxes, other, profit. */
+  parts: Per100Part[]
+  /** Cost lines that are zero across every month: not carried in the job cost, so left off the squares. */
+  missing: string[]
+}
 
 /** Within this share of revenue, a negative "other job cost" is rounding and reads as zero. */
 const OTHER_TOLERANCE = 0.005
@@ -113,8 +119,10 @@ export function per100(closed: CompanyMonth[]): Per100Story | null {
     ['other', 'Other job cost', other], ['profit', 'Gross profit', profit],
   ]
   if (amounts.some(([, , v]) => v < 0)) return null
-  const squares = largestRemainder(amounts.map(([, , v]) => v))
-  return { revenue, parts: amounts.map(([key, label, amount], i) => ({ key, label, amount, squares: squares[i] })) }
+  const shown = amounts.filter(([key, , v]) => v > 0 || key === 'labor' || key === 'profit')
+  const missing = amounts.filter(([key, , v]) => v === 0 && (key === 'subcontractors' || key === 'taxes')).map(([, label]) => label)
+  const squares = largestRemainder(shown.map(([, , v]) => v))
+  return { revenue, parts: shown.map(([key, label, amount], i) => ({ key, label, amount, squares: squares[i] })), missing }
 }
 
 // --- 3. Accounts ------------------------------------------------------------------

@@ -60,9 +60,11 @@ describe('per100', () => {
     expect(p.parts.map((x) => [x.key, x.squares])).toEqual([['labor', 60], ['subcontractors', 10], ['taxes', 8], ['other', 5], ['profit', 17]])
     expect(p.parts.reduce((a, x) => a + x.squares, 0)).toBe(100)
   })
-  it('reads rounding in other job cost as zero', () => {
+  it('reads rounding in other job cost as zero and leaves zero lines off the squares', () => {
     const p = per100([month('2026-01', { revenue: 1000, direct_labor: 700, gross_profit: 302 })])!
-    expect(p.parts.find((x) => x.key === 'other')?.amount).toBe(0)
+    expect(p.parts.map((x) => x.key)).toEqual(['labor', 'profit'])
+    expect(p.parts.reduce((a, x) => a + x.squares, 0)).toBe(100)
+    expect(p.missing).toEqual(['Subcontractors', 'Payroll taxes and insurance'])
   })
   it('is not drawn for a gross loss or costs that do not reconcile', () => {
     expect(per100([month('2026-01', { revenue: 100, direct_labor: 120, gross_profit: -20 })])).toBeNull()
@@ -133,5 +135,15 @@ describe('allocationsStory', () => {
   })
   it('is null when nothing is allocated', () => {
     expect(allocationsStory([month('2026-01', { revenue: 200, gross_profit: 50 })])).toBeNull()
+  })
+})
+
+describe('compact', () => {
+  it('writes negatives in parentheses and zero plainly', async () => {
+    const { compact } = await import('./CompanyStory')
+    expect(compact(0)).toBe('$0')
+    expect(compact(-1_000_000)).toBe('($1.0M)')
+    expect(compact(-506_731)).toBe('($507K)')
+    expect(compact(34_400_000)).toBe('$34.4M')
   })
 })

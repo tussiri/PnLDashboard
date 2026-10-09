@@ -54,8 +54,14 @@ function Section({ id, title, subtitle, figures, chart, table, legend, note, wid
 const PER100_COLORS: Record<Per100Key, string> = {
   labor: 'var(--s1)', subcontractors: 'var(--s2)', taxes: 'var(--s3)', other: 'var(--muted)', profit: 'var(--ok)',
 }
-/** Short dollars for axes and bar ends: "$840K", "$10.7M". */
-const compact = (v: number | null | undefined) => (v != null && Math.abs(v) >= 1_000_000 ? `$${(v / 1_000_000).toFixed(1)}M` : moneyK(v))
+/** Short dollars for axes, bar ends and end labels, negatives in parentheses as `money` writes them: "$0", "$840K", "($1.2M)". */
+export const compact = (v: number | null | undefined) => {
+  if (v == null || !Number.isFinite(v)) return money(v)
+  if (v === 0) return '$0'
+  const a = Math.abs(v)
+  const body = a >= 1_000_000 ? `$${(a / 1_000_000).toFixed(1)}M` : moneyK(a)
+  return v < 0 ? `(${body})` : body
+}
 const signed = (v: number | null) => (v == null ? pct(v) : `${v >= 0 ? '+' : '-'}${pct(Math.abs(v))}`)
 const of = (part: number, whole: number, unit: string) => `${part.toLocaleString('en-US')} of ${whole.toLocaleString('en-US')} ${unit}`
 const span = (from: string | null, to: string | null) => (from && to ? `${monthLabel(from)} to ${monthLabel(to)}` : '')
@@ -121,7 +127,7 @@ export function CompanyStory({ months, accountNames, week, budgets, budgetsLoadi
         : <Empty>Not drawn: costs exceed or do not reconcile to revenue.</Empty>}
       table={split ? <table><thead><tr><th className="nosort l">Line</th><th className="nosort">Amount</th><th className="nosort">Of $100</th></tr></thead>
         <tbody>{split.parts.map((p) => <tr key={p.key}><td className="l">{p.label}</td><td>{money(p.amount)}</td><td>${p.squares}</td></tr>)}</tbody></table> : undefined}
-      note={`Rounded to whole dollars that sum to 100.${flagged}`} />
+      note={`Rounded to whole dollars that sum to 100.${split?.missing.length ? ` Not in the job cost: ${split.missing.join(', ').toLowerCase()}.` : ''}${flagged}`} />
 
     <Section id="accounts" title="Accounts" subtitle={`Closed-month revenue by account, ${range}`}
       figures={[
@@ -158,12 +164,12 @@ export function CompanyStory({ months, accountNames, week, budgets, budgetsLoadi
 
     {budgetsLoading ? <div className="card story-card"><div className="skel" style={{ height: 320 }} aria-hidden="true" /></div> : plan ? <PlanSection plan={plan} /> : alloc ? <Section id="plan" title="After allocations" subtitle={`Gross profit less allocations by month, ${range}`}
       figures={[
-        { metric: 'storyAfterAllocations', value: money(alloc.after), tone: alloc.after < 0 ? 'bad' : '', detail: `${moneyK(alloc.allocated)} allocated` },
+        { metric: 'storyAfterAllocations', value: money(alloc.after), tone: alloc.after < 0 ? 'bad' : '', detail: `${compact(alloc.allocated)} allocated` },
         { metric: 'storyAfterAllocationsShare', value: pct(alloc.share), detail: 'Of revenue' },
       ]}
       legend={<><Swatch color="var(--accent)" label="After allocations" /><Swatch color="var(--muted)" label="Gross profit" /></>}
       chart={<StoryLine caption="Gross profit after allocations by closed month, over gross profit." format={compact}
-        endLabel={money(alloc.months.at(-1)!.after)}
+        endLabel={compact(alloc.months.at(-1)!.after)}
         points={alloc.months.map((m) => ({ key: m.month, label: monthShort(m.month), value: m.after, band: m.grossProfit,
           tip: <><b>{monthLabel(m.month)}</b><span>Gross profit {money(m.grossProfit)}</span><span>Allocated {money(m.allocated)}</span><span>After {money(m.after)}</span></> }))} />}
       table={<table><thead><tr><th className="nosort l">Month</th><th className="nosort">Gross profit</th><th className="nosort">Allocated</th><th className="nosort">After allocations</th></tr></thead>
