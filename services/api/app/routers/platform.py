@@ -23,7 +23,7 @@ from ..common import (PRIMARY_SOURCES, configured_key_accounts, month_status_row
 from ..config import settings
 from ..db import connection, database_ready
 from .. import reconcile
-from ..sources import finance_reference, photovalidation
+from ..sources import finance_reference, hrdashboard, photovalidation
 from ..winteam import RESOURCES, WinTeamError, parse_paged, sarus_ingestion, winteam
 
 logger = logging.getLogger("platform")
@@ -377,6 +377,24 @@ def relay_sync(rebuild: bool = Query(True, description="Rebuild the marts after 
     result = relay.sync()
     loaded = any(r["status"] == "succeeded" for r in result["runs"])
     return jsonable({**result, "marts": marts.rebuild_all(initiated_by="relay-sync") if rebuild and loaded else None})
+
+
+@router.get("/integrations/hr")
+def hr_status() -> dict[str, Any]:
+    """HrDashboard site staffing: wired or not, last pull, rows and sites held, sites not mapped to a job."""
+    return jsonable(hrdashboard.status())
+
+
+@router.post("/integrations/hr/sync", dependencies=[Depends(require_admin)])
+def hr_sync() -> dict[str, Any]:
+    """Pull the last weeks of site staffing from HrDashboard (GET only) and upsert them. No mart rebuild
+    is needed: the staffing route reads core.hr_site_staffing_week directly."""
+    if not hrdashboard.configured():
+        raise HTTPException(status_code=409, detail="HrDashboard is not configured (HR_BASE_URL and HR_EXPORT_TOKEN)")
+    try:
+        return jsonable(hrdashboard.sync())
+    except hrdashboard.HrDashboardError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 @router.get("/integrations/photovalidation")

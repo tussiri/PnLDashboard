@@ -1,7 +1,8 @@
 """Staffing request routes (docs/api-contract.md "Staffing requests").
 
 Serves the PhotoValidation request lines held in core.fact_staffing_request for one site, with the
-week's requested and pending headcount computed by the same rule as mart.job_week (app/staffing.py).
+week's requested and pending headcount computed by the same rule as mart.job_week (app/staffing.py),
+and the week's HrDashboard figures from core.hr_site_staffing_week (app/sources/hrdashboard.py).
 Analyst and admin roles only: the lines carry requested pay rates.
 """
 from __future__ import annotations
@@ -15,6 +16,7 @@ from .. import permissions, staffing
 from ..common import jsonable, source_block
 from ..config import settings
 from ..db import connection
+from ..sources import hrdashboard
 
 router = APIRouter(prefix="/staffing")
 
@@ -55,6 +57,7 @@ def job_requests(company: str, job_number: str, week: str | None = Query(None, d
         cursor.execute("SELECT EXISTS (SELECT 1 FROM core.fact_staffing_request) AS loaded")
         loaded = bool(cursor.fetchone()["loaded"])
         pulled = staffing.last_pull(cursor)
+        hr = hrdashboard.job_week(cursor, job["job_key"], anchor)
     demand = staffing.demand_at(lines, staffing.week_moment(anchor, now)) if loaded else {"requested_headcount": None, "pending_requested_headcount": None}
     return {
         "source": source_block(),
@@ -63,4 +66,5 @@ def job_requests(company: str, job_number: str, week: str | None = Query(None, d
         "week": anchor.isoformat(),
         **demand,
         "lines": [line_out(line, now) for line in lines],
+        "hr": {"configured": hrdashboard.configured(), **(jsonable(dict(hr)) if hr else {})},
     }

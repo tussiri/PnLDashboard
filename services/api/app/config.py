@@ -179,6 +179,11 @@ class Settings:
     relay_base_url: str
     relay_export_token: str
     relay_timeout_seconds: int
+    # HrDashboard site-staffing service API (app/sources/hrdashboard.py). Server-side only.
+    hr_base_url: str
+    hr_export_token: str
+    hr_timeout_seconds: int
+    hr_tenant_companies: str
     # Worker intervals in minutes (0 = off): the light WinTeam timekeeping sync and the PhotoValidation pull.
     winteam_sync_interval_minutes: int
     pv_sync_interval_minutes: int
@@ -271,6 +276,11 @@ class Settings:
             relay_base_url=_text(env, "RELAY_BASE_URL").rstrip("/"),
             relay_export_token=_text(env, "RELAY_EXPORT_TOKEN"),
             relay_timeout_seconds=_integer(env, "RELAY_TIMEOUT_SECONDS", 60, maximum=600),
+            hr_base_url=_text(env, "HR_BASE_URL").rstrip("/"),
+            hr_export_token=_text(env, "HR_EXPORT_TOKEN"),
+            hr_timeout_seconds=_integer(env, "HR_TIMEOUT_SECONDS", 60, maximum=600),
+            # HrDashboard's WinTeam tenant -> this warehouse's WinTeam database.
+            hr_tenant_companies=_text(env, "HR_TENANT_COMPANIES", "primary:Crane,SAR:Sarus"),
             # The worker's light WinTeam sync (timekeeping; jobs at most once per 20 hours) and the
             # PhotoValidation pull run every this many minutes. 0 turns the schedule off; the nightly
             # sync and the Admin buttons are unaffected.
@@ -372,6 +382,10 @@ class Settings:
             parsed = urlparse(self.finance_reference_database_url)
             if parsed.scheme not in {"postgresql", "postgres"} or not parsed.hostname:
                 raise ConfigurationError("FINANCE_REFERENCE_DATABASE_URL must be a postgresql:// URL (empty = source not configured)")
+        if self.hr_base_url:
+            parsed = urlparse(self.hr_base_url)
+            if parsed.scheme not in {"http", "https"} or not parsed.netloc or parsed.username or parsed.password:
+                raise ConfigurationError("HR_BASE_URL must be an http(s) origin without credentials")
         if self.photovalidation_api_url:
             parsed = urlparse(self.photovalidation_api_url)
             if parsed.scheme not in {"http", "https"} or not parsed.netloc or parsed.username or parsed.password:

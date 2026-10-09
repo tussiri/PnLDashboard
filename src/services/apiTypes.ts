@@ -1650,6 +1650,29 @@ export interface StaffingJobResponse {
   /** Submitted and undecided at the same moment; null before the feed loads. */
   pending_requested_headcount: number | null
   lines: StaffingRequestLine[]
+  /** HrDashboard's figures for the site and week (core.hr_site_staffing_week); absent on older APIs. */
+  hr?: HrSiteStaffingWeek
+}
+
+/**
+ * HrDashboard site staffing for one week. Hires and separations happened in the week; the rest is how
+ * the site stood when HR last answered during that week, null before the first pull that week.
+ */
+export interface HrSiteStaffingWeek {
+  /** HR_BASE_URL and HR_EXPORT_TOKEN are set. */
+  configured: boolean
+  week_start?: string
+  hires?: number | null
+  separations?: number | null
+  budgeted_positions?: number | null
+  /** tracker = the ops staffing tracker; budget / observed = HR's estimate. */
+  positions_source?: 'tracker' | 'budget' | 'observed' | null
+  filled_positions?: number | null
+  open_positions?: number | null
+  active_headcount?: number | null
+  /** employee_master = employed at the site; timekeeping = people who worked there. */
+  headcount_source?: 'employee_master' | 'timekeeping' | null
+  hr_as_of?: string | null
 }
 
 /** GET /integrations/photovalidation */
