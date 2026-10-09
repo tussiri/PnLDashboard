@@ -1,12 +1,14 @@
 import { useMemo } from 'react'
 import { useApiQuery } from '../../hooks/useApiQuery'
-import type { CompanyMonth, CompanyResponse, LeadershipRow } from '../../services/apiTypes'
+import type { BudgetMonth, CompanyMonth, CompanyResponse, LeadershipRow } from '../../services/apiTypes'
 import { queryKey } from '../../services/queryClient'
 import { RevenueMarginChart, seriesColor, StackedMoneyChart, useTokens } from '../charts'
+import { CompanyStory } from '../CompanyStory'
 import { rowsOfWeek, segmentOrder, useRows } from '../data'
 import { hours, money, moneyK, pct } from '../format'
 import { accountSummary, statusOf, type AccountSummary } from '../metrics'
 import { monthLabel, monthShort, weekRange } from '../routes'
+import { useRefreshOnRebuild } from '../refresh'
 import { PageHeader, updatedLine } from '../Shell'
 import { useLeadership } from '../state'
 import { Badge, ChartCard, Empty, Kpi, LoadError, Skeleton, SortTable, Swatch, toneOf, VocabContext, type Column } from '../ui'
@@ -18,14 +20,27 @@ const allocOf = (m: CompanyMonth) => m.allocations.management_wages + m.allocati
 
 interface AccountLine { slug: string; name: string; summary: AccountSummary<LeadershipRow> | null; target: number; watchBand?: number; ytdRevenue: number; ytdProfit: number }
 
-/** The company at a glance: the year to date from job cost, the month trend, business units and every account this week. */
+/** Months the story reads (two 12-month windows' worth); the supporting detail shows the last DETAIL_MONTHS. */
+const STORY_MONTHS = 24
+const DETAIL_MONTHS = 14
+
+/**
+ * The company at a glance: the "At a glance" story (CompanyStory), then the supporting detail: the year to
+ * date from job cost, the month trend, business units and every account this week.
+ */
 export function Company() {
-  const { api, keyPrefix, decision, config, featured, optionsFor, weekStart, navigate } = useLeadership()
+  const { api, keyPrefix, decision, config, featured, optionsFor, weekStart, navigate, can } = useLeadership()
   const t = useTokens()
-  const q = useApiQuery<CompanyResponse>(decision ? queryKey(`${keyPrefix}/leadership/company`, { months: 14 }) : null, (signal) => api.leadershipCompany(14, signal), [api])
+  const q = useApiQuery<CompanyResponse>(decision ? queryKey(`${keyPrefix}/leadership/company`, { months: STORY_MONTHS }) : null,
+    (signal) => api.leadershipCompany(STORY_MONTHS, signal), [api])
   const rowsQuery = useRows('featured', 1)
+  const slugs = featured.map((a) => a.slug).join(',')
+  const budgetsQuery = useApiQuery<{ slug: string; months: BudgetMonth[] }[]>(decision && slugs && can('tab.budget') ? queryKey(`${keyPrefix}/leadership/budget/featured`, { slugs }) : null,
+    (signal) => Promise.all(slugs.split(',').map((slug) => api.leadershipBudget(slug, signal).then((b) => ({ slug, months: b.months })))), [api, slugs])
+  useRefreshOnRebuild(config, [q.reload, rowsQuery.reload, budgetsQuery.reload])
   const week = useMemo(() => rowsOfWeek(rowsQuery.data?.rows, weekStart), [rowsQuery.data, weekStart])
-  const months = q.data?.months ?? []
+  const allMonths = q.data?.months ?? []
+  const months = allMonths.slice(-DETAIL_MONTHS)
   const closed = months.filter((m) => m.closed)
   const last = closed.at(-1)
   const year = last?.month.slice(0, 4)
@@ -91,6 +106,12 @@ export function Company() {
   return <>
     <PageHeader title="Company" subtitle={subtitle} account={false} target={false} />
     {q.error ? <LoadError error={q.error} onRetry={q.refetch} /> : !q.data ? <Skeleton height={420} /> : !months.length ? <Empty>No job cost loaded.</Empty> : <>
+      <h2 className="sect-h">At a glance</h2>
+      <CompanyStory months={allMonths} accountNames={Object.fromEntries(q.data.accounts.map((a) => [a.slug, a.name]))}
+        week={{ start: weekStart, loading: !rowsQuery.data && !rowsQuery.error,
+          lines: lines.map((l) => ({ slug: l.slug, name: l.name, laborPct: l.summary?.account.measurePct ?? null, target: l.target, watchBand: l.watchBand, overHours: l.summary?.headerOverHours ?? null })) }}
+        budgets={budgetsQuery.data ?? null} budgetsLoading={budgetsQuery.loading} />
+      <h2 className="sect-h">Supporting detail</h2>
       <div className="kpi-lg">
         <Kpi label={`Revenue ${year} YTD`} value={money(revenue)} sub={`${ytd.length} closed months`} />
         <Kpi label="Gross profit YTD" value={money(profit)} tone={profit < 0 ? 'bad' : ''} sub={`${pct(ratio(profit, revenue))} margin`} />

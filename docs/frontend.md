@@ -13,6 +13,8 @@ React 18 + TypeScript + Vite, Chart.js (react-chartjs-2) and Leaflet. The app li
 | `leadership/Shell.tsx` | Top nav, page header controls (account, week, target), freshness line. |
 | `leadership/Overview.tsx` | The reference Overview: KPIs, notes panel, segment cards, two charts. Used by Home and Account. |
 | `leadership/pages/*` | Home, Account (tabs), SiteDrawer, SiteMap, Vendors, Analytics, Admin. |
+| `leadership/CompanyStory.tsx` | The Company page's "At a glance" story: five cards (revenue, every $100 billed, accounts, this week, against plan or after allocations) above the supporting detail. Math in `storyMetrics.ts` (pure, tested); definitions in `glossary.ts` and `docs/METRICS.md`. |
+| `leadership/storyCharts.tsx`, `reveal.ts`, `refresh.ts` | The story's SVG and HTML charts (CSS motion, not Chart.js), the play-once reveal, and the in-place refresh after a rebuild. |
 | `leadership/charts.tsx`, `ui.tsx` | Chart.js charts (colors from CSS tokens) and shared pieces (KPI, badge, sortable table with CSV, chart card with table view). |
 | `leadership/leadership.css` | Tokens and styles from the reference: 14px base, 1180px shell, light and dark themes. |
 
@@ -28,4 +30,6 @@ a demo banner. Queries are cached by `services/queryClient.ts`, keyed with the d
 - No symbol glyphs or emoji in UI copy (`copy.test.ts`); labels, values, units, dates, definitions.
 - Every chart has a legend or title naming the series, hover tooltips and a table view.
 - Tables sort by keyboard (header buttons with `aria-sort`) and export CSV.
+- Motion only inside `prefers-reduced-motion: no-preference`, played once per element (`reveal.ts`), never on
+  re-render, sort, table toggle or resize; content never stays hidden if the observer fails. Numbers are not animated.
 - After frontend changes run `pnpm test` and `pnpm build`.
