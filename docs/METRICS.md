@@ -20,7 +20,7 @@ and `docs/api-contract.md`.
 
 ### Revenue
 
-Revenue of every account over the closed months of the last 12 months the job cost covers: job cost revenue, or Relay AR for a subcontracted FedEx site.
+Revenue of every account over the closed months of the last 12 months the job cost covers: job cost revenue, or Relay AR for a subcontracted FedEx site. Not the calendar year to date: that figure, the Company Revenue YTD, is given beside it.
 
 ```text
 sum(revenue) over closed months in the window

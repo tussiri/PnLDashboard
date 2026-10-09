@@ -45,6 +45,8 @@ export interface RevenueStory {
   trend: { recent: number; prior: number; change: number | null; recentFrom: string; recentTo: string } | null
   openMonths: string[]
   flagged: { month: string; flags: CompanyMonth['flags'] }[]
+  /** Closed-month revenue in the calendar year of the latest closed month: the Company page's YTD figure. */
+  yearToDate: { year: string; revenue: number } | null
 }
 
 export function revenueStory(w: StoryWindow, trendSize = TREND): RevenueStory {
@@ -58,12 +60,14 @@ export function revenueStory(w: StoryWindow, trendSize = TREND): RevenueStory {
     : null
   if (trend) trend.change = trend.prior > 0 ? trend.recent / trend.prior - 1 : null
   const known = w.closed.length > 0
+  const year = w.closed.at(-1)?.month.slice(0, 4)
   return {
     revenue: known ? revenue : null,
     grossProfit: known ? profit : null,
     margin: ratio(profit, revenue),
     laborPct: ratio(labor, revenue),
     closedMonths: w.closed.length,
+    yearToDate: year ? { year, revenue: sum(w.closed.filter((m) => m.month.startsWith(year)), (m) => m.revenue) } : null,
     trend,
     openMonths: w.months.filter((m) => !m.closed && m.revenue > 0).map((m) => m.month),
     flagged: w.closed.filter((m) => m.flags.length).map((m) => ({ month: m.month, flags: m.flags })),
@@ -119,8 +123,9 @@ export function per100(closed: CompanyMonth[]): Per100Story | null {
     ['other', 'Other job cost', other], ['profit', 'Gross profit', profit],
   ]
   if (amounts.some(([, , v]) => v < 0)) return null
-  const shown = amounts.filter(([key, , v]) => v > 0 || key === 'labor' || key === 'profit')
-  const missing = amounts.filter(([key, , v]) => v === 0 && (key === 'subcontractors' || key === 'taxes')).map(([, label]) => label)
+  // Under a dollar is rounding (other job cost is a remainder of cents when every cost line is accounted for).
+  const shown = amounts.filter(([key, , v]) => Math.round(v) > 0 || key === 'labor' || key === 'profit')
+  const missing = amounts.filter(([key, , v]) => Math.round(v) === 0 && (key === 'subcontractors' || key === 'taxes')).map(([, label]) => label)
   const squares = largestRemainder(shown.map(([, , v]) => v))
   return { revenue, parts: shown.map(([key, label, amount], i) => ({ key, label, amount, squares: squares[i] })), missing }
 }
