@@ -555,6 +555,27 @@ StaffingRequestLine = { line_id, request_id, request_code, site_name, role, shif
 Pulls are recorded in `ops.integration_sync_run` as integration `photovalidation`, so `GET /leadership/config`
 `status.syncs` reports them.
 
+## HrDashboard site staffing, added 2026-10-09
+
+Migration 053, app/sources/hrdashboard.py. The nightly sync (and `POST /integrations/hr/sync`) pulls
+HrDashboard's `GET /api/service/v1/pnl/site-staffing` for the last 8 weeks with `HR_BASE_URL` and
+`HR_EXPORT_TOKEN`, maps HR's WinTeam tenant to `Crane` / `Sarus` by `HR_TENANT_COMPANIES`
+(default `primary:Crane,SAR:Sarus`) and upserts `core.hr_site_staffing_week`, one row per site per week.
+Site-level counts only. Hires and separations are the week's; positions, filled, open and headcount are how
+the site stood when HR last answered during that week, and a pull never replaces a held value with null.
+
+| Route | Response |
+|---|---|
+| `GET /staffing/jobs/{company}/{job_number}?week=` | adds `hr: HrSiteStaffingWeek`; `{configured}` alone when HR holds nothing for the site and week. |
+| `GET /integrations/hr` | `{configured, base_url_host, last_run: {status, completed_at, records_inserted, error_message} \| null, rows, sites, unmapped_sites, latest_week}`. Never returns the token. |
+| `POST /integrations/hr/sync` (admin) | `{status: 'succeeded', fetched, loaded, skipped}`; 409 when not configured, 502 when HR refuses or answers with no mapped rows. |
+
+```
+HrSiteStaffingWeek = { configured, week_start, hires, separations, budgeted_positions,
+  positions_source: 'tracker'|'budget'|'observed'|null, filled_positions, open_positions, active_headcount,
+  headcount_source: 'employee_master'|'timekeeping'|null, hr_as_of }
+```
+
 ## Company view and corporate allocations, added 2026-09-29
 
 Migration 040, app/allocations.py. Rows of `GET /leadership/rows` and a site's weeks add

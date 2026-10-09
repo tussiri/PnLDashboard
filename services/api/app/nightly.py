@@ -8,7 +8,8 @@ Steps, each isolated so one failure does not stop the others:
      skipped) without its own mart rebuild
   3. Sarus, when WINTEAM_SARUS_ENABLED
   4. Relay's FedEx feeds, when RELAY_BASE_URL and RELAY_EXPORT_TOKEN are set (app/relay.py)
-  5. one mart rebuild (marts, weekly leadership mart, account assignment, forecasts)
+  5. HrDashboard site staffing, when HR_BASE_URL and HR_EXPORT_TOKEN are set (app/sources/hrdashboard.py)
+  6. one mart rebuild (marts, weekly leadership mart, account assignment, forecasts)
 
 Schedule: ops.app_setting `nightly_sync` = {"enabled", "hour", "minute", "timezone", "window_hours",
 "import_inbox", "winteam", "sarus"}. A run starts only inside the window after the run time, so a
@@ -33,7 +34,7 @@ from .db import connection
 logger = logging.getLogger("nightly")
 
 DEFAULT_SCHEDULE: dict[str, Any] = {"enabled": True, "hour": 2, "minute": 30, "timezone": "America/Chicago", "window_hours": 3,
-                                    "import_inbox": True, "mail_inbox": True, "winteam": True, "sarus": True, "relay": True}
+                                    "import_inbox": True, "mail_inbox": True, "winteam": True, "sarus": True, "relay": True, "hr": True}
 INTEGRATION = "nightly"
 
 
@@ -78,6 +79,7 @@ def _start(run_id: str, started: datetime) -> None:
 def run_nightly(schedule: dict[str, Any] | None = None) -> dict[str, Any]:
     """Run every enabled step once; returns a summary. Never raises."""
     from . import imports, mail_inbox, marts, relay
+    from .sources import hrdashboard
     from .winteam import sarus_ingestion, winteam
 
     if schedule is None:
@@ -126,6 +128,8 @@ def run_nightly(schedule: dict[str, Any] | None = None) -> dict[str, Any]:
                 raise relay.RelayError(f"Relay feeds failed: {', '.join(result['failed'])}")
             return {}
         step("relay", pull_relay)
+    if schedule.get("hr") and hrdashboard.configured():
+        step("hr", hrdashboard.sync)
     step("marts", lambda: marts.rebuild_all(initiated_by="nightly"))
 
     # ops.integration_sync_run allows running | succeeded | failed: any failed step marks the run
