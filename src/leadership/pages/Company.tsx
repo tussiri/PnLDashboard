@@ -104,7 +104,7 @@ export function Company() {
       {(flagged.length > 0 || open.length > 0) && <dl className="notes">
         {flagged.map((m) => <div key={`f${m.month}`}><dt className="warn">{monthLabel(m.month)}</dt>
           <dd>{m.flags.includes('sub_spike') ? `Subcontractor cost ${money(m.subcontractors)}, well above prior months; check the job cost load` : `Direct labor ${money(m.direct_labor)}, well above prior months; check the job cost load`}</dd></div>)}
-        {open.map((m) => <div key={`o${m.month}`}><dt>{monthLabel(m.month)}</dt><dd>Job cost not closed; left out of the year to date</dd></div>)}
+        {open.map((m) => <div key={`o${m.month}`}><dt>{monthLabel(m.month)}</dt><dd>Job cost not closed{m.unbilled_cost >= 0.15 * m.revenue ? `: ${money(m.unbilled_cost)} of cost on jobs without revenue` : ''}; left out of the year to date</dd></div>)}
       </dl>}
       <div className="charts2">
         <ChartCard title="Revenue and gross margin by month" height={260}

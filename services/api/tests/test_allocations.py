@@ -6,7 +6,7 @@ from datetime import date
 import pytest
 
 from app import allocations
-from app.routers.leadership import flag_spikes
+from app.routers.leadership import flag_spikes, is_closed
 
 CFG = allocations.DEFAULT_SETTINGS
 
@@ -80,6 +80,16 @@ def test_a_month_far_above_the_usual_share_is_flagged_and_growth_is_not():
               for r, s in ((2_700_000, 190_000), (4_600_000, 376_000), (5_400_000, 380_000), (5_600_000, 698_000), (5_760_000, 2_776_000))]
     flag_spikes(months)
     assert [m["flags"] for m in months] == [[], [], [], [], ["sub_spike"]]
+
+
+def test_a_month_with_cost_on_jobs_without_revenue_is_not_closed():
+    # Jul 2026: $5.76M revenue, $2.96M of cost on jobs whose revenue had not posted (open); Jun 2026: 5.9% (closed).
+    month = lambda revenue, unbilled, labor=0.55, tk=0.0: {"revenue": revenue, "direct_labor": revenue * labor, "timekeeping_labor": tk, "unbilled_cost": unbilled}
+    assert is_closed(month(5_605_215, 331_239))
+    assert not is_closed(month(5_758_735, 2_958_519))
+    assert not is_closed(month(6_150_694, 1_743_863))
+    assert not is_closed(month(0, 0))
+    assert not is_closed(month(5_000_000, 0, tk=5_000_000))  # job cost labor under 70% of timekeeping
 
 
 def test_a_weeks_overhead_adds_up_to_the_weekly_pool():
