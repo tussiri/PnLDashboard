@@ -359,16 +359,42 @@ def leadership_monthly(account: str = Query(..., description="An account slug"),
 
 COMPANY_SQL = """
 WITH months AS (SELECT g.m::date AS month FROM generate_series(%(first)s::date, %(last)s::date, interval '1 month') AS g(m)),
-jc AS (
+-- The delivery model of a job in a month: that of its last week in the month (the week holding its Thursday).
+delivery AS (
+  SELECT DISTINCT ON (company, job_number, month) company, job_number, month, delivery_model
+  FROM (SELECT company, job_number, date_trunc('month', week_start + 3)::date AS month, week_start, delivery_model
+        FROM mart.leadership_week
+        WHERE week_start + 3 BETWEEN %(first)s::date AND (%(last)s::date + interval '1 month - 1 day')) w
+  ORDER BY company, job_number, month, week_start DESC
+),
+base AS (
   SELECT jc.month, coalesce(j.company, jc.company) AS company, jc.job_number,
          CASE WHEN a.featured THEN aj.account_slug ELSE 'other' END AS account,
          jc.revenue, jc.direct_labor, coalesce(jc.management_wages, 0) AS management_wages, jc.subcontractors,
-         jc.payroll_taxes_insurance, jc.gross_profit
+         jc.payroll_taxes_insurance, jc.gross_profit,
+         -- The leadership mart's rule (app/leadership.py, relay_revenue): a subcontracted Relay (FedEx) site
+         -- takes Relay AR as its revenue for any month with some, since from July 2026 its contract revenue
+         -- is booked to a GL line with no job and its job cost carries only the OS line. Never Sarus.
+         coalesce(j.company, jc.company) IS DISTINCT FROM 'Sarus'
+           AND (rc.job_number IS NOT NULL OR coalesce(rm.ap_amount, 0) > 0)
+           AND NOT coalesce(rc.self_perform, false) AND coalesce(rm.ar_revenue, 0) > 0
+           AND coalesce(d.delivery_model, 'subcontracted') = 'subcontracted' AS relay_revenue,
+         rm.ar_revenue AS relay_ar
   FROM mart.v_job_cost_month_effective jc
   JOIN months USING (month)
   LEFT JOIN core.dim_job j ON j.job_number = jc.job_number AND j.company = jc.company AND j.valid_to IS NULL
   LEFT JOIN ops.account_job aj ON aj.company = coalesce(j.company, jc.company) AND aj.job_number = jc.job_number
   LEFT JOIN ops.account a ON a.slug = aj.account_slug
+  LEFT JOIN mart.v_relay_job_contract rc ON rc.job_number = jc.job_number
+  LEFT JOIN mart.v_relay_job_month rm ON rm.job_number = jc.job_number AND rm.month = jc.month
+  LEFT JOIN delivery d ON d.company = coalesce(j.company, jc.company) AND d.job_number = jc.job_number AND d.month = jc.month
+),
+jc AS (
+  SELECT month, company, job_number, account,
+         CASE WHEN relay_revenue THEN relay_ar ELSE revenue END AS revenue,
+         direct_labor, management_wages, subcontractors, payroll_taxes_insurance,
+         CASE WHEN relay_revenue THEN coalesce(gross_profit, 0) + relay_ar - coalesce(revenue, 0) ELSE gross_profit END AS gross_profit
+  FROM base
 ),
 tk AS (
   SELECT date_trunc('month', week_start + 3)::date AS month, sum(labor) AS labor
@@ -389,7 +415,8 @@ MONEY = ("revenue", "direct_labor", "management_wages", "subcontractors", "payro
 def leadership_company(request: Request, months: int = Query(14, ge=1, le=36)) -> dict[str, Any]:
     """Company health by month: job cost totals by business unit and by account, whether each month is
     closed (job cost labor at least 70% of timekeeping labor), the company income statement, and the
-    month's allocations. Every account, so a user limited to accounts is refused."""
+    month's allocations. A subcontracted Relay (FedEx) site's revenue is Relay AR, as in the leadership mart.
+    Every account, so a user limited to accounts is refused."""
     if allowed_accounts(request) is not None:
         raise HTTPException(status_code=403, detail="The company view covers every account; your access is limited to some")
     with connection() as conn, conn.cursor() as cursor:
