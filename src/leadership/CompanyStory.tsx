@@ -97,7 +97,7 @@ export function CompanyStory({ months, accountNames, week, budgets, budgetsLoadi
     : ''
 
   return <div className="story">
-    <Section id="revenue" wide title="Revenue" subtitle={`Job cost revenue by month, ${range}`}
+    <Section id="revenue" wide title="Revenue" subtitle={`Revenue by month, ${range}`}
       figures={[
         { metric: 'storyRevenue', label: 'Revenue, 12 months', value: money(rev.revenue),
           detail: `${rev.closedMonths} closed months${rev.yearToDate ? `; ${money(rev.yearToDate.revenue)} in ${rev.yearToDate.year}` : ''}` },
