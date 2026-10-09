@@ -160,17 +160,21 @@ def account_rows(cursor: Any) -> list[dict[str, Any]]:
 
 
 def week_rows(cursor: Any) -> list[dict[str, Any]]:
-    """Every week with rows: labor totals, days with labor and the pay report share, newest last."""
+    """Every week with rows: labor totals, days with labor and the pay report share, newest last. A week is
+    in progress until its Sunday is past both today and the last rebuild: a week that ended after the data was
+    last built carries only the days before it (production rebuilt Oct 2 read the week of Sep 28 - Oct 4 as
+    complete, at $0)."""
     cursor.execute(
         """
         SELECT week_start, week_end, max(days_with_labor) AS days_with_labor,
                round(sum(labor) FILTER (WHERE labor_basis = 'pay_report') / nullif(sum(labor), 0), 4) AS pay_report_share,
-               max(revenue_month) AS revenue_month
+               max(revenue_month) AS revenue_month, max(rebuilt_at)::date AS built_on
         FROM mart.leadership_week GROUP BY week_start, week_end HAVING sum(hours) > 0 ORDER BY week_start
         """
     )
-    today = date.today()
-    return [{**jsonable(dict(r)), "in_progress": r["week_end"] >= today} for r in cursor.fetchall()]
+    rows = cursor.fetchall()
+    data_through = min([date.today(), *[r["built_on"] for r in rows if r["built_on"]]])
+    return [{**jsonable({k: v for k, v in dict(r).items() if k != "built_on"}), "in_progress": r["week_end"] >= data_through} for r in rows]
 
 
 def default_week(weeks: list[dict[str, Any]]) -> str | None:

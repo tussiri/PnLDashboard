@@ -131,6 +131,8 @@ export interface DataFlags {
   /** The last run of each WinTeam integration that failed. */
   failedSyncs: { integration: string; at: string | null }[]
   weekInProgress: boolean
+  /** The day the data was last built (YYYY-MM-DD): an in-progress week has hours and labor up to it. */
+  dataThrough?: string | null
   /** The month-end rollup: subcontractor invoices received of expected, and sites with no billing yet. */
   month?: { subsExpected: number; subsReceived: number; notInvoiced: number; inProgress: boolean }
 }
@@ -167,6 +169,7 @@ export function dataFlags(config: LeadershipConfig | undefined, weekStart: strin
     failedSyncs: (config?.status.syncs ?? []).filter((s) => s.status === 'failed' && (s.integration_name.startsWith('winteam') || ['nightly', 'relay', 'mail_inbox'].includes(s.integration_name))
       && syncConcerns(s.integration_name, rows)).map((s) => ({ integration: s.integration_name, at: s.completed_at ?? s.started_at })),
     weekInProgress: Boolean(week?.in_progress),
+    dataThrough: config?.status.leadership_rebuilt_at?.slice(0, 10) ?? null,
   }
 }
 

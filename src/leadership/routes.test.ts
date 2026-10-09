@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatRoute, monthLabel, parseRoute, weekEndOf, weekLabel, weekStartOf, weekTick, type Route } from './routes'
+import { formatRoute, monthLabel, parseRoute, weekEndOf, weekLabel, weekRange, weekStartOf, weekTick, type Route } from './routes'
 
 describe('leadership routes', () => {
   it('round-trips every view with its selections', () => {
@@ -37,7 +37,9 @@ describe('leadership routes', () => {
     expect(weekEndOf('2026-09-14')).toBe('2026-09-20')
     expect(weekStartOf('2026-09-20')).toBe('2026-09-14')
     expect(weekStartOf('2026-09-14')).toBe('2026-09-14')
-    expect(weekLabel('2026-09-14')).toBe('Week ending Sep 20, 2026')
+    expect(weekLabel('2026-09-14')).toBe('Week of Sep 14 – 20, 2026')
+    expect(weekRange('2026-09-28')).toBe('Sep 28 – Oct 4, 2026')
+    expect(weekRange('2026-12-28')).toBe('Dec 28, 2026 – Jan 3, 2027')
     expect(weekTick('2026-08-31')).toBe('Sep 6')
     expect(monthLabel('2026-08-01')).toBe('Aug 2026')
   })

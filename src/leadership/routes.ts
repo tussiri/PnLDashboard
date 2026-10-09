@@ -145,10 +145,14 @@ export function weekStartOf(iso: string): string {
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const parts = (iso: string) => { const [y, m, d] = iso.slice(0, 10).split('-').map(Number); return { y, m, d } }
-/** "Week ending Sep 20, 2026" from a week start. */
+/** "Sep 28 – Oct 4, 2026" (or "Sep 21 – 27, 2026") from a week start: the Monday-Sunday span. */
+export function weekRange(weekStart: string): string {
+  const s = parts(weekStart), e = parts(weekEndOf(weekStart))
+  return `${MONTHS[s.m - 1]} ${s.d}${s.y !== e.y ? `, ${s.y}` : ''} – ${s.m !== e.m ? `${MONTHS[e.m - 1]} ` : ''}${e.d}, ${e.y}`
+}
+/** "Week of Sep 28 – Oct 4, 2026" from a week start. */
 export function weekLabel(weekStart: string): string {
-  const { y, m, d } = parts(weekEndOf(weekStart))
-  return `Week ending ${MONTHS[m - 1]} ${d}, ${y}`
+  return `Week of ${weekRange(weekStart)}`
 }
 /** "Sep 20" from a week start (chart ticks). */
 export function weekTick(weekStart: string): string {

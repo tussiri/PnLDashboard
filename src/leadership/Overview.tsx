@@ -11,6 +11,7 @@ import { QaCards } from './Qa'
 import { useLeadership } from './state'
 import { billingSources, invoiceLabel, weekChange, wordsFor } from './vocab'
 
+const shortDay = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })
 const siteWord = (n: number) => `${n} site${n === 1 ? '' : 's'}`
 /** Weeks of rows loaded per request for the trend (the API's maximum): about six months. */
 const TREND_LOAD = 26
@@ -36,7 +37,7 @@ export function Notes({ summary, account, flags, options, revenueMonth, extra = 
   if (payroll.length) add('', 'payroll', 'Labor source', `WinTeam hours at WinTeam pay rates, ${siteWord(payroll.length)}`)
   if (flags.revenueLag) add('bad', 'lag', 'Invoicing month', `${monthLabel(flags.revenueLag.revenueMonth)}; ${monthLabel(flags.revenueLag.expectedMonth)} job cost not loaded`)
   for (const s of flags.failedSyncs) add('bad', `s${s.integration}`, `${SYNC_NAME[s.integration] ?? 'WinTeam'} sync failed`, s.at ? s.at.slice(0, 10) : '')
-  if (flags.weekInProgress) add('warn', 'prog', 'Week in progress', 'Partial hours and labor')
+  if (flags.weekInProgress) add('warn', 'prog', 'Week in progress', flags.dataThrough ? `Hours and labor through ${shortDay(flags.dataThrough)}` : 'Partial hours and labor')
   for (const x of extra) add(x.tone, x.key, x.label, x.body)
   if (flags.month?.inProgress) add('warn', 'mprog', 'Month in progress', 'Partial hours and labor')
   if (flags.month?.subsExpected) add(flags.month.subsReceived < flags.month.subsExpected ? 'warn' : '', 'subs', 'Sub invoices', `${flags.month.subsReceived} of ${flags.month.subsExpected} received`)
