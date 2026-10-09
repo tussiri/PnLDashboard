@@ -20,13 +20,13 @@ and `docs/api-contract.md`.
 
 ### Revenue
 
-Job cost revenue of every account over the closed months of the last 12 months the job cost covers.
+Revenue of every account over the closed months of the last 12 months the job cost covers: job cost revenue, or Relay AR for a subcontracted FedEx site.
 
 ```text
 sum(revenue) over closed months in the window
 ```
 
-Job-cost-closed months only: a month is closed when it has revenue and its job cost direct labor is at least 70% of timekeeping labor (or there is no timekeeping). Open months are shown but not counted.
+Job-cost-closed months only: a month is closed when it has revenue and its job cost direct labor is at least 70% of timekeeping labor (or there is no timekeeping), and cost on jobs with no revenue that month is under 20% of revenue. Open months are shown but not counted.
 
 ### Last 3 months
 
@@ -46,7 +46,7 @@ Gross profit as a share of revenue, over the same closed months.
 sum(gross_profit) / sum(revenue)
 ```
 
-Job-cost-closed months only: a month is closed when it has revenue and its job cost direct labor is at least 70% of timekeeping labor (or there is no timekeeping). Open months are shown but not counted.
+Job-cost-closed months only: a month is closed when it has revenue and its job cost direct labor is at least 70% of timekeeping labor (or there is no timekeeping), and cost on jobs with no revenue that month is under 20% of revenue. Open months are shown but not counted.
 
 ### Labor %
 
@@ -56,7 +56,7 @@ Job cost direct labor as a share of revenue, over the same closed months.
 sum(direct_labor) / sum(revenue)
 ```
 
-Job-cost-closed months only: a month is closed when it has revenue and its job cost direct labor is at least 70% of timekeeping labor (or there is no timekeeping). Open months are shown but not counted.
+Job-cost-closed months only: a month is closed when it has revenue and its job cost direct labor is at least 70% of timekeeping labor (or there is no timekeeping), and cost on jobs with no revenue that month is under 20% of revenue. Open months are shown but not counted.
 
 ## Every $100 billed
 
@@ -80,7 +80,7 @@ The featured account with the most closed-month revenue, as a share of revenue o
 account revenue / sum(revenue)
 ```
 
-Accounts that are not featured count together as Other accounts. Job-cost-closed months only: a month is closed when it has revenue and its job cost direct labor is at least 70% of timekeeping labor (or there is no timekeeping). Open months are shown but not counted.
+Accounts that are not featured count together as Other accounts. Job-cost-closed months only: a month is closed when it has revenue and its job cost direct labor is at least 70% of timekeeping labor (or there is no timekeeping), and cost on jobs with no revenue that month is under 20% of revenue. Open months are shown but not counted.
 
 ### Losing money lately
 
@@ -90,7 +90,7 @@ Featured accounts with a gross loss over the latest 3 closed months, of the feat
 count(accounts where sum(gross_profit, latest 3 closed months) < 0)
 ```
 
-The year-to-date tables under Supporting detail cover the calendar year, a different period. Job-cost-closed months only: a month is closed when it has revenue and its job cost direct labor is at least 70% of timekeeping labor (or there is no timekeeping). Open months are shown but not counted.
+The year-to-date tables under Supporting detail cover the calendar year, a different period. Job-cost-closed months only: a month is closed when it has revenue and its job cost direct labor is at least 70% of timekeeping labor (or there is no timekeeping), and cost on jobs with no revenue that month is under 20% of revenue. Open months are shown but not counted.
 
 ## This week
 
@@ -138,7 +138,7 @@ Gross profit less management wages, burden and overhead, over the closed months 
 sum(gross_profit - management_wages - burden - overhead)
 ```
 
-Only the allocations turned on in Admin, Allocations. Job-cost-closed months only: a month is closed when it has revenue and its job cost direct labor is at least 70% of timekeeping labor (or there is no timekeeping). Open months are shown but not counted.
+Only the allocations turned on in Admin, Allocations. Job-cost-closed months only: a month is closed when it has revenue and its job cost direct labor is at least 70% of timekeeping labor (or there is no timekeeping), and cost on jobs with no revenue that month is under 20% of revenue. Open months are shown but not counted.
 
 ### Share of revenue
 
