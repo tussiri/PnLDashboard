@@ -6,7 +6,7 @@ import { RevenueMarginChart, seriesColor, StackedMoneyChart, useTokens } from '.
 import { rowsOfWeek, segmentOrder, useRows } from '../data'
 import { hours, money, moneyK, pct } from '../format'
 import { accountSummary, statusOf, type AccountSummary } from '../metrics'
-import { monthLabel, monthShort, weekLabel } from '../routes'
+import { monthLabel, monthShort, weekRange } from '../routes'
 import { PageHeader, updatedLine } from '../Shell'
 import { useLeadership } from '../state'
 import { Badge, ChartCard, Empty, Kpi, LoadError, Skeleton, SortTable, Swatch, toneOf, VocabContext, type Column } from '../ui'
@@ -99,7 +99,7 @@ export function Company() {
         {last && <Kpi label={`${monthShort(last.month)} revenue`} value={money(last.revenue)}
           sub={prev ? `${last.revenue >= prev.revenue ? '+' : '−'}${pct(Math.abs(ratio(last.revenue - prev.revenue, prev.revenue) ?? 0))} vs ${monthShort(prev.month)}` : undefined} />}
         <Kpi label="Labor % this week" value={pct(weekLp)} tone={toneOf(statusOf(weekLp, blendedTarget))}
-          sub={`${weekStart ? weekLabel(weekStart).replace('Week ending ', '') : ''}; blended target ${pct(blendedTarget)}`} />
+          sub={`${weekStart ? weekRange(weekStart) : ''}; blended target ${pct(blendedTarget)}`} />
       </div>
       {(flagged.length > 0 || open.length > 0) && <dl className="notes">
         {flagged.map((m) => <div key={`f${m.month}`}><dt className="warn">{monthLabel(m.month)}</dt>

@@ -369,7 +369,8 @@ export function accountSummary<R extends WeekRow>(rows: R[], opts: MetricOptions
   if (noLabor.length) notes.push({ kind: 'billed_no_labor', jobs: noLabor.map((r) => ({ job_number: r.job_number, site_name: r.site_name })) })
   const budgetRatio = all.hours > 0 ? all.budgetHours / all.hours : null
   if (budgetRatio != null && budgetRatio < (opts.budgetReliabilityRatio ?? DEFAULTS.budgetReliabilityRatio)) notes.push({ kind: 'budget_unreliable', ratio: budgetRatio })
-  const estimated = sites.filter((r) => r.labor > 0 && r.labor_basis && r.labor_basis !== 'pay_report')
+  // Only labor at the job's job-cost rate is an estimate; WinTeam hours at their WinTeam pay rates (payroll_rate) are not.
+  const estimated = sites.filter((r) => r.labor > 0 && r.labor_basis === 'trailing_rate_estimate')
   if (estimated.length) notes.push({ kind: 'labor_estimated', jobs: estimated.length, labor: estimated.reduce((a, r) => a + r.labor, 0) })
   if (opts.costBasis === 'labor_plus_vendor') {
     const projected = sites.filter((r) => (r.sub_week ?? 0) > 0 && PROJECTED_VENDOR_BASES.has(r.sub_week_basis ?? ''))

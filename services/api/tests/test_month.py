@@ -9,7 +9,7 @@ from app import month
 
 BASE = {
     "company": "Crane", "job_number": "F100", "site_name": "Station", "parent_account": "FedEx", "hours": 400.0, "ot_hours": 20.0,
-    "labor": 8000.0, "pay_report": True, "ot_dollars": 600.0, "budget_hours": 380.0, "budget_dollars": 7600.0, "employees": 6,
+    "labor": 8000.0, "pay_report": True, "payroll_rate": True, "ot_dollars": 600.0, "budget_hours": 380.0, "budget_dollars": 7600.0, "employees": 6,
     "days_with_labor": 30, "delivery_model": "subcontracted", "sub_projected": 5000.0, "rm_budget_hours": 380.0,
     "latitude": 32.9, "longitude": -96.7, "city": "Plano", "state_province": "TX", "parent_job_number": None,
     "jc_revenue": None, "jc_sub": None, "management_wages": 1200.0, "ar_revenue": None, "ar_invoices": 0, "relay_ap": None,
@@ -56,7 +56,8 @@ def test_row_shape_and_sub_invoice_status():
     assert r["week_start"] == "2026-08-01" and r["week_end"] == "2026-08-31" and r["account_slug"] == "fedex"
     assert r["sub_expected"] and r["sub_received"] and r["ar_invoices"] == 1
     assert not row()["sub_received"]
-    assert r["labor_basis"] == "pay_report" and row(pay_report=False)["labor_basis"] == "trailing_rate_estimate"
+    assert r["labor_basis"] == "pay_report" and row(pay_report=False)["labor_basis"] == "payroll_rate"
+    assert row(pay_report=False, payroll_rate=False)["labor_basis"] == "trailing_rate_estimate"
 
 
 def test_a_subcontracted_job_takes_relay_ar_before_its_partial_job_cost():

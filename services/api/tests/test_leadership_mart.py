@@ -77,3 +77,21 @@ def test_an_open_relay_month_projects_from_the_sites_billed_months():
 def test_a_closed_month_invoices_its_own_weeks():
     """The week's revenue month is its own (the month of its Thursday) once closed, else the last closed before it."""
     assert "m.month <= date_trunc('month', w.week_start + 3)::date" in REBUILD_SQL
+
+
+def test_a_week_that_ended_after_the_last_rebuild_is_not_complete():
+    """Production rebuilt Oct 2 read the week of Sep 28 - Oct 4 as complete (and $0) on Oct 9."""
+    from datetime import date
+
+    from app.routers import leadership
+
+    rows = [{"week_start": date(2026, 9, 21), "week_end": date(2026, 9, 27), "days_with_labor": 7, "pay_report_share": None, "revenue_month": None, "built_on": date(2026, 10, 2)},
+            {"week_start": date(2026, 9, 28), "week_end": date(2026, 10, 4), "days_with_labor": 4, "pay_report_share": None, "revenue_month": None, "built_on": date(2026, 10, 2)}]
+
+    class Cursor:
+        def execute(self, sql, params=None): pass
+        def fetchall(self): return rows
+
+    weeks = leadership.week_rows(Cursor())
+    assert [w["in_progress"] for w in weeks] == [False, True] and "built_on" not in weeks[0]
+    assert leadership.default_week(weeks) == "2026-09-21"

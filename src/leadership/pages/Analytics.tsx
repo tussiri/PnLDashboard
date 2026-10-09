@@ -95,7 +95,7 @@ export function Analytics() {
     { key: 'hrs', header: 'Hours', value: (s) => s.hours, render: (s) => hours1(s.hours) },
     { key: 'oth', header: 'OT hrs', value: (s) => s.ot_hours, render: (s) => hours1(s.ot_hours) },
     { key: 'over', header: 'Hrs to cut', value: (s) => s.overHours, render: (s) => (s.overHours > 0.5 ? <span className="bad">{hours1(s.overHours)}</span> : '–') },
-    { key: 'basis', header: 'Labor source', left: true, value: (s) => (s.labor_basis === 'pay_report' ? 'Pay report' : 'Estimated'), render: (s) => <span className="neutral">{s.labor_basis === 'pay_report' ? 'Pay report' : 'Estimated'}</span> },
+    { key: 'basis', header: 'Labor source', left: true, value: (s) => (s.labor_basis === 'pay_report' ? 'Pay report' : s.labor_basis === 'payroll_rate' ? 'WinTeam pay rates' : 'Estimated'), render: (s) => <span className="neutral">{(s.labor_basis === 'pay_report' ? 'Pay report' : s.labor_basis === 'payroll_rate' ? 'WinTeam pay rates' : 'Estimated')}</span> },
     { key: 'st', header: 'Status', value: (s) => s.measurePct, render: roleBadge, csv: (s) => (s.role === 'site' ? s.status : s.role) },
   ]
   const subtitle = [weekStart ? weekLabel(weekStart) : null, updatedLine(config.data)].filter(Boolean).join('. ')

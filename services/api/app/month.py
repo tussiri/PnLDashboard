@@ -54,7 +54,7 @@ m AS (
   SELECT job_key, max(company) AS company, max(job_number) AS job_number, max(site_name) AS site_name, max(parent_account) AS parent_account,
          sum(labor * share) AS labor, sum(hours * share) AS hours, sum(ot_hours * share) AS ot_hours, sum(ot_dollars * share) AS ot_dollars,
          sum(budget_hours * day_share) AS budget_hours, sum(budget_dollars * day_share) AS budget_dollars, sum(sub_week * day_share) AS sub_projected,
-         bool_and(labor_basis = 'pay_report' OR labor = 0) AS pay_report, max(employees) AS employees, sum(days_with_labor) AS days_with_labor,
+         bool_and(labor_basis = 'pay_report' OR labor = 0) AS pay_report, bool_and(labor_basis IN ('pay_report', 'payroll_rate') OR labor = 0) AS payroll_rate, max(employees) AS employees, sum(days_with_labor) AS days_with_labor,
          (array_agg(delivery_model ORDER BY week_start DESC) FILTER (WHERE delivery_model IS NOT NULL))[1] AS delivery_model,
          sum(revenue_month_budget_hours * day_share) AS rm_budget_hours
   FROM shares GROUP BY job_key
@@ -130,7 +130,7 @@ def month_row(r: dict[str, Any], mapping: dict[tuple[str, str], dict[str, Any]],
         "site_name": r["site_name"], "parent_account": r["parent_account"], "account_slug": a.get("account_slug"),
         "segment": a.get("segment"), "role": a.get("role") or "site", "needs_review": bool(a.get("needs_review")),
         "hours": round(_f(r["hours"]), 2), "ot_hours": round(_f(r["ot_hours"]), 2), "labor": round(_f(r["labor"]), 2),
-        "labor_basis": "pay_report" if r["pay_report"] else "trailing_rate_estimate", "ot_dollars": round(_f(r["ot_dollars"]), 2),
+        "labor_basis": "pay_report" if r["pay_report"] else "payroll_rate" if r["payroll_rate"] else "trailing_rate_estimate", "ot_dollars": round(_f(r["ot_dollars"]), 2),
         "budget_hours": round(_f(r["budget_hours"]), 2), "budget_dollars": round(_f(r["budget_dollars"]), 2),
         "employees": int(r["employees"] or 0), "days_with_labor": int(r["days_with_labor"] or 0),
         "revenue_month": first.isoformat(), "revenue_month_amount": round(revenue, 2), "revenue_month_basis": revenue_source,

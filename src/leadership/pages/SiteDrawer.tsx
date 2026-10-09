@@ -98,7 +98,7 @@ export function SiteDrawer({ company, job }: { company: string; job: string }) {
       </div>
       {q.error ? <LoadError error={q.error} onRetry={q.refetch} /> : !q.data ? <Skeleton height={400} /> : <>
         {current ? <div className="kpi-lg">
-          <Kpi label="Direct labor" value={money(current.labor)} sub={current.labor_basis === 'pay_report' ? 'Pay report' : 'Estimated'} tone={current.labor_basis === 'pay_report' ? '' : 'warn'} />
+          <Kpi label="Direct labor" value={money(current.labor)} sub={current.labor_basis === 'pay_report' ? 'Pay report' : current.labor_basis === 'payroll_rate' ? 'WinTeam pay rates' : 'Estimated'} tone={current.labor_basis === 'trailing_rate_estimate' ? 'warn' : ''} />
           <Kpi label="Invoicing" value={money(current.invoice)} sub={current.revenue_allocated ? `Incl. ${money(current.revenue_allocated / (options.divisor ?? 4.33))} spread from parent` : `${monthLabel(current.revenue_month)} revenue`} />
           <Kpi label={m} value={pct(current.measurePct)} tone={toneOf(current.status)} sub={`${current.measurePct == null ? '' : `${pts(current.measurePct - current.target)} vs ${pct(current.target)} target; `}${monthLabel(current.revenue_month)} ${pct(current.priorLaborPct)}`} />
           <Kpi label="Hours" value={hours1(current.hours)} sub={`${hours1(current.ot_hours)} OT (${pct(current.otPct)})`} />

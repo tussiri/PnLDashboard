@@ -4,7 +4,7 @@ import { queryKey } from '../services/queryClient'
 import { QaVarianceChart, useTokens } from './charts'
 import { money, pct } from './format'
 import type { SiteMetrics } from './metrics'
-import { weekLabel, weekTick } from './routes'
+import { weekRange, weekTick } from './routes'
 import { useLeadership } from './state'
 import { ChartCard, Swatch } from './ui'
 
@@ -39,7 +39,7 @@ export function QaCards({ account, sites, weekStart }: { account: LeadershipAcco
   const scored = points.filter((p) => p.score != null)
   const avg = scored.length ? scored.reduce((x, p) => x + p.score!, 0) / scored.length : null
   const exact = weekStart === latest
-  const title = `QA score vs budget variance, ${exact ? 'this week' : weekLabel(latest).replace('Week ending', 'QA week ending')}`
+  const title = `QA score vs budget variance, ${exact ? 'this week' : `QA week of ${weekRange(latest)}`}`
   return <>
     {weekStart && points.some((p) => p.variance != null) && <ChartCard title={title} height={300}
       legend={<><Swatch color={t.ok} label={`QA ${QA_PASS}+`} /><Swatch color={t.warn} label={`QA ${QA_WARN} to ${QA_PASS}`} /><Swatch color={t.bad} label={`QA under ${QA_WARN}`} />
