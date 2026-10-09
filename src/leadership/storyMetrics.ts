@@ -127,17 +127,35 @@ export function per100(closed: CompanyMonth[]): Per100Story | null {
 
 // --- 3. Accounts ------------------------------------------------------------------
 
-export interface AccountShare { slug: string; name: string; revenue: number; grossProfit: number; share: number; margin: number | null }
-export interface AccountsStory { rows: AccountShare[]; revenue: number; top: AccountShare | null; belowZero: number }
+export interface AccountShare {
+  slug: string; name: string; revenue: number; grossProfit: number; share: number; margin: number | null
+  /** Gross margin over the latest TREND closed months; null when the account had no revenue in them. */
+  recentMargin: number | null
+  recentProfit: number
+}
+export interface AccountsStory {
+  rows: AccountShare[]; revenue: number; top: AccountShare | null
+  /** Featured accounts with a gross loss over the latest TREND closed months. */
+  losingRecently: number
+  recentFrom: string | null; recentTo: string | null
+}
 
-/** Closed-month revenue and gross profit by featured account, the rest as Other last; accounts with no revenue are left out. */
-export function accountsStory(closed: CompanyMonth[], names: Record<string, string>): AccountsStory {
-  const totals = new Map<string, { revenue: number; profit: number }>()
+/**
+ * Closed-month revenue and gross profit by featured account, the rest as Other last; accounts with no revenue
+ * are left out. Each account also carries its margin over the latest TREND closed months, so an account that
+ * is profitable over the year but losing money now reads as such (the year-to-date table below covers a
+ * different period and would otherwise seem to contradict the 12-month figure).
+ */
+export function accountsStory(closed: CompanyMonth[], names: Record<string, string>, trendSize = TREND): AccountsStory {
+  const recentMonths = new Set(closed.slice(-trendSize).map((m) => m.month))
+  const totals = new Map<string, { revenue: number; profit: number; recentRevenue: number; recentProfit: number }>()
   for (const m of closed) {
+    const recent = recentMonths.has(m.month)
     for (const [slug, v] of Object.entries(m.by_account)) {
-      const t = totals.get(slug) ?? { revenue: 0, profit: 0 }
+      const t = totals.get(slug) ?? { revenue: 0, profit: 0, recentRevenue: 0, recentProfit: 0 }
       t.revenue += v.revenue
       t.profit += v.gross_profit
+      if (recent) { t.recentRevenue += v.revenue; t.recentProfit += v.gross_profit }
       totals.set(slug, t)
     }
   }
@@ -145,9 +163,15 @@ export function accountsStory(closed: CompanyMonth[], names: Record<string, stri
   const rows = [...totals.entries()].filter(([, t]) => t.revenue > 0).map(([slug, t]) => ({
     slug, name: slug === 'other' ? 'Other accounts' : names[slug] ?? slug, revenue: t.revenue, grossProfit: t.profit,
     share: revenue > 0 ? t.revenue / revenue : 0, margin: ratio(t.profit, t.revenue),
+    recentMargin: ratio(t.recentProfit, t.recentRevenue), recentProfit: t.recentProfit,
   })).sort((a, b) => Number(a.slug === 'other') - Number(b.slug === 'other') || b.revenue - a.revenue)
   const named = rows.filter((r) => r.slug !== 'other')
-  return { rows, revenue, top: named[0] ?? null, belowZero: named.filter((r) => r.grossProfit < 0).length }
+  const recent = closed.slice(-trendSize)
+  return {
+    rows, revenue, top: named[0] ?? null,
+    losingRecently: named.filter((r) => r.recentMargin != null && r.recentProfit < 0).length,
+    recentFrom: recent[0]?.month ?? null, recentTo: recent.at(-1)?.month ?? null,
+  }
 }
 
 // --- 4. This week -----------------------------------------------------------------

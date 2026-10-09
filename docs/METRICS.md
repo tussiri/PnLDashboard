@@ -82,15 +82,15 @@ account revenue / sum(revenue)
 
 Accounts that are not featured count together as Other accounts. Job-cost-closed months only: a month is closed when it has revenue and its job cost direct labor is at least 70% of timekeeping labor (or there is no timekeeping). Open months are shown but not counted.
 
-### Accounts below zero
+### Losing money lately
 
-Featured accounts whose closed-month gross profit is negative, of the featured accounts with revenue.
+Featured accounts with a gross loss over the latest 3 closed months, of the featured accounts with revenue. Each bar also shows the account's margin over those 3 months beside its 12-month margin.
 
 ```text
-count(accounts where sum(gross_profit) < 0)
+count(accounts where sum(gross_profit, latest 3 closed months) < 0)
 ```
 
-Job-cost-closed months only: a month is closed when it has revenue and its job cost direct labor is at least 70% of timekeeping labor (or there is no timekeeping). Open months are shown but not counted.
+The year-to-date tables under Supporting detail cover the calendar year, a different period. Job-cost-closed months only: a month is closed when it has revenue and its job cost direct labor is at least 70% of timekeeping labor (or there is no timekeeping). Open months are shown but not counted.
 
 ## This week
 

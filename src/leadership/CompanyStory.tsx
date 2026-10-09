@@ -132,18 +132,18 @@ export function CompanyStory({ months, accountNames, week, budgets, budgetsLoadi
     <Section id="accounts" title="Accounts" subtitle={`Closed-month revenue by account, ${range}`}
       figures={[
         { metric: 'storyAccountShare', value: pct(accts.top?.share), detail: accts.top ? accts.top.name : undefined },
-        { metric: 'storyAccountMargin', value: accts.top ? String(accts.belowZero) : pct(null),
-          detail: of(accts.belowZero, accts.rows.filter((r) => r.slug !== 'other').length, 'accounts'), tone: accts.belowZero ? 'bad' : '' },
+        { metric: 'storyAccountMargin', value: accts.top ? String(accts.losingRecently) : pct(null), tone: accts.losingRecently ? 'bad' : '',
+          detail: `${of(accts.losingRecently, accts.rows.filter((r) => r.slug !== 'other').length, 'accounts')}${accts.recentFrom ? `, ${monthShort(accts.recentFrom)} to ${monthShort(accts.recentTo)}` : ''}` },
       ]}
       chart={accts.rows.length
         ? <StoryBars caption="Revenue by account, with gross margin." rows={accts.rows.map((r, i) => ({
-            key: r.slug, label: r.name, value: r.revenue, display: compact(r.revenue), detail: `${pct(r.margin)} margin`,
-            tone: r.grossProfit < 0 ? 'bad' : r.slug === 'other' ? 'sbar-muted' : i === 0 ? 'sbar' : 'sbar-muted',
-            tip: `${r.name}: revenue ${money(r.revenue)}, ${pct(r.share)} of the total; gross profit ${money(r.grossProfit)}` }))} />
+            key: r.slug, label: r.name, value: r.revenue, display: compact(r.revenue), detail: `${pct(r.margin)}; last 3 ${pct(r.recentMargin)}`,
+            tone: r.grossProfit < 0 || r.recentProfit < 0 ? 'bad' : r.slug === 'other' ? 'sbar-muted' : i === 0 ? 'sbar' : 'sbar-muted',
+            tip: `${r.name}: revenue ${money(r.revenue)}, ${pct(r.share)} of the total; gross profit ${money(r.grossProfit)}, ${money(r.recentProfit)} in the latest 3 closed months` }))} />
         : <Empty>No account revenue in this window.</Empty>}
-      table={<table><thead><tr><th className="nosort l">Account</th><th className="nosort">Revenue</th><th className="nosort">Share</th><th className="nosort">Gross profit</th><th className="nosort">Margin</th></tr></thead>
-        <tbody>{accts.rows.map((r) => <tr key={r.slug}><td className="l">{r.name}</td><td>{money(r.revenue)}</td><td>{pct(r.share)}</td><td>{money(r.grossProfit)}</td><td>{pct(r.margin)}</td></tr>)}</tbody></table>}
-      note="Accounts not featured count together as Other accounts." />
+      table={<table><thead><tr><th className="nosort l">Account</th><th className="nosort">Revenue</th><th className="nosort">Share</th><th className="nosort">Gross profit</th><th className="nosort">Margin</th><th className="nosort">Margin, last 3 months</th></tr></thead>
+        <tbody>{accts.rows.map((r) => <tr key={r.slug}><td className="l">{r.name}</td><td>{money(r.revenue)}</td><td>{pct(r.share)}</td><td>{money(r.grossProfit)}</td><td>{pct(r.margin)}</td><td>{pct(r.recentMargin)}</td></tr>)}</tbody></table>}
+      note={`Margin over the 12 months, then over the latest 3 closed months; red when either is a loss. Accounts not featured count together as Other accounts.`} />
 
     <Section id="week" title="This week" subtitle={week.start ? `Labor % against target, ${weekRange(week.start)}` : 'Labor % against target'}
       figures={[

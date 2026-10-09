@@ -52,10 +52,10 @@ export const GLOSSARY = {
     caveat: 'Accounts that are not featured count together as Other accounts. ' + CLOSED,
   },
   storyAccountMargin: {
-    term: 'Accounts below zero',
-    definition: 'Featured accounts whose closed-month gross profit is negative, of the featured accounts with revenue.',
-    formula: 'count(accounts where sum(gross_profit) < 0)',
-    caveat: CLOSED,
+    term: 'Losing money lately',
+    definition: 'Featured accounts with a gross loss over the latest 3 closed months, of the featured accounts with revenue. Each bar also shows the account\'s margin over those 3 months beside its 12-month margin.',
+    formula: 'count(accounts where sum(gross_profit, latest 3 closed months) < 0)',
+    caveat: 'The year-to-date tables under Supporting detail cover the calendar year, a different period. ' + CLOSED,
   },
   storyOverTarget: {
     term: 'Over target',

@@ -82,7 +82,16 @@ describe('accountsStory', () => {
     expect(s.rows.map((r) => r.name)).toEqual(['Beta', 'Alpha', 'Other accounts'])
     expect(s.revenue).toBe(4000)
     expect(s.top?.share).toBeCloseTo(0.4)
-    expect(s.belowZero).toBe(1)
+    expect(s.losingRecently).toBe(1)
+  })
+  it('flags an account that is profitable over the year but losing money in the latest months', () => {
+    const acct = (revenue: number, gross_profit: number) => ({ by_account: { f: { ...money, revenue, gross_profit } } })
+    const months = [...series(9, () => acct(100, 20)), ...series(3, () => acct(100, -10)).map((m, i) => ({ ...m, month: `2026-1${i}-01` }))]
+    const s = accountsStory(months, { f: 'FedEx' })
+    expect(s.rows[0].margin).toBeCloseTo(150 / 1200)
+    expect(s.rows[0].recentMargin).toBeCloseTo(-0.1)
+    expect(s.losingRecently).toBe(1)
+    expect(s.recentFrom).toBe('2026-10-01')
   })
 })
 
