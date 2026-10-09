@@ -317,3 +317,93 @@ tr.dim td{color:var(--text3)}
 .slider{display:inline-flex;align-items:center;gap:8px;font-weight:400;color:var(--text2);font-size:12px}
 .slider input[type=range]{width:clamp(90px,18vw,180px);accent-color:var(--accent)}
 .slider output{min-width:2ch;text-align:right;font-variant-numeric:tabular-nums;color:var(--text)}
+
+/* Company story ("At a glance"): five cards, the first full width, the rest paired, stacked below 900px. */
+.sect-h{font-size:13px;font-weight:600;color:var(--text2);margin:4px 0 10px}
+.sect-h+.kpi-lg{margin-top:0}
+.story{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:24px}
+.story>*{min-width:0}
+.story>.wide{grid-column:1/-1}
+.story-card{display:flex;flex-direction:column;height:100%;padding:0}
+.story-h{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;padding:14px 16px 0}
+.story-h h3{font-size:14px;font-weight:600;color:var(--text);margin:0}
+.story-h p{font-size:11.5px;color:var(--text3);margin:2px 0 0}
+.story-figs{display:grid;grid-template-columns:repeat(auto-fit,minmax(9rem,1fr));gap:12px 20px;padding:14px 16px 0;margin:0}
+.story-figs dt{font-size:11px;color:var(--text3)}
+.story-figs dd{margin:0}
+.story-figs .sv{font-size:24px;font-weight:600;line-height:1.2;font-variant-numeric:tabular-nums;white-space:nowrap;color:var(--text)}
+.story-figs .sv.ok{color:var(--ok)}.story-figs .sv.bad{color:var(--bad)}.story-figs .sv.warn{color:var(--warn)}
+.story-figs .sd{font-size:11px;color:var(--text2);font-variant-numeric:tabular-nums}
+.story-chart{flex:1;padding:16px 16px 14px;min-width:0}
+.story-note{margin:auto 0 0;border-top:0.5px solid var(--border);padding:9px 16px;font-size:11.5px;line-height:1.45;color:var(--text3)}
+@media(max-width:900px){.story{grid-template-columns:minmax(0,1fr)}}
+
+/* Metric label with its definition on hover and focus. */
+.ml{position:relative;border-bottom:1px dotted var(--border2);cursor:help;outline-offset:2px}
+.ml__tip{display:none;position:absolute;z-index:20;left:0;top:calc(100% + 6px);width:min(300px,80vw);background:var(--bg);color:var(--text2);border:0.5px solid var(--border2);border-radius:var(--r);box-shadow:var(--shadow);padding:9px 11px;font-size:11.5px;line-height:1.45;white-space:normal;font-weight:400}
+.ml__tip b{color:var(--text)}
+.ml__tip code{display:block;margin-top:6px;font-size:10.5px;color:var(--text)}
+.ml__cv{display:block;margin-top:6px;color:var(--text3)}
+.ml:hover .ml__tip,.ml:focus .ml__tip,.ml:focus-within .ml__tip{display:block}
+
+/* Story charts (storyCharts.tsx). */
+.sfig{position:relative;margin:0;min-width:0}
+.ssvg{display:block;overflow:visible}
+.ssvg text{font-size:11px;fill:var(--text2);font-variant-numeric:tabular-nums}
+.ssvg g:focus{outline:none}
+.sgridline{stroke:var(--border)}
+.szero{stroke:var(--border2)}
+.sbar{fill:var(--accent);background:var(--accent)}
+.sbar-muted{fill:var(--muted);background:var(--muted)}
+rect.on{opacity:.8}
+.sline{fill:none;stroke:var(--accent);stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.sband{fill:none;stroke:var(--text3);stroke-width:1;stroke-dasharray:3 3}
+.sdot{fill:var(--accent);stroke:var(--bg);stroke-width:1.5}
+.ssvg text.send{font-size:12px;font-weight:600;fill:var(--text)}
+.stip{position:absolute;transform:translate(-50%,-100%);pointer-events:none;z-index:10;background:var(--bg);border:0.5px solid var(--border2);border-radius:var(--r);box-shadow:var(--shadow);padding:7px 9px;font-size:11.5px;line-height:1.4;white-space:nowrap;display:flex;flex-direction:column;color:var(--text2);font-variant-numeric:tabular-nums}
+.stip b{color:var(--text)}
+.sbars{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:9px}
+.sbars li{display:grid;grid-template-columns:9.5rem minmax(0,1fr);align-items:center;gap:10px;font-size:12.5px}
+.sbars__l{color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sbars__t{position:relative;display:flex;align-items:center;gap:8px;min-width:0}
+.sbars__b{display:block;height:18px;min-width:2px;flex-shrink:0;border-radius:0 3px 3px 0}
+.sbars__b.ok{background:var(--ok)}.sbars__b.warn{background:var(--warn)}.sbars__b.bad{background:var(--bad)}
+.sbars__m{position:absolute;top:-3px;bottom:-3px;width:0;border-left:1.5px dashed var(--text)}
+.sbars__v{display:flex;align-items:baseline;gap:6px;white-space:nowrap;font-variant-numeric:tabular-nums}
+.sbars__v b{font-weight:600;color:var(--text)}
+.sbars__v small{font-size:11px;color:var(--text3)}
+.sgrid{display:grid;grid-template-columns:repeat(20,minmax(0,1fr));gap:3px;max-width:440px}
+.sgrid i{display:block;aspect-ratio:1;border-radius:2px}
+.sgrid__k{list-style:none;margin:12px 0 0;padding:0;display:flex;flex-direction:column;gap:4px;font-size:12.5px}
+.sgrid__k li{display:grid;grid-template-columns:10px 2.6rem minmax(0,1fr) auto;align-items:center;gap:8px}
+.sgrid__k i{width:10px;height:10px;border-radius:2px}
+.sgrid__k b{font-weight:600;font-variant-numeric:tabular-nums;color:var(--text)}
+.sgrid__k span{color:var(--text2)}
+.sgrid__k small{font-size:11px;color:var(--text3);font-variant-numeric:tabular-nums}
+@media(max-width:520px){.sbars li{grid-template-columns:6.5rem minmax(0,1fr)}.story-figs .sv{font-size:20px}.sgrid__k li{grid-template-columns:10px 2.4rem minmax(0,1fr)}.sgrid__k small{display:none}}
+
+/*
+ * Company story motion. Everything is drawn as is unless motion is allowed. Within that, a section's
+ * `data-reveal` (reveal.ts) says where it is: `pending` as first rendered, `waiting` below the fold, `play`
+ * once while it animates, then `static`. Marks carry `--story-delay` for their stagger. Numbers are never
+ * animated: they appear at their real values.
+ */
+@media(prefers-reduced-motion:no-preference){
+  :root{--story-dur:420ms;--story-ease:cubic-bezier(0.22,1,0.36,1)}
+  @keyframes story-rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+  @keyframes story-fade{from{opacity:0}to{opacity:1}}
+  @keyframes story-grow-y{from{transform:scaleY(0)}to{transform:none}}
+  @keyframes story-grow-x{from{transform:scaleX(0)}to{transform:none}}
+  @keyframes story-draw{from{stroke-dashoffset:1}to{stroke-dashoffset:0}}
+  @keyframes story-pop{from{opacity:0;transform:scale(.3)}to{opacity:1;transform:none}}
+  /* Before the effect runs: hidden, but shown anyway after 3 s if it never does. */
+  [data-reveal='pending'] .story-card{animation:story-fade var(--story-dur) var(--story-ease) 3s both}
+  [data-reveal='waiting'] .story-card{opacity:0}
+  [data-reveal='play'] .story-card{animation:story-rise calc(var(--story-dur)*2) var(--story-ease) both}
+  [data-reveal='play'] .story-stat{animation:story-rise calc(var(--story-dur)*1.5) var(--story-ease) calc(120ms + var(--story-delay,0ms)) both}
+  [data-reveal='play'] .story-grow-y{transform-box:view-box;animation:story-grow-y calc(var(--story-dur)*2) var(--story-ease) calc(150ms + var(--story-delay,0ms)) both}
+  [data-reveal='play'] .story-grow-x{transform-origin:left center;animation:story-grow-x calc(var(--story-dur)*2) var(--story-ease) calc(150ms + var(--story-delay,0ms)) both}
+  [data-reveal='play'] .story-draw{stroke-dasharray:1;animation:story-draw calc(var(--story-dur)*3) var(--story-ease) 150ms both}
+  [data-reveal='play'] .story-fade-in{animation:story-fade var(--story-dur) var(--story-ease) calc(150ms + var(--story-delay,0ms)) both}
+  [data-reveal='play'] .story-pop{animation:story-pop var(--story-dur) var(--story-ease) calc(200ms + var(--story-delay,0ms)) both}
+}

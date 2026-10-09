@@ -95,3 +95,20 @@ def test_a_week_that_ended_after_the_last_rebuild_is_not_complete():
     weeks = leadership.week_rows(Cursor())
     assert [w["in_progress"] for w in weeks] == [False, True] and "built_on" not in weeks[0]
     assert leadership.default_week(weeks) == "2026-09-21"
+
+
+def test_company_takes_relay_ar_for_subcontracted_relay_sites_like_the_mart():
+    """From July 2026 a subcontracted FedEx site's contract revenue is booked to a GL line with no job, so the
+    company months take Relay AR for it, as mart.leadership_week does, and gross profit moves with revenue."""
+    from app.routers.leadership import COMPANY_SQL
+
+    rule = COMPANY_SQL[COMPANY_SQL.index("base AS ("):COMPANY_SQL.index("AS relay_revenue")]
+    assert "IS DISTINCT FROM 'Sarus'" in rule
+    assert "NOT coalesce(rc.self_perform, false)" in rule and "coalesce(rm.ar_revenue, 0) > 0" in rule
+    assert "coalesce(d.delivery_model, 'subcontracted') = 'subcontracted'" in rule
+    assert "coalesce(a.delivery_model, 'subcontracted') = 'subcontracted'" in REBUILD_SQL
+    jc = COMPANY_SQL[COMPANY_SQL.index("\njc AS ("):COMPANY_SQL.index("\ntk AS (")]
+    assert "CASE WHEN relay_revenue THEN relay_ar ELSE revenue END AS revenue" in jc
+    assert "coalesce(gross_profit, 0) + relay_ar - coalesce(revenue, 0)" in jc
+    assert set(re.findall(r"%\((\w+)\)s", COMPANY_SQL)) == {"first", "last"}
+    assert not re.search(r"%(?!\(\w+\)s)", COMPANY_SQL)

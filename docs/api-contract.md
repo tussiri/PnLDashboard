@@ -555,6 +555,27 @@ StaffingRequestLine = { line_id, request_id, request_code, site_name, role, shif
 Pulls are recorded in `ops.integration_sync_run` as integration `photovalidation`, so `GET /leadership/config`
 `status.syncs` reports them.
 
+## HrDashboard site staffing, added 2026-10-09
+
+Migration 053, app/sources/hrdashboard.py. The nightly sync (and `POST /integrations/hr/sync`) pulls
+HrDashboard's `GET /api/service/v1/pnl/site-staffing` for the last 8 weeks with `HR_BASE_URL` and
+`HR_EXPORT_TOKEN`, maps HR's WinTeam tenant to `Crane` / `Sarus` by `HR_TENANT_COMPANIES`
+(default `primary:Crane,SAR:Sarus`) and upserts `core.hr_site_staffing_week`, one row per site per week.
+Site-level counts only. Hires and separations are the week's; positions, filled, open and headcount are how
+the site stood when HR last answered during that week, and a pull never replaces a held value with null.
+
+| Route | Response |
+|---|---|
+| `GET /staffing/jobs/{company}/{job_number}?week=` | adds `hr: HrSiteStaffingWeek`; `{configured}` alone when HR holds nothing for the site and week. |
+| `GET /integrations/hr` | `{configured, base_url_host, last_run: {status, completed_at, records_inserted, error_message} \| null, rows, sites, unmapped_sites, latest_week}`. Never returns the token. |
+| `POST /integrations/hr/sync` (admin) | `{status: 'succeeded', fetched, loaded, skipped}`; 409 when not configured, 502 when HR refuses or answers with no mapped rows. |
+
+```
+HrSiteStaffingWeek = { configured, week_start, hires, separations, budgeted_positions,
+  positions_source: 'tracker'|'budget'|'observed'|null, filled_positions, open_positions, active_headcount,
+  headcount_source: 'employee_master'|'timekeeping'|null, hr_as_of }
+```
+
 ## Company view and corporate allocations, added 2026-09-29
 
 Migration 040, app/allocations.py. Rows of `GET /leadership/rows` and a site's weeks add
@@ -568,7 +589,7 @@ labor − vendor (100%) − allocations.
 
 | Route | Response |
 |---|---|
-| `GET /leadership/company?months=14` | Every account, so `403` for a user limited to accounts. `{months: [{month, closed, revenue, direct_labor, management_wages, subcontractors, payroll_taxes, gross_profit, timekeeping_labor, unbilled_cost, by_company: {name: money}, by_account: {slug or other: money}, statement: {line: amount}, allocations: {management_wages, burden, overhead, burden_rate, burden_source, overhead_source}, flags: [sub_spike, labor_spike]}], accounts: [{slug, name, featured, target_labor_pct}]}`. A month is closed when job cost labor is at least 70% of timekeeping labor and `unbilled_cost` (job cost on jobs with no revenue that month: revenue − gross profit) is under 15% of revenue; a closed month is flagged when its subcontractor or labor share of revenue is over 2.5× the median of the other closed months and at least 10 points above it. |
+| `GET /leadership/company?months=14` | Every account, so `403` for a user limited to accounts. `{months: [{month, closed, revenue, direct_labor, management_wages, subcontractors, payroll_taxes, gross_profit, timekeeping_labor, unbilled_cost, by_company: {name: money}, by_account: {slug or other: money}, statement: {line: amount}, allocations: {management_wages, burden, overhead, burden_rate, burden_source, overhead_source}, flags: [sub_spike, labor_spike]}], accounts: [{slug, name, featured, target_labor_pct}]}`. A month is closed when job cost labor is at least 70% of timekeeping labor and `unbilled_cost` (cost on jobs with no revenue that month, after the Relay AR rule below: revenue − gross profit) is under 20% of revenue; a closed month is flagged when its subcontractor or labor share of revenue is over 2.5× the median of the other closed months and at least 10 points above it. Revenue is job cost, except that a subcontracted Relay (FedEx) site (never Sarus) takes Relay AR for any month it has some, the rule `mart.leadership_week` uses, since from July 2026 its job cost carries only the OS line; its gross profit moves by the same amount. |
 | `GET /leadership/allocations` | Admin. `{settings: {management_wages: {enabled}, burden: {enabled, lines}, overhead: {enabled, lines, basis}}, months: [{month, burden_rate, burden_source, overhead_pool, overhead_source, management_wages, manual_burden_rate, manual_overhead_pool, statement_loaded}]}` for the last 12 months. |
 | `PUT /leadership/allocations` | Admin. Any of the settings; `422` for an unknown basis or bad lines. |
 | `PUT /leadership/allocations/months/{YYYY-MM}` | Admin. `{burden_rate, overhead_pool}` (fraction, dollars); both null clears the month. |

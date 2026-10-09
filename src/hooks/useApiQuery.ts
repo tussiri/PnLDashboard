@@ -10,6 +10,8 @@ export interface QueryState<T> {
   stale: boolean
   fetching: boolean
   refetch: () => void
+  /** Fetch again in the background, keeping the visible data until the new data arrives. */
+  reload: () => void
 }
 
 /**
@@ -44,7 +46,8 @@ export function useApiQuery<T>(key: string | null, fetcher: Fetcher<T>, deps: un
   }, [key, ...deps])
 
   const refetch = useCallback(() => { if (key) queryClient.invalidate(key, true) }, [key])
-  if (!key) return { data: undefined, error: undefined, loading: false, stale: false, fetching: false, refetch }
+  const reload = useCallback(() => { if (key) queryClient.fetch(key, (signal) => fetcherRef.current(signal)).catch(() => undefined) }, [key])
+  if (!key) return { data: undefined, error: undefined, loading: false, stale: false, fetching: false, refetch, reload }
   const entry = queryClient.get<T>(key)
   const fetching = queryClient.isFetching(key)
   const hasData = entry?.data !== undefined
@@ -55,5 +58,6 @@ export function useApiQuery<T>(key: string | null, fetcher: Fetcher<T>, deps: un
     stale: hasData && (fetching || queryClient.isStale(key)),
     fetching,
     refetch,
+    reload,
   }
 }

@@ -2,7 +2,7 @@ import { groupVisits, scoreTone, stars, visitScores } from './Feedback'
 import { X } from 'lucide-react'
 import { useEffect, useMemo, useRef } from 'react'
 import { useApiQuery } from '../../hooks/useApiQuery'
-import type { LeadershipBudgetResponse, LeadershipSiteResponse, StaffingJobResponse, StaffingRequestLine } from '../../services/apiTypes'
+import type { HrSiteStaffingWeek, LeadershipBudgetResponse, LeadershipSiteResponse, StaffingJobResponse, StaffingRequestLine } from '../../services/apiTypes'
 import { queryKey } from '../../services/queryClient'
 import { TrendChart } from '../charts'
 import { includesVendor, inSentence, rowsOfWeek, segmentOrder, useRows, vendorLabel, weekBudgetOf } from '../data'
@@ -18,13 +18,31 @@ const cap = (s: string | null) => (s ? s.charAt(0).toUpperCase() + s.slice(1).re
 const STATUS_TONE: Record<string, string> = { submitted: 'warn', approved: 'neutral', posted: 'neutral', filled: 'ok', rejected: 'bad', cancelled: 'neutral' }
 const shiftLabel = (l: StaffingRequestLine) => [cap(l.shift), l.shift_start && l.shift_end ? `${l.shift_start}-${l.shift_end}` : null].filter(Boolean).join(' ')
 
-/** PhotoValidation staffing requests for the site: the week's requested and pending headcount and each line. */
+const POSITIONS_SOURCE: Record<string, string> = { tracker: 'Staffing tracker', budget: 'Estimated from budget', observed: 'Estimated from roster' }
+
+/** HrDashboard's positions, headcount and turnover for the site and week. */
+function HrStaffing({ hr }: { hr: HrSiteStaffingWeek | undefined }) {
+  if (!hr?.configured) return null
+  if (!hr.week_start) return <Empty>HrDashboard has no staffing for this site this week.</Empty>
+  const fill = hr.filled_positions != null && hr.budgeted_positions ? hr.filled_positions / hr.budgeted_positions : null
+  return <div className="kpi-lg">
+    <Kpi small label="Positions" value={hr.budgeted_positions ?? '–'} sub={hr.positions_source ? POSITIONS_SOURCE[hr.positions_source] : undefined} />
+    <Kpi small label="Filled" value={hr.filled_positions ?? '–'} sub={fill != null ? `${pct(fill)} of positions` : undefined} />
+    <Kpi small label="Open in Hire" value={hr.open_positions ?? '–'} />
+    <Kpi small label="Headcount" value={hr.active_headcount ?? '–'} sub={hr.headcount_source === 'timekeeping' ? 'People who worked' : hr.headcount_source ? 'Employed here' : undefined} />
+    <Kpi small label="Hires" value={hr.hires ?? '–'} sub="This week" />
+    <Kpi small label="Separations" value={hr.separations ?? '–'} sub="This week" />
+  </div>
+}
+
+/** HrDashboard staffing and PhotoValidation requests for the site: the week's figures and each request line. */
 function StaffingCard({ company, job }: { company: string; job: string }) {
   const { api, keyPrefix, decision, weekStart } = useLeadership()
   const q = useApiQuery<StaffingJobResponse>(decision && weekStart ? queryKey(`${keyPrefix}/staffing/job`, { company, job, week: weekStart }) : null,
     (signal) => api.staffingJob(company, job, { week: weekStart }, signal), [api, company, job, weekStart])
   return <div className="card">
-    <div className="ct"><span>Staffing requests</span>{q.data?.as_of && <span className="ks">PhotoValidation {new Date(q.data.as_of).toLocaleDateString('en-US')}</span>}</div>
+    <div className="ct"><span>Staffing</span>{q.data?.as_of && <span className="ks">PhotoValidation {new Date(q.data.as_of).toLocaleDateString('en-US')}</span>}</div>
+    {q.data && <HrStaffing hr={q.data.hr} />}
     {q.error ? <LoadError error={q.error} onRetry={q.refetch} /> : !q.data ? <Skeleton height={120} />
       : !q.data.configured && !q.data.lines.length ? <Empty>PhotoValidation is not connected.</Empty> : <>
         <div className="kpi-lg pair">

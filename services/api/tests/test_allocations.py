@@ -83,9 +83,11 @@ def test_a_month_far_above_the_usual_share_is_flagged_and_growth_is_not():
 
 
 def test_a_month_with_cost_on_jobs_without_revenue_is_not_closed():
-    # Jul 2026: $5.76M revenue, $2.96M of cost on jobs whose revenue had not posted (open); Jun 2026: 5.9% (closed).
+    # Without Relay AR, Jul 2026 had $2.96M of cost on jobs with no revenue (51%, open); Jun 2026 5.9% and Jul with
+    # Relay AR 15.3% (closed).
     month = lambda revenue, unbilled, labor=0.55, tk=0.0: {"revenue": revenue, "direct_labor": revenue * labor, "timekeeping_labor": tk, "unbilled_cost": unbilled}
     assert is_closed(month(5_605_215, 331_239))
+    assert is_closed(month(7_834_135, 1_198_000))
     assert not is_closed(month(5_758_735, 2_958_519))
     assert not is_closed(month(6_150_694, 1_743_863))
     assert not is_closed(month(0, 0))
