@@ -97,12 +97,13 @@ export function CompanyStory({ months, accountNames, week, budgets, budgetsLoadi
     : ''
 
   return <div className="story">
-    <Section id="revenue" wide title="Revenue" subtitle={`Job cost revenue by month, ${range}`}
+    <Section id="revenue" wide title="Revenue" subtitle={`Revenue by month, ${range}`}
       figures={[
-        { metric: 'storyRevenue', value: money(rev.revenue), detail: `${rev.closedMonths} closed months` },
+        { metric: 'storyRevenue', label: 'Revenue, 12 months', value: money(rev.revenue),
+          detail: `${rev.closedMonths} closed months${rev.yearToDate ? `; ${money(rev.yearToDate.revenue)} in ${rev.yearToDate.year}` : ''}` },
         { metric: 'storyRevenueTrend', value: signed(rev.trend?.change ?? null), tone: rev.trend?.change == null ? '' : rev.trend.change < 0 ? 'bad' : 'ok',
           detail: rev.trend ? `${monthShort(rev.trend.recentFrom)} to ${monthShort(rev.trend.recentTo)} against the 3 before` : 'Needs 6 closed months' },
-        { metric: 'storyGrossMargin', value: pct(rev.margin), detail: rev.grossProfit == null ? undefined : `${money(rev.grossProfit)} gross profit` },
+        { metric: 'storyGrossMargin', label: 'Gross margin, 12 months', value: pct(rev.margin), detail: rev.grossProfit == null ? undefined : `${money(rev.grossProfit)} gross profit` },
         { metric: 'storyLaborPct', value: pct(rev.laborPct), detail: 'Direct labor of revenue' },
       ]}
       legend={<><Swatch color="var(--accent)" label="Closed" /><Swatch color="var(--muted)" label="Not closed" /></>}

@@ -40,6 +40,11 @@ describe('storyWindow and revenueStory', () => {
     expect(r.laborPct).toBeCloseTo(0.6)
     expect(r.openMonths).toEqual(['2026-09-01'])
   })
+  it('reconciles the 12 months with the calendar year to date', () => {
+    const r = revenueStory(storyWindow([month('2025-11', { revenue: 50 }), month('2025-12', { revenue: 70 }), month('2026-01', { revenue: 100 }), month('2026-02', { revenue: 110 })]))
+    expect(r.revenue).toBe(330)
+    expect(r.yearToDate).toEqual({ year: '2026', revenue: 210 })
+  })
   it('compares the latest three closed months with the three before', () => {
     const r = revenueStory(storyWindow(series(6, (i) => ({ revenue: i < 3 ? 100 : 110 }))))
     expect(r.trend?.prior).toBe(300)
@@ -59,6 +64,10 @@ describe('per100', () => {
     const p = per100([month('2026-01', { revenue: 1000, direct_labor: 600, subcontractors: 100, payroll_taxes: 80, gross_profit: 170 })])!
     expect(p.parts.map((x) => [x.key, x.squares])).toEqual([['labor', 60], ['subcontractors', 10], ['taxes', 8], ['other', 5], ['profit', 17]])
     expect(p.parts.reduce((a, x) => a + x.squares, 0)).toBe(100)
+  })
+  it('leaves off other job cost that is only cents', () => {
+    const p = per100([month('2026-01', { revenue: 1000.4, direct_labor: 700, gross_profit: 300 })])!
+    expect(p.parts.map((x) => x.key)).toEqual(['labor', 'profit'])
   })
   it('reads rounding in other job cost as zero and leaves zero lines off the squares', () => {
     const p = per100([month('2026-01', { revenue: 1000, direct_labor: 700, gross_profit: 302 })])!
