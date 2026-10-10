@@ -8,8 +8,9 @@ and `docs/api-contract.md`.
 
 ## Rules for every figure
 
-- **Anchored to the data, not today.** The window is the last 12 months of `GET /leadership/company`, which
-  ends with the last month that has job cost revenue. The week is the selected week, by default the latest
+- **Anchored to the data, not today.** The window ends with the last month of `GET /leadership/company`, the
+  last month with job cost revenue. It opens on the calendar year to date (the year of the latest closed month,
+  as the Company year to date counts it); a toggle switches every card but This week to the last 12 months. The week is the selected week, by default the latest
   complete one (its Sunday past both today and the last rebuild).
 - **Censored, not zero.** A month that is not job-cost closed is shown in the chart but left out of every
   figure. A value that is not yet knowable (too few closed months, no billing, no budget) shows a dash.
@@ -20,7 +21,7 @@ and `docs/api-contract.md`.
 
 ### Revenue
 
-Revenue of every account over the closed months of the last 12 months the job cost covers: job cost revenue, or Relay AR for a subcontracted FedEx site. Not the calendar year to date: that figure, the Company Revenue YTD, is given beside it.
+Revenue of every account over the closed months of the chosen period: the calendar year to date (the default, the same figure as the Company Revenue YTD) or the last 12 months the job cost covers. Job cost revenue, or Relay AR for a subcontracted FedEx site.
 
 ```text
 sum(revenue) over closed months in the window
@@ -36,7 +37,7 @@ Revenue of the latest 3 closed months against the 3 closed months before them.
 sum(revenue, latest 3 closed) / sum(revenue, 3 closed before) - 1
 ```
 
-A dash until there are 6 closed months in the window.
+Always over the last 12 months, whichever period is chosen. A dash until there are 6 closed months in them.
 
 ### Gross margin
 
@@ -84,7 +85,7 @@ Accounts that are not featured count together as Other accounts. Job-cost-closed
 
 ### Losing money lately
 
-Featured accounts with a gross loss over the latest 3 closed months, of the featured accounts with revenue. Each bar also shows the account's margin over those 3 months beside its 12-month margin.
+Featured accounts with a gross loss over the latest 3 closed months, of the featured accounts with revenue. Each bar also shows the account's margin over those 3 months beside its margin over the chosen period.
 
 ```text
 count(accounts where sum(gross_profit, latest 3 closed months) < 0)

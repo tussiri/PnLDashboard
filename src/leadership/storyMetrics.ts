@@ -33,6 +33,17 @@ export function storyWindow(months: CompanyMonth[], size = WINDOW): StoryWindow 
   return { months: inWindow, closed: inWindow.filter((m) => m.closed), from: inWindow[0]?.month ?? null, through: inWindow.at(-1)?.month ?? null }
 }
 
+/**
+ * The calendar-year part of a window: its months in the year of its latest closed month, the same months the
+ * Company page's year to date counts. Null when the window has no closed month.
+ */
+export function yearWindow(w: StoryWindow): StoryWindow | null {
+  const year = w.closed.at(-1)?.month.slice(0, 4)
+  if (!year) return null
+  const months = w.months.filter((m) => m.month.startsWith(year))
+  return { months, closed: months.filter((m) => m.closed), from: months[0]?.month ?? null, through: months.at(-1)?.month ?? null }
+}
+
 // --- 1. Revenue -------------------------------------------------------------------
 
 export interface RevenueStory {

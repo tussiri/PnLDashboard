@@ -17,7 +17,7 @@ const CLOSED = 'Job-cost-closed months only: a month is closed when it has reven
 export const GLOSSARY = {
   storyRevenue: {
     term: 'Revenue',
-    definition: 'Revenue of every account over the closed months of the last 12 months the job cost covers: job cost revenue, or Relay AR for a subcontracted FedEx site. Not the calendar year to date: that figure, the Company Revenue YTD, is given beside it.',
+    definition: 'Revenue of every account over the closed months of the chosen period: the calendar year to date (the default, the same figure as the Company Revenue YTD) or the last 12 months the job cost covers. Job cost revenue, or Relay AR for a subcontracted FedEx site.',
     formula: 'sum(revenue) over closed months in the window',
     caveat: CLOSED,
   },
@@ -25,7 +25,7 @@ export const GLOSSARY = {
     term: 'Last 3 months',
     definition: 'Revenue of the latest 3 closed months against the 3 closed months before them.',
     formula: 'sum(revenue, latest 3 closed) / sum(revenue, 3 closed before) - 1',
-    caveat: 'A dash until there are 6 closed months in the window.',
+    caveat: 'Always over the last 12 months, whichever period is chosen. A dash until there are 6 closed months in them.',
   },
   storyGrossMargin: {
     term: 'Gross margin',
@@ -53,7 +53,7 @@ export const GLOSSARY = {
   },
   storyAccountMargin: {
     term: 'Losing money lately',
-    definition: 'Featured accounts with a gross loss over the latest 3 closed months, of the featured accounts with revenue. Each bar also shows the account\'s margin over those 3 months beside its 12-month margin.',
+    definition: 'Featured accounts with a gross loss over the latest 3 closed months, of the featured accounts with revenue. Each bar also shows the account\'s margin over those 3 months beside its margin over the chosen period.',
     formula: 'count(accounts where sum(gross_profit, latest 3 closed months) < 0)',
     caveat: 'The year-to-date tables under Supporting detail cover the calendar year, a different period. ' + CLOSED,
   },

@@ -6,10 +6,10 @@ import { useRevealOnce } from './reveal'
 import { monthLabel, monthShort, weekRange } from './routes'
 import { MetricLabel, MonthBars, SquareGrid, StoryBars, StoryLine, type SquareGroup } from './storyCharts'
 import {
-  accountsStory, allocationsStory, per100, planStory, revenueStory, storyWindow, weekStory,
+  accountsStory, allocationsStory, per100, planStory, revenueStory, storyWindow, weekStory, yearWindow,
   type Per100Key, type PlanStory, type WeekLine,
 } from './storyMetrics'
-import { Empty, Swatch } from './ui'
+import { Empty, Pills, Swatch } from './ui'
 
 interface Figure {
   metric: GlossaryKey
@@ -66,6 +66,8 @@ const signed = (v: number | null) => (v == null ? pct(v) : `${v >= 0 ? '+' : '-'
 const of = (part: number, whole: number, unit: string) => `${part.toLocaleString('en-US')} of ${whole.toLocaleString('en-US')} ${unit}`
 const span = (from: string | null, to: string | null) => (from && to ? `${monthLabel(from)} to ${monthLabel(to)}` : '')
 
+type Period = 'ytd' | '12m'
+
 export interface CompanyStoryProps {
   /** /leadership/company months, oldest first, ending with the last month the job cost covers. */
   months: CompanyMonth[]
@@ -80,11 +82,19 @@ export interface CompanyStoryProps {
 
 /**
  * The Company page's "At a glance" story: five cards, revenue full width, the rest paired on wide screens and
- * stacked on narrow ones. Every window ends with the last month the job cost covers.
+ * stacked on narrow ones. Every window ends with the last month the job cost covers. It opens on the calendar
+ * year to date, the period of the Company year to date below it; a toggle shows the last 12 months instead.
+ * The 3-month trend always reads the 12 months, so it has six closed months to compare in January too.
  */
 export function CompanyStory({ months, accountNames, week, budgets, budgetsLoading }: CompanyStoryProps) {
-  const w = storyWindow(months)
+  const [period, setPeriod] = useState<Period>('ytd')
+  const full = storyWindow(months)
+  const ytd = yearWindow(full)
+  const w = period === 'ytd' && ytd ? ytd : full
+  const isYtd = w === ytd
   const rev = revenueStory(w)
+  const trend = revenueStory(full).trend
+  const periodLabel = isYtd ? `${w.through?.slice(0, 4)} to date` : '12 months'
   const split = per100(w.closed)
   const accts = accountsStory(w.closed, accountNames)
   const wk = weekStory(week.lines)
@@ -97,13 +107,17 @@ export function CompanyStory({ months, accountNames, week, budgets, budgetsLoadi
     : ''
 
   return <div className="story">
+    <div className="story-period wide">
+      <Pills label="Period" value={isYtd ? 'ytd' : '12m'} onChange={setPeriod}
+        options={[{ value: 'ytd', label: 'Year to date' }, { value: '12m', label: '12 months' }]} />
+    </div>
     <Section id="revenue" wide title="Revenue" subtitle={`Revenue by month, ${range}`}
       figures={[
-        { metric: 'storyRevenue', label: 'Revenue, 12 months', value: money(rev.revenue),
-          detail: `${rev.closedMonths} closed months${rev.yearToDate ? `; ${money(rev.yearToDate.revenue)} in ${rev.yearToDate.year}` : ''}` },
-        { metric: 'storyRevenueTrend', value: signed(rev.trend?.change ?? null), tone: rev.trend?.change == null ? '' : rev.trend.change < 0 ? 'bad' : 'ok',
-          detail: rev.trend ? `${monthShort(rev.trend.recentFrom)} to ${monthShort(rev.trend.recentTo)} against the 3 before` : 'Needs 6 closed months' },
-        { metric: 'storyGrossMargin', label: 'Gross margin, 12 months', value: pct(rev.margin), detail: rev.grossProfit == null ? undefined : `${money(rev.grossProfit)} gross profit` },
+        { metric: 'storyRevenue', label: `Revenue, ${periodLabel}`, value: money(rev.revenue),
+          detail: `${rev.closedMonths} closed months${!isYtd && rev.yearToDate ? `; ${money(rev.yearToDate.revenue)} in ${rev.yearToDate.year}` : ''}` },
+        { metric: 'storyRevenueTrend', value: signed(trend?.change ?? null), tone: trend?.change == null ? '' : trend.change < 0 ? 'bad' : 'ok',
+          detail: trend ? `${monthShort(trend.recentFrom)} to ${monthShort(trend.recentTo)} against the 3 before` : 'Needs 6 closed months' },
+        { metric: 'storyGrossMargin', label: `Gross margin, ${periodLabel}`, value: pct(rev.margin), detail: rev.grossProfit == null ? undefined : `${money(rev.grossProfit)} gross profit` },
         { metric: 'storyLaborPct', value: pct(rev.laborPct), detail: 'Direct labor of revenue' },
       ]}
       legend={<><Swatch color="var(--accent)" label="Closed" /><Swatch color="var(--muted)" label="Not closed" /></>}
@@ -144,7 +158,7 @@ export function CompanyStory({ months, accountNames, week, budgets, budgetsLoadi
         : <Empty>No account revenue in this window.</Empty>}
       table={<table><thead><tr><th className="nosort l">Account</th><th className="nosort">Revenue</th><th className="nosort">Share</th><th className="nosort">Gross profit</th><th className="nosort">Margin</th><th className="nosort">Margin, last 3 months</th></tr></thead>
         <tbody>{accts.rows.map((r) => <tr key={r.slug}><td className="l">{r.name}</td><td>{money(r.revenue)}</td><td>{pct(r.share)}</td><td>{money(r.grossProfit)}</td><td>{pct(r.margin)}</td><td>{pct(r.recentMargin)}</td></tr>)}</tbody></table>}
-      note={`Margin over the 12 months, then over the latest 3 closed months; red when either is a loss. Accounts not featured count together as Other accounts.`} />
+      note={`Margin over ${isYtd ? 'the year to date' : 'the 12 months'}, then over the latest 3 closed months; red when either is a loss. Accounts not featured count together as Other accounts.`} />
 
     <Section id="week" title="This week" subtitle={week.start ? `Labor % against target, ${weekRange(week.start)}` : 'Labor % against target'}
       figures={[

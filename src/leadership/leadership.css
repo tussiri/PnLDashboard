@@ -324,6 +324,7 @@ tr.dim td{color:var(--text3)}
 .story{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:24px}
 .story>*{min-width:0}
 .story>.wide{grid-column:1/-1}
+.story-period{display:flex;justify-content:flex-end}
 .story-card{display:flex;flex-direction:column;height:100%;padding:0}
 .story-h{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;padding:14px 16px 0}
 .story-h h3{font-size:14px;font-weight:600;color:var(--text);margin:0}

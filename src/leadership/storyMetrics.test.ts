@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { BudgetMonth, CompanyMonth } from '../services/apiTypes'
-import { accountsStory, allocationsStory, largestRemainder, per100, planStory, revenueStory, storyWindow, weekStory } from './storyMetrics'
+import { accountsStory, allocationsStory, largestRemainder, per100, planStory, revenueStory, storyWindow, weekStory, yearWindow } from './storyMetrics'
 
 const money = { revenue: 0, direct_labor: 0, management_wages: 0, subcontractors: 0, payroll_taxes: 0, gross_profit: 0 }
 function month(m: string, v: Partial<CompanyMonth> = {}): CompanyMonth {
@@ -56,6 +56,19 @@ describe('storyWindow and revenueStory', () => {
     expect(r.revenue).toBeNull()
     expect(r.margin).toBeNull()
     expect(r.trend).toBeNull()
+  })
+})
+
+describe('yearWindow', () => {
+  it('keeps the months of the latest closed month\'s year, as the Company year to date does', () => {
+    const w = storyWindow([month('2025-11', { revenue: 50 }), month('2025-12', { revenue: 50 }), month('2026-01', { revenue: 100 }), month('2026-02', { revenue: 120, closed: false })])
+    const y = yearWindow(w)!
+    expect([y.from, y.through]).toEqual(['2026-01-01', '2026-02-01'])
+    expect(revenueStory(y).revenue).toBe(100)
+    expect(revenueStory(y).revenue).toBe(revenueStory(w).yearToDate?.revenue)
+  })
+  it('is null with no closed month', () => {
+    expect(yearWindow(storyWindow([month('2026-01', { revenue: 100, closed: false })]))).toBeNull()
   })
 })
 
