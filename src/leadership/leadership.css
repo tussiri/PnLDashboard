@@ -321,6 +321,9 @@ tr.dim td{color:var(--text3)}
 /* Company story ("At a glance"): five cards, the first full width, the rest paired, stacked below 900px. */
 .sect-h{font-size:13px;font-weight:600;color:var(--text2);margin:4px 0 10px}
 .sect-h+.kpi-lg{margin-top:0}
+.sect-row{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin:4px 0 10px}
+.sect-row .sect-h{margin:0}
+.sect-row .pills{margin-bottom:0}
 .story{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:24px}
 .story>*{min-width:0}
 .story>.wide{grid-column:1/-1}

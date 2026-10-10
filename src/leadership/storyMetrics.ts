@@ -18,7 +18,13 @@ const ym = (iso: string) => iso.slice(0, 7)
 
 // --- Window -----------------------------------------------------------------------
 
+/** The story's period: the calendar year to date of the last month the job cost covers, or the last 12 months. */
+export type StoryPeriod = 'ytd' | '12m'
+
 export interface StoryWindow {
+  period: StoryPeriod
+  /** The window's calendar year (that of its last month), for labels. */
+  year: string | null
   /** Every month in the window, oldest first, closed or not. */
   months: CompanyMonth[]
   /** The window's job-cost-closed months: the only ones counted in its figures. */
@@ -27,10 +33,15 @@ export interface StoryWindow {
   through: string | null
 }
 
-/** The last WINDOW months of the response (it ends with the last month that has revenue). */
-export function storyWindow(months: CompanyMonth[], size = WINDOW): StoryWindow {
-  const inWindow = months.slice(-size)
-  return { months: inWindow, closed: inWindow.filter((m) => m.closed), from: inWindow[0]?.month ?? null, through: inWindow.at(-1)?.month ?? null }
+/**
+ * The story's months, from a response that ends with the last month that has revenue: the last `size` months
+ * for '12m', or the months of that last month's calendar year (at most `size`) for 'ytd'.
+ */
+export function storyWindow(months: CompanyMonth[], size = WINDOW, period: StoryPeriod = '12m'): StoryWindow {
+  const year = months.at(-1)?.month.slice(0, 4) ?? null
+  const last = months.slice(-size)
+  const inWindow = period === 'ytd' ? last.filter((m) => m.month.startsWith(year ?? '-')) : last
+  return { period, year, months: inWindow, closed: inWindow.filter((m) => m.closed), from: inWindow[0]?.month ?? null, through: inWindow.at(-1)?.month ?? null }
 }
 
 // --- 1. Revenue -------------------------------------------------------------------
@@ -49,12 +60,16 @@ export interface RevenueStory {
   yearToDate: { year: string; revenue: number } | null
 }
 
-export function revenueStory(w: StoryWindow, trendSize = TREND): RevenueStory {
+/**
+ * Revenue, margin and labor share over the window's closed months. The trend reads `trendFrom` (by default the
+ * window), so a year to date that is too short for two TREND halves can still take it from the last 12 months.
+ */
+export function revenueStory(w: StoryWindow, trendSize = TREND, trendFrom: StoryWindow = w): RevenueStory {
   const revenue = sum(w.closed, (m) => m.revenue)
   const profit = sum(w.closed, (m) => m.gross_profit)
   const labor = sum(w.closed, (m) => m.direct_labor)
-  const recent = w.closed.slice(-trendSize)
-  const prior = w.closed.slice(-trendSize * 2, -trendSize)
+  const recent = trendFrom.closed.slice(-trendSize)
+  const prior = trendFrom.closed.slice(-trendSize * 2, -trendSize)
   const trend = recent.length === trendSize && prior.length === trendSize
     ? { recent: sum(recent, (m) => m.revenue), prior: sum(prior, (m) => m.revenue), change: null as number | null, recentFrom: recent[0].month, recentTo: recent.at(-1)!.month }
     : null

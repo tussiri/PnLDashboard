@@ -8,8 +8,10 @@ and `docs/api-contract.md`.
 
 ## Rules for every figure
 
-- **Anchored to the data, not today.** The window is the last 12 months of `GET /leadership/company`, which
-  ends with the last month that has job cost revenue. The week is the selected week, by default the latest
+- **Anchored to the data, not today.** The window ends with the last month of `GET /leadership/company` (the last
+  month that has job cost revenue) and covers that month's calendar year to date by default, or the last 12
+  months with the period toggle. The revenue trend always compares the latest 3 closed months with the 3
+  before, from the last 12 months. The week is the selected week, by default the latest
   complete one (its Sunday past both today and the last rebuild).
 - **Censored, not zero.** A month that is not job-cost closed is shown in the chart but left out of every
   figure. A value that is not yet knowable (too few closed months, no billing, no budget) shows a dash.
@@ -20,7 +22,7 @@ and `docs/api-contract.md`.
 
 ### Revenue
 
-Revenue of every account over the closed months of the last 12 months the job cost covers: job cost revenue, or Relay AR for a subcontracted FedEx site. Not the calendar year to date: that figure, the Company Revenue YTD, is given beside it.
+Revenue of every account over the closed months of the selected period, ending with the last month the job cost covers: the calendar year to date (the default) or the last 12 months. Job cost revenue, or Relay AR for a subcontracted FedEx site. Over the year to date it is the Company Revenue YTD.
 
 ```text
 sum(revenue) over closed months in the window

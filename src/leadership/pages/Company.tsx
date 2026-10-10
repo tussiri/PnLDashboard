@@ -1,9 +1,9 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useApiQuery } from '../../hooks/useApiQuery'
 import type { BudgetMonth, CompanyMonth, CompanyResponse, LeadershipRow } from '../../services/apiTypes'
 import { queryKey } from '../../services/queryClient'
 import { RevenueMarginChart, seriesColor, StackedMoneyChart, useTokens } from '../charts'
-import { CompanyStory } from '../CompanyStory'
+import { CompanyStory, STORY_PERIODS } from '../CompanyStory'
 import { rowsOfWeek, segmentOrder, useRows } from '../data'
 import { hours, money, moneyK, pct } from '../format'
 import { accountSummary, statusOf, type AccountSummary } from '../metrics'
@@ -11,7 +11,7 @@ import { monthLabel, monthShort, weekRange } from '../routes'
 import { useRefreshOnRebuild } from '../refresh'
 import { PageHeader, updatedLine } from '../Shell'
 import { useLeadership } from '../state'
-import { Badge, ChartCard, Empty, Kpi, LoadError, Skeleton, SortTable, Swatch, toneOf, VocabContext, type Column } from '../ui'
+import { Badge, ChartCard, Empty, Kpi, LoadError, Pills, Skeleton, SortTable, Swatch, toneOf, VocabContext, type Column } from '../ui'
 import { vocabOf } from '../vocab'
 
 const ratio = (a: number, b: number) => (b ? a / b : null)
@@ -31,6 +31,7 @@ const DETAIL_MONTHS = 14
 export function Company() {
   const { api, keyPrefix, decision, config, featured, optionsFor, weekStart, navigate, can } = useLeadership()
   const t = useTokens()
+  const [period, setPeriod] = useState<'ytd' | '12m'>('ytd')
   const q = useApiQuery<CompanyResponse>(decision ? queryKey(`${keyPrefix}/leadership/company`, { months: STORY_MONTHS }) : null,
     (signal) => api.leadershipCompany(STORY_MONTHS, signal), [api])
   const rowsQuery = useRows('featured', 1)
@@ -106,11 +107,11 @@ export function Company() {
   return <>
     <PageHeader title="Company" subtitle={subtitle} account={false} target={false} />
     {q.error ? <LoadError error={q.error} onRetry={q.refetch} /> : !q.data ? <Skeleton height={420} /> : !months.length ? <Empty>No job cost loaded.</Empty> : <>
-      <h2 className="sect-h">At a glance</h2>
+      <div className="sect-row"><h2 className="sect-h">At a glance</h2><Pills label="Period" options={STORY_PERIODS} value={period} onChange={setPeriod} /></div>
       <CompanyStory months={allMonths} accountNames={Object.fromEntries(q.data.accounts.map((a) => [a.slug, a.name]))}
         week={{ start: weekStart, loading: !rowsQuery.data && !rowsQuery.error,
           lines: lines.map((l) => ({ slug: l.slug, name: l.name, laborPct: l.summary?.account.measurePct ?? null, target: l.target, watchBand: l.watchBand, overHours: l.summary?.headerOverHours ?? null })) }}
-        budgets={budgetsQuery.data ?? null} budgetsLoading={budgetsQuery.loading} />
+        budgets={budgetsQuery.data ?? null} budgetsLoading={budgetsQuery.loading} period={period} />
       <h2 className="sect-h">Supporting detail</h2>
       <div className="kpi-lg">
         <Kpi label={`Revenue ${year} YTD`} value={money(revenue)} sub={`${ytd.length} closed months`} />
