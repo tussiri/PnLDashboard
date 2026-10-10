@@ -45,6 +45,17 @@ describe('storyWindow and revenueStory', () => {
     expect(r.revenue).toBe(330)
     expect(r.yearToDate).toEqual({ year: '2026', revenue: 210 })
   })
+  it('takes the calendar year to date of the last month, with the trend from the 12 months', () => {
+    const months = [month('2025-10', { revenue: 90 }), month('2025-11', { revenue: 90 }), month('2025-12', { revenue: 90 }),
+      month('2026-01', { revenue: 100 }), month('2026-02', { revenue: 100 }), month('2026-03', { revenue: 120 }), month('2026-04', { revenue: 0, closed: false })]
+    const ytd = storyWindow(months, 12, 'ytd')
+    expect([ytd.from, ytd.through, ytd.year]).toEqual(['2026-01-01', '2026-04-01', '2026'])
+    const r = revenueStory(ytd, 3, storyWindow(months))
+    expect(r.revenue).toBe(320)
+    expect(r.closedMonths).toBe(3)
+    expect(r.trend?.change).toBeCloseTo(320 / 270 - 1)
+    expect(revenueStory(ytd).trend).toBeNull()
+  })
   it('compares the latest three closed months with the three before', () => {
     const r = revenueStory(storyWindow(series(6, (i) => ({ revenue: i < 3 ? 100 : 110 }))))
     expect(r.trend?.prior).toBe(300)
