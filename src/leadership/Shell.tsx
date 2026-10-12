@@ -102,10 +102,10 @@ export function PageHeader({ title, subtitle, account = true, week = true, targe
         <select id="mo" value={month ?? ''} onChange={(e) => navigate({ month: e.target.value, compare: undefined }, { replace: true })}>
           {months.map((m) => <option key={m} value={m}>{monthLabel(`${m}-01`)}</option>)}
         </select>
-        <label htmlFor="cmp">Compare to</label>
+        {route.tab === 'compare' && <><label htmlFor="cmp">Compare to</label>
         <select id="cmp" value={compareMonth ?? ''} onChange={(e) => navigate({ compare: month && e.target.value === priorMonth(month) ? undefined : e.target.value }, { replace: true })}>
           {compareMonths.map((m) => <option key={m} value={m}>{monthLabel(`${m}-01`)}</option>)}
-        </select></>}
+        </select></>}</>}
       {week && !(periodSwitch && monthMode) && <><label htmlFor="wk">Week</label>
         <select id="wk" value={weekStart ?? ''} onChange={(e) => navigate({ week: weekEndOf(e.target.value) })}>
           {weeks.map((w) => <option key={w.week_start} value={w.week_start}>{weekLabel(w.week_start)}{w.in_progress ? ' (in progress)' : ''}</option>)}

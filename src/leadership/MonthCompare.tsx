@@ -1,35 +1,43 @@
 import type { LeadershipAccount, LeadershipRow } from '../services/apiTypes'
 import { hours, money, pct, pts } from './format'
-import type { AccountSummary } from './metrics'
+import { useMemo, useState } from 'react'
+import { accountSummary, type AccountSummary, type MetricOptions } from './metrics'
 import { compareGroups, compareSites, delta, hoursChange, moneyChange, pctChange, type Delta, type SiteCompare } from './monthCompare'
-import { segmentLabel } from './data'
+import { daysInMonth, segmentLabel, segmentOrder, useMonthRows } from './data'
 import { monthLabel, monthShort } from './routes'
 import { useLeadership } from './state'
-import { Skeleton, SortTable, useVocab, type Column } from './ui'
+import { Pills, Skeleton, SortTable, useVocab, type Column } from './ui'
 import { wordsFor } from './vocab'
 
 /** Tone of a change: rising is bad for cost-like measures (labor %, OT cost). */
 const riseBad = (v: number | null, eps = 0) => (v == null ? '' : v > eps ? 'bad' : v < -eps ? 'ok' : '')
 
+type View = 'totals' | 'groups' | 'sites'
+
 /**
- * The month rollup against a comparison month: account totals, each group and each site, with the
+ * The Compare months tab: the month rollup against a comparison month (the header's Compare to, the
+ * month before by default), one view at a time: account totals, each group, or each site, with the
  * change in dollars and percent (labor % in points).
  */
-export function MonthCompare({ account, month, compare, summary, prior, loading }: {
-  account: LeadershipAccount; month: string; compare: string
+export function MonthCompare({ account, month, summary, options }: {
+  account: LeadershipAccount; month: string
   summary: AccountSummary<LeadershipRow>
-  /** The comparison month's summary; null when it has no rows. */
-  prior: AccountSummary<LeadershipRow> | null
-  loading: boolean
+  options: MetricOptions
 }) {
-  const { navigate, can } = useLeadership()
+  const { navigate, can, compareMonth } = useLeadership()
   const w = wordsFor(useVocab())
+  const [view, setView] = useState<View>('totals')
+  const compare = compareMonth ?? month
+  const query = useMonthRows(account.slug, compareMonth)
+  const prior = useMemo(() => (query.data?.rows.length
+    ? accountSummary(query.data.rows, { ...options, periodDays: daysInMonth(compare) }, segmentOrder(account)) : null), [query.data, options, compare, account])
+  const loading = query.loading
   const sameYear = month.slice(0, 4) === compare.slice(0, 4)
   const tag = (m: string) => (sameYear ? monthShort(`${m}-01`) : monthLabel(`${m}-01`))
   const cur = tag(month), cmp = tag(compare)
   const title = `${monthLabel(`${month}-01`)} vs ${monthLabel(`${compare}-01`)}`
   if (loading) return <div className="card"><div className="ct"><span>{title}</span></div><Skeleton height={160} /></div>
-  if (!prior) return <div className="card"><div className="ct"><span>{title}</span></div><p className="empty">No data for {monthLabel(`${compare}-01`)}.</p></div>
+  if (query.error || !prior) return <div className="card"><div className="ct"><span>{title}</span></div><p className="empty">No data for {monthLabel(`${compare}-01`)}.</p></div>
 
   const a = summary.account, b = prior.account
   const measures: { label: string; d: Delta; fmt: (v: number | null) => string; change: (v: number | null) => string; tone?: string; points?: boolean }[] = [
@@ -64,15 +72,21 @@ export function MonthCompare({ account, month, compare, summary, prior, loading 
     { key: 'otd', header: 'OT cost change', value: (r) => r.otDollars.diff, render: (r) => <span className={riseBad(r.otDollars.diff)}>{moneyChange(r.otDollars.diff)}</span> },
   ]
 
+  const views: { value: View; label: string }[] = [
+    { value: 'totals', label: 'Totals' },
+    ...(groups.length > 1 ? [{ value: 'groups' as const, label: `By ${segmentLabel(account)}` }] : []),
+    { value: 'sites', label: 'By site' },
+  ]
+  const shown = views.some((v) => v.value === view) ? view : 'totals'
   return <div className="card month-compare">
-    <div className="ct"><span>{title}</span></div>
-    <div className="tw"><table>
+    <div className="ct"><span>{title}</span><Pills label="Comparison view" options={views} value={shown} onChange={setView} /></div>
+    {shown === 'totals' && <div className="tw"><table>
       <caption className="sr-only">{title}, account totals</caption>
       <thead><tr><th className="nosort l" scope="col">Measure</th><th className="nosort" scope="col">{cur}</th><th className="nosort" scope="col">{cmp}</th><th className="nosort" scope="col">Change</th><th className="nosort" scope="col">Change %</th></tr></thead>
       <tbody>{measures.map((m) => <tr key={m.label}><td className="l">{m.label}</td><td><b>{m.fmt(m.d.cur)}</b></td><td className="neutral">{m.fmt(m.d.cmp)}</td>
         <td className={m.tone}>{m.change(m.d.diff)}</td><td className={m.tone}>{m.points ? '–' : pctChange(m.d.pct)}</td></tr>)}</tbody>
-    </table></div>
-    {groups.length > 1 && <div className="tw"><table>
+    </table></div>}
+    {shown === 'groups' && <div className="tw"><table>
       <caption className="sr-only">{title}, by {segmentLabel(account).toLowerCase()}</caption>
       <thead><tr><th className="nosort l" scope="col">{segmentLabel(account)}</th><th className="nosort" scope="col">{w.invoiceCol} change</th><th className="nosort" scope="col">{w.laborCol} {cur}</th><th className="nosort" scope="col">{w.laborCol} {cmp}</th>
         <th className="nosort" scope="col">Change</th><th className="nosort" scope="col">Change %</th><th className="nosort" scope="col">Labor % {cur}</th><th className="nosort" scope="col">Labor % {cmp}</th><th className="nosort" scope="col">Labor % change</th></tr></thead>
@@ -80,9 +94,9 @@ export function MonthCompare({ account, month, compare, summary, prior, loading 
         <td>{moneyChange(g.cost.diff)}</td><td>{pctChange(g.cost.pct)}</td><td>{pct(g.measurePct.cur)}</td><td className="neutral">{pct(g.measurePct.cmp)}</td>
         <td className={riseBad(g.measurePct.diff, 0.0005)}>{pts(g.measurePct.diff)}</td></tr>)}</tbody>
     </table></div>}
-    <SortTable caption={`${title}, by site`} rows={sites} columns={siteCols} defaultSort={{ key: 'labd', dir: -1 }} pageSize={50}
+    {shown === 'sites' && <SortTable caption={`${title}, by site`} rows={sites} columns={siteCols} defaultSort={{ key: 'labd', dir: -1 }} pageSize={50}
       rowClass={(r) => (r.cost.cur == null ? 'dim' : '')}
       onRowClick={(r) => navigate({ site: { company: r.company ?? '', job: r.job } })} rowLabel={(r) => `Open ${r.site}`}
-      csvName={`${account.slug}-${month}-vs-${compare}`} />
+      csvName={`${account.slug}-${month}-vs-${compare}`} />}
   </div>
 }
