@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from dataclasses import replace
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import httpx
@@ -22,14 +23,16 @@ def graph_transport(messages: list[dict[str, Any]], attachments: dict[str, list[
         if request.url.host == "login.microsoftonline.com":
             return httpx.Response(200, json={"access_token": "tok", "expires_in": 3600})
         assert request.headers["authorization"] == "Bearer tok"
+        assert request.headers["prefer"] == 'IdType="ImmutableId"'  # ids survive another tool moving the mail
         if status != 200:
             return httpx.Response(status, json={})
         path = request.url.path
-        if path.endswith("/mailFolders/inbox/messages"):
+        if path.endswith("/messages"):  # the whole mailbox, not only the inbox
+            assert "mailFolders" not in path
             if request.url.params.get("page") == "2":
                 return httpx.Response(200, json={"value": messages[1:]})
             assert "receivedDateTime ge" in request.url.params["$filter"] and "hasAttachments eq true" in request.url.params["$filter"]
-            return httpx.Response(200, json={"value": messages[:1], "@odata.nextLink": "https://graph.microsoft.com/v1.0/users/x/mailFolders/inbox/messages?page=2"})
+            return httpx.Response(200, json={"value": messages[:1], "@odata.nextLink": "https://graph.microsoft.com/v1.0/users/x/messages?page=2"})
         if path.endswith("/$value"):
             return httpx.Response(200, content=files[path.split("/")[-2]])
         if path.endswith("/attachments"):
@@ -44,6 +47,7 @@ class FakeDb:
     def __init__(self):
         self.rows: dict[tuple[str, str], tuple] = {}
         self.setting: dict[str, Any] | None = None
+        self.scanned = True  # a mailbox-wide poll has run before
 
     @contextmanager
     def connection(self, *a, **k):
@@ -59,6 +63,8 @@ class FakeDb:
                     return {"last": max((r[2] for r in db.rows.values()), default=None)}
                 if "FROM ops.mail_attachment WHERE" in self.sql:
                     return (1,) if tuple(self.params) in db.rows else None
+                if "integration_sync_run" in self.sql:
+                    return (1,) if db.scanned else None
                 if "app_setting" in self.sql:
                     return {"value": db.setting} if db.setting else None
                 return None
@@ -211,3 +217,28 @@ def test_recognize_tells_a_budget_from_a_feed():
     assert mail_inbox.recognize("Plano_budget.csv", BUDGET_TSV) == "budget"
     assert mail_inbox.recognize("Crane_job_cost.csv", JOB_COST) == "job_cost"
     assert mail_inbox.recognize("ar_aging.csv", OTHER_REPORT) is None
+
+
+def test_a_poll_starts_a_day_before_the_last_attachment_and_the_first_mailbox_wide_poll_catches_up():
+    now = datetime(2026, 10, 12, 19, 0, tzinfo=timezone.utc)
+    last = datetime(2026, 10, 12, 14, 9, tzinfo=timezone.utc)
+    assert mail_inbox.poll_since(None, False, 14, now) == now - timedelta(days=14)
+    assert mail_inbox.poll_since(last, True, 14, now) == last - timedelta(days=1)
+    # Mail other tools moved out of the inbox before the poller read every folder: reach back a month once.
+    assert mail_inbox.poll_since(last, False, 14, now) == now - timedelta(days=mail_inbox.MAILBOX_CATCH_UP_DAYS)
+
+
+def test_the_first_mailbox_wide_poll_reads_back_further(setup):
+    db, _loads, _rebuilds = setup
+    db.rows[("old", "x")] = ("old", "x", datetime(2026, 10, 12, tzinfo=timezone.utc))
+    db.scanned = False
+    filters: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "login.microsoftonline.com":
+            return httpx.Response(200, json={"access_token": "tok", "expires_in": 3600})
+        filters.append(request.url.params["$filter"])
+        return httpx.Response(200, json={"value": []})
+    mail_inbox.poll(mail_inbox.Graph(httpx.Client(transport=httpx.MockTransport(handler))))
+    start = filters[0].split("receivedDateTime ge ")[1].split(" ")[0]
+    assert start < "2026-10-11"  # not the usual one-day overlap
