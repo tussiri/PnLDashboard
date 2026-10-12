@@ -23,3 +23,10 @@ describe('permissions', () => {
     expect(can({ username: 'x', role: 'admin', permissions: { 'view.company': false } }, 'view.company')).toBe(true)
   })
 })
+
+describe('view.company-story', () => {
+  it('is off for every role but admin until an administrator grants it', () => {
+    expect([ROLE_DEFAULTS.executive['view.company-story'], ROLE_DEFAULTS.analyst['view.company-story'], ROLE_DEFAULTS.admin['view.company-story']]).toEqual([false, false, true])
+    expect(effective('executive', { 'view.company-story': true })['view.company-story']).toBe(true)
+  })
+})

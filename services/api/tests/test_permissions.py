@@ -113,3 +113,10 @@ def test_matrix_routes_and_enforcement(store):
     # An unrelated change keeps the overrides.
     c.patch("/api/v1/users/pat", json={"permissions": {"tab.map": False}})
     assert c.patch("/api/v1/users/pat", json={"active": True}).json()["user"]["permissions"] == {"tab.map": False}
+
+
+def test_the_company_story_is_admin_only_by_default():
+    assert not permissions.effective("executive", None)["view.company-story"]
+    assert not permissions.effective("analyst", None)["view.company-story"]
+    assert permissions.effective("admin", None)["view.company-story"]
+    assert permissions.effective("executive", {"view.company-story": True})["view.company-story"]

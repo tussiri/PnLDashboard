@@ -633,6 +633,7 @@ separate and unchanged.
 | Key | Default off for | Enforced by |
 |---|---|---|
 | `view.company` | – | `403` on `GET /leadership/company`; the Company link |
+| `view.company-story` | executive, analyst | the Company page's "At a glance" story (in testing); its data is `GET /leadership/company`, which the page already shows |
 | `view.analytics` | executive, analyst | the Portfolio link (its data is the user's own rows) |
 | `tab.sites`, `tab.pallet`, `tab.over-target`, `tab.overtime`, `tab.income-statement`, `tab.subcontracted`, `tab.map` | – | the account tab |
 | `tab.vendors` | – | `403` on `GET /leadership/vendors`; the Vendors tab |
