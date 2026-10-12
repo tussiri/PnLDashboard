@@ -462,6 +462,10 @@ Sign-in itself (`/auth/login`, `/auth/logout`, `/auth/me`, `/auth/mode`) is desc
 | `POST /users` | Admin. Body `{username, role, password, accounts?, permissions?}`; `201 {user}`. `409` when the name exists (any case) or is an environment user; `422` for an unknown permission key. |
 | `PATCH /users/{username}` | Admin. Body any of `{role, active, password, accounts, permissions}` (`accounts: []` = every account; `permissions: {}` = the role's defaults, otherwise the whole override set); `{user}`. `409` for an environment user or when the change would leave no active administrator; `404` for an unknown user. A password reset refuses every session issued before it (the administrator resetting their own password gets a fresh cookie). |
 
+`POST /auth/password` (any signed-in role) takes `{current_password, new_password}` and answers `{user}`.
+`401` without a session, `403` for a wrong current password, `409` for an APP_USERS_JSON user, `422` for a
+new password under 10 characters. It refuses every session issued before it and sets a fresh cookie on this one.
+
 `/auth/login`, `/auth/setup` and `/auth/me` answer `{user: {username, role, accounts, permissions}}`
 where `permissions` are the user's effective values (see the permissions section below).
 

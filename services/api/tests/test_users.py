@@ -140,6 +140,35 @@ def test_password_reset_ends_earlier_sessions(store):
     assert signin(ana, "ana") == 401 and signin(ana, "ana", "another-long-password") == 200
 
 
+def test_any_user_changes_their_own_password(store):
+    settings(APP_SETUP_TOKEN=SETUP)
+    c = client()
+    c.post("/api/v1/auth/setup", json={"token": SETUP, "username": "boss", "password": PASSWORD})
+    c.post("/api/v1/users", json={"username": "ana", "role": "executive", "password": PASSWORD})
+    ana, other_tab = client(), client()
+    signin(ana, "ana")
+    signin(other_tab, "ana")
+    change = lambda current, new: ana.post("/api/v1/auth/password", json={"current_password": current, "new_password": new})
+    assert change("wrong-password-123", "another-long-password").status_code == 403
+    assert change(PASSWORD, "short").status_code == 422
+    r = change(PASSWORD, "another-long-password")
+    assert r.status_code == 200 and r.json()["user"]["role"] == "executive"
+    assert COOKIE_NAME in r.headers["set-cookie"]  # this session gets a fresh cookie and stays signed in
+    users.clear_cache()
+    assert other_tab.get("/api/v1/view").status_code == 401  # every earlier session ends
+    assert signin(ana, "ana") == 401 and signin(ana, "ana", "another-long-password") == 200
+    assert store.get("ana").role == "executive"  # nothing but the password changed
+
+
+def test_password_change_needs_a_session_and_a_database_user(store):
+    settings(APP_USERS_JSON=f'[{{"username":"break","role":"admin","password_hash":"{hash_password("env-password-123", iterations=1000)}"}}]')
+    c = client()
+    body = {"current_password": "env-password-123", "new_password": "another-long-password"}
+    assert c.post("/api/v1/auth/password", json=body).status_code == 401
+    signin(c, "break", "env-password-123")
+    assert c.post("/api/v1/auth/password", json=body).status_code == 409
+
+
 def test_the_last_active_admin_cannot_be_removed(store):
     settings(APP_SETUP_TOKEN=SETUP)
     c = client()

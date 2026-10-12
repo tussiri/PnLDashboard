@@ -1,4 +1,5 @@
-"""Sign-in, sign-out, the current-session probe and first-administrator setup (public routes under /auth)."""
+"""Sign-in, sign-out, the current-session probe, first-administrator setup and changing one's own password
+(routes under /auth; the password change needs a session)."""
 from __future__ import annotations
 
 import hmac
@@ -9,7 +10,7 @@ from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
 from .. import permissions, users
-from ..auth import COOKIE_NAME, SESSION_TTL_SECONDS, User, get_auth_settings, sign_session
+from ..auth import COOKIE_NAME, SESSION_TTL_SECONDS, User, get_auth_settings, sign_session, verify_password
 from ..common import current_user
 
 router = APIRouter()
@@ -23,6 +24,11 @@ FAILED_LOGIN_DELAY_SECONDS = 0.3
 class LoginBody(BaseModel):
     username: str = Field(min_length=1, max_length=200)
     password: str = Field(min_length=1, max_length=1000)
+
+
+class PasswordBody(BaseModel):
+    current_password: str = Field(min_length=1, max_length=1000)
+    new_password: str = Field(min_length=1, max_length=1000)
 
 
 class SetupBody(BaseModel):
@@ -118,4 +124,26 @@ def me(request: Request) -> dict[str, Any]:
     user = current_user(request)
     if user is None:
         raise HTTPException(status_code=401, detail="Sign in required")
+    return {"user": user_payload(user)}
+
+
+@router.post("/auth/password")
+def change_password(body: PasswordBody, request: Request, response: Response) -> dict[str, Any]:
+    """The signed-in user changes their own password, any role. Needs the current password; ends every
+    other session (as an administrator's reset does) and keeps this one signed in."""
+    user = current_user(request)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Sign in required")
+    if user.username in get_auth_settings().users:
+        raise HTTPException(status_code=409, detail="This sign-in is defined in APP_USERS_JSON; change it there")
+    record = users.lookup(user.username)
+    if record is None or not verify_password(body.current_password, record.password_hash):
+        time.sleep(FAILED_LOGIN_DELAY_SECONDS)
+        # 403, not 401: a wrong current password must not read as a lost session.
+        raise HTTPException(status_code=403, detail="The current password is not correct")
+    try:
+        updated = users.update(user.username, user.username, password=body.new_password)
+    except users.UserError as exc:
+        raise HTTPException(status_code=exc.status, detail=str(exc)) from exc
+    set_session_cookie(response, request, User(updated.username, updated.role))
     return {"user": user_payload(user)}
