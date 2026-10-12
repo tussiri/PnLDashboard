@@ -31,7 +31,7 @@ def test_role_defaults_and_overrides():
     assert an["view.analytics"] and not an["tab.vendors"] and an["data.staffing"]
     assert permissions.overrides_of("executive", ex) == {}
     assert permissions.overrides_of("executive", {**ex, "view.analytics": True, "tab.map": False}) == {"view.analytics": True, "tab.map": False}
-    assert set(permissions.catalog()["defaults"]) == {"executive", "analyst", "admin"}
+    assert set(permissions.catalog()["defaults"]) == {"executive", "analyst", "admin", "none"}
     with pytest.raises(ValueError):
         permissions.validate({"view.nothing": True})
     with pytest.raises(ValueError):

@@ -10,7 +10,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
-from .. import permissions, users
+from .. import permissions, roles, users
 from ..auth import User, get_auth_settings
 from ..common import current_user, require_admin
 from .auth import set_session_cookie
@@ -25,6 +25,19 @@ class UserIn(BaseModel):
     #: Accounts the user may see; empty or absent = every account.
     accounts: list[str] | None = None
     #: Permission overrides over the role's defaults; absent or {} = the defaults.
+    permissions: dict[str, bool] | None = None
+
+
+class RoleIn(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    #: Permissions over the starting point (``copy_from``'s, or all off); absent = the starting point.
+    permissions: dict[str, bool] | None = None
+    copy_from: str | None = None
+
+
+class RolePatch(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    #: Keys named here change; keys left out keep their value.
     permissions: dict[str, bool] | None = None
 
 
@@ -62,7 +75,7 @@ def environment_admins() -> int:
 @router.get("/users")
 def list_users() -> dict[str, Any]:
     settings = get_auth_settings()
-    env = [{"username": u.username, "role": u.role, "active": True, "source": "development" if settings.is_dev_user(u) else "environment",
+    env = [{"username": u.username, "role": u.role, "role_name": roles.name(u.role), "active": True, "source": "development" if settings.is_dev_user(u) else "environment",
             "accounts": list(u.accounts) if u.accounts else None, "permissions": dict(u.permissions or {}),
             "effective_permissions": permissions.effective(u.role, u.permissions), "created_at": None, "created_by": None, "last_login_at": None}
            for u in settings.users.values()]
@@ -72,8 +85,63 @@ def list_users() -> dict[str, Any]:
 
 @router.get("/users/permissions")
 def permission_catalog() -> dict[str, Any]:
-    """Every permission (key, group, label) and each role's defaults."""
+    """Every permission (key, group, label) and each role's permissions."""
     return permissions.catalog()
+
+
+def _role_holders() -> dict[str, int]:
+    """Users per role slug, database and environment users alike."""
+    counts: dict[str, int] = {}
+    for u in [*users.listing(), *({"role": r.role} for r in get_auth_settings().users.values())]:
+        counts[u["role"]] = counts.get(u["role"], 0) + 1
+    return counts
+
+
+def _role_fail(exc: roles.RoleError) -> HTTPException:
+    return HTTPException(status_code=exc.status, detail=str(exc))
+
+
+@router.get("/users/roles")
+def list_roles() -> dict[str, Any]:
+    """Every role with its permissions and how many users hold it."""
+    holders = _role_holders()
+    return {"roles": [r.public(holders.get(r.slug, 0)) for r in roles.listing()]}
+
+
+@router.post("/users/roles", status_code=201)
+def create_role(body: RoleIn, request: Request) -> dict[str, Any]:
+    try:
+        return {"role": roles.create(body.name, body.permissions, _actor(request), copy_from=body.copy_from).public()}
+    except roles.RoleError as exc:
+        raise _role_fail(exc) from exc
+
+
+@router.patch("/users/roles/{slug}")
+def update_role(slug: str, body: RolePatch, request: Request) -> dict[str, Any]:
+    try:
+        role = roles.update(slug, _actor(request), name_=body.name, permissions_=body.permissions)
+    except roles.RoleError as exc:
+        raise _role_fail(exc) from exc
+    return {"role": role.public(_role_holders().get(role.slug, 0))}
+
+
+@router.post("/users/roles/{slug}/reset")
+def reset_role(slug: str, request: Request) -> dict[str, Any]:
+    """Executive or Analyst back to the shipped name and permissions."""
+    try:
+        role = roles.reset(slug, _actor(request))
+    except roles.RoleError as exc:
+        raise _role_fail(exc) from exc
+    return {"role": role.public(_role_holders().get(role.slug, 0))}
+
+
+@router.delete("/users/roles/{slug}")
+def delete_role(slug: str) -> dict[str, bool]:
+    try:
+        roles.delete(slug, _role_holders().get(slug, 0))
+    except roles.RoleError as exc:
+        raise _role_fail(exc) from exc
+    return {"ok": True}
 
 
 @router.post("/users", status_code=201)

@@ -457,10 +457,20 @@ Sign-in itself (`/auth/login`, `/auth/logout`, `/auth/me`, `/auth/mode`) is desc
 |---|---|
 | `GET /auth/setup` | `{needed}`: true while `APP_SETUP_TOKEN` is set and no database or `APP_USERS_JSON` user exists. Public. |
 | `POST /auth/setup` | Body `{token, username, password}`. Creates the first administrator and sets the session cookie; `201 {user: {username, role}}`. `404` without a setup token, `409` once any user exists, `401` for a wrong code, `422` for an invalid username or a password under 10 characters. Public. |
-| `GET /users` | Admin. `{users: [{username, role, active, source, accounts, permissions, effective_permissions, created_at, created_by, last_login_at}]}` (`accounts`: slugs the user may see, null = every account; `permissions`: overrides over the role's defaults; `effective_permissions`: every key after them); `source` is `database`, `environment` (`APP_USERS_JSON`, read-only) or `development` (dev mode). Never returns hashes. |
-| `GET /users/permissions` | Admin. The catalog: `{permissions: [{key, group, label}], defaults: {executive: {key: bool}, analyst, admin}}`. |
+| `GET /users` | Admin. `{users: [{username, role, role_name, active, source, accounts, permissions, effective_permissions, created_at, created_by, last_login_at}]}` (`accounts`: slugs the user may see, null = every account; `permissions`: overrides over the role's defaults; `effective_permissions`: every key after them); `source` is `database`, `environment` (`APP_USERS_JSON`, read-only) or `development` (dev mode). Never returns hashes. |
+| `GET /users/permissions` | Admin. The catalog: `{permissions: [{key, group, label}], defaults: {<role slug>: {key: bool}}}` for every role, No access included. |
+| `GET /users/roles` | Admin. `{roles: [{slug, name, permissions, built_in, editable, deletable, users}]}`: Administrator first, No access last. `users` counts holders; `deletable` is false for built-in roles and any role somebody holds. |
+| `POST /users/roles` | Admin. Body `{name, copy_from?, permissions?}`; `201 {role}`. The slug comes from the name. `409` when the name is taken (any case); `422` for a name under 2 characters, a built-in name, or an unknown key; `404` for an unknown `copy_from`. |
+| `PATCH /users/roles/{slug}` | Admin. Body any of `{name, permissions}`; only the keys named change; `{role}`. `409` for Administrator or No access. |
+| `POST /users/roles/{slug}/reset` | Admin. Executive or Analyst back to the shipped name and permissions; `{role}`. `409` for any other role. |
+| `DELETE /users/roles/{slug}` | Admin. `{ok}`. `409` for a built-in role or one somebody holds. |
 | `POST /users` | Admin. Body `{username, role, password, accounts?, permissions?}`; `201 {user}`. `409` when the name exists (any case) or is an environment user; `422` for an unknown permission key. |
 | `PATCH /users/{username}` | Admin. Body any of `{role, active, password, accounts, permissions}` (`accounts: []` = every account; `permissions: {}` = the role's defaults, otherwise the whole override set); `{user}`. `409` for an environment user or when the change would leave no active administrator; `404` for an unknown user. A password reset refuses every session issued before it (the administrator resetting their own password gets a fresh cookie). |
+
+`role` on users, `/auth/me` and `/auth/login` is any role's slug (Admin > Users > Roles), with `role_name`
+its display name; `none` (No access) is what a first Microsoft sign-in gets. The permission key
+`view.reporting` (Reporting and forecasts) gates the reporting, labor, forecast, staffing and
+platform GET routes that used to need the analyst or admin role.
 
 `GET /auth/entra/start` and `GET /auth/callback/entra` are browser navigations, not API calls: Microsoft
 sign-in (docs/auth-rbac.md). The callback answers `303` to `/` with a session cookie, or to
@@ -644,6 +654,7 @@ separate and unchanged.
 | `view.company` | – | `403` on `GET /leadership/company`; the Company link |
 | `view.company-story` | executive, analyst | the Company page's "At a glance" story (in testing); its data is `GET /leadership/company`, which the page already shows |
 | `view.analytics` | executive, analyst | the Portfolio link (its data is the user's own rows) |
+| `view.reporting` | executive | `403` on the reporting, labor, forecast and staffing routes and platform GET routes other than `/system/status` and `/dimensions` |
 | `tab.sites`, `tab.pallet`, `tab.over-target`, `tab.overtime`, `tab.income-statement`, `tab.subcontracted`, `tab.map` | – | the account tab |
 | `tab.vendors` | – | `403` on `GET /leadership/vendors`; the Vendors tab |
 | `data.allocations` | – | `alloc_management`, `alloc_burden`, `alloc_overhead` are dropped from the rows of `/leadership/rows`, `/leadership/month` and `/leadership/sites/…`; margin is hidden |

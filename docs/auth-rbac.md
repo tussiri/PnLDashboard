@@ -7,20 +7,31 @@ No new Python dependencies: PBKDF2 and HMAC come from the standard library.
 
 ## Roles
 
-| Role        | Sees                                   | API                                                                                   |
-|-------------|----------------------------------------|---------------------------------------------------------------------------------------|
-| `executive` | Executive Overview only                | `/executive/*`, `/system/status`, `/dimensions`                                       |
-| `analyst`   | every view except Administration       | everything above plus reporting, labor, forecast and platform GET routes              |
-| `admin`     | everything                             | everything, and platform/forecast POST/PUT routes without needing an admin token      |
+A role is a name and a set of permissions (below). Administrators create and edit roles in
+**Admin > Users > Roles** (`app/roles.py`, `ops.app_role`, migration 054): one row per role, one
+column per permission, and a tick changes that role for everyone holding it within 30 seconds.
+
+| Role                | Built in | What it holds                                                                 |
+|---------------------|----------|-------------------------------------------------------------------------------|
+| `admin` Administrator | fixed  | every permission, the Admin pages, every account; writes need no admin token  |
+| `executive` Executive | editable preset | the shipped defaults: no Portfolio, reporting or staffing requests     |
+| `analyst` Analyst   | editable preset | everything but Company at a glance and Portfolio                         |
+| any other slug      | custom   | exactly the boxes ticked (a new role starts from another role or from nothing) |
+| `none` No access    | fixed    | nothing; the role of a first Microsoft sign-in until an administrator picks one |
+
+Executive and Analyst can be renamed, edited and reset to their defaults but not deleted. A custom
+role can be renamed, edited, and deleted once nobody holds it. A user's own overrides (Permissions
+by user) still apply on top of their role, except for No access, which holds nothing whatever is ticked.
 
 Enforcement is attached to the `include_router` calls in `services/api/app/main.py`, so the router
 modules stay free of session logic:
 
 - `/health/*` and `/auth/*` are public.
 - `platform_access`: `/system/status` and `/dimensions` for any signed-in role (the shell needs them);
-  other platform GET routes need analyst or admin.
-- `require_role("analyst", "admin")` on reporting, labor, forecast and staffing (request lines carry pay rates); `require_role("executive",
-  "analyst", "admin")` on executive.
+  other platform GET routes need the `view.reporting` permission.
+- `require_access("view.reporting")` on reporting, labor, forecast and staffing (request lines carry pay
+  rates); any role with access on executive. No access (and a role deleted under a live session) gets
+  `403` everywhere but `/auth/*`.
 - Mutating requests (POST/PUT/PATCH/DELETE) accept **either** a valid `X-Admin-Token` **or** an
   admin-role session. `require_admin` on the individual write routes applies the same rule, so
   scripted calls with only the token keep working and a signed-in administrator does not need one.
@@ -29,8 +40,8 @@ Responses: `401` when no valid session exists, `403` when the role is not allowe
 
 ## Permissions
 
-Roles are presets. Each user also carries a permission matrix (Admin > Users > Permissions):
-Company and Portfolio views, each account tab, and data such as allocations and margin, the month
+Roles are presets. Each user also carries a permission matrix (Admin > Users > Permissions by user):
+Company and Portfolio views, reporting and forecasts, each account tab, and data such as allocations and margin, the month
 rollup, staffing requests, vendor invoices, photos and CSV export. Defaults come from the role
 (executives lack Portfolio and staffing requests; analysts lack Portfolio; the key is still `view.analytics`); an administrator's
 ticks that differ are stored as overrides in `ops.app_user.permissions` (migration 042) and Reset
@@ -118,11 +129,17 @@ endpoint (client secret and PKCE verifier) and checks the token's issuer, audien
 and nonce. The token arrives directly from Microsoft over TLS, so its signature is not checked
 (OpenID Connect Core 3.1.3.7, step 6).
 
-Nobody is created by signing in. The person's work email (`preferred_username`, else `email`) must
-be the username of an **active** dashboard user, compared without regard to case; the session is then
-that user's, with their role, accounts and permissions. Anyone else returns to the sign-in page told
-they have no access yet and to ask an administrator. So an administrator adds people in Admin > Users
-with their work email as the username before they sign in. Every failure returns to the sign-in page
+The person's work email (`preferred_username`, else `email`) is their username, compared without
+regard to case. An existing **active** user signs in with their role, accounts and permissions. Someone
+signing in for the first time is created with the **No access** role (`created_by` `microsoft`, an
+unusable random password): they see a "Waiting for access" page, Admin > Users lists them as waiting
+for a role, and nothing opens until an administrator picks one. A disabled user, or an email that cannot
+be a username, is refused (`not_provisioned`).
+
+Who may sign in at all is decided in Entra: on the dashboard's **Enterprise application**, set
+**Properties > Assignment required** to **Yes** and add people or groups under **Users and groups**.
+Anyone not assigned is stopped by Microsoft before reaching the dashboard. Without it, anyone in the
+tenant can sign in and land as No access. Every failure returns to the sign-in page
 with a short reason (`?signin_error=cancelled|expired|not_provisioned|failed|off`); Microsoft's own
 error text is logged, never shown.
 
@@ -147,9 +164,12 @@ sessions already issued; they run out within 12 hours.
 3. On the API service (Render: crane-ifs-api > Environment) set `ENTRA_TENANT_ID`, `ENTRA_CLIENT_ID`,
    `ENTRA_CLIENT_SECRET` and `ENTRA_REDIRECT_URI` (the address from step 1). Leave
    `AUTH_PASSWORD_LOGIN=all`.
-4. In Admin > Users, make sure each person's username is their Microsoft work email, and that an
-   administrator can still sign in with a password. Then try **Sign in with Microsoft**.
-5. When everyone signs in with Microsoft, set `AUTH_PASSWORD_LOGIN=admins`.
+4. In Entra, **Enterprise applications** > the dashboard > **Properties**: set **Assignment required**
+   to Yes, then add the people (or a group) under **Users and groups**.
+5. Make sure an administrator can still sign in with a password. Then try **Sign in with Microsoft**.
+   New people appear in Admin > Users waiting for a role; existing users whose username is their work
+   email keep theirs.
+6. When everyone signs in with Microsoft, set `AUTH_PASSWORD_LOGIN=admins`.
 
 Half a configuration (some `ENTRA_*` set, some empty), a tenant that is not a GUID, a redirect that is
 not `https://` (localhost aside), or `AUTH_PASSWORD_LOGIN=admins` without Microsoft sign-in stops the

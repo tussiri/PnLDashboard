@@ -11,7 +11,7 @@ const errorText = (e: unknown) => (e instanceof ApiError ? (e.isNetwork ? `API u
 const MICROSOFT_ERRORS: Record<string, string> = {
   cancelled: 'Microsoft sign-in was cancelled.',
   expired: 'The Microsoft sign-in took too long or was started in another window. Try again.',
-  not_provisioned: 'Your Microsoft account has no access to this dashboard yet. Ask an administrator to add your work email in Admin > Users.',
+  not_provisioned: 'Your Microsoft account cannot use this dashboard: it has been disabled, or its email cannot be a username. Ask an administrator.',
   off: 'Microsoft sign-in is not set up on this dashboard.',
   failed: 'Microsoft sign-in could not be completed. Try again, or ask an administrator.',
 }

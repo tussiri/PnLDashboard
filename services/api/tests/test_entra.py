@@ -81,7 +81,6 @@ def test_microsoft_sign_in_for_a_dashboard_user(store, monkeypatch):
 
 
 @pytest.mark.parametrize("claims,error", [
-    ({"preferred_username": "stranger@crane.com"}, "not_provisioned"),
     ({"aud": "another-app"}, "failed"),
     ({"tid": "99999999-2222-3333-4444-555555555555"}, "failed"),
     ({"iss": "https://login.microsoftonline.com/common/v2.0"}, "failed"),
@@ -95,6 +94,26 @@ def test_microsoft_sign_in_refusals(store, monkeypatch, claims, error):
     r, _, _ = returning(c, monkeypatch, claims=claims)
     assert r.headers["location"] == f"/?signin_error={error}"
     assert c.get("/api/v1/auth/me").status_code == 401
+
+
+def test_a_first_microsoft_sign_in_lands_with_no_access(store, monkeypatch):
+    settings(**ENTRA)
+    c = client()
+    with_users(c)
+    r, _, _ = returning(c, monkeypatch, claims={"preferred_username": "New.Person@Crane.com"})
+    assert r.headers["location"] == "/"
+    me = c.get("/api/v1/auth/me").json()["user"]
+    assert me["username"] == "new.person@crane.com" and me["role"] == "none" and me["role_name"] == "No access"
+    assert not any(me["permissions"].values())
+    assert c.get("/api/v1/view").status_code == 403  # nothing opens until an administrator picks a role
+    assert store.get("new.person@crane.com").created_by == "microsoft"
+    boss = client()
+    signin(boss, "boss")
+    assert boss.patch("/api/v1/users/new.person@crane.com", json={"role": "analyst"}).status_code == 200
+    users.clear_cache()
+    assert c.get("/api/v1/view").status_code == 200
+    r, _, _ = returning(c, monkeypatch, claims={"preferred_username": "odd+tag@crane.com"})
+    assert r.headers["location"] == "/?signin_error=not_provisioned"  # an email that cannot be a username
 
 
 def test_callback_needs_the_flow_cookie_and_its_state(store, monkeypatch):
