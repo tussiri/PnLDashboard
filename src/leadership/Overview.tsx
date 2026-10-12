@@ -163,6 +163,12 @@ export function Overview({ account, rows, summary, options, flags, headline = tr
   const anyProjected = !monthMode && shownWeeks.some((x) => x.projected)
   const selectedProjected = !monthMode && shownWeeks.some((x) => x.week === weekStart && x.projected)
   const projectedFlags = anyProjected ? shownWeeks.map((x) => x.projected) : undefined
+  // A finished week whose labor is not in yet: the headline shows the projection, not the near-zero labor received so far.
+  const selProj = selectedProjected && !flags.weekInProgress ? shownWeeks.find((x) => x.week === weekStart) ?? null : null
+  const shownCost = selProj?.cost ?? a.cost
+  const shownLp = selProj ? selProj.lp : a.measurePct
+  const shownMargin = a.margin - (shownCost - a.cost)
+  const shownStatus = selProj ? statusOf(shownLp, target, options.watchBand) : accountStatus
   const trendMonths = useMemo(() => (monthMode ? closed.filter((m) => !month || m.slice(0, 7) <= month) : []), [monthMode, closed, month])
   const monthTotals = (m: string, jobs: typeof scopeJobs) => {
     const inv = jobs.reduce((x, j) => x + monthRevenue(j.months[m], j.delivery_model === 'subcontracted'), 0)
@@ -205,14 +211,15 @@ export function Overview({ account, rows, summary, options, flags, headline = tr
 
   return <>
     {headline && <div className="kpi-lg">
-      <Kpi label={w.labor} value={money(a.cost)} sub={join(laborParts, change(a.cost, prev?.cost, money)) || undefined} />
+      <Kpi label={w.labor} value={money(shownCost)} sub={selProj ? `Projected; ${money(a.cost)} in` : join(laborParts, change(a.cost, prev?.cost, money)) || undefined} />
       <Kpi label={invoiceLabel(w, vocab, period)} value={money(summary.all.invoice)} sub={basis || undefined} />
-      <Kpi label={w.accountLaborPct} value={pct(a.measurePct)} tone={toneOf(accountStatus)}
-        sub={join(`Target ${pct(target)}`, lastClosed ? `${monthLabel(lastClosed)} actual ${pct(actual)}` : null,
-          a.measurePct != null && prev?.measurePct != null ? weekChange(a.measurePct - prev.measurePct, vocab, period) : null)} />
+      <Kpi label={w.accountLaborPct} value={pct(shownLp)} tone={toneOf(shownStatus)}
+        sub={join(selProj ? 'Projected' : null, `Target ${pct(target)}`, lastClosed ? `${monthLabel(lastClosed)} actual ${pct(actual)}` : null,
+          !selProj && a.measurePct != null && prev?.measurePct != null ? weekChange(a.measurePct - prev.measurePct, vocab, period) : null)} />
       <Kpi label={w.hours} value={hours(a.hours)} sub={join(`${hours(a.otHours)} OT/DT (${pct(a.otPct)})`, palHrs ? `pallet ${hours(palHrs)}` : null, change(a.hours, prev?.hours, hours))} />
-      {can('data.allocations') && <Kpi label="Margin" value={money(a.margin)} tone={a.margin < 0 ? 'bad' : ''}
-        sub={join(pct(a.marginPct), a.allocation > 0 ? `after ${moneyK(a.allocation)} alloc.` : null)} />}
+      {can('data.allocations') && <Kpi label="Margin" value={money(shownMargin)} tone={shownMargin < 0 ? 'bad' : ''}
+        sub={join(selProj ? 'Projected' : null, pct(selProj ? (a.invoice > 0 ? shownMargin / a.invoice : null) : a.marginPct),
+          a.allocation > 0 ? `after ${moneyK(a.allocation)} alloc.` : null)} />}
       {budgetWeek != null && <Kpi label="Vs budget labor" value={`${exEvents - budgetWeek >= 0 ? '+' : '−'}${money(Math.abs(exEvents - budgetWeek))}`} tone={exEvents > budgetWeek ? 'bad' : 'ok'}
         sub={join(`Budget ${money(budgetWeek)}`, `${pct(Math.abs(exEvents / budgetWeek - 1))} ${exEvents > budgetWeek ? 'over' : 'under'}`,
           thisWeekBudget?.source === 'monthly' ? 'from the monthly plan' : thisWeekBudget?.holiday && !payHolidays ? 'stat holiday not paid' : null)} />}
