@@ -7,7 +7,7 @@ import pytest
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
-from app import permissions
+from app import permissions, roles
 from app import auth as auth_module
 from app.auth import (
     COOKIE_NAME,
@@ -85,10 +85,12 @@ def test_session_sign_verify_and_expiry() -> None:
         assert verify_session(bad, SECRET, now=now) is None
 
 
-def test_session_rejects_unknown_role_even_when_signed() -> None:
+def test_session_rejects_a_malformed_role_even_when_signed() -> None:
+    # Roles are defined in the dashboard, so the cookie only checks a role's shape; the user record
+    # (app/common.py current_user) decides what a role grants.
     token = sign_session(User("jane", "analyst"), SECRET, now=1_800_000_000.0)
-    forged_payload = auth_module._b64url(b"jane|superuser|1900000000")
-    forged = f"{forged_payload}.{auth_module._signature(b'jane|superuser|1900000000', SECRET)}"
+    forged_payload = auth_module._b64url(b"jane|Super User!|1900000000")
+    forged = f"{forged_payload}.{auth_module._signature(b'jane|Super User!|1900000000', SECRET)}"
     assert verify_session(forged, SECRET, now=1_800_000_000.0) is None
     assert verify_session(token, SECRET, now=1_800_000_000.0) is not None
 
@@ -165,7 +167,7 @@ def login(client: TestClient, role: str) -> None:
     client.cookies.clear()
     response = client.post("/api/v1/auth/login", json={"username": role, "password": f"dev-{role}"})
     assert response.status_code == 200, response.text
-    assert response.json()["user"] == {"username": role, "role": role, "accounts": None, "permissions": permissions.ROLE_DEFAULTS[role]}
+    assert response.json()["user"] == {"username": role, "role": role, "role_name": roles.name(role), "accounts": None, "permissions": permissions.ROLE_DEFAULTS[role]}
     assert COOKIE_NAME in response.cookies
 
 
@@ -180,7 +182,7 @@ def test_login_logout_me_and_cookie_flags() -> None:
     login(client, "analyst")
     set_cookie = client.post("/api/v1/auth/login", json={"username": "analyst", "password": "dev-analyst"}).headers["set-cookie"].lower()
     assert "httponly" in set_cookie and "samesite=lax" in set_cookie and "secure" not in set_cookie and f"max-age={SESSION_TTL_SECONDS}" in set_cookie
-    assert client.get("/api/v1/auth/me").json()["user"] == {"username": "analyst", "role": "analyst", "accounts": None, "permissions": permissions.ROLE_DEFAULTS["analyst"]}
+    assert client.get("/api/v1/auth/me").json()["user"] == {"username": "analyst", "role": "analyst", "role_name": "Analyst", "accounts": None, "permissions": permissions.ROLE_DEFAULTS["analyst"]}
     assert client.post("/api/v1/auth/logout").json() == {"ok": True}
     client.cookies.clear()
     assert client.get("/api/v1/auth/me").status_code == 401

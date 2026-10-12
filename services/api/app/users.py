@@ -18,10 +18,12 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Protocol
 
-from . import permissions
+import secrets
+
+from . import permissions, roles
 from psycopg.types.json import Jsonb
 
-from .auth import _DUMMY_HASH, ROLES, User, hash_password, verify_password
+from .auth import _DUMMY_HASH, User, hash_password, verify_password
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +57,7 @@ class StoredUser:
     permissions: dict[str, bool] | None = None
 
     def public(self) -> dict[str, Any]:
-        return {"username": self.username, "role": self.role, "active": self.active, "source": "database", "accounts": self.account_slugs,
+        return {"username": self.username, "role": self.role, "role_name": roles.name(self.role), "active": self.active, "source": "database", "accounts": self.account_slugs,
                 "permissions": self.permissions or {}, "effective_permissions": permissions.effective(self.role, self.permissions),
                 "created_at": _iso(self.created_at), "created_by": self.created_by, "last_login_at": _iso(self.last_login_at)}
 
@@ -77,8 +79,8 @@ def validate_username(username: str) -> str:
 
 def validate_role(role: str) -> str:
     value = (role or "").strip().lower()
-    if value not in ROLES:
-        raise UserError(f"Role must be one of {', '.join(ROLES)}")
+    if not roles.exists(value):
+        raise UserError(f"Role must be one of {', '.join(r.slug for r in roles.listing())}")
     return value
 
 
@@ -212,8 +214,21 @@ def authenticate(username: str, password: str) -> User | None:
 
 
 def microsoft_user(email: str) -> User | None:
-    """The active database user whose username is this Microsoft work email (any case), else None."""
-    record = lookup((email or "").strip())
+    """The database user whose username is this Microsoft work email (any case). A first sign-in
+    creates that user with No access, so an administrator only has to pick a role; Microsoft decides
+    who may sign in at all (Entra "Assignment required"). None for a disabled user or an email that
+    cannot be a username."""
+    name = (email or "").strip()
+    record = lookup(name)
+    if record is None:
+        if not USERNAME_PATTERN.match(name):
+            logger.warning("A Microsoft email cannot be a username; no user created")
+            return None
+        # A password nobody knows: this user signs in with Microsoft until an administrator sets one.
+        user = StoredUser(name.lower(), roles.NONE, hash_password(secrets.token_urlsafe(32)), True, datetime.now(timezone.utc), created_by="microsoft")
+        _store.create(user)  # a concurrent first sign-in may win the insert; either way the row exists
+        clear_cache()
+        record = lookup(name)
     if record is None or not record.active:
         return None
     try:

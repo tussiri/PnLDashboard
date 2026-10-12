@@ -1,6 +1,6 @@
 import { request } from '../services/api'
 import type { Permission } from './permissions'
-import type { AuthUser, Role } from './roles'
+import type { AuthUser } from './roles'
 
 export type AuthMode = 'dev' | 'required'
 /** Microsoft sign-in on or off, and who may still use a password ('admins' once Microsoft sign-in is the norm). */
@@ -11,7 +11,9 @@ export const MICROSOFT_SIGN_IN_PATH = '/api/v1/auth/entra/start'
 /** A sign-in user as Admin > Users lists it (never a password hash). */
 export interface AppUser {
   username: string
-  role: Role
+  /** A role's slug (Admin > Users > Roles); 'none' until an administrator picks one. */
+  role: string
+  role_name?: string
   active: boolean
   /** database: managed here; environment: APP_USERS_JSON (read-only); development: dev mode only. */
   source: 'database' | 'environment' | 'development'
@@ -24,7 +26,7 @@ export interface AppUser {
   created_by: string | null
   last_login_at: string | null
 }
-export interface AppUserPatch { role?: Role; active?: boolean; password?: string; accounts?: string[]; permissions?: Partial<Record<Permission, boolean>> }
+export interface AppUserPatch { role?: string; active?: boolean; password?: string; accounts?: string[]; permissions?: Partial<Record<Permission, boolean>> }
 
 /** Session routes are same-origin and cookie-based; the browser never sees the session value. */
 export const authApi = {
@@ -42,6 +44,29 @@ export const authApi = {
 /** Admin > Users (administrator session required). */
 export const usersApi = {
   list: (signal?: AbortSignal) => request<{ users: AppUser[] }>('/users', { signal, rawRatios: true }),
-  create: (username: string, role: Role, password: string, accounts: string[] = []) => request<{ user: AppUser }>('/users', { method: 'POST', body: { username, role, password, accounts }, rawRatios: true }),
+  create: (username: string, role: string, password: string, accounts: string[] = []) => request<{ user: AppUser }>('/users', { method: 'POST', body: { username, role, password, accounts }, rawRatios: true }),
   update: (username: string, patch: AppUserPatch) => request<{ user: AppUser }>(`/users/${encodeURIComponent(username)}`, { method: 'PATCH', body: patch, rawRatios: true }),
+}
+
+/** A role as Admin > Users > Roles lists it. Administrator and No access are fixed; Executive and Analyst
+ * can be edited and reset but not deleted; a role somebody holds cannot be deleted. */
+export interface AppRole {
+  slug: string
+  name: string
+  permissions: Record<Permission, boolean>
+  built_in: boolean
+  editable: boolean
+  deletable: boolean
+  /** How many users hold it. */
+  users: number
+}
+
+/** Admin > Users > Roles (administrator session required). */
+export const rolesApi = {
+  list: (signal?: AbortSignal) => request<{ roles: AppRole[] }>('/users/roles', { signal, rawRatios: true }),
+  create: (name: string, copyFrom?: string) => request<{ role: AppRole }>('/users/roles', { method: 'POST', body: { name, copy_from: copyFrom || null }, rawRatios: true }),
+  /** permissions: only the keys named change. */
+  update: (slug: string, patch: { name?: string; permissions?: Partial<Record<Permission, boolean>> }) => request<{ role: AppRole }>(`/users/roles/${encodeURIComponent(slug)}`, { method: 'PATCH', body: patch, rawRatios: true }),
+  reset: (slug: string) => request<{ role: AppRole }>(`/users/roles/${encodeURIComponent(slug)}/reset`, { method: 'POST', rawRatios: true }),
+  remove: (slug: string) => request<{ ok: boolean }>(`/users/roles/${encodeURIComponent(slug)}`, { method: 'DELETE', rawRatios: true }),
 }

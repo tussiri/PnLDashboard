@@ -30,3 +30,19 @@ describe('view.company-story', () => {
     expect(effective('executive', { 'view.company-story': true })['view.company-story']).toBe(true)
   })
 })
+
+describe('roles defined in the dashboard', () => {
+  const roles = { 'regional-manager': { ...ROLE_DEFAULTS.executive, 'view.reporting': true, 'tab.map': false } }
+  it('a custom role reads its permissions from the roles list; an unknown role holds nothing', () => {
+    expect(effective('regional-manager', { 'tab.map': true }, roles)).toMatchObject({ 'view.reporting': true, 'tab.map': true, 'tab.sites': true })
+    expect(overridesOf('regional-manager', roles['regional-manager'], roles)).toEqual({})
+    expect(Object.values(effective('deleted-role', null)).some(Boolean)).toBe(false)
+  })
+  it('No access holds nothing, whatever the overrides', () => {
+    expect(Object.values(effective('none', { 'tab.map': true })).some(Boolean)).toBe(false)
+    expect(can({ username: 'x', role: 'none', permissions: { 'tab.map': true } }, 'tab.map')).toBe(false)
+  })
+  it('reporting is off for executives by default', () => {
+    expect([ROLE_DEFAULTS.executive['view.reporting'], ROLE_DEFAULTS.analyst['view.reporting']]).toEqual([false, true])
+  })
+})

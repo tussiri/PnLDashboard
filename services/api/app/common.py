@@ -12,7 +12,7 @@ from collections.abc import Callable
 
 from fastapi import Header, HTTPException, Query, Request
 
-from .auth import COOKIE_NAME, ROLE_LABEL, ROLES, User, get_auth_settings, session_claims
+from .auth import COOKIE_NAME, ROLES, User, get_auth_settings, session_claims
 from .config import settings
 from .db import connection
 
@@ -161,10 +161,6 @@ def require_admin(request: Request, x_admin_token: str | None = Header(default=N
     raise HTTPException(status_code=401, detail="A valid ingestion admin token or an administrator sign-in is required")
 
 
-def _roles_label(roles: tuple[str, ...]) -> str:
-    return " or ".join(ROLE_LABEL.get(r, r) for r in roles)
-
-
 def account_scope(user: User | None) -> frozenset[str] | None:
     """The accounts a user may see; None = every account (administrators, unlimited users, the admin token)."""
     if user is None or user.role == "admin" or not user.accounts:
@@ -184,15 +180,30 @@ def require_account(request: Request, slug: str | None) -> None:
 
 
 def require_role(*roles: str, scoped: bool = False) -> Callable[..., User | None]:
-    """Router-level dependency: reads require a session whose role is in ``roles`` (no roles = any
-    signed-in role); mutating requests accept a valid X-Admin-Token or an admin session instead, so
-    scripted admin calls keep working without a browser session. A user limited to accounts reaches
-    only routers marked ``scoped`` (the leadership routes, which filter by account); every other
-    router covers every account and answers 403."""
+    """The router gates in the names of the three original roles, now that roles are defined in the
+    dashboard (app/roles.py): a set that includes Executive (the narrowest original role), or none
+    named, means any role with access; ``("analyst", "admin")`` means the view.reporting permission,
+    which Executive lacks by default."""
     unknown = [r for r in roles if r not in ROLES]
     if unknown:
         raise ValueError(f"unknown role(s): {', '.join(unknown)}")
-    allowed = tuple(roles) or ROLES
+    if not roles or "executive" in roles:
+        return require_access(scoped=scoped)
+    if set(roles) == {"analyst", "admin"}:
+        return require_access("view.reporting", scoped=scoped)
+    raise ValueError(f"no permission stands for the role set {', '.join(roles)}")
+
+
+def require_access(permission: str | None = None, scoped: bool = False) -> Callable[..., User | None]:
+    """Router-level dependency: reads need a session whose role gives access (not No access) and, when
+    named, ``permission``; mutating requests accept a valid X-Admin-Token or an admin session instead,
+    so scripted admin calls keep working without a browser session. A user limited to accounts reaches
+    only routers marked ``scoped`` (the leadership routes, which filter by account); every other
+    router covers every account and answers 403."""
+    from . import permissions, roles
+
+    if permission is not None and permission not in permissions.KEYS:
+        raise ValueError(f"unknown permission {permission}")
 
     def dependency(request: Request, x_admin_token: str | None = Header(default=None)) -> User | None:
         if request.method in MUTATING_METHODS:
@@ -207,8 +218,10 @@ def require_role(*roles: str, scoped: bool = False) -> Callable[..., User | None
         user = current_user(request)
         if user is None:
             raise HTTPException(status_code=401, detail="Sign in required")
-        if user.role not in allowed:
-            raise HTTPException(status_code=403, detail=f"This view requires the {_roles_label(allowed)} role")
+        if user.role == roles.NONE or not roles.exists(user.role):
+            raise HTTPException(status_code=403, detail="Your account is waiting for an administrator to give it access")
+        if permission is not None and not permissions.allowed(user, permission):
+            raise HTTPException(status_code=403, detail=f"Your access does not include {permissions.label(permission).lower()}")
         if not scoped and account_scope(user) is not None:
             raise HTTPException(status_code=403, detail="This view covers every account; your access is limited to some")
         return user

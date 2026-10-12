@@ -35,6 +35,7 @@ import hmac
 import json
 import logging
 import os
+import re
 import secrets
 import sys
 import time
@@ -46,7 +47,10 @@ from .entra import EntraConfig
 
 log = logging.getLogger(__name__)
 
+#: The built-in roles an APP_USERS_JSON or development user may hold. Database users may hold any role
+#: defined in the dashboard (app/roles.py).
 ROLES: tuple[str, ...] = ("executive", "analyst", "admin")
+ROLE_SLUG = re.compile(r"^[a-z0-9][a-z0-9-]{1,39}$")
 ROLE_LABEL = {"executive": "Executive", "analyst": "Analyst", "admin": "Administrator"}
 COOKIE_NAME = "crane_session"
 SESSION_TTL_SECONDS = 12 * 60 * 60
@@ -232,7 +236,9 @@ def session_claims(token: str | None, secret: str, now: float | None = None) -> 
         expiry = int(expiry_text)
     except (UnicodeDecodeError, ValueError):
         return None
-    if role not in ROLES or not username:
+    # Roles are defined in the dashboard (app/roles.py); the user record, re-read on every request, is
+    # what decides access. The cookie's role only has to look like a role's slug.
+    if not ROLE_SLUG.match(role) or not username:
         return None
     if expiry <= (time.time() if now is None else now):
         return None

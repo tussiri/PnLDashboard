@@ -1,6 +1,7 @@
 """Per-user permissions: what a signed-in user may open and see, beyond the role and account scope.
 
-A role (app/auth.py) is a preset: each permission has a default per role. A user may carry
+A role (app/roles.py) is a preset: a set of these keys, built in or made in Admin > Users > Roles.
+ROLE_DEFAULTS below are the shipped values of the built-in roles. A user may carry
 overrides (ops.app_user.permissions, migration 042; or "permissions" on an APP_USERS_JSON entry)
 that switch single permissions on or off. Administrators always hold every permission. The catalog
 below is mirrored by the browser (src/auth/permissions.ts), which hides what a user may not open;
@@ -11,6 +12,7 @@ Keys
     view.company        the Company page (every account; also needs an unlimited account scope)
     view.company-story  the Company page's "At a glance" story, in testing (off for every role but admin)
     view.analytics      the Portfolio pages (route #/portfolio; the key keeps its first name)
+    view.reporting      the reporting, labor and forecast routes and the platform reads (sync runs, sources)
     tab.<account tab>   an account tab (sites, pallet, over-target, overtime, income-statement,
                         subcontracted, map, vendors, feedback, budget); Overview is always open
     data.allocations    corporate allocations and margin after allocations
@@ -35,6 +37,7 @@ CATALOG: tuple[tuple[str, str, str], ...] = (
     ("view.company", "Views", "Company"),
     ("view.company-story", "Views", "Company at a glance"),
     ("view.analytics", "Views", "Portfolio"),
+    ("view.reporting", "Views", "Reporting and forecasts"),
     ("tab.sites", "Account tabs", "Sites"),
     ("tab.pallet", "Account tabs", "Pallet"),
     ("tab.over-target", "Account tabs", "Hours to cut"),
@@ -55,7 +58,7 @@ CATALOG: tuple[tuple[str, str, str], ...] = (
 )
 KEYS: tuple[str, ...] = tuple(k for k, _, _ in CATALOG)
 
-_EXECUTIVE_OFF = frozenset({"view.company-story", "view.analytics", "data.staffing"})
+_EXECUTIVE_OFF = frozenset({"view.company-story", "view.analytics", "view.reporting", "data.staffing"})
 _ANALYST_OFF = frozenset({"view.company-story", "view.analytics"})
 ROLE_DEFAULTS: dict[str, dict[str, bool]] = {
     "executive": {k: k not in _EXECUTIVE_OFF for k in KEYS},
@@ -82,17 +85,28 @@ def validate(value: Any) -> dict[str, bool]:
     return {str(k): bool(v) for k, v in value.items()}
 
 
+def role_defaults(role: str) -> dict[str, bool]:
+    from . import roles
+
+    return roles.defaults(role)
+
+
 def overrides_of(role: str, effective_: Mapping[str, bool]) -> dict[str, bool]:
     """The overrides that turn the role's defaults into `effective_` (what the matrix stores)."""
-    defaults = ROLE_DEFAULTS.get(role, ROLE_DEFAULTS["executive"])
+    defaults = role_defaults(role)
     return {k: bool(v) for k, v in effective_.items() if k in KEYS and bool(v) != defaults[k]}
 
 
 def effective(role: str, overrides: Mapping[str, Any] | None) -> dict[str, bool]:
-    """Every key, from the role's defaults with the user's overrides applied. Administrators hold all."""
-    if role == "admin":
-        return dict(ROLE_DEFAULTS["admin"])
-    out = dict(ROLE_DEFAULTS.get(role, ROLE_DEFAULTS["executive"]))
+    """Every key, from the role's permissions with the user's overrides applied. Administrators hold
+    all; No access (and a role that no longer exists) holds none, whatever the overrides say."""
+    from . import roles
+
+    if role == roles.ADMIN:
+        return {k: True for k in KEYS}
+    if role == roles.NONE or not roles.exists(role):
+        return {k: False for k in KEYS}
+    out = role_defaults(role)
     for k, v in (overrides or {}).items():
         if k in out:
             out[k] = bool(v)
@@ -135,4 +149,8 @@ def strip(user: User | None, rows: list[dict[str, Any]]) -> list[dict[str, Any]]
 
 
 def catalog() -> dict[str, Any]:
-    return {"permissions": [{"key": k, "group": g, "label": lbl} for k, g, lbl in CATALOG], "defaults": ROLE_DEFAULTS}
+    """Every permission (key, group, label) and every role's permissions, keyed by slug."""
+    from . import roles
+
+    return {"permissions": [{"key": k, "group": g, "label": lbl} for k, g, lbl in CATALOG],
+            "defaults": {r.slug: r.permissions for r in roles.listing()}}

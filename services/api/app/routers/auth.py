@@ -11,7 +11,7 @@ from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 
-from .. import entra, permissions, users
+from .. import entra, permissions, roles, users
 from ..auth import (COOKIE_NAME, SESSION_TTL_SECONDS, User, get_auth_settings, sign_session, sign_value, verify_password,
                     verify_value)
 from ..common import current_user
@@ -142,7 +142,7 @@ def entra_callback(request: Request, code: str = "", state: str = "", error: str
 def user_payload(user: User) -> dict[str, Any]:
     """The browser's view of a user: role, the accounts it may see (null = every account) and its
     effective permissions (app/permissions.py)."""
-    return {**user.as_dict(), "accounts": list(user.accounts) if user.accounts and user.role != "admin" else None,
+    return {**user.as_dict(), "role_name": roles.name(user.role), "accounts": list(user.accounts) if user.accounts and user.role != "admin" else None,
             "permissions": permissions.effective(user.role, user.permissions)}
 
 
