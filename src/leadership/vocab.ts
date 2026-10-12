@@ -24,10 +24,11 @@ export function tabsFor(_account: LeadershipAccount | undefined, all: readonly A
 }
 
 /** Signed percentage points in the account's wording: "+0.7pp WoW" or "+0.7 pts vs prior wk" (MoM /
- * "vs prior month" in the month-end rollup). */
-export function weekChange(change: number | null, vocab: Vocabulary, period: 'week' | 'month' = 'week'): string {
+ * "vs prior month" in the month-end rollup; `vs` names a picked comparison month: "+0.7pp vs Jun"). */
+export function weekChange(change: number | null, vocab: Vocabulary, period: 'week' | 'month' = 'week', vs?: string): string {
   if (change == null || !Number.isFinite(change)) return '–'
   const n = `${change >= 0 ? '+' : '−'}${Math.abs(change * 100).toFixed(1)}`
+  if (vs) return vocab === 'fedex' ? `${n} pts ${vs}` : `${n}pp ${vs}`
   if (period === 'month') return vocab === 'fedex' ? `${n} pts vs prior month` : `${n}pp MoM`
   return vocab === 'fedex' ? `${n} pts vs prior wk` : `${n}pp WoW`
 }

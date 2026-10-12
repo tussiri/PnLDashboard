@@ -2,11 +2,12 @@ import { useMemo, type ReactNode } from 'react'
 import type { BudgetMonth, BudgetWeek, LeadershipAccount, LeadershipMonthlyJob, LeadershipRow } from '../services/apiTypes'
 import { Badge, ChartCard, Kpi, Skeleton, Swatch, toneOf, useVocab } from './ui'
 import { LaborMixChart, MonthWeekTrendChart, SegmentTrendChart, SiteLpChart, useTokens } from './charts'
-import { closedMonths, includesVendor, inSentence, isSubcontracted, monthLaborPct, monthRevenue, priorMonth, rowsOfWeek, segmentLabel, segmentOrder, siteMonths, useMonthly, useMonthRows, useRows, vendorLabel, weekBudgetOf, type DataFlags, type WeekBudget } from './data'
+import { closedMonths, daysInMonth, includesVendor, inSentence, isSubcontracted, monthLaborPct, monthRevenue, priorMonth, rowsOfWeek, segmentLabel, segmentOrder, siteMonths, useMonthly, useMonthRows, useRows, vendorLabel, weekBudgetOf, type DataFlags, type WeekBudget } from './data'
 import { hours, hours1, money, moneyK, pct } from './format'
 import { accountSummary, statusOf, type AccountNote, type AccountSummary, type MetricOptions, type SiteMetrics } from './metrics'
 import { addDays, monthLabel, monthShort, TREND_WEEKS_DEFAULT, TREND_WEEKS_MAX, TREND_WEEKS_MIN, weekEndOf, weekTick } from './routes'
 import { projectRecentWeeks, PROJECTION_BASE_WEEKS } from './projection'
+import { MonthCompare } from './MonthCompare'
 import { QaCards } from './Qa'
 import { useLeadership } from './state'
 import { billingSources, invoiceLabel, weekChange, wordsFor } from './vocab'
@@ -88,7 +89,7 @@ export function Overview({ account, rows, summary, options, flags, headline = tr
   const w = wordsFor(vocab)
   const target = options.target
   const factor = options.vendorFactor ?? 1
-  const { optionsFor, monthMode, month, can, navigate, weekStart, route, config } = useLeadership()
+  const { optionsFor, monthMode, month, compareMonth, can, navigate, weekStart, route, config } = useLeadership()
   const hasBudget = Boolean(budgetWeeks?.length || budgetMonths?.length)
   const budgetOf = (weekStartIso: string): WeekBudget | null => weekBudgetOf(weekStartIso, budgetWeeks, budgetMonths, payHolidays)
   const period = options.period ?? 'week'
@@ -100,7 +101,9 @@ export function Overview({ account, rows, summary, options, flags, headline = tr
   const history = useRows(monthMode ? undefined : account.slug, TREND_LOAD)
   const older = useRows(!monthMode && trendWeeks > TREND_LOAD ? account.slug : undefined, TREND_LOAD,
     { week: weekStart ? addDays(weekStart, -TREND_LOAD * 7) : undefined })
-  const priorMonthQuery = useMonthRows(monthMode ? account.slug : undefined, month ? priorMonth(month) : undefined)
+  // The month rollup's changes are against the comparison month (the month before unless one is picked).
+  const priorMonthQuery = useMonthRows(monthMode ? account.slug : undefined, compareMonth)
+  const compareOptions = useMemo(() => (compareMonth ? { ...options, periodDays: daysInMonth(compareMonth) } : options), [options, compareMonth])
   const monthly = useMonthly(account.slug)
   const revenueMonth = rows.find((r) => r.revenue_month)?.revenue_month ?? null
   const a = summary.account
@@ -126,7 +129,7 @@ export function Overview({ account, rows, summary, options, flags, headline = tr
   const prevMonthRows = priorMonthQuery.data?.rows
   const prevWeek = weeks.find((x) => weekStart && x.week === addDays(weekStart, -7))
   const prev = monthMode
-    ? (prevMonthRows?.length ? accountSummary(prevMonthRows, options, segmentOrder(account)).account : null)
+    ? (prevMonthRows?.length ? accountSummary(prevMonthRows, compareOptions, segmentOrder(account)).account : null)
     : prevWeek?.s ?? null
   // The prior period's rows (the week before, or the month before in the rollup), for the group cards' changes.
   const prevRows = monthMode ? prevMonthRows : prevWeek?.rows
@@ -134,8 +137,12 @@ export function Overview({ account, rows, summary, options, flags, headline = tr
   const lastClosed = closed.at(-1)
   const scopeJobs = useMemo(() => (monthly.data ? laborJobs(account, monthly.data.jobs) : []), [monthly.data, account])
   const actual = lastClosed ? monthLaborPct(scopeJobs, lastClosed, factor) : null
+  // A picked comparison month reads "vs Jun"; the month before keeps the report's MoM wording.
+  const vsMonth = monthMode && month && compareMonth && compareMonth !== priorMonth(month)
+    ? `vs ${compareMonth.slice(0, 4) === month.slice(0, 4) ? monthShort(`${compareMonth}-01`) : monthLabel(`${compareMonth}-01`)}` : undefined
+  const changeWord = vsMonth ?? (period === 'month' ? (vocab === 'fedex' ? 'vs prior month' : 'MoM') : vocab === 'fedex' ? 'vs prior wk' : 'WoW')
   const change = (cur: number | null, before: number | null | undefined, format: (v: number) => string) =>
-    cur == null || before == null ? null : `${cur - before >= 0 ? '+' : '−'}${format(Math.abs(cur - before))} ${period === 'month' ? (vocab === 'fedex' ? 'vs prior month' : 'MoM') : vocab === 'fedex' ? 'vs prior wk' : 'WoW'}`
+    cur == null || before == null ? null : `${cur - before >= 0 ? '+' : '−'}${format(Math.abs(cur - before))} ${changeWord}`
   const join = (...parts: (string | null | undefined | false)[]) => parts.filter(Boolean).join('; ')
 
   const basis = period === 'month' ? billingSources(summary.sites) : account.revenue_method === 'weekly_billing' ? null : options.invoiceBasis === 'run_rate_3m'
@@ -146,9 +153,8 @@ export function Overview({ account, rows, summary, options, flags, headline = tr
 
   const groups = summary.segments.map((g) => ({ name: g.segment, list: sites.filter((r) => r.segment === g.segment), target: g.target }))
   // The prior period's OT cost per group card (null when the prior period is not loaded).
-  const prevSummary = useMemo(() => (prevRows?.length ? accountSummary(prevRows, options, segmentOrder(account)) : null), [prevRows, options, account])
+  const prevSummary = useMemo(() => (prevRows?.length ? accountSummary(prevRows, monthMode ? compareOptions : options, segmentOrder(account)) : null), [prevRows, monthMode, compareOptions, options, account])
   const prevGroupOt = (name: string) => (prevSummary ? prevSummary.sites.filter((r) => r.role === 'site' && r.segment === name).reduce((x, r) => x + r.ot_dollars, 0) : null)
-  const changeWord = period === 'month' ? (vocab === 'fedex' ? 'vs prior month' : 'MoM') : vocab === 'fedex' ? 'vs prior wk' : 'WoW'
   // The trend: weeks in the week view (the last trendWeeks up to the selected week); closed months, as monthly
   // totals, in the month rollup (up to the selected month).
   // The latest weeks while their labor is still arriving are drawn as a projection (projection.ts), labeled as such.
@@ -209,7 +215,7 @@ export function Overview({ account, rows, summary, options, flags, headline = tr
       <Kpi label={invoiceLabel(w, vocab, period)} value={money(summary.all.invoice)} sub={basis || undefined} />
       <Kpi label={w.accountLaborPct} value={pct(a.measurePct)} tone={toneOf(accountStatus)}
         sub={join(`Target ${pct(target)}`, lastClosed ? `${monthLabel(lastClosed)} actual ${pct(actual)}` : null,
-          a.measurePct != null && prev?.measurePct != null ? weekChange(a.measurePct - prev.measurePct, vocab, period) : null)} />
+          a.measurePct != null && prev?.measurePct != null ? weekChange(a.measurePct - prev.measurePct, vocab, period, vsMonth) : null)} />
       <Kpi label={w.hours} value={hours(a.hours)} sub={join(`${hours(a.otHours)} OT/DT (${pct(a.otPct)})`, palHrs ? `pallet ${hours(palHrs)}` : null, change(a.hours, prev?.hours, hours))} />
       {can('data.allocations') && <Kpi label="Margin" value={money(a.margin)} tone={a.margin < 0 ? 'bad' : ''}
         sub={join(pct(a.marginPct), a.allocation > 0 ? `after ${moneyK(a.allocation)} alloc.` : null)} />}
@@ -237,6 +243,8 @@ export function Overview({ account, rows, summary, options, flags, headline = tr
       {nonBilled.length > 0 && <GroupCard name="Non-billed" sub={nonBilled.map((r) => `Job ${r.job_number} ${r.site_name}`).join(', ')} badge={null} invoice={0} labor={summary.nonBilled.cost}
         lp={null} lpTone="" otCost={summary.nonBilled.otDollars} otPrior={prevSummary?.nonBilled.otDollars ?? null} otHours={summary.nonBilled.otHours} changeWord={changeWord} w={w} />}
     </div>
+    {monthMode && month && compareMonth && <MonthCompare account={account} month={month} compare={compareMonth} summary={summary} prior={prevSummary}
+      loading={priorMonthQuery.loading} />}
     {afterGroups}
     {(trend.length > 1 || !monthMode) && <ChartCard title={monthMode ? `${w.trendTitle} by month` : `${w.trendTitle}, last ${trendWeeks} weeks`} height={260}
       action={weeksSlider}

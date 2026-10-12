@@ -13,6 +13,7 @@ describe('leadership routes', () => {
       { view: 'admin', adminTab: 'allocations' },
       { view: 'company', week: '2026-09-20' },
       { view: 'account', account: 'fedex', tab: 'sites', period: 'month', month: '2026-08' },
+      { view: 'account', account: 'plano-isd', tab: 'overview', period: 'month', month: '2026-09', compare: '2026-06' },
       { view: 'analytics', analyticsTab: 'units', week: '2026-09-20' },
     ]
     for (const route of routes) expect(parseRoute(formatRoute(route))).toEqual(route)
@@ -30,6 +31,8 @@ describe('leadership routes', () => {
     expect(parseRoute('#/account/amazon/nonsense?week=Sept&target=abc')).toEqual({ view: 'account', account: 'amazon', tab: 'overview' })
     expect(parseRoute('#/admin/unknown')).toEqual({ view: 'admin', adminTab: 'accounts' })
     expect(parseRoute('#/company?site=noseparator').site).toBeUndefined()
+    expect(parseRoute('#/account/amazon?compare=2026-06').compare).toBeUndefined()
+    expect(parseRoute('#/account/amazon?period=month&compare=June').compare).toBeUndefined()
     expect(parseRoute('#/company?site=Crane%20IFS~12~A').site).toEqual({ company: 'Crane IFS~12', job: 'A' })
   })
 

@@ -31,11 +31,7 @@ export function useMonthRows(account: string | undefined, month: string | undefi
   return { ...q, data }
 }
 
-/** The month before YYYY-MM. */
-export const priorMonth = (month: string) => {
-  const [y, m] = month.split('-').map(Number)
-  return m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, '0')}`
-}
+export { priorMonth } from './routes'
 
 /** Days in a month (YYYY-MM), for per-day figures in the month rollup. */
 export const daysInMonth = (month: string) => { const [y, m] = month.split('-').map(Number); return new Date(Date.UTC(y, m, 0)).getUTCDate() }
