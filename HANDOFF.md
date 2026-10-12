@@ -272,7 +272,7 @@ most once per 20 hours unless `force=true`; AP invoices WinTeam cannot serve are
   customer name; deletions in WinTeam are not visible.
 - Seasonality is not modeled (needs ≥ 24 closed months); subcontractor cost is not forecast by
   site.
-- SSO/OIDC, row-level security, signed Metabase embedding, managed secrets, retries/dead
+- Microsoft sign-in is built (docs/auth-rbac.md) but not yet exercised against the live tenant. Row-level security, signed Metabase embedding, managed secrets, retries/dead
   letters at the orchestration level, monitoring, backups and restore drills remain production
   deployment work.
 - The local instance still uses fallback credentials; rotate before loading real data.

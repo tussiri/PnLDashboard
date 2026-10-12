@@ -211,6 +211,18 @@ def authenticate(username: str, password: str) -> User | None:
     return User(record.username, record.role, record.accounts, record.permissions)
 
 
+def microsoft_user(email: str) -> User | None:
+    """The active database user whose username is this Microsoft work email (any case), else None."""
+    record = lookup((email or "").strip())
+    if record is None or not record.active:
+        return None
+    try:
+        _store.touch_login(record.username)
+    except Exception:  # noqa: BLE001 - a failed timestamp must not refuse a valid sign-in
+        logger.exception("Could not record sign-in for %s", record.username)
+    return User(record.username, record.role, record.accounts, record.permissions)
+
+
 def session_user(user: User, issued_at: float) -> User | None:
     """The database user behind a verified cookie: None when unknown, disabled or reset since."""
     record = lookup(user.username)

@@ -171,7 +171,7 @@ def login(client: TestClient, role: str) -> None:
 
 def test_login_logout_me_and_cookie_flags() -> None:
     client = build_app()
-    assert client.get("/api/v1/auth/mode").json() == {"mode": "dev"}
+    assert client.get("/api/v1/auth/mode").json() == {"mode": "dev", "microsoft": False, "password": "all"}
     assert client.get("/api/v1/auth/me").status_code == 401
     started = time.perf_counter()
     bad = client.post("/api/v1/auth/login", json={"username": "admin", "password": "nope"})

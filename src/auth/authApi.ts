@@ -3,6 +3,10 @@ import type { Permission } from './permissions'
 import type { AuthUser, Role } from './roles'
 
 export type AuthMode = 'dev' | 'required'
+/** Microsoft sign-in on or off, and who may still use a password ('admins' once Microsoft sign-in is the norm). */
+export interface SignInOptions { microsoft: boolean; password: 'all' | 'admins' }
+/** Where the browser goes to sign in with Microsoft (a full-page navigation, not a fetch). */
+export const MICROSOFT_SIGN_IN_PATH = '/api/v1/auth/entra/start'
 
 /** A sign-in user as Admin > Users lists it (never a password hash). */
 export interface AppUser {
@@ -24,7 +28,7 @@ export interface AppUserPatch { role?: Role; active?: boolean; password?: string
 
 /** Session routes are same-origin and cookie-based; the browser never sees the session value. */
 export const authApi = {
-  mode: (signal?: AbortSignal) => request<{ mode: AuthMode }>('/auth/mode', { signal, timeoutMs: 8_000 }),
+  mode: (signal?: AbortSignal) => request<{ mode: AuthMode } & Partial<SignInOptions>>('/auth/mode', { signal, timeoutMs: 8_000 }),
   me: (signal?: AbortSignal) => request<{ user: AuthUser }>('/auth/me', { signal, timeoutMs: 8_000 }),
   login: (username: string, password: string, signal?: AbortSignal) => request<{ user: AuthUser }>('/auth/login', { method: 'POST', body: { username, password }, signal, timeoutMs: 15_000 }),
   /** The signed-in user's own password (any role); other sessions end, this one stays signed in. */
