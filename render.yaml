@@ -184,26 +184,6 @@ services:
           type: pserv
           name: crane-ifs-api
           envVarKey: RELAY_EXPORT_TOKEN
-      - key: HR_BASE_URL
-        fromService:
-          type: pserv
-          name: crane-ifs-api
-          envVarKey: HR_BASE_URL
-      - key: HR_EXPORT_TOKEN
-        fromService:
-          type: pserv
-          name: crane-ifs-api
-          envVarKey: HR_EXPORT_TOKEN
-      - key: PHOTOVALIDATION_API_URL
-        fromService:
-          type: pserv
-          name: crane-ifs-api
-          envVarKey: PHOTOVALIDATION_API_URL
-      - key: PHOTOVALIDATION_API_TOKEN
-        fromService:
-          type: pserv
-          name: crane-ifs-api
-          envVarKey: PHOTOVALIDATION_API_TOKEN
       - key: GRAPH_TENANT_ID
         fromService:
           type: pserv
