@@ -369,7 +369,9 @@ delivery AS (
 ),
 base AS (
   SELECT jc.month, coalesce(j.company, jc.company) AS company, jc.job_number,
-         CASE WHEN a.featured THEN aj.account_slug ELSE 'other' END AS account,
+         -- A non-billed job (Plano's 896, Special Events) is billed apart from the account, so it counts in
+         -- the company but not in the account, as in the weekly account figures (metrics.ts accountRows).
+         CASE WHEN a.featured AND aj.role IS DISTINCT FROM 'non_billed' THEN aj.account_slug ELSE 'other' END AS account,
          jc.revenue, jc.direct_labor, coalesce(jc.management_wages, 0) AS management_wages, jc.subcontractors,
          jc.payroll_taxes_insurance, jc.gross_profit,
          -- The leadership mart's rule (app/leadership.py, relay_revenue): a subcontracted Relay (FedEx) site
