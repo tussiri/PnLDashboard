@@ -251,3 +251,27 @@ def test_qa_wide_layout_reads_one_column_per_site():
     assert [(r["site_code"], r["week_start"].isoformat(), float(r["score"])) for r in parsed.records] == [
         ("LGB3", "2026-09-14", 100.0), ("BDL3/7", "2026-09-14", 88.5), ("LGB3", "2026-09-21", 92.0)]
     assert parsed.errors == [] and parsed.skipped == 1  # the Average row is not a week
+
+
+class _DimJob:
+    """A cursor holding the current core.dim_job rows the namespacing reads."""
+    def __init__(self, rows):
+        self.rows, self.result = rows, []
+
+    def execute(self, sql, params):
+        assert "core.dim_job" in sql and "valid_to IS NULL" in sql
+        self.result = [r for r in self.rows if r["job_number"] in params[0]]
+
+    def fetchall(self):
+        return self.result
+
+
+def test_a_crane_job_cost_row_on_a_sarus_number_takes_the_namespaced_number():
+    from app.imports import namespace_job_numbers
+
+    cursor = _DimJob([{"job_number": "300", "company": "Sarus"}, {"job_number": "801", "company": "Crane Southwest"},
+                      {"job_number": "Crane:300", "company": "Crane IFS"}])
+    records = [{"company": "Crane IFS", "job_number": "300"}, {"company": "Sarus", "job_number": "300"},
+               {"company": "Crane Southwest", "job_number": "801"}, {"company": "Crane West", "job_number": "4444"}]
+    namespace_job_numbers(cursor, records)
+    assert [r["job_number"] for r in records] == ["Crane:300", "300", "801", "4444"]

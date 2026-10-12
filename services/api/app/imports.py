@@ -8,7 +8,9 @@ Two feeds, CSV (UTF-8, header row) or XLSX (first sheet):
 * `job_cost` - Job Cost Analysis by job and month. Rows are written with source 'export_import',
   which mart.v_job_cost_month_effective prefers over the restored finance_reference export. Optional
   revenue_fixed / revenue_variable columns split revenue into contract billing and variable (OS,
-  pallet) billing for the Pallet view.
+  pallet) billing for the Pallet view. A Crane job whose number is a Sarus job in the warehouse (300 is
+  FXE Pittsburgh in Crane and Amazon BDL3/7 in Sarus) is stored under its namespaced number
+  ('Crane:300', migration 012), so the two databases' rows never overwrite each other (migration 054).
 * `service_feedback` - customer feedback and star ratings per work order (the ServiceChannel export:
   Feedback, WO Number, Location Number, Provider Name, Trade, Feed Back Date, Star Ratings Comment,
   Star Ratings Score). Upserted by work order (migration 043); mart.v_service_feedback ties each
@@ -38,6 +40,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from . import native_exports
+from .sources import rules
 
 logger = logging.getLogger(__name__)
 
@@ -511,6 +514,23 @@ def _load_service_feedback(cursor: Any, file_id: int, records: list[dict[str, An
     )
 
 
+def namespace_job_numbers(cursor: Any, records: list[dict[str, Any]]) -> None:
+    """Give a job cost row its warehouse job number. Job numbers are unique only within one WinTeam
+    database, and core.fact_job_cost_month is keyed by job number and month, so a Crane row for 300 used
+    to overwrite the Sarus row for 300 (Amazon BDL3/7) or be overwritten by it, whichever file loaded
+    last. The bare number belongs to the job core.dim_job holds under it; a row from the other database
+    takes the namespaced number ('Crane:300'), as API facts do (mart.v_api_job_map)."""
+    numbers = sorted({r["job_number"] for r in records if r.get("job_number")})
+    if not numbers:
+        return
+    cursor.execute("SELECT job_number, company FROM core.dim_job WHERE valid_to IS NULL AND job_number = ANY(%s)", (numbers,))
+    owner = {r["job_number"]: rules.namespace_for(r["company"]) for r in cursor.fetchall() if r["company"]}
+    for r in records:
+        namespace = rules.namespace_for(r.get("company"))
+        if owner.get(r.get("job_number"), namespace) != namespace:
+            r["job_number"] = rules.namespaced_job_number(namespace, r["job_number"])
+
+
 def _load_job_cost(cursor: Any, file_id: int, records: list[dict[str, Any]], replace_months: bool = False) -> None:
     """Upsert job-months. With replace_months (a full Job Cost Analysis by GL line), the imported rows of
     each company and month in the file are cleared first, so a job that left the report leaves the data."""
@@ -653,6 +673,8 @@ def load_file(conn: Any, file_name: str, content: bytes, *, kind: str | None = N
             parsed.records = known
         if read_error:
             parsed.errors.insert(0, read_error)
+        if kind == "job_cost":
+            namespace_job_numbers(cursor, parsed.records)
         if not parsed.records:
             return _log(cursor, conn, kind, file_name, digest, origin, "failed", parsed.rows_read, 0, [], None, None,
                         parsed.errors or ["no rows"], uploaded_by)

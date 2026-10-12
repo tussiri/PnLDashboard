@@ -112,3 +112,12 @@ def test_company_takes_relay_ar_for_subcontracted_relay_sites_like_the_mart():
     assert "coalesce(gross_profit, 0) + relay_ar - coalesce(revenue, 0)" in jc
     assert set(re.findall(r"%\((\w+)\)s", COMPANY_SQL)) == {"first", "last"}
     assert not re.search(r"%(?!\(\w+\)s)", COMPANY_SQL)
+
+
+def test_company_leaves_non_billed_jobs_out_of_their_account():
+    """Plano's Special Events job (896) is billed apart from the account: it counts under other, as the
+    weekly account figures leave non-billed jobs out of the account (metrics.ts accountRows)."""
+    from app.routers.leadership import COMPANY_SQL
+
+    account = re.search(r"CASE WHEN a\.featured(.*?)END AS account", COMPANY_SQL, re.S)[1]
+    assert "aj.role IS DISTINCT FROM 'non_billed'" in account
