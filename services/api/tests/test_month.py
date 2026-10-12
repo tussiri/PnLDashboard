@@ -66,3 +66,10 @@ def test_a_subcontracted_job_takes_relay_ar_before_its_partial_job_cost():
     assert (r["revenue_month_basis"], r["revenue_month_amount"], r["sub_week"]) == ("relay_ar", 189143.5, 189053.69)
     assert row(jc_revenue=4030.48)["revenue_month_basis"] == "job_cost"  # no Relay AR yet: job cost
     assert row(jc_revenue=30000.0, ar_revenue=31000.0, delivery_model="self_perform")["revenue_month_basis"] == "job_cost"
+
+
+def test_sarus_jobs_never_take_relay_figures():
+    # Relay is keyed by Crane job numbers; Sarus reuses some (300: FXE Pittsburgh in Crane, Amazon BDL3/7 in Sarus).
+    for join in ("LEFT JOIN rjm r ", "LEFT JOIN last_ar la ", "LEFT JOIN mart.v_relay_job_contract c "):
+        line = next(l for l in month.MONTH_SQL.splitlines() if l.startswith(join))
+        assert "m.company IS DISTINCT FROM 'Sarus'" in line

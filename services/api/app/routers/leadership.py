@@ -68,7 +68,7 @@ LEFT JOIN LATERAL (
          avg(ex.revenue_variable) AS variable_run_rate
   FROM generate_series(w.revenue_month - interval '2 months', w.revenue_month, interval '1 month') AS g(m)
   LEFT JOIN mart.v_job_cost_month_effective jc ON jc.company = w.company AND jc.job_number = w.job_number AND jc.month = g.m::date
-  LEFT JOIN mart.v_relay_job_month r ON r.job_number = w.job_number AND r.month = g.m::date
+  LEFT JOIN mart.v_relay_job_month r ON r.job_number = w.job_number AND r.month = g.m::date AND w.company IS DISTINCT FROM 'Sarus'
   LEFT JOIN core.fact_job_cost_month ex ON ex.source = 'export_import' AND ex.company = w.company AND ex.job_number = w.job_number
                                        AND ex.month = g.m::date
 ) rr ON w.revenue_month IS NOT NULL
@@ -302,7 +302,8 @@ LEFT JOIN delivery d USING (company, job_number)
 LEFT JOIN mart.v_job_cost_month_effective jc ON jc.company = jobs.company AND jc.job_number = jobs.job_number AND jc.month = months.month
 LEFT JOIN core.fact_job_cost_month ex ON ex.source = 'export_import' AND ex.company = jobs.company AND ex.job_number = jobs.job_number
                                      AND ex.month = months.month
-LEFT JOIN mart.v_relay_job_month r ON r.job_number = jobs.job_number AND r.month = months.month
+-- Relay (FedEx) is keyed by Crane's job numbers, which Sarus reuses: never Sarus.
+LEFT JOIN mart.v_relay_job_month r ON r.job_number = jobs.job_number AND r.month = months.month AND jobs.company IS DISTINCT FROM 'Sarus'
 LEFT JOIN timekeeping tk ON tk.company = jobs.company AND tk.job_number = jobs.job_number AND tk.month = months.month
 ORDER BY jobs.company, jobs.job_number, months.month
 """
@@ -332,7 +333,7 @@ def leadership_monthly(account: str = Query(..., description="An account slug"),
                 SELECT greatest(
                   (SELECT max(jc.month) FROM mart.v_job_cost_month_effective jc JOIN ops.account_job aj
                      ON aj.company = jc.company AND aj.job_number = jc.job_number WHERE aj.account_slug = %(a)s AND jc.revenue > 0),
-                  (SELECT max(r.month) FROM mart.v_relay_job_month r JOIN ops.account_job aj ON aj.job_number = r.job_number
+                  (SELECT max(r.month) FROM mart.v_relay_job_month r JOIN ops.account_job aj ON aj.job_number = r.job_number AND aj.company IS DISTINCT FROM 'Sarus'
                      WHERE aj.account_slug = %(a)s AND r.ar_revenue > 0)) AS last
                 """,
                 {"a": account},
