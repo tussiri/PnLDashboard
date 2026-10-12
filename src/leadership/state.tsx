@@ -6,7 +6,7 @@ import { queryKey } from '../services/queryClient'
 import { can as canOf, type Permission } from '../auth/permissions'
 import type { AuthUser } from '../auth/roles'
 import type { InvoiceBasis, MetricOptions } from './metrics'
-import { formatRoute, parseRoute, weekEndOf, weekStartOf, type Route } from './routes'
+import { formatRoute, parseRoute, priorMonth, weekEndOf, weekStartOf, type Route } from './routes'
 import { CanExport } from './ui'
 
 export type Theme = 'system' | 'light' | 'dark'
@@ -47,6 +47,8 @@ export interface LeadershipState {
   /** The month-end rollup (route period=month) and its month, YYYY-MM. */
   monthMode: boolean
   month: string | undefined
+  /** The month the rollup is compared against, YYYY-MM: the route's pick, else the month before. */
+  compareMonth: string | undefined
   /** Target override from the URL as a fraction; null when the account targets apply. */
   targetOverride: number | null
   optionsFor: (account: LeadershipAccount | undefined) => MetricOptions
@@ -144,12 +146,13 @@ export function LeadershipProvider({ user, signOut, children, forcedDecision }: 
   const monthMode = route.period === 'month' && can('data.month')
   // The month defaults to the one the selected week ends in.
   const month = route.month ?? (weekStart ? weekStart.slice(0, 7) : undefined)
+  const compareMonth = monthMode && month ? (route.compare && route.compare !== month ? route.compare : priorMonth(month)) : undefined
   const targetOverride = route.target != null ? route.target / 100 : null
   const optionsFor = useCallback((account: LeadershipAccount | undefined) => optionsForAccount(account, targetOverride, route.basis), [targetOverride, route.basis])
 
   const value: LeadershipState = {
     user, can, unlimited, signOut, decision, api, keyPrefix, adminApi, adminKeyPrefix, adminConfig, apiReachable, redetect, config, route, navigate, featured, accountBySlug, selectedAccount,
-    weekStart, monthMode, month, targetOverride, optionsFor, theme, setTheme: setThemeState,
+    weekStart, monthMode, month, compareMonth, targetOverride, optionsFor, theme, setTheme: setThemeState,
   }
   return <Ctx.Provider value={value}><CanExport.Provider value={value.can('data.export')}>{children}</CanExport.Provider></Ctx.Provider>
 }

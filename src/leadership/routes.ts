@@ -6,6 +6,7 @@
  *   #/account/plano-isd/sites?week=2026-09-20&site=Crane%20Southwest~801
  *   #/account/fedex/sites?delivery=self      (subcontracted sites hidden)
  *   #/analytics?week=2026-09-20&account=other&status=over&q=elementary
+ *   #/account/plano-isd?period=month&month=2026-09&compare=2026-06   (September against June)
  *   #/admin/imports
  *
  * `week` is the week-ending Sunday the views display (the API maps any date to its Monday week);
@@ -46,6 +47,8 @@ export interface Route {
   period?: 'month'
   /** The month shown in the month-end rollup (YYYY-MM); the selected week's month when absent. */
   month?: string
+  /** The month the rollup is compared against (YYYY-MM); the month before `month` when absent. */
+  compare?: string
   /** Account overview: weeks in the trend (TREND_WEEKS_DEFAULT when absent). */
   trendWeeks?: number
 }
@@ -101,6 +104,8 @@ export function parseRoute(hash: string): Route {
   if (params.get('period') === 'month' && route.view === 'account') route.period = 'month'
   const month = params.get('month')
   if (route.period && month && /^\d{4}-\d{2}$/.test(month)) route.month = month
+  const compare = params.get('compare')
+  if (route.period && compare && /^\d{4}-\d{2}$/.test(compare)) route.compare = compare
   return route
 }
 
@@ -123,6 +128,7 @@ export function formatRoute(route: Route): string {
   if (route.period === 'month' && route.view === 'account') {
     params.set('period', 'month')
     if (route.month) params.set('month', route.month)
+    if (route.compare) params.set('compare', route.compare)
   }
   const query = params.toString()
   return `#/${path}${query ? `?${query}` : ''}`
@@ -167,3 +173,9 @@ export function monthLabel(iso: string | null | undefined): string {
 }
 /** "Aug" from a month. */
 export const monthShort = (iso: string | null | undefined) => (iso ? MONTHS[parts(iso).m - 1] : '')
+
+/** The month before a month (YYYY-MM). */
+export const priorMonth = (month: string) => {
+  const [y, m] = month.split('-').map(Number)
+  return m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, '0')}`
+}

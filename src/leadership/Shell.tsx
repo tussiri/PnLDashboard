@@ -3,7 +3,7 @@ import type { Permission } from '../auth/permissions'
 import { useAuth } from '../auth/useAuth'
 import { LogOut, Monitor, Moon, Sun } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
-import { formatRoute, monthLabel, weekEndOf, weekLabel, type View } from './routes'
+import { formatRoute, monthLabel, priorMonth, weekEndOf, weekLabel, type View } from './routes'
 import { Pills } from './ui'
 import { useLeadership, type Theme } from './state'
 
@@ -75,10 +75,12 @@ export function Shell({ children }: { children: ReactNode }) {
 export function PageHeader({ title, subtitle, account = true, week = true, target = true, period = false, extra, defaultTarget }: { title: string; subtitle?: ReactNode; account?: boolean; week?: boolean; target?: boolean; period?: boolean; extra?: ReactNode
   /** The target in force when none is typed (a week's budget target), as a fraction; the account target otherwise. */
   defaultTarget?: number }) {
-  const { featured, selectedAccount, config, weekStart, navigate, targetOverride, route, monthMode, month, can } = useLeadership()
+  const { featured, selectedAccount, config, weekStart, navigate, targetOverride, route, monthMode, month, compareMonth, can } = useLeadership()
   const periodSwitch = period && can('data.month')
   const weeks = [...(config.data?.weeks ?? [])].reverse()
   const months = [...new Set(weeks.map((w) => w.week_start.slice(0, 7)))]
+  // Any loaded month but the selected one; the default (the month before) is listed even when it is older than the weeks loaded.
+  const compareMonths = [...new Set([...months, ...(compareMonth ? [compareMonth] : [])])].filter((m) => m !== month).sort().reverse()
   const [draft, setDraft] = useState('')
   const accountTarget = defaultTarget != null ? (defaultTarget * 100).toFixed(1) : selectedAccount ? (selectedAccount.target_labor_pct * 100).toFixed(1) : ''
   useEffect(() => { setDraft(targetOverride != null ? String(Math.round(targetOverride * 1000) / 10) : accountTarget) }, [targetOverride, accountTarget])
@@ -94,11 +96,15 @@ export function PageHeader({ title, subtitle, account = true, week = true, targe
         <select id="acct" value={selectedAccount?.slug ?? ''} onChange={(e) => navigate({ account: e.target.value, site: undefined })}>
           {featured.map((a) => <option key={a.slug} value={a.slug}>{a.name}</option>)}
         </select></>}
-      {periodSwitch && <Pills label="Period" value={monthMode ? 'month' : 'week'} onChange={(v) => navigate({ period: v === 'month' ? 'month' : undefined, month: undefined }, { replace: true })}
+      {periodSwitch && <Pills label="Period" value={monthMode ? 'month' : 'week'} onChange={(v) => navigate({ period: v === 'month' ? 'month' : undefined, month: undefined, compare: undefined }, { replace: true })}
         options={[{ value: 'week', label: 'Week' }, { value: 'month', label: 'Month' }]} />}
       {periodSwitch && monthMode && <><label htmlFor="mo">Month</label>
-        <select id="mo" value={month ?? ''} onChange={(e) => navigate({ month: e.target.value }, { replace: true })}>
+        <select id="mo" value={month ?? ''} onChange={(e) => navigate({ month: e.target.value, compare: undefined }, { replace: true })}>
           {months.map((m) => <option key={m} value={m}>{monthLabel(`${m}-01`)}</option>)}
+        </select>
+        <label htmlFor="cmp">Compare to</label>
+        <select id="cmp" value={compareMonth ?? ''} onChange={(e) => navigate({ compare: month && e.target.value === priorMonth(month) ? undefined : e.target.value }, { replace: true })}>
+          {compareMonths.map((m) => <option key={m} value={m}>{monthLabel(`${m}-01`)}</option>)}
         </select></>}
       {week && !(periodSwitch && monthMode) && <><label htmlFor="wk">Week</label>
         <select id="wk" value={weekStart ?? ''} onChange={(e) => navigate({ week: weekEndOf(e.target.value) })}>

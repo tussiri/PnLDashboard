@@ -76,10 +76,12 @@ FROM m
 LEFT JOIN core.dim_job j ON j.job_key = m.job_key
 LEFT JOIN jcm jc ON jc.job_number = m.job_number AND jc.month = %(first)s::date
 LEFT JOIN jcm pj ON pj.job_number = m.job_number AND pj.month = %(prior)s::date
-LEFT JOIN rjm r ON r.job_number = m.job_number AND r.month = %(first)s::date
+-- Relay (FedEx) is keyed by Crane's WinTeam job numbers; Sarus reuses some of them (300 is FXE Pittsburgh
+-- in Crane and Amazon BDL3/7 in Sarus), so a Sarus job never takes Relay AR, AP or a contract.
+LEFT JOIN rjm r ON r.job_number = m.job_number AND r.month = %(first)s::date AND m.company IS DISTINCT FROM 'Sarus'
 LEFT JOIN last_jc lj ON lj.job_number = m.job_number
-LEFT JOIN last_ar la ON la.job_number = m.job_number
-LEFT JOIN mart.v_relay_job_contract c ON c.job_number = m.job_number
+LEFT JOIN last_ar la ON la.job_number = m.job_number AND m.company IS DISTINCT FROM 'Sarus'
+LEFT JOIN mart.v_relay_job_contract c ON c.job_number = m.job_number AND m.company IS DISTINCT FROM 'Sarus'
 """
 
 ACCOUNTS_SQL = """
