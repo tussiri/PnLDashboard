@@ -17,7 +17,7 @@ const CLOSED = 'Job-cost-closed months only: a month is closed when it has reven
 export const GLOSSARY = {
   storyRevenue: {
     term: 'Revenue',
-    definition: 'Revenue of every account over the closed months of the last 12 months the job cost covers: job cost revenue, or Relay AR for a subcontracted FedEx site. Not the calendar year to date: that figure, the Company Revenue YTD, is given beside it.',
+    definition: 'Revenue of every account over the closed months of the selected period, ending with the last month the job cost covers: the calendar year to date (the default) or the last 12 months. Job cost revenue, or Relay AR for a subcontracted FedEx site. Over the year to date it is the Company Revenue YTD.',
     formula: 'sum(revenue) over closed months in the window',
     caveat: CLOSED,
   },
