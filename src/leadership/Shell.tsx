@@ -1,4 +1,6 @@
+import { ChangePassword } from '../auth/ChangePassword'
 import type { Permission } from '../auth/permissions'
+import { useAuth } from '../auth/useAuth'
 import { LogOut, Monitor, Moon, Sun } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
 import { formatRoute, monthLabel, weekEndOf, weekLabel, type View } from './routes'
@@ -41,6 +43,7 @@ export function freshnessLine(config: Config): string {
 
 export function Shell({ children }: { children: ReactNode }) {
   const { route, user, signOut, theme, setTheme, decision, selectedAccount, weekStart, targetOverride, can, unlimited } = useLeadership()
+  const { backend, apiMode } = useAuth()
   const next = THEMES[(THEMES.findIndex((t) => t.theme === theme) + 1) % THEMES.length]
   const current = THEMES.find((t) => t.theme === theme)!
   const carry = { account: selectedAccount?.slug, week: weekStart ? weekEndOf(weekStart) : undefined, target: targetOverride != null ? targetOverride * 100 : undefined }
@@ -56,6 +59,7 @@ export function Shell({ children }: { children: ReactNode }) {
         <div className="topbar__end">
           <span className="user">{user.username}</span>
           <button type="button" className="iconbtn" onClick={() => setTheme(next.theme)} aria-label={`${current.label}; switch to ${next.label.toLowerCase()}`} title={current.label}>{current.icon}</button>
+          {backend === 'api' && apiMode === 'required' && <ChangePassword />}
           <button type="button" className="navbtn" onClick={signOut}><LogOut size={14} aria-hidden="true" />Log out</button>
         </div>
       </div>

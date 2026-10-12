@@ -27,6 +27,8 @@ export const authApi = {
   mode: (signal?: AbortSignal) => request<{ mode: AuthMode }>('/auth/mode', { signal, timeoutMs: 8_000 }),
   me: (signal?: AbortSignal) => request<{ user: AuthUser }>('/auth/me', { signal, timeoutMs: 8_000 }),
   login: (username: string, password: string, signal?: AbortSignal) => request<{ user: AuthUser }>('/auth/login', { method: 'POST', body: { username, password }, signal, timeoutMs: 15_000 }),
+  /** The signed-in user's own password (any role); other sessions end, this one stays signed in. */
+  changePassword: (currentPassword: string, newPassword: string) => request<{ user: AuthUser }>('/auth/password', { method: 'POST', body: { current_password: currentPassword, new_password: newPassword }, timeoutMs: 15_000 }),
   logout: (signal?: AbortSignal) => request<{ ok: boolean }>('/auth/logout', { method: 'POST', signal, timeoutMs: 8_000 }),
   /** Whether the one-time first-administrator page is open. */
   setupStatus: (signal?: AbortSignal) => request<{ needed: boolean }>('/auth/setup', { signal, timeoutMs: 8_000 }),

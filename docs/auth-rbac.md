@@ -46,6 +46,10 @@ re-enable an account. Passwords need at least 10 characters and are stored as PB
 Usernames are 2 to 100 letters, digits, `.`, `-`, `_` or `@`, unique regardless of case. The last
 active administrator cannot be demoted or disabled.
 
+Any signed-in database user, whatever the role, changes their own password from **Password** in the
+top bar (`POST /auth/password` with the current password). It ends their other sessions and keeps the
+one they used. APP_USERS_JSON users change theirs in the environment; the button is hidden in dev mode.
+
 A database user's session is re-checked against `ops.app_user` (cached for 30 seconds): disabling an
 account or changing its role applies to sessions already issued, and a password reset refuses every
 session issued before it.
