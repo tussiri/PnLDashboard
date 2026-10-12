@@ -153,7 +153,7 @@ without making the entire dashboard all-or-nothing.
 Local Docker is the integration baseline, not the final hosting topology. Before
 production, add:
 
-- SSO/OIDC at the application and Metabase edges
+- SSO at the Metabase edge (the application has Microsoft sign-in, docs/auth-rbac.md)
 - TLS, managed secrets, restricted egress, and IP/private-network controls
 - separate managed PostgreSQL instances or lifecycle policies for warehouse and
   Metabase application data

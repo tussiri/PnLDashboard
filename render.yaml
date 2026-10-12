@@ -71,6 +71,18 @@ services:
       # Optional environment users (a way back in); leave empty.
       - key: APP_USERS_JSON
         sync: false
+      # Microsoft sign-in (docs/auth-rbac.md, Microsoft sign-in): all four or none. AUTH_PASSWORD_LOGIN
+      # all (default) keeps passwords for everyone; admins keeps them for administrators only.
+      - key: ENTRA_TENANT_ID
+        sync: false
+      - key: ENTRA_CLIENT_ID
+        sync: false
+      - key: ENTRA_CLIENT_SECRET
+        sync: false
+      - key: ENTRA_REDIRECT_URI
+        sync: false
+      - key: AUTH_PASSWORD_LOGIN
+        sync: false
       - key: INGESTION_ADMIN_TOKEN
         generateValue: true
       # WINTEAM_ENABLED and WINTEAM_SARUS_ENABLED are true, so the API will not start without the

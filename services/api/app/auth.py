@@ -12,6 +12,10 @@ they win on a name clash and are a way back in if every database administrator i
 APP_SESSION_SECRET is the HMAC key for session cookies. APP_SETUP_TOKEN (at least 24 characters)
 opens the one-time page that creates the first administrator while no user exists.
 
+Microsoft sign-in (app/entra.py) is on when ENTRA_TENANT_ID, ENTRA_CLIENT_ID, ENTRA_CLIENT_SECRET and
+ENTRA_REDIRECT_URI are all set. AUTH_PASSWORD_LOGIN says who may still use a password: ``all`` (the
+default) or ``admins`` (administrators only, a way back in when Microsoft sign-in fails).
+
 APP_AUTH_MODE
     dev        adds three fixed development users (executive / analyst / admin, password
                ``dev-<username>``) and falls back to a fixed development session secret.
@@ -38,6 +42,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 from .config import ConfigurationError
+from .entra import EntraConfig
 
 log = logging.getLogger(__name__)
 
@@ -51,6 +56,8 @@ MODES: tuple[str, ...] = ("dev", "required")
 MIN_SETUP_TOKEN_LENGTH = 24
 DEV_USERNAMES: tuple[str, ...] = ROLES
 DEV_PASSWORD_PREFIX = "dev-"
+PASSWORD_LOGIN: tuple[str, ...] = ("all", "admins")
+ENTRA_KEYS: tuple[str, ...] = ("ENTRA_TENANT_ID", "ENTRA_CLIENT_ID", "ENTRA_CLIENT_SECRET", "ENTRA_REDIRECT_URI")
 _DEV_SESSION_SECRET = "crane-ifs-development-session-secret-not-for-production"
 
 
@@ -182,6 +189,21 @@ def _signature(payload: bytes, secret: str) -> str:
     return hmac.new(secret.encode("utf-8"), payload, hashlib.sha256).hexdigest()
 
 
+def sign_value(payload: bytes, secret: str, purpose: str) -> str:
+    """A signed, tamper-evident cookie value for anything but a session (``purpose`` keeps the two apart)."""
+    return f"{_b64url(payload)}.{_signature(purpose.encode('ascii') + b'|' + payload, secret)}"
+
+
+def verify_value(token: str | None, secret: str, purpose: str) -> bytes | None:
+    if not token or not secret or "." not in token:
+        return None
+    encoded, _, signature = token.rpartition(".")
+    payload = _b64url_decode(encoded)
+    if payload is None or not hmac.compare_digest(signature, _signature(purpose.encode("ascii") + b"|" + payload, secret)):
+        return None
+    return payload
+
+
 def sign_session(user: User, secret: str, now: float | None = None, ttl_seconds: int = SESSION_TTL_SECONDS) -> str:
     """Signed cookie value for ``user`` expiring ``ttl_seconds`` from ``now``."""
     if not secret:
@@ -224,6 +246,10 @@ class AuthSettings:
     session_secret: str
     users: dict[str, UserRecord]
     setup_token: str = ""
+    #: Microsoft sign-in; None = off.
+    entra: EntraConfig | None = None
+    #: Who may sign in with a password: "all" or "admins".
+    password_login: str = "all"
 
     @property
     def dev_mode(self) -> bool:
@@ -252,7 +278,13 @@ class AuthSettings:
             merged = dev_users()
             merged.update(users)  # configured accounts win over the fixed development ones
             users = merged
-        return cls(mode=mode, session_secret=secret, users=users, setup_token=setup_token)
+        entra = load_entra(env)
+        password_login = (env.get("AUTH_PASSWORD_LOGIN") or "all").strip().lower()
+        if password_login not in PASSWORD_LOGIN:
+            raise ConfigurationError(f"AUTH_PASSWORD_LOGIN must be one of {', '.join(PASSWORD_LOGIN)}, got {password_login!r}")
+        if password_login == "admins" and entra is None:
+            raise ConfigurationError("AUTH_PASSWORD_LOGIN=admins needs Microsoft sign-in (the ENTRA_* variables); nobody else could sign in")
+        return cls(mode=mode, session_secret=secret, users=users, setup_token=setup_token, entra=entra, password_login=password_login)
 
     def authenticate(self, username: str, password: str) -> User | None:
         """User for valid credentials, else None. Unknown users still pay for one hash check."""
@@ -274,6 +306,22 @@ class AuthSettings:
     def listing(self) -> list[dict[str, str]]:
         """Usernames and roles only (never hashes)."""
         return [{"username": u.username, "role": u.role, "source": "dev" if self.is_dev_user(u) else "configured"} for u in self.users.values()]
+
+
+def load_entra(env: Mapping[str, str]) -> EntraConfig | None:
+    """Microsoft sign-in settings: all four ENTRA_* variables, or none of them."""
+    values = {key: (env.get(key) or "").strip() for key in ENTRA_KEYS}
+    if not any(values.values()):
+        return None
+    missing = [key for key, value in values.items() if not value]
+    if missing:
+        raise ConfigurationError(f"Microsoft sign-in needs all of {', '.join(ENTRA_KEYS)}; missing {', '.join(missing)}")
+    tenant = values["ENTRA_TENANT_ID"].lower()
+    if len(tenant) != 36 or tenant.count("-") != 4 or any(c not in "0123456789abcdef-" for c in tenant):
+        raise ConfigurationError("ENTRA_TENANT_ID must be the Directory (tenant) ID, a GUID")
+    if not values["ENTRA_REDIRECT_URI"].startswith(("https://", "http://localhost", "http://127.0.0.1")):
+        raise ConfigurationError("ENTRA_REDIRECT_URI must be an https:// address")
+    return EntraConfig(tenant, values["ENTRA_CLIENT_ID"], values["ENTRA_CLIENT_SECRET"], values["ENTRA_REDIRECT_URI"])
 
 
 _DUMMY_HASH = hash_password("dummy-password-for-timing", iterations=10_000, salt=b"crane-ifs-dummy-salt")

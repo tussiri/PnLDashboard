@@ -107,6 +107,55 @@ Usernames are case-sensitive and must be unique; roles must be one of the three 
 hash is a configuration error. Password checks use `hmac.compare_digest`; an unknown username still
 pays for one hash comparison, and every failed login sleeps about 300 ms.
 
+## Microsoft sign-in
+
+With the four `ENTRA_*` variables set, the sign-in page offers **Sign in with Microsoft**
+(`app/entra.py`, routes in `app/routers/auth.py`). It is the OpenID Connect authorization-code flow
+with PKCE: `GET /api/v1/auth/entra/start` sends the browser to Microsoft with a state, a nonce and a
+code challenge held in a short-lived signed cookie, and Microsoft returns to
+`GET /api/v1/auth/callback/entra`. The API exchanges the code for an ID token at Microsoft's token
+endpoint (client secret and PKCE verifier) and checks the token's issuer, audience, tenant, expiry
+and nonce. The token arrives directly from Microsoft over TLS, so its signature is not checked
+(OpenID Connect Core 3.1.3.7, step 6).
+
+Nobody is created by signing in. The person's work email (`preferred_username`, else `email`) must
+be the username of an **active** dashboard user, compared without regard to case; the session is then
+that user's, with their role, accounts and permissions. Anyone else returns to the sign-in page told
+they have no access yet and to ask an administrator. So an administrator adds people in Admin > Users
+with their work email as the username before they sign in. Every failure returns to the sign-in page
+with a short reason (`?signin_error=cancelled|expired|not_provisioned|failed|off`); Microsoft's own
+error text is logged, never shown.
+
+`AUTH_PASSWORD_LOGIN` decides who keeps a password:
+
+| Value           | Password sign-in                                                                         |
+|-----------------|------------------------------------------------------------------------------------------|
+| `all` (default) | Everyone, alongside Microsoft. Use this while people move over.                          |
+| `admins`        | Administrators only (a way back in when Microsoft sign-in fails); everyone else gets `403 Sign in with Microsoft`. The form folds under "Administrator sign-in", and the top bar's Password button shows only for administrators. Needs Microsoft sign-in configured. |
+
+`APP_USERS_JSON` users always sign in with their password. Switching to `admins` does not end password
+sessions already issued; they run out within 12 hours.
+
+### Setting it up
+
+1. In the Microsoft Entra admin center (entra.microsoft.com), **App registrations > New registration**:
+   name it for this dashboard, single tenant, platform **Web**, redirect URI
+   `https://<dashboard address>/api/v1/auth/callback/entra`. Give the dashboard its own registration
+   rather than sharing another app's: it needs only the delegated **User.Read** permission (the default).
+2. Copy the **Directory (tenant) ID** and **Application (client) ID** from the Overview page, and create a
+   client secret under **Certificates & secrets** (copy its Value; it is shown once).
+3. On the API service (Render: crane-ifs-api > Environment) set `ENTRA_TENANT_ID`, `ENTRA_CLIENT_ID`,
+   `ENTRA_CLIENT_SECRET` and `ENTRA_REDIRECT_URI` (the address from step 1). Leave
+   `AUTH_PASSWORD_LOGIN=all`.
+4. In Admin > Users, make sure each person's username is their Microsoft work email, and that an
+   administrator can still sign in with a password. Then try **Sign in with Microsoft**.
+5. When everyone signs in with Microsoft, set `AUTH_PASSWORD_LOGIN=admins`.
+
+Half a configuration (some `ENTRA_*` set, some empty), a tenant that is not a GUID, a redirect that is
+not `https://` (localhost aside), or `AUTH_PASSWORD_LOGIN=admins` without Microsoft sign-in stops the
+API at start-up with a message naming the problem. Client secrets expire: renew in Entra and update
+`ENTRA_CLIENT_SECRET` before the date shown there.
+
 ## Sessions
 
 `POST /api/v1/auth/login` with `{"username", "password"}` returns `{"user": {"username", "role"}}` and
@@ -117,8 +166,8 @@ the signature and expiry on every request and never stores sessions server-side.
 `APP_SESSION_SECRET` signs everyone out.
 
 `GET /api/v1/auth/me` returns the current user or `401`; `POST /api/v1/auth/logout` clears the cookie;
-`GET /api/v1/auth/mode` returns `{"mode": "dev" | "required"}` so the login page can show the
-development notice.
+`GET /api/v1/auth/mode` returns `{"mode": "dev" | "required", "microsoft": bool, "password": "all" | "admins"}`
+so the login page can show the development notice, the Microsoft button and the password rule.
 
 The browser keeps nothing but the HttpOnly cookie. When any data route answers `401` the shell
 returns to the login page.

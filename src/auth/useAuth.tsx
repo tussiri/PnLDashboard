@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { ApiError, UNAUTHORIZED_EVENT } from '../services/api'
 import { queryClient } from '../services/queryClient'
-import { authApi, type AuthMode } from './authApi'
+import { authApi, type AuthMode, type SignInOptions } from './authApi'
 import { demoAuthenticate, type AuthUser } from './roles'
 
 /**
@@ -19,6 +19,8 @@ export interface AuthState {
   backend: AuthBackend
   /** The API's sign-in mode (dev shows the development-user notice); null until known or in demo. */
   apiMode: AuthMode | null
+  /** Microsoft sign-in and the password rule; passwords for everyone until the API says otherwise. */
+  signInOptions: SignInOptions
   signIn: (username: string, password: string) => Promise<void>
   signOut: () => Promise<void>
 }
@@ -47,14 +49,16 @@ export function AuthProvider({ children, forced }: { children: ReactNode; forced
   const [user, setUser] = useState<AuthUser | null>(forced?.user ?? null)
   const [backend, setBackend] = useState<AuthBackend>(forced?.backend ?? 'api')
   const [apiMode, setApiMode] = useState<AuthMode | null>(forced?.apiMode ?? null)
+  const [signInOptions, setSignInOptions] = useState<SignInOptions>({ microsoft: false, password: 'all' })
 
   useEffect(() => {
     if (forced) return
     const controller = new AbortController()
     ;(async () => {
       try {
-        const { mode } = await authApi.mode(controller.signal)
+        const { mode, microsoft, password } = await authApi.mode(controller.signal)
         setApiMode(mode); setBackend('api')
+        setSignInOptions({ microsoft: microsoft === true, password: password === 'admins' ? 'admins' : 'all' })
         try {
           const { user } = await authApi.me(controller.signal)
           setUser(user); setStatus('signed_in')
@@ -102,7 +106,7 @@ export function AuthProvider({ children, forced }: { children: ReactNode; forced
     queryClient.invalidate()
   }, [backend])
 
-  const value = useMemo<AuthState>(() => ({ status, user, backend, apiMode, signIn, signOut }), [status, user, backend, apiMode, signIn, signOut])
+  const value = useMemo<AuthState>(() => ({ status, user, backend, apiMode, signInOptions, signIn, signOut }), [status, user, backend, apiMode, signInOptions, signIn, signOut])
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 
