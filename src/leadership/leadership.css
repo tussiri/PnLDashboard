@@ -420,4 +420,4 @@ rect.on{opacity:.8}
   [data-reveal='play'] .story-fade-in{animation:story-fade var(--story-dur) var(--story-ease) calc(150ms + var(--story-delay,0ms)) both}
   [data-reveal='play'] .story-pop{animation:story-pop var(--story-dur) var(--story-ease) calc(200ms + var(--story-delay,0ms)) both}
 }
-.month-compare .tw+.tw,.month-compare .tw+.table-tools{margin-top:16px}
+.month-compare .ct{flex-wrap:wrap;gap:8px}.month-compare .ct .pills{margin-bottom:0}

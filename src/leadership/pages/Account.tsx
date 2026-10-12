@@ -19,6 +19,7 @@ import { HoursToCut } from './HoursToCut'
 import { IncomeStatementTab, PalletTab, SubcontractedTab } from './ReportViews'
 import { Sites } from './Sites'
 import { tabLabel, tabsFor, vocabOf } from '../vocab'
+import { MonthCompare } from '../MonthCompare'
 import { SiteDrawer } from './SiteDrawer'
 import { Vendors } from './Vendors'
 
@@ -126,7 +127,8 @@ export function Account() {
     pallet: rows.some((r) => (r.kids?.length ?? 1) > 1),
     subcontracted: Boolean(account?.split_subcontracted) || subcontracted > 0,
     incomeStatement: Boolean(account?.split_subcontracted) || Object.keys(monthly.data?.income_statement ?? {}).length > 0,
-  }).filter((t) => (!monthMode || t !== 'over-target') && (t === 'overview' || can(`tab.${t}`)))
+    month: monthMode,
+  }).filter((t) => (!monthMode || t !== 'over-target') && (t === 'overview' || t === 'compare' || can(`tab.${t}`)))
   const vocab = vocabOf(account)
   let body
   if (rowsQuery.error) body = <LoadError error={rowsQuery.error} onRetry={rowsQuery.refetch} />
@@ -137,6 +139,7 @@ export function Account() {
   else if (tab === 'subcontracted' && tabs.includes(tab)) body = <SubcontractedTab account={account} />
   else if (tab === 'income-statement' && tabs.includes(tab)) body = <IncomeStatementTab account={account} options={options} />
   else if (!summary) body = <Empty>No data for this {monthMode ? 'month' : 'week'}.</Empty>
+  else if (tab === 'compare' && tabs.includes(tab) && month) body = <MonthCompare account={account} month={month} summary={summary} options={options} />
   else if (tab === 'pallet' && tabs.includes(tab)) body = <PalletTab account={account} summary={summary} options={options}
     subcontracted={(monthMode ? rows : rowsOfWeek(fullWeek.data?.rows, weekStart)).filter((r) => isSubcontracted(r, account))} />
   else if (tab === 'overview' || !tabs.includes(tab)) body = <Overview account={account} rows={rows} summary={summary} options={options} flags={flags}
