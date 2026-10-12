@@ -31,12 +31,14 @@ const DETAIL_MONTHS = 14
 export function Company() {
   const { api, keyPrefix, decision, config, featured, optionsFor, weekStart, navigate, can } = useLeadership()
   const t = useTokens()
+  // The story is in testing: only administrators, and users granted view.company-story, see it.
+  const story = can('view.company-story')
   const [period, setPeriod] = useState<'ytd' | '12m'>('ytd')
   const q = useApiQuery<CompanyResponse>(decision ? queryKey(`${keyPrefix}/leadership/company`, { months: STORY_MONTHS }) : null,
     (signal) => api.leadershipCompany(STORY_MONTHS, signal), [api])
   const rowsQuery = useRows('featured', 1)
   const slugs = featured.map((a) => a.slug).join(',')
-  const budgetsQuery = useApiQuery<{ slug: string; months: BudgetMonth[] }[]>(decision && slugs && can('tab.budget') ? queryKey(`${keyPrefix}/leadership/budget/featured`, { slugs }) : null,
+  const budgetsQuery = useApiQuery<{ slug: string; months: BudgetMonth[] }[]>(story && decision && slugs && can('tab.budget') ? queryKey(`${keyPrefix}/leadership/budget/featured`, { slugs }) : null,
     (signal) => Promise.all(slugs.split(',').map((slug) => api.leadershipBudget(slug, signal).then((b) => ({ slug, months: b.months })))), [api, slugs])
   useRefreshOnRebuild(config, [q.reload, rowsQuery.reload, budgetsQuery.reload])
   const week = useMemo(() => rowsOfWeek(rowsQuery.data?.rows, weekStart), [rowsQuery.data, weekStart])
@@ -107,12 +109,14 @@ export function Company() {
   return <>
     <PageHeader title="Company" subtitle={subtitle} account={false} target={false} />
     {q.error ? <LoadError error={q.error} onRetry={q.refetch} /> : !q.data ? <Skeleton height={420} /> : !months.length ? <Empty>No job cost loaded.</Empty> : <>
-      <div className="sect-row"><h2 className="sect-h">At a glance</h2><Pills label="Period" options={STORY_PERIODS} value={period} onChange={setPeriod} /></div>
-      <CompanyStory months={allMonths} accountNames={Object.fromEntries(q.data.accounts.map((a) => [a.slug, a.name]))}
-        week={{ start: weekStart, loading: !rowsQuery.data && !rowsQuery.error,
-          lines: lines.map((l) => ({ slug: l.slug, name: l.name, laborPct: l.summary?.account.measurePct ?? null, target: l.target, watchBand: l.watchBand, overHours: l.summary?.headerOverHours ?? null })) }}
-        budgets={budgetsQuery.data ?? null} budgetsLoading={budgetsQuery.loading} period={period} />
-      <h2 className="sect-h">Supporting detail</h2>
+      {story && <>
+        <div className="sect-row"><h2 className="sect-h">At a glance</h2><Pills label="Period" options={STORY_PERIODS} value={period} onChange={setPeriod} /></div>
+        <CompanyStory months={allMonths} accountNames={Object.fromEntries(q.data.accounts.map((a) => [a.slug, a.name]))}
+          week={{ start: weekStart, loading: !rowsQuery.data && !rowsQuery.error,
+            lines: lines.map((l) => ({ slug: l.slug, name: l.name, laborPct: l.summary?.account.measurePct ?? null, target: l.target, watchBand: l.watchBand, overHours: l.summary?.headerOverHours ?? null })) }}
+          budgets={budgetsQuery.data ?? null} budgetsLoading={budgetsQuery.loading} period={period} />
+        <h2 className="sect-h">Supporting detail</h2>
+      </>}
       <div className="kpi-lg">
         <Kpi label={`Revenue ${year} YTD`} value={money(revenue)} sub={`${ytd.length} closed months`} />
         <Kpi label="Gross profit YTD" value={money(profit)} tone={profit < 0 ? 'bad' : ''} sub={`${pct(ratio(profit, revenue))} margin`} />

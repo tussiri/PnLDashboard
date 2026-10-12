@@ -6,7 +6,7 @@ import type { AuthUser, Role } from './roles'
  * administrator's overrides. The API enforces the same keys; these only decide what the views show.
  */
 export type Permission =
-  | 'view.company' | 'view.analytics'
+  | 'view.company' | 'view.company-story' | 'view.analytics'
   | 'tab.sites' | 'tab.pallet' | 'tab.over-target' | 'tab.overtime' | 'tab.income-statement' | 'tab.subcontracted' | 'tab.map' | 'tab.vendors' | 'tab.feedback' | 'tab.budget'
   | 'data.allocations' | 'data.month' | 'data.staffing' | 'data.invoices' | 'data.photos' | 'data.export' | 'data.qa'
 
@@ -14,6 +14,7 @@ export interface PermissionInfo { key: Permission; group: string; label: string 
 
 export const PERMISSIONS: readonly PermissionInfo[] = [
   { key: 'view.company', group: 'Views', label: 'Company' },
+  { key: 'view.company-story', group: 'Views', label: 'Company at a glance' },
   { key: 'view.analytics', group: 'Views', label: 'Portfolio' },
   { key: 'tab.sites', group: 'Account tabs', label: 'Sites' },
   { key: 'tab.pallet', group: 'Account tabs', label: 'Pallet' },
@@ -35,7 +36,7 @@ export const PERMISSIONS: readonly PermissionInfo[] = [
 ]
 export const PERMISSION_KEYS: readonly Permission[] = PERMISSIONS.map((p) => p.key)
 
-const OFF: Record<Role, readonly Permission[]> = { executive: ['view.analytics', 'data.staffing'], analyst: ['view.analytics'], admin: [] }
+const OFF: Record<Role, readonly Permission[]> = { executive: ['view.company-story', 'view.analytics', 'data.staffing'], analyst: ['view.company-story', 'view.analytics'], admin: [] }
 export const ROLE_DEFAULTS: Record<Role, Record<Permission, boolean>> = {
   executive: Object.fromEntries(PERMISSION_KEYS.map((k) => [k, !OFF.executive.includes(k)])) as Record<Permission, boolean>,
   analyst: Object.fromEntries(PERMISSION_KEYS.map((k) => [k, !OFF.analyst.includes(k)])) as Record<Permission, boolean>,

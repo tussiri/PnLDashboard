@@ -9,6 +9,7 @@ not see (strip).
 
 Keys
     view.company        the Company page (every account; also needs an unlimited account scope)
+    view.company-story  the Company page's "At a glance" story, in testing (off for every role but admin)
     view.analytics      the Portfolio pages (route #/portfolio; the key keeps its first name)
     tab.<account tab>   an account tab (sites, pallet, over-target, overtime, income-statement,
                         subcontracted, map, vendors, feedback, budget); Overview is always open
@@ -32,6 +33,7 @@ from .auth import ROLES, User
 #: (key, group, label). Order is the matrix column order.
 CATALOG: tuple[tuple[str, str, str], ...] = (
     ("view.company", "Views", "Company"),
+    ("view.company-story", "Views", "Company at a glance"),
     ("view.analytics", "Views", "Portfolio"),
     ("tab.sites", "Account tabs", "Sites"),
     ("tab.pallet", "Account tabs", "Pallet"),
@@ -53,8 +55,8 @@ CATALOG: tuple[tuple[str, str, str], ...] = (
 )
 KEYS: tuple[str, ...] = tuple(k for k, _, _ in CATALOG)
 
-_EXECUTIVE_OFF = frozenset({"view.analytics", "data.staffing"})
-_ANALYST_OFF = frozenset({"view.analytics"})
+_EXECUTIVE_OFF = frozenset({"view.company-story", "view.analytics", "data.staffing"})
+_ANALYST_OFF = frozenset({"view.company-story", "view.analytics"})
 ROLE_DEFAULTS: dict[str, dict[str, bool]] = {
     "executive": {k: k not in _EXECUTIVE_OFF for k in KEYS},
     "analyst": {k: k not in _ANALYST_OFF for k in KEYS},
