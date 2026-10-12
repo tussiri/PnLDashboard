@@ -159,11 +159,6 @@ services:
           type: pserv
           name: crane-ifs-api
           envVarKey: WINTEAM_SUBSCRIPTION_KEY
-      - key: WINTEAM_CUSTOMER_NUMBERS
-        fromService:
-          type: pserv
-          name: crane-ifs-api
-          envVarKey: WINTEAM_CUSTOMER_NUMBERS
       - key: WINTEAM_SARUS_BASE_URL
         fromService:
           type: pserv
