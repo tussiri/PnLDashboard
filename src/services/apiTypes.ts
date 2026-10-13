@@ -1688,6 +1688,8 @@ export interface HrSiteStaffingWeek {
   /** employee_master = employed at the site; timekeeping = people who worked there. */
   headcount_source?: 'employee_master' | 'timekeeping' | null
   hr_as_of?: string | null
+  /** The week positions, filled, open and headcount come from: this week, else the nearest week HR reported them. */
+  state_week?: string | null
 }
 
 /** GET /integrations/photovalidation */

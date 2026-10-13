@@ -165,7 +165,7 @@ export function demoStaffingJob(company: string, jobNumber: string, query: { wee
   const sum = (status: string) => lines.filter((l) => l.status === status).reduce((a, l) => a + l.headcount_needed, 0)
   const positions = Math.max(4, Math.round(12 * k))
   const hr = { configured: true, week_start: week, hires: Math.round(2 * k), separations: Math.round(k), budgeted_positions: positions, positions_source: 'tracker' as const,
-    filled_positions: positions - 1, open_positions: 1, active_headcount: positions - 1, headcount_source: 'employee_master' as const, hr_as_of: week }
+    filled_positions: positions - 1, open_positions: 1, active_headcount: positions - 1, headcount_source: 'employee_master' as const, hr_as_of: week, state_week: week }
   return { source, configured: true, as_of: '2026-09-21T06:00:00Z', week, requested_headcount: sum('posted'), pending_requested_headcount: sum('submitted'), lines, hr }
 }
 

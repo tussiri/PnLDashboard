@@ -233,12 +233,29 @@ def status() -> dict[str, Any]:
 
 
 def job_week(cursor: Any, job_key: int, week_start: date) -> dict[str, Any] | None:
-    """The held row for one site and week, as the staffing route serves it; None when HR has none."""
+    """The held row for one site and week, as the staffing route serves it; None when HR has none.
+
+    HR reports positions, filled, open and headcount only as of when it answers, so a week pulled after it
+    ended has hires and separations but none of those. They are taken from the nearest week that has them,
+    the latest one up to the week first, else the earliest after it; `state_week` names that week.
+    """
     cursor.execute(
         """
-        SELECT week_start, hires, separations, budgeted_positions, positions_source, filled_positions,
-               open_positions, active_headcount, headcount_source, hr_as_of
-        FROM core.hr_site_staffing_week WHERE job_key = %s AND week_start = %s
+        SELECT w.week_start, w.hires, w.separations, s.budgeted_positions, s.positions_source, s.filled_positions,
+               s.open_positions, s.active_headcount, s.headcount_source, COALESCE(s.hr_as_of, w.hr_as_of) AS hr_as_of,
+               s.week_start AS state_week
+        FROM core.hr_site_staffing_week w
+        LEFT JOIN LATERAL (
+            SELECT x.week_start, x.budgeted_positions, x.positions_source, x.filled_positions, x.open_positions,
+                   x.active_headcount, x.headcount_source, x.hr_as_of
+            FROM core.hr_site_staffing_week x
+            WHERE x.job_key = w.job_key
+              AND (x.budgeted_positions IS NOT NULL OR x.filled_positions IS NOT NULL
+                   OR x.open_positions IS NOT NULL OR x.active_headcount IS NOT NULL)
+            ORDER BY x.week_start > w.week_start, abs(x.week_start - w.week_start)
+            LIMIT 1
+        ) s ON true
+        WHERE w.job_key = %s AND w.week_start = %s
         """,
         (job_key, week_start),
     )
