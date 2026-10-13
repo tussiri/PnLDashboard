@@ -2,7 +2,7 @@ import { useMemo, type ReactNode } from 'react'
 import type { BudgetMonth, BudgetWeek, LeadershipAccount, LeadershipMonthlyJob, LeadershipRow } from '../services/apiTypes'
 import { Badge, ChartCard, Kpi, Skeleton, Swatch, toneOf, useVocab } from './ui'
 import { LaborMixChart, MonthWeekTrendChart, SegmentTrendChart, SiteLpChart, useTokens } from './charts'
-import { closedMonths, includesVendor, inSentence, isSubcontracted, monthLaborPct, monthRevenue, priorMonth, rowsOfWeek, segmentLabel, segmentOrder, siteMonths, useMonthly, useMonthRows, useRows, vendorLabel, weekBudgetOf, type DataFlags, type WeekBudget } from './data'
+import { closedMonths, includesVendor, inSentence, isSubcontracted, monthLaborPct, monthRevenue, priorMonth, rowsOfWeek, schoolWeekNote, segmentLabel, segmentOrder, siteMonths, useMonthly, useMonthRows, useRows, vendorLabel, weekBudgetOf, type DataFlags, type WeekBudget } from './data'
 import { hours, hours1, money, moneyK, pct } from './format'
 import { accountSummary, statusOf, type AccountNote, type AccountSummary, type MetricOptions, type SiteMetrics } from './metrics'
 import { addDays, monthLabel, monthShort, TREND_WEEKS_DEFAULT, TREND_WEEKS_MAX, TREND_WEEKS_MIN, weekEndOf, weekTick } from './routes'
@@ -37,6 +37,8 @@ export function Notes({ summary, account, flags, options, revenueMonth, extra = 
   if (payroll.length) add('', 'payroll', 'Labor source', `WinTeam hours at WinTeam pay rates, ${siteWord(payroll.length)}`)
   if (flags.revenueLag) add('bad', 'lag', 'Invoicing month', `${monthLabel(flags.revenueLag.revenueMonth)}; ${monthLabel(flags.revenueLag.expectedMonth)} job cost not loaded`)
   for (const s of flags.failedSyncs) add('bad', `s${s.integration}`, `${SYNC_NAME[s.integration] ?? 'WinTeam'} sync failed`, s.at ? s.at.slice(0, 10) : '')
+  const school = schoolWeekNote(flags.schoolWeek)
+  if (school) add(school.tone, 'school', 'School calendar', school.body)
   if (flags.weekInProgress) add('warn', 'prog', 'Week in progress', flags.dataThrough ? `Hours and labor through ${shortDay(flags.dataThrough)}` : 'Partial hours and labor')
   for (const x of extra) add(x.tone, x.key, x.label, x.body)
   if (flags.month?.inProgress) add('warn', 'mprog', 'Month in progress', 'Partial hours and labor')

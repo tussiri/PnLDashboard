@@ -761,3 +761,32 @@ In the views a site counts as subcontracted by its delivery model only for accou
 subcontracted sites out (FedEx, from Relay); elsewhere only when Crane has no payroll hours there and the
 week carries vendor cost, since the restored reference flag marks any site with agency cost.
 
+
+## School district calendars, added 2026-10-13
+
+Migration 055 (`ops.school_day`, `ops.school_calendar_source`, view `ops.v_school_day`), `app/school_calendar.py`.
+One row per weekday per source for a school district account. `day_type` is `school`, `early_release`,
+`staff_only` (students out, staff in), `holiday` (students and staff out; "Closed" in the views) or
+`summer`. `source` is `scraped` (read from the district's published calendar) or `manual` (an Admin
+override). A manual row wins and survives re-reads: a read replaces only the scraped rows of the school
+year it covers (July 1 to June 30).
+
+The nightly sync (step `school_calendar`, ops.app_setting `nightly_sync.school_calendar`, default on)
+downloads each enabled district's calendar link (a PDF, HTML page or text) and re-parses it only when the
+file changed. Plano ISD and Crowley ISD have default links. A calendar in which no school year, first day
+or last day of school is found is refused and the previous rows stay; the failure is kept on the source
+(`last_status: 'failed'`, `last_error`) and does not fail the nightly run.
+
+| Route | Response |
+|---|---|
+| `GET /leadership/school-calendars` | `{districts: [{account, name, url, default_url, enabled, school_year, days_found, last_checked_at, last_changed_at, last_status: 'loaded' \| 'unchanged' \| 'failed' \| null, last_error, updated_by}]}`, within the user's account scope. |
+| `GET /leadership/school-calendar?account=&from=&to=` | Account scope. Default range July 1 to June 30 of the current school year. `{account, from, to, source (as above, no account/name) \| null, days: [{date, day_type, label, source, scraped: {day_type, label} \| null, updated_by}], weeks: [{week_start (Monday), school, early_release, staff_only, holiday, summer, labels}]}`. `scraped` is the value an override replaces; `labels` are the week's labels for days not in session. Empty `days` for an account with no calendar. |
+| `PUT /leadership/school-calendar/{slug}/days` | Admin. `{days: [{date, day_type, label?}]}` saved as overrides; `422` for a weekend, a repeated date or an unknown type. |
+| `DELETE /leadership/school-calendar/{slug}/days/{date}` | Admin. Drops the day's override, so the scraped day applies again. `{account, removed}`. |
+| `PUT /leadership/school-calendar/{slug}/source` | Admin. `{url \| null (the default link), enabled}`; `422` for a link that is not http(s). |
+| `POST /leadership/school-calendar/{slug}/refresh` | Admin, refresh pause (`423` unless `override_pause=true`). Downloads and re-reads the link now, changed or not: `{account, status: 'loaded', school_year, days, first_day, last_day, days_off}`; `422` with the reason when the download or the parse fails. |
+| `POST /leadership/school-calendar/{slug}/upload` | Admin, refresh pause. Multipart `file` (PDF, HTML or text) read in place of the link; same answer as refresh. |
+
+On the account Overview, a week whose district calendar has days not in session adds a School calendar
+note: the week's school days and the other days by type, with their labels (warning tone when fewer than
+five days are school or early release).

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { LeadershipAccount, LeadershipRow } from '../services/apiTypes'
-import { closedMonths, isSubcontracted, monthRevenue, prepareRows, syncConcerns, weekBudgetOf, weekdaysIn } from './data'
+import { closedMonths, isSubcontracted, monthRevenue, prepareRows, schoolWeekNote, syncConcerns, weekBudgetOf, weekdaysIn } from './data'
 
 const row = (job: string, extra: Partial<LeadershipRow> = {}): LeadershipRow => ({
   week_start: '2026-09-14', week_end: '2026-09-20', company: 'Crane West', job_number: job, site_name: `Site ${job}`, parent_account: 'FedEx',
@@ -106,5 +106,21 @@ describe('isSubcontracted', () => {
     expect(isSubcontracted(row({ hours: 12 }), fedex)).toBe(true)
     expect(isSubcontracted(row({ delivery_model: 'self_perform' }), fedex)).toBe(false)
     expect(isSubcontracted(row({ delivery_model: null, hours: 0 }), fedex)).toBe(true)
+  })
+})
+
+describe('schoolWeekNote', () => {
+  const week = (p: Partial<Record<'school' | 'early_release' | 'staff_only' | 'holiday' | 'summer', number>>, labels: string[] = []) =>
+    ({ week_start: '2026-11-23', school: 0, early_release: 0, staff_only: 0, holiday: 0, summer: 0, labels, ...p })
+  it('says nothing for a full school week or no calendar', () => {
+    expect(schoolWeekNote(week({ school: 5 }))).toBeNull()
+    expect(schoolWeekNote(undefined)).toBeNull()
+  })
+  it('flags a week with schools closed', () => {
+    expect(schoolWeekNote(week({ holiday: 5 }, ['Thanksgiving Break']))).toEqual({ tone: 'warn', body: '0 school days; 5 closed. Thanksgiving Break' })
+    expect(schoolWeekNote(week({ school: 3, staff_only: 2 }))).toEqual({ tone: 'warn', body: '3 school days; 2 staff only' })
+  })
+  it('notes an early release day without a warning', () => {
+    expect(schoolWeekNote(week({ school: 4, early_release: 1 }))).toEqual({ tone: '', body: '4 school days; 1 early release' })
   })
 })

@@ -1,6 +1,6 @@
 import type {
   FullSyncResult, LeadershipAccount, LeadershipAccountJob, LeadershipAccountPatch, LeadershipConfig, LeadershipImportFile, LeadershipImportKind,
-  LeadershipJobMapping, LeadershipRowsQuery, LeadershipRowsResponse, LeadershipSegment, LeadershipSiteResponse, LeadershipVendorsResponse, LeadershipFeedbackResponse, FeedbackOverview, LeadershipQaResponse, LeadershipBudgetResponse, BudgetPlanRow, BudgetWeekRow, LeadershipMonthlyResponse, MailInboxStatus, MailInboxSetting, MailPollResult, CompanyResponse, LeadershipMonthResponse, AllocationStatus, AllocationSettings, AllocationMonth,
+  LeadershipJobMapping, LeadershipRowsQuery, LeadershipRowsResponse, LeadershipSegment, LeadershipSiteResponse, LeadershipVendorsResponse, LeadershipFeedbackResponse, FeedbackOverview, LeadershipQaResponse, LeadershipBudgetResponse, BudgetPlanRow, SchoolCalendarLoad, SchoolCalendarResponse, SchoolDayType, SchoolDistrict, BudgetWeekRow, LeadershipMonthlyResponse, MailInboxStatus, MailInboxSetting, MailPollResult, CompanyResponse, LeadershipMonthResponse, AllocationStatus, AllocationSettings, AllocationMonth,
   PauseOverride, PhotoValidationSyncResult, RebuildResult, StaffingJobResponse, SyncOptions, SyncRunsResponse, SystemStatus } from './apiTypes'
 
 /**
@@ -139,6 +139,21 @@ export const api = {
   leadershipBudget: (account: string, signal?: AbortSignal) => request<LeadershipBudgetResponse>('/leadership/budget', { query: { account }, signal, rawRatios: true }),
   saveBudget: (account: string, plan: { months?: BudgetPlanRow[]; weeks?: BudgetWeekRow[] }, signal?: AbortSignal) => request<{ account: string; months: BudgetPlanRow[] }>(`/leadership/budget/${encodeURIComponent(account)}`, { method: 'PUT', body: { months: plan.months ?? [], weeks: plan.weeks ?? [] }, admin: true, signal, rawRatios: true }),
   deleteBudget: (account: string, month?: string, signal?: AbortSignal, weeks = false) => request<{ account: string; removed: number }>(`/leadership/budget/${encodeURIComponent(account)}`, { method: 'DELETE', query: weeks ? { weeks: 'true' } : month ? { month } : undefined, admin: true, signal, rawRatios: true }),
+  // School district calendars (migration 055)
+  schoolCalendars: (signal?: AbortSignal) => request<{ districts: SchoolDistrict[] }>('/leadership/school-calendars', { signal, rawRatios: true }),
+  schoolCalendar: (account: string, signal?: AbortSignal) => request<SchoolCalendarResponse>('/leadership/school-calendar', { query: { account }, signal, rawRatios: true }),
+  saveSchoolDays: (account: string, days: { date: string; day_type: SchoolDayType; label?: string | null }[], signal?: AbortSignal) =>
+    request<{ account: string; saved: number }>(`/leadership/school-calendar/${encodeURIComponent(account)}/days`, { method: 'PUT', body: { days }, admin: true, signal, rawRatios: true }),
+  revertSchoolDay: (account: string, day: string, signal?: AbortSignal) =>
+    request<{ account: string; removed: number }>(`/leadership/school-calendar/${encodeURIComponent(account)}/days/${day}`, { method: 'DELETE', admin: true, signal, rawRatios: true }),
+  saveSchoolSource: (account: string, source: { url: string | null; enabled: boolean }, signal?: AbortSignal) =>
+    request<{ account: string; source: SchoolDistrict }>(`/leadership/school-calendar/${encodeURIComponent(account)}/source`, { method: 'PUT', body: source, admin: true, signal, rawRatios: true }),
+  refreshSchoolCalendar: (account: string, signal?: AbortSignal, options?: PauseOverride) =>
+    request<SchoolCalendarLoad>(`/leadership/school-calendar/${encodeURIComponent(account)}/refresh`, { method: 'POST', admin: true, query: pauseQuery(options), signal, timeoutMs: 120_000 }),
+  uploadSchoolCalendar: (account: string, file: File, signal?: AbortSignal, options?: PauseOverride) => {
+    const form = new FormData(); form.append('file', file)
+    return postForm<SchoolCalendarLoad>(`/leadership/school-calendar/${encodeURIComponent(account)}/upload${buildQuery(pauseQuery(options))}`, form, signal)
+  },
   leadershipFeedbackOverview: (account: string, month: string | undefined, signal?: AbortSignal) => request<FeedbackOverview>('/leadership/feedback/overview', { query: { account, month }, signal, rawRatios: true }),
   leadershipQa: (account: string, week: string | undefined, signal?: AbortSignal) => request<LeadershipQaResponse>('/leadership/qa', { query: { account, week, weeks: 16 }, signal, rawRatios: true }),
   leadershipFeedback: (account: string, months = 12, signal?: AbortSignal) => request<LeadershipFeedbackResponse>('/leadership/feedback', { query: { account, months }, signal, rawRatios: true }),
