@@ -89,7 +89,8 @@ const LOG_PCT_TICKS = [5, 10, 25, 50, 100, 200, 500, 1000, 2000, 5000, 10000]
  * The axis is logarithmic, so a spike (a summer week at several hundred percent) stays on the chart without flattening
  * the ordinary weeks. */
 export function SegmentTrendChart({ labels, series, current, budgetTargets, onPick, projected }: {
-  labels: string[]; series: { name: string; values: (number | null)[]; target: number }[]; current: number
+  /** A week's label may carry a second line ("School closed"). */
+  labels: (string | string[])[]; series: { name: string; values: (number | null)[]; target: number }[]; current: number
   budgetTargets?: (number | null)[]; onPick?: (index: number) => void
   /** Points that are projections: hollow, with a dashed line into them. */
   projected?: boolean[]
@@ -251,7 +252,7 @@ export function LaborMixChart({ labels, invoice, core, pallet, sub, subLabel, di
 }
 
 /** Labor dollars by period as bars (muted before weekFrom, the current one highlighted), invoice and labor % as lines, target dashed. */
-export function MonthWeekTrendChart({ labels, labor, invoice, lp, target, weekFrom, current, weekTargets, onPick, sitesLp, unit = 'week', projected }: { labels: string[]; labor: (number | null)[]; invoice: (number | null)[]; lp: (number | null)[]; target: number; weekFrom: number; current: number
+export function MonthWeekTrendChart({ labels, labor, invoice, lp, target, weekFrom, current, weekTargets, onPick, sitesLp, unit = 'week', projected }: { labels: (string | string[])[]; labor: (number | null)[]; invoice: (number | null)[]; lp: (number | null)[]; target: number; weekFrom: number; current: number
   /** Points whose labor is a projection (the latest weeks while timekeeping arrives): lighter bars, hollow points. */
   projected?: boolean[]
   /** The period each point is: names the series in the tooltip. */

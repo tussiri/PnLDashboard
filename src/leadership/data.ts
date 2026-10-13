@@ -275,3 +275,19 @@ export function schoolWeekNote(week: SchoolWeek | null | undefined) {
   const days = `${week.school} school day${week.school === 1 ? '' : 's'}; ${parts.join(', ')}`
   return { tone: week.school + week.early_release < 5 ? 'warn' as const : '' as const, body: week.labels.length ? `${days}. ${week.labels.join('; ')}` : days }
 }
+
+/** A short tag for a week when schools are out ("School closed", "School closed 3 days", "Summer break"): from the
+ * district's school calendar, else from the budget calendar's day counts. Null for a full school week or no calendar. */
+export function schoolClosedTag(week: SchoolWeek | null | undefined, budgetDetails?: Partial<Record<string, number>> | null): string | null {
+  let school: number, off: number, summer: number
+  if (week) { school = week.school + week.early_release; off = week.holiday + week.staff_only; summer = week.summer }
+  else if (budgetDetails && budgetDetails.school_days != null) {
+    school = budgetDetails.school_days
+    off = (budgetDetails.closure_days ?? 0) + (budgetDetails.staff_days ?? 0) + (budgetDetails.stat_holidays ?? 0)
+    summer = budgetDetails.summer_days ?? 0
+  } else return null
+  if (off + summer <= 0) return null
+  if (school <= 0) return off === 0 ? 'Summer break' : 'School closed'
+  const days = off + summer
+  return `School closed ${days} day${days === 1 ? '' : 's'}`
+}

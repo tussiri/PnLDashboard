@@ -3,6 +3,7 @@ import { useApiQuery } from '../../hooks/useApiQuery'
 import type { BudgetMonth, BudgetPlanRow, LeadershipAccount, LeadershipBudgetResponse } from '../../services/apiTypes'
 import { queryClient, queryKey } from '../../services/queryClient'
 import { parseBudget, type BudgetRow, type BudgetWeekRow } from '../budgetParse'
+import { schoolClosedTag } from '../data'
 import { money, pct } from '../format'
 import { monthLabel } from '../routes'
 import { useLeadership } from '../state'
@@ -123,6 +124,7 @@ export function BudgetsAdmin() {
     { key: 'h', header: 'Stat holiday labor', value: (r) => r.holiday_labor, render: (r) => (r.holiday_labor ? money(r.holiday_labor) : '–') },
     { key: 't', header: 'Total', value: (r) => r.site_labor + r.overhead_labor, render: (r) => <b>{money(r.site_labor + r.overhead_labor)}</b> },
     { key: 'd', header: 'Days', left: true, value: (r) => daysOf(r.details), className: 'neutral' },
+    { key: 'c', header: 'Schools', left: true, value: (r) => schoolClosedTag(null, r.details) ?? '', render: (r) => <span className="warn">{schoolClosedTag(null, r.details) ?? ''}</span> },
   ]
   const weeks = q.data?.weeks ?? []
   const what = [months.length ? `${months.length} months` : null, weekRows.length ? `${weekRows.length} weeks` : null].filter(Boolean).join(' and ')
