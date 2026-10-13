@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { LeadershipAccount, LeadershipRow } from '../services/apiTypes'
-import { closedMonths, isSubcontracted, monthRevenue, prepareRows, schoolWeekNote, syncConcerns, weekBudgetOf, weekdaysIn } from './data'
+import { closedMonths, isSubcontracted, monthRevenue, prepareRows, schoolClosedTag, schoolWeekNote, syncConcerns, weekBudgetOf, weekdaysIn } from './data'
 
 const row = (job: string, extra: Partial<LeadershipRow> = {}): LeadershipRow => ({
   week_start: '2026-09-14', week_end: '2026-09-20', company: 'Crane West', job_number: job, site_name: `Site ${job}`, parent_account: 'FedEx',
@@ -122,5 +122,27 @@ describe('schoolWeekNote', () => {
   })
   it('notes an early release day without a warning', () => {
     expect(schoolWeekNote(week({ school: 4, early_release: 1 }))).toEqual({ tone: '', body: '4 school days; 1 early release' })
+  })
+})
+
+describe('schoolClosedTag', () => {
+  const week = (p: Partial<Record<'school' | 'early_release' | 'staff_only' | 'holiday' | 'summer', number>>) =>
+    ({ week_start: '2026-10-12', school: 0, early_release: 0, staff_only: 0, holiday: 0, summer: 0, labels: [], ...p })
+  it('tags a week with no school days', () => {
+    expect(schoolClosedTag(week({ holiday: 3, staff_only: 2 }))).toBe('School closed')
+    expect(schoolClosedTag(week({ summer: 5 }))).toBe('Summer break')
+  })
+  it('counts the closed days of a partial week', () => {
+    expect(schoolClosedTag(week({ school: 4, holiday: 1 }))).toBe('School closed 1 day')
+    expect(schoolClosedTag(week({ school: 2, staff_only: 3 }))).toBe('School closed 3 days')
+  })
+  it('says nothing for a full school week, an early release, or no calendar', () => {
+    expect(schoolClosedTag(week({ school: 5 }))).toBeNull()
+    expect(schoolClosedTag(week({ school: 4, early_release: 1 }))).toBeNull()
+    expect(schoolClosedTag(null)).toBeNull()
+  })
+  it('falls back to the budget calendar day counts', () => {
+    expect(schoolClosedTag(null, { school_days: 0, closure_days: 3, staff_days: 2 })).toBe('School closed')
+    expect(schoolClosedTag(null, { school_days: 5 })).toBeNull()
   })
 })
