@@ -1,9 +1,11 @@
 """Shared fixtures: roles (app/roles.py) live in memory for every test, never in a database."""
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 
-from app import roles
+from app import refresh_pause, roles
 
 
 class MemoryRoleStore:
@@ -30,3 +32,9 @@ def role_store():
     roles.set_store(store)
     yield store
     roles.set_store(roles.PostgresRoleStore())
+
+
+@pytest.fixture(autouse=True)
+def no_refresh_pause(monkeypatch):
+    """The suite must not depend on the wall clock: the weekly refresh pause is off unless a test sets it."""
+    monkeypatch.setattr(refresh_pause, "settings", replace(refresh_pause.settings, refresh_pause_windows=()))

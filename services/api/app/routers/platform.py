@@ -17,9 +17,9 @@ import psycopg
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
-from .. import companycam, mail_inbox, marts, relay, schedule
+from .. import companycam, mail_inbox, marts, refresh_pause, relay, schedule
 from ..common import (PRIMARY_SOURCES, configured_key_accounts, month_status_rows, jsonable,
-                      require_admin)
+                      refresh_gate, require_admin)
 from ..config import settings
 from ..db import connection, database_ready
 from .. import reconcile
@@ -122,6 +122,7 @@ def system_status() -> dict[str, Any]:
         "sources": _sources_block(),
         "marts": _marts_block(),
         "forecast": _forecast_block(),
+        "refresh_pause": refresh_pause.status(),
     }
 
 
@@ -137,7 +138,7 @@ def finance_reference_status() -> dict[str, Any]:
     return jsonable(finance_reference.status())
 
 
-@router.post("/integrations/finance-reference/load", dependencies=[Depends(require_admin)])
+@router.post("/integrations/finance-reference/load", dependencies=[Depends(require_admin), Depends(refresh_gate)])
 def finance_reference_load() -> dict[str, Any]:
     """Full replace of the warehouse from the restored Finance_Dashboard database (see docs/finance-reference-source.md)."""
     if not settings.finance_reference_configured:
@@ -158,7 +159,7 @@ def integration_test() -> dict[str, Any]:
         raise HTTPException(status_code=502, detail={"ok": False, "error": str(exc), "field_errors": exc.errors}) from exc
 
 
-@router.post("/integrations/winteam/sync/{resource}", dependencies=[Depends(require_admin)])
+@router.post("/integrations/winteam/sync/{resource}", dependencies=[Depends(require_admin), Depends(refresh_gate)])
 def integration_sync(
     resource: str,
     normalize: bool | None = Query(None, description="false = land raw payloads only; default WINTEAM_NORMALIZE"),
@@ -197,7 +198,7 @@ def integration_reset_watermark(resource: str) -> dict[str, Any]:
     return {"resource": resource, "watermark_removed": removed > 0, "next_sync": "full backfill"}
 
 
-@router.post("/integrations/winteam/sync", dependencies=[Depends(require_admin)])
+@router.post("/integrations/winteam/sync", dependencies=[Depends(require_admin), Depends(refresh_gate)])
 def integration_sync_all(
     normalize: bool | None = Query(None, description="false = raw landing only, no normalization or mart rebuild; default WINTEAM_NORMALIZE"),
     resources: str | None = Query(None, description="Comma separated subset of the enabled resources"),
@@ -212,7 +213,7 @@ def integration_sync_all(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
-@router.post("/marts/rebuild", dependencies=[Depends(require_admin)])
+@router.post("/marts/rebuild", dependencies=[Depends(require_admin), Depends(refresh_gate)])
 def marts_rebuild() -> dict[str, Any]:
     try:
         return jsonable(marts.rebuild_all(initiated_by="admin-api"))
@@ -293,7 +294,7 @@ def winteam_sarus_status() -> dict[str, Any]:
     })
 
 
-@router.post("/integrations/winteam/sarus/sync", dependencies=[Depends(require_admin)])
+@router.post("/integrations/winteam/sarus/sync", dependencies=[Depends(require_admin), Depends(refresh_gate)])
 def winteam_sarus_sync(
     normalize: bool | None = Query(None, description="false = raw landing only, no normalization or mart rebuild; default WINTEAM_NORMALIZE"),
     resources: str | None = Query(None, description="Comma separated subset of the Sarus resources"),
@@ -369,7 +370,7 @@ def relay_status() -> dict[str, Any]:
     return jsonable(relay.status())
 
 
-@router.post("/integrations/relay/sync", dependencies=[Depends(require_admin)])
+@router.post("/integrations/relay/sync", dependencies=[Depends(require_admin), Depends(refresh_gate)])
 def relay_sync(rebuild: bool = Query(True, description="Rebuild the marts after the pull")) -> dict[str, Any]:
     """Pull every Relay feed (GET only against Relay), replace the snapshots, then rebuild the marts."""
     if not relay.configured():
@@ -385,7 +386,7 @@ def hr_status() -> dict[str, Any]:
     return jsonable(hrdashboard.status())
 
 
-@router.post("/integrations/hr/sync", dependencies=[Depends(require_admin)])
+@router.post("/integrations/hr/sync", dependencies=[Depends(require_admin), Depends(refresh_gate)])
 def hr_sync() -> dict[str, Any]:
     """Pull the last weeks of site staffing from HrDashboard (GET only) and upsert them. No mart rebuild
     is needed: the staffing route reads core.hr_site_staffing_week directly."""
@@ -403,7 +404,7 @@ def photovalidation_status() -> dict[str, Any]:
     return jsonable(photovalidation.status())
 
 
-@router.post("/integrations/photovalidation/sync", dependencies=[Depends(require_admin)])
+@router.post("/integrations/photovalidation/sync", dependencies=[Depends(require_admin), Depends(refresh_gate)])
 def photovalidation_sync() -> dict[str, Any]:
     """Pull the staffing requests updated since the last pull (GET only against PhotoValidation), then
     refresh mart.job_week's requested headcount. No mart rebuild is needed."""
@@ -419,7 +420,7 @@ def mail_status() -> dict[str, Any]:
     return jsonable(mail_inbox.status())
 
 
-@router.post("/integrations/mail/poll", dependencies=[Depends(require_admin)])
+@router.post("/integrations/mail/poll", dependencies=[Depends(require_admin), Depends(refresh_gate)])
 def mail_poll() -> dict[str, Any]:
     """Read the reports mailbox now (read-only against Microsoft Graph); rebuilds the marts when a report loaded."""
     if not mail_inbox.configured():

@@ -24,7 +24,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from ..common import (MartFilters, jsonable, require_admin, resolve_filters, scope_block,
+from ..common import (MartFilters, jsonable, refresh_gate, require_admin, resolve_filters, scope_block,
                       source_block)
 from ..db import connection
 from ..forecasting import (ACCOUNT_JOB, METRICS, PORTFOLIO_JOB, SCOPE_JOB, aggregate_account,
@@ -279,7 +279,7 @@ def forecast_track_record(metric: str = Query("revenue"),
             "run": _run_meta(run), "rows": rows}
 
 
-@router.post("/forecasts/rebuild", dependencies=[Depends(require_admin)])
+@router.post("/forecasts/rebuild", dependencies=[Depends(require_admin), Depends(refresh_gate)])
 def rebuild_forecasts() -> dict[str, Any]:
     return build_forecasts(initiated_by="admin-api")
 
