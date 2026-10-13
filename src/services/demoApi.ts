@@ -57,5 +57,12 @@ export function createDemoApi(options: DemoApiOptions = {}): DashboardApi {
     leadershipImports: (_limit, signal) => settle(() => ({ files: [] }), signal),
     leadershipUpload: () => notAvailable('File import'),
     readBudgetWorkbook: () => notAvailable('Budget workbook'),
+    schoolCalendars: (signal) => settle(() => ({ districts: [] }), signal),
+    schoolCalendar: (account, signal) => settle(() => ({ account, from: '', to: '', source: null, days: [], weeks: [] }), signal),
+    saveSchoolDays: () => notAvailable('School calendar'),
+    revertSchoolDay: () => notAvailable('School calendar'),
+    saveSchoolSource: () => notAvailable('School calendar'),
+    refreshSchoolCalendar: () => notAvailable('School calendar'),
+    uploadSchoolCalendar: () => notAvailable('School calendar'),
   }
 }

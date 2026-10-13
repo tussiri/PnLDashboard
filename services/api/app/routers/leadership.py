@@ -22,6 +22,7 @@ from .. import allocations, accounts, companycam, imports, marts
 from .. import month as month_module
 from .. import budget as budget_module
 from .. import budget_file, feedback_ai, mail_inbox, permissions
+from .. import school_calendar
 from ..common import allowed_accounts, current_user, jsonable, refresh_gate, require_account, require_admin, source_block
 from ..db import connection
 
@@ -963,6 +964,131 @@ def delete_budget(slug: str, month: str | None = Query(None, description="YYYY-M
         removed = cursor.rowcount
         conn.commit()
     return {"account": slug, "removed": removed}
+
+
+class SchoolDaysIn(BaseModel):
+    #: [{date: YYYY-MM-DD (a weekday), day_type, label?}]
+    days: list[dict[str, Any]]
+
+
+class SchoolSourceIn(BaseModel):
+    url: str | None = None
+    enabled: bool = True
+
+
+def _source_out(src: dict[str, Any] | None) -> dict[str, Any] | None:
+    if src is None:
+        return None
+    keys = ("url", "enabled", "school_year", "days_found", "last_checked_at", "last_changed_at", "last_status", "last_error", "updated_by")
+    return jsonable({k: src.get(k) for k in keys} | {"default_url": school_calendar.DEFAULT_SOURCES.get(src["account_slug"])})
+
+
+def _school_account(cursor: Any, slug: str) -> None:
+    cursor.execute("SELECT 1 FROM ops.account WHERE slug = %s", (slug,))
+    if cursor.fetchone() is None:
+        raise HTTPException(status_code=404, detail=f"Unknown account {slug!r}")
+
+
+def _calendar_error(exc: Exception) -> HTTPException:
+    return HTTPException(status_code=422, detail=str(exc))
+
+
+@router.get("/school-calendars")
+def school_calendars(request: Request) -> dict[str, Any]:
+    """The school districts with a calendar link and their last read (app/school_calendar.py)."""
+    scope = allowed_accounts(request)
+    with connection() as conn, conn.cursor() as cursor:
+        rows = school_calendar.sources(cursor)
+    return {"districts": [{"account": r["account_slug"], "name": r["account_name"], **(_source_out(r) or {})}
+                          for r in rows if scope is None or r["account_slug"] in scope]}
+
+
+@router.get("/school-calendar")
+def school_calendar_days(account: str = Query(..., description="An account slug"),
+                         start: str | None = Query(None, alias="from", description="YYYY-MM-DD; default July 1 of this school year"),
+                         end: str | None = Query(None, alias="to", description="YYYY-MM-DD; default June 30 of this school year"),
+                         request: Request = None) -> dict[str, Any]:  # type: ignore[assignment]
+    """A district's calendar in effect, day by day and by Monday-start week (migration 055)."""
+    if request is not None:
+        require_account(request, account)
+    first, last = school_calendar.school_year_bounds()
+    try:
+        first = date.fromisoformat(start) if start else first
+        last = date.fromisoformat(end) if end else last
+    except ValueError:
+        raise HTTPException(status_code=422, detail="from and to must be YYYY-MM-DD") from None
+    if last < first or (last - first).days > 800:
+        raise HTTPException(status_code=422, detail="to must be after from, at most two school years apart")
+    with connection() as conn, conn.cursor() as cursor:
+        _school_account(cursor, account)
+        src = school_calendar.source(cursor, account)
+        rows = school_calendar.days(cursor, account, first, last)
+    return {"account": account, "from": first.isoformat(), "to": last.isoformat(), "source": _source_out(src),
+            "days": rows, "weeks": school_calendar.weeks(rows)}
+
+
+@router.put("/school-calendar/{slug}/days", dependencies=[Depends(require_admin)])
+def save_school_days(slug: str, body: SchoolDaysIn, request: Request) -> dict[str, Any]:
+    """Admin: override days by hand. An override wins over the scraped day and survives re-reads."""
+    try:
+        rows = school_calendar.validate_days(body.days)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    with connection() as conn, conn.cursor() as cursor:
+        _school_account(cursor, slug)
+        school_calendar.save_manual(cursor, slug, rows, _actor(request))
+        conn.commit()
+    return {"account": slug, "saved": len(rows)}
+
+
+@router.delete("/school-calendar/{slug}/days/{day}", dependencies=[Depends(require_admin)])
+def revert_school_day(slug: str, day: str) -> dict[str, Any]:
+    """Admin: drop a day's override, so the scraped day applies again."""
+    try:
+        parsed = date.fromisoformat(day)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="day must be YYYY-MM-DD") from None
+    with connection() as conn, conn.cursor() as cursor:
+        removed = school_calendar.delete_manual(cursor, slug, parsed)
+        conn.commit()
+    return {"account": slug, "removed": removed}
+
+
+@router.put("/school-calendar/{slug}/source", dependencies=[Depends(require_admin)])
+def save_school_source(slug: str, body: SchoolSourceIn, request: Request) -> dict[str, Any]:
+    """Admin: the district's calendar link (empty = the default link) and whether the nightly sync reads it."""
+    url = (body.url or "").strip() or None
+    if url and not re.match(r"^https?://", url):
+        raise HTTPException(status_code=422, detail="The calendar link must start with http:// or https://")
+    with connection() as conn, conn.cursor() as cursor:
+        _school_account(cursor, slug)
+        school_calendar.save_source(cursor, slug, url, body.enabled, _actor(request))
+        conn.commit()
+        src = school_calendar.source(cursor, slug)
+    return {"account": slug, "source": _source_out(src)}
+
+
+@router.post("/school-calendar/{slug}/refresh", dependencies=[Depends(require_admin), Depends(refresh_gate)])
+def refresh_school_calendar(slug: str) -> dict[str, Any]:
+    """Admin: download the district's calendar link now and re-read it, changed or not."""
+    try:
+        return school_calendar.refresh(slug, force=True)
+    except school_calendar.CalendarError as exc:
+        raise _calendar_error(exc) from exc
+
+
+@router.post("/school-calendar/{slug}/upload", dependencies=[Depends(require_admin), Depends(refresh_gate)])
+async def upload_school_calendar(slug: str, request: Request, file: UploadFile = File(...)) -> dict[str, Any]:
+    """Admin: read an uploaded calendar file (PDF, HTML or text) in place of the link."""
+    content = await file.read(school_calendar.MAX_BYTES + 1)
+    if len(content) > school_calendar.MAX_BYTES:
+        raise HTTPException(status_code=413, detail="File is larger than 20 MB")
+    with connection() as conn, conn.cursor() as cursor:
+        _school_account(cursor, slug)
+    try:
+        return school_calendar.load(slug, content, force=True, actor=_actor(request))
+    except school_calendar.CalendarError as exc:
+        raise _calendar_error(exc) from exc
 
 
 @router.get("/vendors", dependencies=[Depends(permissions.require_permission("tab.vendors"))])

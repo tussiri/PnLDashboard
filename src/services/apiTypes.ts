@@ -1553,6 +1553,17 @@ export interface BudgetMonth {
 /** A week of the plan's day calendar; holiday is the week's stat-holiday pay (counted when the view pays stat holidays). */
 export interface BudgetWeek { week_end: string; site: number; overhead: number; holiday: number; details: BudgetMonth['details'] }
 export interface LeadershipBudgetResponse { account: string; months: BudgetMonth[]; weeks: BudgetWeek[] }
+/** School district calendars (migration 055): the weekday types of a district's calendar in effect. */
+export type SchoolDayType = 'school' | 'early_release' | 'staff_only' | 'holiday' | 'summer'
+export interface SchoolCalendarSource {
+  url: string | null; default_url: string | null; enabled: boolean; school_year: number | null; days_found: number | null
+  last_checked_at: string | null; last_changed_at: string | null; last_status: 'loaded' | 'unchanged' | 'failed' | null; last_error: string | null; updated_by: string | null
+}
+export interface SchoolDistrict extends SchoolCalendarSource { account: string; name: string }
+export interface SchoolDay { date: string; day_type: SchoolDayType; label: string | null; source: 'scraped' | 'manual'; scraped: { day_type: SchoolDayType; label: string | null } | null; updated_by: string | null }
+export interface SchoolWeek extends Record<SchoolDayType, number> { week_start: string; labels: string[] }
+export interface SchoolCalendarResponse { account: string; from: string; to: string; source: SchoolCalendarSource | null; days: SchoolDay[]; weeks: SchoolWeek[] }
+export interface SchoolCalendarLoad { account: string; status: 'loaded' | 'unchanged'; school_year: number | null; days: number | null; first_day?: string; last_day?: string; days_off?: number }
 export interface BudgetWeekRow { week_end: string; site_labor: number; overhead_labor: number; holiday_labor: number; details: Record<string, number> }
 /** PUT /leadership/budget/{slug}: what is saved. */
 export interface BudgetPlanRow { month: string; site_labor: number | null; overhead_labor: number | null; revenue: number | null; supplies: number | null; details: Record<string, number>; updated_at?: string; updated_by?: string | null }

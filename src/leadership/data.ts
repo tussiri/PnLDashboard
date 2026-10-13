@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { useApiQuery } from '../hooks/useApiQuery'
-import type { BudgetMonth, BudgetWeek, LeadershipAccount, LeadershipConfig, LeadershipMonth, LeadershipMonthlyJob, LeadershipMonthlyResponse, LeadershipMonthResponse, LeadershipRow, LeadershipRowsResponse } from '../services/apiTypes'
+import type { BudgetMonth, BudgetWeek, LeadershipAccount, LeadershipConfig, LeadershipMonth, LeadershipMonthlyJob, LeadershipMonthlyResponse, LeadershipMonthResponse, LeadershipRow, LeadershipRowsResponse, SchoolDayType, SchoolWeek } from '../services/apiTypes'
 import { queryKey } from '../services/queryClient'
 import { accountSummary, type AccountSummary, type MetricOptions } from './metrics'
 import { addDays } from './routes'
@@ -129,6 +129,8 @@ export interface DataFlags {
   weekInProgress: boolean
   /** The day the data was last built (YYYY-MM-DD): an in-progress week has hours and labor up to it. */
   dataThrough?: string | null
+  /** The week's school district calendar (school district accounts only). */
+  schoolWeek?: SchoolWeek | null
   /** The month-end rollup: subcontractor invoices received of expected, and sites with no billing yet. */
   month?: { subsExpected: number; subsReceived: number; notInvoiced: number; inProgress: boolean }
 }
@@ -259,4 +261,17 @@ export function weekdaysIn(month: string): number {
   let n = 0
   for (let d = 1; d <= new Date(Date.UTC(y, m, 0)).getUTCDate(); d++) { const w = new Date(Date.UTC(y, m - 1, d)).getUTCDay(); if (w !== 0 && w !== 6) n++ }
   return n
+}
+
+/** Weekday types of a school district calendar (Admin > School calendars). */
+export const SCHOOL_DAY_LABEL: Record<SchoolDayType, string> = { school: 'School', early_release: 'Early release', staff_only: 'Staff only', holiday: 'Closed', summer: 'Summer' }
+export const SCHOOL_DAY_TYPES = Object.keys(SCHOOL_DAY_LABEL) as SchoolDayType[]
+
+/** The week's school calendar as a note: its days not in session. Null for a week of five school days. */
+export function schoolWeekNote(week: SchoolWeek | null | undefined) {
+  if (!week) return null
+  const parts = SCHOOL_DAY_TYPES.filter((t) => t !== 'school' && week[t] > 0).map((t) => `${week[t]} ${SCHOOL_DAY_LABEL[t].toLowerCase()}`)
+  if (!parts.length) return null
+  const days = `${week.school} school day${week.school === 1 ? '' : 's'}; ${parts.join(', ')}`
+  return { tone: week.school + week.early_release < 5 ? 'warn' as const : '' as const, body: week.labels.length ? `${days}. ${week.labels.join('; ')}` : days }
 }

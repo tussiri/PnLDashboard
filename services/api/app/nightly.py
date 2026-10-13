@@ -9,7 +9,10 @@ Steps, each isolated so one failure does not stop the others:
   3. Sarus, when WINTEAM_SARUS_ENABLED
   4. Relay's FedEx feeds, when RELAY_BASE_URL and RELAY_EXPORT_TOKEN are set (app/relay.py)
   5. HrDashboard site staffing, when HR_BASE_URL and HR_EXPORT_TOKEN are set (app/sources/hrdashboard.py)
-  6. one mart rebuild (marts, weekly leadership mart, account assignment, forecasts)
+  6. school district calendars (app/school_calendar.py): each district's published calendar, re-parsed
+     only when the file changed; a district that fails is recorded on Admin > School calendars and does
+     not fail the run
+  7. one mart rebuild (marts, weekly leadership mart, account assignment, forecasts)
 
 Schedule: ops.app_setting `nightly_sync` = {"enabled", "hour", "minute", "timezone", "window_hours",
 "import_inbox", "winteam", "sarus"}. A run starts only inside the window after the run time, so a
@@ -34,7 +37,8 @@ from .db import connection
 logger = logging.getLogger("nightly")
 
 DEFAULT_SCHEDULE: dict[str, Any] = {"enabled": True, "hour": 2, "minute": 30, "timezone": "America/Chicago", "window_hours": 3,
-                                    "import_inbox": True, "mail_inbox": True, "winteam": True, "sarus": True, "relay": True, "hr": True}
+                                    "import_inbox": True, "mail_inbox": True, "winteam": True, "sarus": True, "relay": True, "hr": True,
+                                    "school_calendar": True}
 INTEGRATION = "nightly"
 
 
@@ -78,7 +82,7 @@ def _start(run_id: str, started: datetime) -> None:
 
 def run_nightly(schedule: dict[str, Any] | None = None) -> dict[str, Any]:
     """Run every enabled step once; returns a summary. Never raises."""
-    from . import imports, mail_inbox, marts, relay
+    from . import imports, mail_inbox, marts, relay, school_calendar
     from .sources import hrdashboard
     from .winteam import sarus_ingestion, winteam
 
@@ -130,6 +134,12 @@ def run_nightly(schedule: dict[str, Any] | None = None) -> dict[str, Any]:
         step("relay", pull_relay)
     if schedule.get("hr") and hrdashboard.configured():
         step("hr", hrdashboard.sync)
+    if schedule.get("school_calendar"):
+        def read_calendars() -> dict[str, Any]:
+            result = school_calendar.sync()
+            summary["school_calendar"] = {"loaded": [r["account"] for r in result["results"] if r["status"] == "loaded"], "failed": result["failed"]}
+            return {}
+        step("school_calendar", read_calendars)
     step("marts", lambda: marts.rebuild_all(initiated_by="nightly"))
 
     # ops.integration_sync_run allows running | succeeded | failed: any failed step marks the run

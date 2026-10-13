@@ -103,4 +103,5 @@ def test_gated_routes():
     assert gated == {f"/api/v1{p}" for p in (
         "/integrations/finance-reference/load", "/integrations/winteam/sync/{resource}", "/integrations/winteam/sync",
         "/marts/rebuild", "/integrations/winteam/sarus/sync", "/integrations/relay/sync", "/integrations/hr/sync",
-        "/integrations/photovalidation/sync", "/integrations/mail/poll", "/forecasts/rebuild", "/leadership/imports")}
+        "/integrations/photovalidation/sync", "/integrations/mail/poll", "/forecasts/rebuild", "/leadership/imports",
+        "/leadership/school-calendar/{slug}/refresh", "/leadership/school-calendar/{slug}/upload")}

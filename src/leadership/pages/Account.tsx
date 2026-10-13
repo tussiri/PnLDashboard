@@ -6,7 +6,7 @@ import { Feedback, FeedbackTile, RatingMatrix } from './Feedback'
 import { BudgetTab } from './Budget'
 import { useApiQuery } from '../../hooks/useApiQuery'
 import { queryKey } from '../../services/queryClient'
-import type { LeadershipBudgetResponse, LeadershipFeedbackResponse } from '../../services/apiTypes'
+import type { LeadershipBudgetResponse, LeadershipFeedbackResponse, SchoolCalendarResponse } from '../../services/apiTypes'
 import { dataFlags, daysInMonth, weekBudgetOf, isSubcontracted, monthFlags, rowsOfWeek, segmentLabel, segmentOrder, useMonthly, useMonthRows, useRows, vendorLabel } from '../data'
 import { hours, hours1, money, pct } from '../format'
 import { accountSummary, type AccountSummary as Summary, type SiteMetrics as Metrics } from '../metrics'
@@ -115,7 +115,10 @@ export function Account() {
     return invoice > 0 ? { ...base, target: weekBudget.labor / invoice } : base
   }, [optionsFor, account, monthMode, month, weekBudget, route.target, rows, payHolidays])
   const summary = useMemo(() => (account && rows.length ? accountSummary(rows, options, segmentOrder(account)) : null), [account, rows, options])
-  const flags = useMemo(() => (monthMode && month ? monthFlags(config.data, month, rows) : dataFlags(config.data, weekStart, rows)), [config.data, weekStart, rows, monthMode, month])
+  const school = useApiQuery<SchoolCalendarResponse>(decision && account && !monthMode ? queryKey(`${keyPrefix}/leadership/school-calendar`, { account: account.slug }) : null,
+    (signal) => api.schoolCalendar(account!.slug, signal), [api, account?.slug])
+  const flags = useMemo(() => (monthMode && month ? monthFlags(config.data, month, rows)
+    : { ...dataFlags(config.data, weekStart, rows), schoolWeek: school.data?.weeks.find((w) => w.week_start === weekStart) ?? null }), [config.data, weekStart, rows, monthMode, month, school.data])
   const subtitle = [monthMode && month ? monthLabel(`${month}-01`) : weekStart ? weekLabel(weekStart) : null, updatedLine(config.data)].filter(Boolean).join('. ')
   const setTab = (next: AccountTab) => navigate({ view: 'account', account: account?.slug, tab: next })
   const monthly = useMonthly(account?.slug)
