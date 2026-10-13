@@ -146,7 +146,7 @@ export function Account() {
   else if (tab === 'pallet' && tabs.includes(tab)) body = <PalletTab account={account} summary={summary} options={options}
     subcontracted={(monthMode ? rows : rowsOfWeek(fullWeek.data?.rows, weekStart)).filter((r) => isSubcontracted(r, account))} />
   else if (tab === 'overview' || !tabs.includes(tab)) body = <Overview account={account} rows={rows} summary={summary} options={options} flags={flags}
-    budgetWeeks={budgetWeeks} budgetMonths={budgetMonths} payHolidays={payHolidays}
+    budgetWeeks={budgetWeeks} budgetMonths={budgetMonths} schoolWeeks={school.data?.weeks} payHolidays={payHolidays}
     afterGroups={can('tab.feedback') && <FeedbackTile account={account} month={monthMode ? month : weekStart ? weekEndOf(weekStart).slice(0, 7) : undefined} />}
     footer={can('tab.feedback') && feedback.data && feedback.data.lines.length > 0 && <RatingMatrix lines={feedback.data.lines} since={feedback.data.since}
       action={<button type="button" className="linkbtn" onClick={() => setTab('feedback')}>All feedback</button>} />} />

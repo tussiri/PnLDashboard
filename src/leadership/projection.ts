@@ -27,21 +27,38 @@ const mean = (xs: (number | null | undefined)[]) => { const v = xs.filter((x): x
  * Each of the latest PROJECTION_RECENT_WEEKS weeks that is in progress, or carries under PROJECTION_SHORT_SHARE of the
  * average labor of the PROJECTION_BASE_WEEKS complete weeks before it, takes that average as its labor (labor % against
  * its own invoice) and each group's average labor %; it is flagged projected. Other weeks pass through unchanged.
+ *
+ * `weight` scales the average for a week that should run lighter or heavier than the base weeks (a school break): the
+ * week's weight over the base weeks' average weight, when the week and at least two base weeks have one. The account
+ * view passes the weekly budget labor, else the school calendar's working days.
  */
 export function projectRecentWeeks<T extends TrendWeek>(weeks: T[], inProgress: ReadonlySet<string>,
   /** Whether a week is among the latest the data has (default: the last PROJECTION_RECENT_WEEKS of `weeks`). */
-  isRecent?: (week: string) => boolean): ProjectedWeek<T>[] {
+  isRecent?: (week: string) => boolean,
+  weight?: (week: string) => number | null): ProjectedWeek<T>[] {
   const out: ProjectedWeek<T>[] = []
   weeks.forEach((w, i) => {
     const base = out.slice(0, i).filter((x) => !x.projected && (x.cost ?? 0) > 0).slice(-PROJECTION_BASE_WEEKS)
-    const baseCost = base.length >= 2 ? mean(base.map((x) => x.cost)) : null
+    const share = scaleOf(w.week, base, weight)
+    const baseCost = base.length >= 2 ? (mean(base.map((x) => x.cost)) ?? 0) * share : null
     const recent = isRecent ? isRecent(w.week) : i >= weeks.length - PROJECTION_RECENT_WEEKS
     const short = baseCost != null && (w.cost ?? 0) < baseCost * PROJECTION_SHORT_SHARE
     if (!recent || baseCost == null || !(inProgress.has(w.week) || short)) { out.push({ ...w, projected: false }); return }
     const cost = Math.max(w.cost ?? 0, baseCost)
     const names = new Set(base.flatMap((x) => Object.keys(x.segs)))
     out.push({ ...w, projected: true, cost, lp: w.invoice ? cost / w.invoice : mean(base.map((x) => x.lp)),
-      sitesLp: mean(base.map((x) => x.sitesLp)), segs: Object.fromEntries([...names].map((n) => [n, mean(base.map((x) => x.segs[n]))])) })
+      sitesLp: times(mean(base.map((x) => x.sitesLp)), share), segs: Object.fromEntries([...names].map((n) => [n, times(mean(base.map((x) => x.segs[n])), share)])) })
   })
   return out
+}
+
+const times = (x: number | null, k: number) => (x == null ? null : x * k)
+
+/** The week's weight over the base weeks' average weight; 1 when either is missing. */
+function scaleOf(week: string, base: TrendWeek[], weight?: (week: string) => number | null): number {
+  if (!weight) return 1
+  const own = weight(week)
+  const baseWeights = base.map((x) => weight(x.week)).filter((x): x is number => x != null && x > 0)
+  const avg = baseWeights.length >= 2 ? mean(baseWeights) : null
+  return own == null || !avg ? 1 : Math.max(0, own) / avg
 }
