@@ -790,3 +790,7 @@ or last day of school is found is refused and the previous rows stay; the failur
 On the account Overview, a week whose district calendar has days not in session adds a School calendar
 note: the week's school days and the other days by type, with their labels (warning tone when fewer than
 five days are school or early release).
+
+A projected trend week (labor still arriving) is scaled for a break: the four-week average labor times the
+week's budget labor over the base weeks' average budget labor when the account has a budget, else times its
+working days (school, early release and staff-only days) over the base weeks' average. Added 2026-10-13.

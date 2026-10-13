@@ -1,5 +1,5 @@
 import { useMemo, type ReactNode } from 'react'
-import type { BudgetMonth, BudgetWeek, LeadershipAccount, LeadershipMonthlyJob, LeadershipRow } from '../services/apiTypes'
+import type { BudgetMonth, BudgetWeek, LeadershipAccount, LeadershipMonthlyJob, LeadershipRow, SchoolWeek } from '../services/apiTypes'
 import { Badge, ChartCard, Kpi, Skeleton, Swatch, toneOf, useVocab } from './ui'
 import { LaborMixChart, MonthWeekTrendChart, SegmentTrendChart, SiteLpChart, useTokens } from './charts'
 import { closedMonths, includesVendor, inSentence, isSubcontracted, monthLaborPct, monthRevenue, priorMonth, rowsOfWeek, schoolWeekNote, segmentLabel, segmentOrder, siteMonths, useMonthly, useMonthRows, useRows, vendorLabel, weekBudgetOf, type DataFlags, type WeekBudget } from './data'
@@ -74,11 +74,13 @@ export const laborJobs = (account: LeadershipAccount, jobs: LeadershipMonthlyJob
   jobs.filter((j) => j.role !== 'non_billed' && !(account.split_subcontracted && j.delivery_model === 'subcontracted'))
 
 /** Every account's overview: headline figures, notes, one card per group, the trend, labor % by site and where the labor dollars went. */
-export function Overview({ account, rows, summary, options, flags, headline = true, afterGroups, budgetWeeks, budgetMonths, payHolidays = false, footer }: { account: LeadershipAccount; rows: LeadershipRow[]; summary: AccountSummary<LeadershipRow>; options: MetricOptions; flags: DataFlags; headline?: boolean
+export function Overview({ account, rows, summary, options, flags, headline = true, afterGroups, budgetWeeks, budgetMonths, schoolWeeks, payHolidays = false, footer }: { account: LeadershipAccount; rows: LeadershipRow[]; summary: AccountSummary<LeadershipRow>; options: MetricOptions; flags: DataFlags; headline?: boolean
   /** Rendered after the group cards (the account page puts customer feedback here). */
   afterGroups?: ReactNode
   /** The account's weekly budget calendar (Admin > Budgets): budget labor and target per week. */
   budgetWeeks?: BudgetWeek[]
+  /** The district's school calendar by week (school district accounts): scales a break week's projection. */
+  schoolWeeks?: SchoolWeek[]
   /** The monthly plan: a week without a calendar row takes its budget from it, spread over weekdays. */
   budgetMonths?: BudgetMonth[]
   /** Count each week's stat-holiday pay in its budget. */
@@ -154,13 +156,21 @@ export function Overview({ account, rows, summary, options, flags, headline = tr
   // The trend: weeks in the week view (the last trendWeeks up to the selected week); closed months, as monthly
   // totals, in the month rollup (up to the selected month).
   // The latest weeks while their labor is still arriving are drawn as a projection (projection.ts), labeled as such.
+  // A break week projects lighter: by its weekly budget labor when the account has a budget, else by the school
+  // calendar's working days (school, early release and staff-only days; closed and summer days count none).
+  const projectionWeight = useMemo(() => {
+    if (hasBudget) return (wk: string) => weekBudgetOf(wk, budgetWeeks, budgetMonths, payHolidays)?.labor ?? null
+    if (!schoolWeeks?.length) return undefined
+    const days = new Map(schoolWeeks.map((x) => [x.week_start, x.school + x.early_release + x.staff_only]))
+    return (wk: string) => days.get(wk) ?? null
+  }, [hasBudget, budgetWeeks, budgetMonths, payHolidays, schoolWeeks])
   const projected = useMemo(() => {
     const known = config.data?.weeks ?? []
     const latest = known.reduce((m, w) => (w.week_start > m ? w.week_start : m), '')
     const inProgress = new Set(known.filter((w) => w.in_progress).map((w) => w.week_start))
     return projectRecentWeeks(weeks.map((x) => ({ week: x.week, cost: x.s?.cost ?? null, invoice: x.s?.invoice ?? null, lp: x.s?.measurePct ?? null, sitesLp: x.sitesLp, segs: x.segs })),
-      inProgress, latest ? (wk) => wk >= addDays(latest, -7) : undefined)
-  }, [weeks, config.data])
+      inProgress, latest ? (wk) => wk >= addDays(latest, -7) : undefined, projectionWeight)
+  }, [weeks, config.data, projectionWeight])
   const shownWeeks = useMemo(() => projected.filter((x) => !weekStart || x.week <= weekStart).slice(-trendWeeks), [projected, weekStart, trendWeeks])
   const anyProjected = !monthMode && shownWeeks.some((x) => x.projected)
   const selectedProjected = !monthMode && shownWeeks.some((x) => x.week === weekStart && x.projected)
@@ -222,7 +232,7 @@ export function Overview({ account, rows, summary, options, flags, headline = tr
         sub={join(`${hours1(over / perDay)}/day`, w.over(summary.billed.over, billed.length))} />
     </div>}
     <Notes summary={summary} account={account} flags={flags} options={options} revenueMonth={revenueMonth}
-      extra={selectedProjected && !flags.weekInProgress ? [{ tone: 'warn', key: 'proj', label: 'Labor not in yet', body: `Trend projected from the ${PROJECTION_BASE_WEEKS} weeks before` }] : []} />
+      extra={selectedProjected && !flags.weekInProgress ? [{ tone: 'warn', key: 'proj', label: 'Labor not in yet', body: `Trend projected from the ${PROJECTION_BASE_WEEKS} weeks before${hasBudget ? ', scaled by weekly budget' : schoolWeeks?.length ? ', scaled by school days' : ''}` }] : []} />
     <div className="seg-grid">
       {groups.map((g) => {
         const s = accountSummary(g.list, options, []).billed
