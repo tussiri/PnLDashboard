@@ -602,8 +602,13 @@ the site stood when HR last answered during that week, and a pull never replaces
 ```
 HrSiteStaffingWeek = { configured, week_start, hires, separations, budgeted_positions,
   positions_source: 'tracker'|'budget'|'observed'|null, filled_positions, open_positions, active_headcount,
-  headcount_source: 'employee_master'|'timekeeping'|null, hr_as_of }
+  headcount_source: 'employee_master'|'timekeeping'|null, hr_as_of, state_week }
 ```
+
+HR reports positions, filled, open and headcount only as of when it answers, so a week pulled after it
+ended has none of them. The route then serves them from the nearest week that has them (the latest one up
+to the week, else the earliest after it) and `state_week` names that week; it equals `week_start` when
+the week has its own. Hires and separations are always the week's own.
 
 ## Company view and corporate allocations, added 2026-09-29
 

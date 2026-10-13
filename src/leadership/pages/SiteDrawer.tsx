@@ -25,11 +25,15 @@ function HrStaffing({ hr }: { hr: HrSiteStaffingWeek | undefined }) {
   if (!hr?.configured) return null
   if (!hr.week_start) return <Empty>HrDashboard has no staffing for this site this week.</Empty>
   const fill = hr.filled_positions != null && hr.budgeted_positions ? hr.filled_positions / hr.budgeted_positions : null
+  // Positions, filled, open and headcount from another week (HR reports them only as of when it answers).
+  const asOf = hr.state_week && hr.state_week !== hr.week_start
+    ? `As of ${new Date(`${hr.state_week}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}` : null
+  const sub = (...parts: (string | null | undefined)[]) => parts.filter(Boolean).join('; ') || undefined
   return <div className="kpi-lg">
-    <Kpi small label="Positions" value={hr.budgeted_positions ?? '–'} sub={hr.positions_source ? POSITIONS_SOURCE[hr.positions_source] : undefined} />
-    <Kpi small label="Filled" value={hr.filled_positions ?? '–'} sub={fill != null ? `${pct(fill)} of positions` : undefined} />
-    <Kpi small label="Open in Hire" value={hr.open_positions ?? '–'} />
-    <Kpi small label="Headcount" value={hr.active_headcount ?? '–'} sub={hr.headcount_source === 'timekeeping' ? 'People who worked' : hr.headcount_source ? 'Employed here' : undefined} />
+    <Kpi small label="Positions" value={hr.budgeted_positions ?? '–'} sub={sub(hr.positions_source ? POSITIONS_SOURCE[hr.positions_source] : null, asOf)} />
+    <Kpi small label="Filled" value={hr.filled_positions ?? '–'} sub={sub(fill != null ? `${pct(fill)} of positions` : null, asOf)} />
+    <Kpi small label="Open in Hire" value={hr.open_positions ?? '–'} sub={sub(asOf)} />
+    <Kpi small label="Headcount" value={hr.active_headcount ?? '–'} sub={sub(hr.headcount_source === 'timekeeping' ? 'People who worked' : hr.headcount_source ? 'Employed here' : null, asOf)} />
     <Kpi small label="Hires" value={hr.hires ?? '–'} sub="This week" />
     <Kpi small label="Separations" value={hr.separations ?? '–'} sub="This week" />
   </div>
@@ -40,11 +44,12 @@ function StaffingCard({ company, job }: { company: string; job: string }) {
   const { api, keyPrefix, decision, weekStart } = useLeadership()
   const q = useApiQuery<StaffingJobResponse>(decision && weekStart ? queryKey(`${keyPrefix}/staffing/job`, { company, job, week: weekStart }) : null,
     (signal) => api.staffingJob(company, job, { week: weekStart }, signal), [api, company, job, weekStart])
+  if (q.data && !q.data.configured && !q.data.lines.length && !q.data.hr?.configured) return null
   return <div className="card">
     <div className="ct"><span>Staffing</span>{q.data?.as_of && <span className="ks">PhotoValidation {new Date(q.data.as_of).toLocaleDateString('en-US')}</span>}</div>
     {q.data && <HrStaffing hr={q.data.hr} />}
     {q.error ? <LoadError error={q.error} onRetry={q.refetch} /> : !q.data ? <Skeleton height={120} />
-      : !q.data.configured && !q.data.lines.length ? <Empty>PhotoValidation is not connected.</Empty> : <>
+      : !q.data.configured && !q.data.lines.length ? null : <>
         <div className="kpi-lg pair">
           <Kpi small label="Requested" value={q.data.requested_headcount ?? '–'} sub="Approved or posted" />
           <Kpi small label="Pending" value={q.data.pending_requested_headcount ?? '–'} sub="Awaiting approval" />
