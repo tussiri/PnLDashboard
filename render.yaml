@@ -37,6 +37,11 @@ envVarGroups:
         value: "30"
       - key: PV_SYNC_INTERVAL_MINUTES
         value: "15"
+      # No refreshes during the Tuesday leadership meeting (app/refresh_pause.py); "off" removes the pause.
+      - key: REFRESH_PAUSE
+        value: "tue 06:00-12:00"
+      - key: REFRESH_PAUSE_TIMEZONE
+        value: America/Chicago
       - key: LOG_LEVEL
         value: INFO
 

@@ -117,7 +117,9 @@ export interface SarusStatus {
 
 /** Options of an on-demand sync. force: also re-read the daily resources synced within 20 hours;
  *  deep: re-read 35 days of timekeeping and AP instead of 3. */
-export interface SyncOptions { force?: boolean; deep?: boolean }
+/** `overridePause` runs a refresh inside the weekly refresh pause (REFRESH_PAUSE), which otherwise answers 423. */
+export interface PauseOverride { overridePause?: boolean }
+export interface SyncOptions extends PauseOverride { force?: boolean; deep?: boolean }
 
 export interface MartsStatus {
   latest_month: IsoMonth | null

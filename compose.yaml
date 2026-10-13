@@ -53,6 +53,8 @@ x-api-environment: &api-environment
   # Worker intervals in minutes (0 = off): light WinTeam timekeeping sync, PhotoValidation pull.
   WINTEAM_SYNC_INTERVAL_MINUTES: ${WINTEAM_SYNC_INTERVAL_MINUTES:-30}
   PV_SYNC_INTERVAL_MINUTES: ${PV_SYNC_INTERVAL_MINUTES:-15}
+  REFRESH_PAUSE: "${REFRESH_PAUSE:-tue 06:00-12:00}"
+  REFRESH_PAUSE_TIMEZONE: ${REFRESH_PAUSE_TIMEZONE:-America/Chicago}
   # PhotoValidation staffing-request feed (origin, and an existing PhotoValidation API token). Blank = off.
   PHOTOVALIDATION_API_URL: ${PHOTOVALIDATION_API_URL:-}
   PHOTOVALIDATION_API_TOKEN: ${PHOTOVALIDATION_API_TOKEN:-}

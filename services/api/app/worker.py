@@ -11,6 +11,9 @@ every WinTeam sync holds one advisory lock, so none of them overlap.
 The worker also reads the reports mailbox for report exports (app/mail_inbox.py), every
 `every_minutes` of ops.app_setting 'mail_inbox' (default 30): that reads Microsoft Graph, not WinTeam.
 
+Every Tuesday 06:00-12:00 America/Chicago (REFRESH_PAUSE, app/refresh_pause.py) the worker starts none of
+these, so the numbers hold still for the leadership meeting; each runs on its first check after the window.
+
 On startup the worker also rebuilds the marts if core facts exist but mart.job_month is empty (for
 example after a fresh mart migration), then checks the schedules once a minute until SIGTERM/SIGINT.
 Each check is isolated: a failure is logged and the worker carries on.
@@ -21,12 +24,13 @@ import logging
 import signal
 import time
 
-from . import mail_inbox, marts, nightly, schedule
+from . import mail_inbox, marts, nightly, refresh_pause, schedule
 from .config import settings
 
 logging.basicConfig(level=settings.log_level, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 logger = logging.getLogger("worker")
 running = True
+was_paused = False
 CHECK_EVERY_SECONDS = 60
 
 
@@ -45,6 +49,16 @@ def rebuild_on_startup() -> None:
 
 
 def tick() -> None:
+    global was_paused
+    until = refresh_pause.active_until()
+    if until is not None:
+        if not was_paused:
+            logger.info("Refresh pause: no syncs, pulls or rebuilds until %s", until.isoformat())
+        was_paused = True
+        return
+    if was_paused:
+        logger.info("Refresh pause over; schedules resume")
+    was_paused = False
     for name, check in (("Nightly", nightly.check_and_run), ("WinTeam interval", schedule.run_winteam_light),
                         ("PhotoValidation interval", schedule.run_photovalidation),
                         ("Reports mailbox", mail_inbox.check_and_poll)):

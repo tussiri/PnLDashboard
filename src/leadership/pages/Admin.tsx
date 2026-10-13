@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useApiQuery } from '../../hooks/useApiQuery'
+import { ApiError } from '../../services/api'
 import type { LeadershipAccount, LeadershipAccountJob, LeadershipAccountPatch, LeadershipImportFile, LeadershipImportKind, LeadershipRole, SyncRunsResponse, MailInboxStatus, MailRule } from '../../services/apiTypes'
 import { queryClient, queryKey } from '../../services/queryClient'
 import { inSentence } from '../data'
@@ -25,10 +26,19 @@ function useAction() {
   const { decision, redetect } = useLeadership()
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null)
-  /** `done` is the success message; a failure shows the error. */
-  const run = async (done: string, fn: () => Promise<unknown>) => {
+  /** `done` is the success message; a failure shows the error. A refresh refused by the weekly refresh pause (423)
+   * asks once whether to run it anyway, and `fn(true)` sends the override. */
+  const run = async (done: string, fn: (overridePause: boolean) => Promise<unknown>) => {
     setBusy(true); setMessage(null)
-    try { await fn(); setMessage({ ok: true, text: done }); refreshAll(); if (decision?.mode === 'demo') redetect() }
+    try {
+      try { await fn(false) }
+      catch (e) {
+        if (!(e instanceof ApiError && e.status === 423)) throw e
+        if (!window.confirm(`${e.detail}\n\nRun it anyway?`)) { setMessage({ ok: false, text: e.detail }); return }
+        await fn(true)
+      }
+      setMessage({ ok: true, text: done }); refreshAll(); if (decision?.mode === 'demo') redetect()
+    }
     catch (e) { setMessage({ ok: false, text: errorText(e) }) }
     finally { setBusy(false) }
   }
@@ -225,7 +235,7 @@ function MailInbox() {
     <div className="ct"><span>Reports inbox</span><span className="ks">{s?.mailbox ?? ''}</span></div>
     {q.error ? <LoadError error={q.error} onRetry={q.refetch} /> : !s ? <Skeleton height={80} /> : !s.configured ? <Empty>Not connected. Set GRAPH_TENANT_ID, GRAPH_CLIENT_ID, GRAPH_CLIENT_SECRET and GRAPH_MAILBOX (docs/mail-inbox.md).</Empty> : <>
       <div className="ctrl">
-        <button type="button" className="btn" disabled={busy} onClick={() => run('Inbox checked', async () => { const r = await api.mailPoll(); if (r.status === 'failed') throw new Error(r.error ?? 'Mailbox check failed'); q.refetch() })}>Check inbox now</button>
+        <button type="button" className="btn" disabled={busy} onClick={() => run('Inbox checked', async (o) => { const r = await api.mailPoll(undefined, { overridePause: o }); if (r.status === 'failed') throw new Error(r.error ?? 'Mailbox check failed'); q.refetch() })}>Check inbox now</button>
         <span className="ks">{s.schedule.enabled ? `Every ${s.schedule.every_minutes} min` : 'Automatic checks off'}{last ? `; last ${new Date(last.started_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}, ${last.status}` : '; not checked yet'}</span>
         {last?.error_message && <span className="bad ks">{last.error_message}</span>}
       </div>
@@ -265,7 +275,7 @@ function ImportsTab() {
   return <>
     <div className="card">
       <div className="ct"><span>Upload</span></div>
-      <form className="form-grid" onSubmit={(e) => { e.preventDefault(); if (file) void run(`Imported ${file.name}`, () => api.leadershipUpload(file, kind || undefined)) }}>
+      <form className="form-grid" onSubmit={(e) => { e.preventDefault(); if (file) void run(`Imported ${file.name}`, (o) => api.leadershipUpload(file, kind || undefined, undefined, { overridePause: o })) }}>
         <label className="field"><span>File (CSV or XLSX)</span><input type="file" accept=".csv,.xlsx,.xlsm" onChange={(e) => setFile(e.target.files?.[0] ?? null)} /></label>
         <label className="field"><span>Feed</span><select value={kind} onChange={(e) => setKind(e.target.value as '' | LeadershipImportKind)}><option value="">Auto-detect</option><option value="pay_report">Timekeeping labor (Pay Report or labor summary)</option><option value="job_cost">Job Cost Analysis</option><option value="income_statement">Trend Income Statement</option><option value="service_feedback">Feedback and star ratings</option><option value="qa_score">QA scores</option></select></label>
         <div className="field"><button type="submit" className="btn primary" disabled={!file || busy}>{busy ? 'Importing' : 'Import'}</button></div>
@@ -294,10 +304,10 @@ function DataTab() {
     <div className="card">
       <div className="ct"><span>Status</span><span className="ks">{decision?.mode === 'live' ? freshnessLine(config.data) : apiReachable ? 'No data loaded' : ''}</span></div>
       <div className="ctrl">
-        <button type="button" className="btn" disabled={busy} onClick={() => run('WinTeam synced', () => api.syncAll())}>Sync WinTeam</button>
-        <button type="button" className="btn" disabled={busy} onClick={() => run('Sarus synced', () => api.syncSarus())}>Sync Sarus</button>
-        <button type="button" className="btn" disabled={busy} onClick={() => run('PhotoValidation synced', () => api.syncPhotoValidation())}>Sync PhotoValidation</button>
-        <button type="button" className="btn" disabled={busy} onClick={() => run('Marts rebuilt', () => api.rebuildMarts())}>Rebuild marts</button>
+        <button type="button" className="btn" disabled={busy} onClick={() => run('WinTeam synced', (o) => api.syncAll({ overridePause: o }))}>Sync WinTeam</button>
+        <button type="button" className="btn" disabled={busy} onClick={() => run('Sarus synced', (o) => api.syncSarus({ overridePause: o }))}>Sync Sarus</button>
+        <button type="button" className="btn" disabled={busy} onClick={() => run('PhotoValidation synced', (o) => api.syncPhotoValidation(undefined, { overridePause: o }))}>Sync PhotoValidation</button>
+        <button type="button" className="btn" disabled={busy} onClick={() => run('Marts rebuilt', (o) => api.rebuildMarts(undefined, { overridePause: o }))}>Rebuild marts</button>
         {busy && <span className="ks">Running</span>}
       </div>
       {view}

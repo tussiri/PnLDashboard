@@ -15,10 +15,12 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from typing import Any
 from urllib.parse import urlparse
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 
 class ConfigurationError(ValueError):
@@ -117,6 +119,39 @@ def _location_ids(raw: str) -> tuple[int, ...]:
     return tuple(ids)
 
 
+_PAUSE_DAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+_PAUSE_WINDOW = re.compile(r"^([a-z]{3})[a-z]*\s+(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})$")
+
+
+def parse_refresh_pause(raw: str) -> tuple[tuple[int, int, int], ...]:
+    """REFRESH_PAUSE: comma separated weekly windows "tue 06:00-12:00" -> (weekday, start minute,
+    end minute), Monday = 0. "off" (or "none") = no pause. A window may end at 24:00 but not cross midnight."""
+    text = raw.strip().lower()
+    if text in {"", "off", "none", "false", "0"}:
+        return ()
+    windows: list[tuple[int, int, int]] = []
+    for item in parse_csv(text):
+        match = _PAUSE_WINDOW.match(item)
+        if not match or match.group(1) not in _PAUSE_DAYS:
+            raise ConfigurationError(f"REFRESH_PAUSE window {item!r} must look like 'tue 06:00-12:00' (or REFRESH_PAUSE=off)")
+        day = _PAUSE_DAYS.index(match.group(1))
+        sh, sm, eh, em = (int(g) for g in match.groups()[1:])
+        start, end = sh * 60 + sm, eh * 60 + em
+        if sm > 59 or em > 59 or start >= end or end > 24 * 60:
+            raise ConfigurationError(f"REFRESH_PAUSE window {item!r} must start before it ends, within one day")
+        windows.append((day, start, end))
+    return tuple(windows)
+
+
+def _timezone(env: Mapping[str, str], name: str, default: str) -> str:
+    value = _text(env, name, default)
+    try:
+        ZoneInfo(value)
+    except (ZoneInfoNotFoundError, ValueError) as exc:
+        raise ConfigurationError(f"{name} must be an IANA time zone such as America/Chicago, got {value!r}") from exc
+    return value
+
+
 def _normalize_base_url(base: str, prefix: str) -> str:
     """Append the gateway API prefix (default /wtnextgen) when the configured base URL omits it.
 
@@ -187,6 +222,9 @@ class Settings:
     # Worker intervals in minutes (0 = off): the light WinTeam timekeeping sync and the PhotoValidation pull.
     winteam_sync_interval_minutes: int
     pv_sync_interval_minutes: int
+    # The weekly refresh pause (app/refresh_pause.py): (weekday, start minute, end minute) on refresh_pause_timezone.
+    refresh_pause_windows: tuple[tuple[int, int, int], ...]
+    refresh_pause_timezone: str
     # PhotoValidation staffing-request feed (app/sources/photovalidation.py). Server-side only.
     photovalidation_api_url: str
     photovalidation_api_token: str
@@ -286,6 +324,9 @@ class Settings:
             # sync and the Admin buttons are unaffected.
             winteam_sync_interval_minutes=_integer(env, "WINTEAM_SYNC_INTERVAL_MINUTES", 30, minimum=0, maximum=1440),
             pv_sync_interval_minutes=_integer(env, "PV_SYNC_INTERVAL_MINUTES", 15, minimum=0, maximum=1440),
+            # No refreshes while leadership meets (Tuesday morning, Central time, daylight saving included).
+            refresh_pause_windows=parse_refresh_pause(_text(env, "REFRESH_PAUSE", "tue 06:00-12:00")),
+            refresh_pause_timezone=_timezone(env, "REFRESH_PAUSE_TIMEZONE", "America/Chicago"),
             photovalidation_api_url=_text(env, "PHOTOVALIDATION_API_URL").rstrip("/"),
             photovalidation_api_token=_text(env, "PHOTOVALIDATION_API_TOKEN"),
             graph_tenant_id=_text(env, "GRAPH_TENANT_ID"),

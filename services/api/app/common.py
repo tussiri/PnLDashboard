@@ -15,6 +15,7 @@ from fastapi import Header, HTTPException, Query, Request
 from .auth import COOKIE_NAME, ROLES, User, get_auth_settings, session_claims
 from .config import settings
 from .db import connection
+from . import refresh_pause
 
 PERIODS = ("MTD", "QTD", "YTD", "T12M")
 FILTER_COLUMNS = {
@@ -159,6 +160,14 @@ def require_admin(request: Request, x_admin_token: str | None = Header(default=N
     if user is not None and user.role == "admin":
         return
     raise HTTPException(status_code=401, detail="A valid ingestion admin token or an administrator sign-in is required")
+
+
+def refresh_gate(override_pause: bool = Query(False, description="true = run even inside the refresh pause (REFRESH_PAUSE)")) -> None:
+    """Admin refresh routes: 423 inside the weekly refresh pause (app/refresh_pause.py) unless overridden."""
+    try:
+        refresh_pause.check(override_pause)
+    except refresh_pause.RefreshPaused as exc:
+        raise HTTPException(status_code=423, detail=str(exc)) from exc
 
 
 def account_scope(user: User | None) -> frozenset[str] | None:

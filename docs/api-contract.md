@@ -558,6 +558,16 @@ hours; everything else waits for the nightly run. A database is due when its las
 Every WinTeam sync (nightly, interval, Admin) holds one Postgres advisory lock; the Admin routes answer
 409 while it is held and the worker skips to its next tick.
 
+**Refresh pause.** Inside a `REFRESH_PAUSE` window (default `tue 06:00-12:00` on `REFRESH_PAUSE_TIMEZONE`,
+default America/Chicago, so it follows daylight saving) the worker starts no nightly, interval,
+PhotoValidation or mailbox run; each runs on its first check after the window. The Admin refresh routes
+(`/integrations/winteam/sync`, `/integrations/winteam/sync/{resource}`, `/integrations/winteam/sarus/sync`,
+`/integrations/relay/sync`, `/integrations/hr/sync`, `/integrations/photovalidation/sync`,
+`/integrations/mail/poll`, `/integrations/finance-reference/load`, `/marts/rebuild`, `/forecasts/rebuild`,
+`POST /leadership/imports`) answer `423` with the window's end in `detail`, unless called with
+`?override_pause=true`. Admin edits (budgets, accounts, job mapping, allocations, settings) are not paused.
+`GET /system/status` carries `refresh_pause: {enabled, timezone, windows, paused, until}`.
+
 | Route | Response |
 |---|---|
 | `GET /staffing/jobs/{company}/{job_number}?week=` (analyst, admin) | `{source, configured, as_of, week, requested_headcount, pending_requested_headcount, lines: [StaffingRequestLine]}`. `company` and `job_number` as in `GET /leadership/sites/...`; `week` = any date in the week (default this week); the headcounts follow the `mart.job_week` rule for that week (null before the feed loads). Lines: open first, then newest submission; at most 200. `as_of` = the last successful pull. 404 for an unknown job. |

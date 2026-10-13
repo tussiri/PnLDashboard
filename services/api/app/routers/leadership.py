@@ -22,7 +22,7 @@ from .. import allocations, accounts, companycam, imports, marts
 from .. import month as month_module
 from .. import budget as budget_module
 from .. import budget_file, feedback_ai, mail_inbox, permissions
-from ..common import allowed_accounts, current_user, jsonable, require_account, require_admin, source_block
+from ..common import allowed_accounts, current_user, jsonable, refresh_gate, require_account, require_admin, source_block
 from ..db import connection
 
 logger = logging.getLogger(__name__)
@@ -1203,7 +1203,7 @@ def list_imports(limit: int = Query(25, ge=1, le=200)) -> dict[str, Any]:
     return {"files": files}
 
 
-@router.post("/imports", dependencies=[Depends(require_admin)])
+@router.post("/imports", dependencies=[Depends(require_admin), Depends(refresh_gate)])
 async def upload_import(request: Request, file: UploadFile = File(...), kind: str | None = Form(None),
                         rebuild: bool = Form(True)) -> dict[str, Any]:
     """Load one export (CSV/XLSX), then rebuild the marts so the views use it. With no kind, a file that is no feed

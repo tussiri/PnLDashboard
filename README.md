@@ -41,7 +41,10 @@ docker compose up -d --build
 The worker syncs WinTeam nightly (`app/nightly.py`) and runs a light timekeeping sync every
 `WINTEAM_SYNC_INTERVAL_MINUTES` (default 30, 0 = off; `app/schedule.py`) under the on-demand sync's
 throttles; it also pulls PhotoValidation staffing requests every `PV_SYNC_INTERVAL_MINUTES` (default 15)
-when `PHOTOVALIDATION_API_URL` and `PHOTOVALIDATION_API_TOKEN` are set. A WinTeam sync
+when `PHOTOVALIDATION_API_URL` and `PHOTOVALIDATION_API_TOKEN` are set. Every Tuesday 06:00-12:00
+America/Chicago (`REFRESH_PAUSE`, `app/refresh_pause.py`) nothing refreshes, so the numbers hold still for
+the leadership meeting: the worker skips its schedules and the Admin refresh buttons ask before running
+anyway. A WinTeam sync
 normalizes, rebuilds the marts and reruns the forecast engine. The Administration page (admin token = `INGESTION_ADMIN_TOKEN`) can test the
 connection, sync, reset a watermark for a full re-pull, rebuild marts or forecasts, and edit
 tenant settings (job tier map, overtime rule, GL account classes, fiscal year start, payroll

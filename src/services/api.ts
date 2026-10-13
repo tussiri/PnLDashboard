@@ -1,7 +1,7 @@
 import type {
   FullSyncResult, LeadershipAccount, LeadershipAccountJob, LeadershipAccountPatch, LeadershipConfig, LeadershipImportFile, LeadershipImportKind,
   LeadershipJobMapping, LeadershipRowsQuery, LeadershipRowsResponse, LeadershipSegment, LeadershipSiteResponse, LeadershipVendorsResponse, LeadershipFeedbackResponse, FeedbackOverview, LeadershipQaResponse, LeadershipBudgetResponse, BudgetPlanRow, BudgetWeekRow, LeadershipMonthlyResponse, MailInboxStatus, MailInboxSetting, MailPollResult, CompanyResponse, LeadershipMonthResponse, AllocationStatus, AllocationSettings, AllocationMonth,
-  PhotoValidationSyncResult, RebuildResult, StaffingJobResponse, SyncOptions, SyncRunsResponse, SystemStatus } from './apiTypes'
+  PauseOverride, PhotoValidationSyncResult, RebuildResult, StaffingJobResponse, SyncOptions, SyncRunsResponse, SystemStatus } from './apiTypes'
 
 /**
  * The live API expresses ratio fields as fractions (gross_margin_pct: 0.25, pct_over: -0.046)
@@ -112,7 +112,8 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
   return method === 'GET' && !rawRatios ? ratiosToPoints(payload) : payload
 }
 
-const syncQuery = (options?: SyncOptions): QueryParams => ({ ...(options?.force ? { force: true } : {}), ...(options?.deep ? { deep: true } : {}) })
+const pauseQuery = (options?: PauseOverride): QueryParams => (options?.overridePause ? { override_pause: true } : {})
+const syncQuery = (options?: SyncOptions): QueryParams => ({ ...(options?.force ? { force: true } : {}), ...(options?.deep ? { deep: true } : {}), ...pauseQuery(options) })
 
 /** The contract routes the app calls. Every call accepts an optional AbortSignal as the last argument. */
 export const api = {
@@ -121,12 +122,12 @@ export const api = {
   /** On demand (the nightly and interval schedules run server-side). */
   syncAll: (options?: SyncOptions, signal?: AbortSignal) => request<FullSyncResult>('/integrations/winteam/sync', { method: 'POST', admin: true, query: syncQuery(options), signal, timeoutMs: 900_000 }),
   syncSarus: (options?: SyncOptions, signal?: AbortSignal) => request<FullSyncResult>('/integrations/winteam/sarus/sync', { method: 'POST', admin: true, query: syncQuery(options), signal, timeoutMs: 900_000 }),
-  syncPhotoValidation: (signal?: AbortSignal) => request<PhotoValidationSyncResult>('/integrations/photovalidation/sync', { method: 'POST', admin: true, signal, timeoutMs: 300_000 }),
-  rebuildMarts: (signal?: AbortSignal) => request<RebuildResult>('/marts/rebuild', { method: 'POST', admin: true, signal, timeoutMs: 600_000 }),
+  syncPhotoValidation: (signal?: AbortSignal, options?: PauseOverride) => request<PhotoValidationSyncResult>('/integrations/photovalidation/sync', { method: 'POST', admin: true, query: pauseQuery(options), signal, timeoutMs: 300_000 }),
+  rebuildMarts: (signal?: AbortSignal, options?: PauseOverride) => request<RebuildResult>('/marts/rebuild', { method: 'POST', admin: true, query: pauseQuery(options), signal, timeoutMs: 600_000 }),
   syncRuns: (limit = 25, signal?: AbortSignal) => request<SyncRunsResponse>('/integrations/winteam/runs', { query: { limit }, signal }),
   mailStatus: (signal?: AbortSignal) => request<MailInboxStatus>('/integrations/mail', { signal, rawRatios: true }),
   updateMailSetting: (value: MailInboxSetting, signal?: AbortSignal) => request<{ value: MailInboxSetting }>('/settings/mail_inbox', { method: 'PUT', body: { value }, admin: true, signal, rawRatios: true }),
-  mailPoll: (signal?: AbortSignal) => request<MailPollResult>('/integrations/mail/poll', { method: 'POST', admin: true, signal, timeoutMs: 600_000 }),
+  mailPoll: (signal?: AbortSignal, options?: PauseOverride) => request<MailPollResult>('/integrations/mail/poll', { method: 'POST', admin: true, query: pauseQuery(options), signal, timeoutMs: 600_000 }),
   // Leadership labor P&L (ratios stay fractions)
   leadershipConfig: (signal?: AbortSignal) => request<LeadershipConfig>('/leadership/config', { signal, rawRatios: true }),
   leadershipRows: (query?: LeadershipRowsQuery, signal?: AbortSignal) => request<LeadershipRowsResponse>('/leadership/rows', { query: { ...query }, signal, rawRatios: true }),
@@ -159,7 +160,7 @@ export const api = {
     request<LeadershipAccountJob>(`/leadership/account-jobs/${encodeURIComponent(company)}/${encodeURIComponent(jobNumber)}`, { method: 'PUT', body: mapping, admin: true, signal }),
   leadershipReloadSeed: (signal?: AbortSignal) => request<{ added: { accounts: number; segments: number; jobs: number } }>('/leadership/accounts/seed', { method: 'POST', admin: true, signal }),
   leadershipImports: (limit = 25, signal?: AbortSignal) => request<{ files: LeadershipImportFile[] }>('/leadership/imports', { query: { limit }, admin: true, signal, rawRatios: true }),
-  leadershipUpload: (file: File, kind?: LeadershipImportKind, signal?: AbortSignal) => uploadImport(file, kind, signal),
+  leadershipUpload: (file: File, kind?: LeadershipImportKind, signal?: AbortSignal, options?: PauseOverride) => uploadImport(file, kind, signal, options),
   /** An uploaded labor budget workbook as one tab-separated table per sheet (nothing saved). */
   readBudgetWorkbook: (file: File, signal?: AbortSignal) => { const form = new FormData(); form.append('file', file); return postForm<{ file: string; sheets: { name: string; text: string }[] }>('/leadership/budget/read', form, signal) },
 }
@@ -177,13 +178,13 @@ async function postForm<T>(path: string, form: FormData, signal?: AbortSignal): 
 }
 
 /** Multipart upload of one export file (the JSON `request` helper cannot send FormData). */
-async function uploadImport(file: File, kind: LeadershipImportKind | undefined, signal?: AbortSignal): Promise<{ file: LeadershipImportFile; marts: unknown }> {
+async function uploadImport(file: File, kind: LeadershipImportKind | undefined, signal?: AbortSignal, options?: PauseOverride): Promise<{ file: LeadershipImportFile; marts: unknown }> {
   const form = new FormData()
   form.append('file', file)
   if (kind) form.append('kind', kind)
   const headers: Record<string, string> = { Accept: 'application/json' }
   if (adminToken) headers['X-Admin-Token'] = adminToken
-  const response = await fetch(`${apiBaseUrl()}/leadership/imports`, { method: 'POST', body: form, headers, signal })
+  const response = await fetch(`${apiBaseUrl()}/leadership/imports${buildQuery(pauseQuery(options))}`, { method: 'POST', body: form, headers, signal })
   if (!response.ok) {
     let detail = response.statusText || `HTTP ${response.status}`
     try { const payload = await response.json() as { detail?: unknown }; if (typeof payload?.detail === 'string') detail = payload.detail } catch { /* keep statusText */ }
