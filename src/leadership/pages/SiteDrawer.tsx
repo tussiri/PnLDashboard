@@ -5,7 +5,7 @@ import { useApiQuery } from '../../hooks/useApiQuery'
 import type { HrSiteStaffingWeek, LeadershipBudgetResponse, LeadershipSiteResponse, StaffingJobResponse, StaffingRequestLine } from '../../services/apiTypes'
 import { queryKey } from '../../services/queryClient'
 import { TrendChart } from '../charts'
-import { includesVendor, inSentence, rowsOfWeek, segmentOrder, useRows, vendorLabel, weekBudgetOf } from '../data'
+import { includesVendor, rowsOfWeek, segmentOrder, useRows, vendorLabel, weekBudgetOf } from '../data'
 import { hours, hours1, money, pct, pts, rate } from '../format'
 import { accountSummary, siteMetrics } from '../metrics'
 import { monthLabel, weekLabel, weekTick } from '../routes'
@@ -143,18 +143,18 @@ export function SiteDrawer({ company, job }: { company: string; job: string }) {
           </table></div>
         </div>}
         {can('data.staffing') && <StaffingCard company={company} job={job} />}
-        {q.data.invoices && <div className="card">
+        {/* Only a site with subcontractor invoices shows the card; a self-performed site has none. */}
+        {q.data.invoices && q.data.invoices.lines.length > 0 && <div className="card">
           <div className="ct"><span>{vendorLabel(account)} invoices since {monthLabel(q.data.invoices.since)}</span><span>{money(q.data.invoices.total)}</span></div>
-          {q.data.invoices.lines.length ? <div className="tw"><table><caption className="sr-only">{vendorLabel(account)} invoices</caption>
+          <div className="tw"><table><caption className="sr-only">{vendorLabel(account)} invoices</caption>
             <thead><tr><th className="nosort l">Date</th><th className="nosort l">Vendor</th><th className="nosort l">Invoice</th><th className="nosort l">Source</th><th className="nosort">GL</th><th className="nosort">Amount</th></tr></thead>
             <tbody>{q.data.invoices.lines.map((l, i) => <tr key={`${l.invoice_number}-${i}`}><td className="l">{l.invoice_date}</td><td className="l nm">{l.vendor_name}</td><td className="l">{l.invoice_number}</td><td className="l neutral">{l.source === 'relay' ? 'Relay' : 'WinTeam'}</td><td>{l.gl_account_number ?? '–'}</td><td>{money(l.amount)}</td></tr>)}</tbody>
-          </table></div> : <Empty>No {inSentence(vendorLabel(account))} invoices.</Empty>}
+          </table></div>
         </div>}
-        {q.data.photos && <div className="card">
+        {/* Photos only for a site linked to a CompanyCam project while CompanyCam is connected. */}
+        {q.data.photos?.configured && q.data.photos.project_id && <div className="card">
           <div className="ct"><span>Photos</span></div>
-          {!q.data.photos.configured ? <Empty>CompanyCam is not connected.</Empty>
-            : !q.data.photos.project_id ? <Empty>No CompanyCam project mapped.</Empty>
-              : q.data.photos.error ? <LoadError error={q.data.photos.error} />
+          {q.data.photos.error ? <LoadError error={q.data.photos.error} />
                 : q.data.photos.items?.length ? <div className="photos">{q.data.photos.items.map((p, i) => <a key={String(p.id ?? i)} href={p.web ?? '#'} target="_blank" rel="noreferrer noopener">
                   <img src={p.thumbnail ?? p.web ?? ''} alt={`Site photo${p.creator_name ? ` by ${p.creator_name}` : ''}`} loading="lazy" /></a>)}</div>
                   : <Empty>No photos.</Empty>}
