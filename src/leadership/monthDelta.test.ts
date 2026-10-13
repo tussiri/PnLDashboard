@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { accountSummary, type MetricOptions, type WeekRow } from './metrics'
-import { compareGroups, compareSites, delta, moneyChange, pctChange } from './monthCompare'
+import { compareGroups, compareSites, delta, moneyChange, pctChange } from './monthDelta'
 
 type Row = WeekRow & { company: string | null }
 const opts: MetricOptions = { target: 0.6, revenueMethod: 'weekly_billing', period: 'month', periodDays: 30 }
