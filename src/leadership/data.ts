@@ -210,7 +210,7 @@ export function monthLaborPct(jobs: LeadershipMonthlyJob[], month: string, vendo
     revenue += monthRevenue(m, isSub(j))
     labor += (m?.direct_labor ?? 0) + (m?.subcontractors ?? 0) * vendorFactor
   }
-  return revenue > 0 ? labor / revenue : null
+  return revenue >= 1 ? labor / revenue : null
 }
 
 /**

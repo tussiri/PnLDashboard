@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { LeadershipAccount, LeadershipRow } from '../services/apiTypes'
-import { closedMonths, isSubcontracted, monthRevenue, prepareRows, schoolWeekNote, syncConcerns, weekBudgetOf, weekdaysIn } from './data'
+import { closedMonths, isSubcontracted, monthLaborPct, monthRevenue, prepareRows, schoolWeekNote, syncConcerns, weekBudgetOf, weekdaysIn } from './data'
 
 const row = (job: string, extra: Partial<LeadershipRow> = {}): LeadershipRow => ({
   week_start: '2026-09-14', week_end: '2026-09-20', company: 'Crane West', job_number: job, site_name: `Site ${job}`, parent_account: 'FedEx',
@@ -122,5 +122,17 @@ describe('schoolWeekNote', () => {
   })
   it('notes an early release day without a warning', () => {
     expect(schoolWeekNote(week({ school: 4, early_release: 1 }))).toEqual({ tone: '', body: '4 school days; 1 early release' })
+  })
+})
+
+describe('monthLaborPct', () => {
+  const job = (revenue: number, direct_labor: number) => ({ company: 'Crane Southwest', job_number: '800', job_name: 'Catch-all', role: 'catch_all' as const,
+    parent_job_number: null, delivery_model: 'self_perform' as const,
+    months: { '2026-08-01': { revenue, revenue_variable: null, direct_labor, payroll_taxes: 0, subcontractors: 0, relay_ar: 0, relay_ap: 0, timekeeping_labor: 0 } } })
+  it('has no labor % on a few cents of revenue (a catch-all job)', () => {
+    expect(monthLaborPct([job(0.002, 14580)], '2026-08-01', 0.7)).toBeNull()
+  })
+  it('divides labor by revenue from a dollar up', () => {
+    expect(monthLaborPct([job(1000, 600)], '2026-08-01', 0.7)).toBeCloseTo(0.6, 10)
   })
 })

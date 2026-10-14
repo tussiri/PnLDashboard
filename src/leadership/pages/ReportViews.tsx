@@ -47,7 +47,7 @@ export function PalletTab({ account, summary, options, subcontracted = [] }: { a
   }
   const monthTotals = sites.map(monthPallet).reduce((a, m) => ({ labor: a.labor + m.labor, variable: m.variable == null ? a.variable : (a.variable ?? 0) + m.variable }), { labor: 0, variable: null as number | null })
   const palLp = (r: Row) => { const v = variableWk(r, options); return v ? pallet(r) / v : null }
-  const coreLp = (r: Row) => { const fixed = r.invoice - (variableWk(r, options) ?? 0); return fixed > 0 ? (core(r) + r.vendor) / fixed : null }
+  const coreLp = (r: Row) => { const fixed = r.invoice - (variableWk(r, options) ?? 0); return fixed >= 1 ? (core(r) + r.vendor) / fixed : null }
   const cols: Column<Row>[] = [
     { key: 'job', header: 'Jobs', left: true, value: (r) => Number(r.job_number) || r.job_number, render: (r) => (r.kids ?? [r.job_number]).join(' + ') },
     { key: 'name', header: 'Site', left: true, value: (r) => r.site_name, className: 'nm' },
@@ -83,7 +83,7 @@ function SubcontractedPallet({ account, sites, options, lastMonth, jobs }: { acc
   const varOf = (r: Row) => variableWk(r, options) ?? 0
   // The subcontractor's full invoice (the account's vendor factor scales it only for labor %), plus any direct labor.
   const costOf = (r: Row) => (r.sub_week ?? 0) + r.labor
-  const pctOf = (r: Row) => (r.invoice > 0 ? costOf(r) / r.invoice : null)
+  const pctOf = (r: Row) => (r.invoice >= 1 ? costOf(r) / r.invoice : null)
   // The closed month: AR against AP (and any direct labor). A week's AP is the invoices that landed in it, so it is lumpy.
   const monthOf = (r: Row) => {
     const js = jobs && lastMonth ? siteMonths(jobs, r.company, r.kids, r.job_number) : []
@@ -91,9 +91,9 @@ function SubcontractedPallet({ account, sites, options, lastMonth, jobs }: { acc
     const cost = js.reduce((a, j) => { const x = j.months[lastMonth!]; return a + (x ? (x.relay_ap > 0 ? x.relay_ap : x.subcontractors) + x.direct_labor : 0) }, 0)
     return { rev, cost }
   }
-  const monthCost = (r: Row) => { const m = monthOf(r); return m.rev > 0 ? m.cost / m.rev : null }
+  const monthCost = (r: Row) => { const m = monthOf(r); return m.rev >= 1 ? m.cost / m.rev : null }
   const monthT = sites.map(monthOf).reduce((a, m) => ({ rev: a.rev + m.rev, cost: a.cost + m.cost }), { rev: 0, cost: 0 })
-  const monthPct = monthT.rev > 0 ? monthT.cost / monthT.rev : null
+  const monthPct = monthT.rev >= 1 ? monthT.cost / monthT.rev : null
   const invT = sites.reduce((a, r) => a + r.invoice, 0)
   const costT = sites.reduce((a, r) => a + costOf(r), 0)
   const varT = sites.reduce((a, r) => a + varOf(r), 0)
@@ -112,7 +112,7 @@ function SubcontractedPallet({ account, sites, options, lastMonth, jobs }: { acc
     <div className="kpi-lg">
       <Kpi label="Subcontracted pallet sites" value={String(sites.length)} sub={projected ? `${projected} with projected ${sub.toLowerCase()} cost` : undefined} />
       <Kpi label="Variable invoice" value={money(varT)} sub={`of ${money(invT)} total`} />
-      <Kpi label={`${sub} cost this ${options.period ?? 'week'}`} value={money(costT)} sub={`${pct(invT > 0 ? costT / invT : null)} of invoice`} />
+      <Kpi label={`${sub} cost this ${options.period ?? 'week'}`} value={money(costT)} sub={`${pct(invT >= 1 ? costT / invT : null)} of invoice`} />
       <Kpi label={`${monthLabel(lastMonth ?? null)} cost %`} value={pct(monthPct)} tone={toneOf(statusOf(monthPct, target, options.watchBand))} sub={`AP ${moneyK(monthT.cost)} ÷ AR ${moneyK(monthT.rev)}`} />
     </div>
     <div className="card"><SortTable caption="Subcontracted pallet sites" rows={sites} columns={cols} defaultSort={{ key: 'aug', dir: -1 }} csvName={`${account.slug}-pallet-subcontracted`} /></div>

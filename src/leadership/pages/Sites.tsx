@@ -40,7 +40,8 @@ export function Sites({ account, summary, options, selfOnly, ratings }: { accoun
   const fixed = (r: Row) => r.invoice - (variableWk(r, options) ?? 0)
   const budget = (r: Row) => (r.invoice > 0 ? r.invoice * r.target : null)
   const variance = (r: Row) => (r.invoice > 0 ? r.cost - r.invoice * r.target : null)
-  const lpOf = (r: Row, m: string) => (monthly.data ? monthLaborPct(siteMonths(monthly.data.jobs, r.company, r.kids, r.job_number), m, factor) : null)
+  // Catch-all and non-billed jobs bill nothing of their own, so they carry no labor % of their own.
+  const lpOf = (r: Row, m: string) => (monthly.data && r.role === 'site' ? monthLaborPct(siteMonths(monthly.data.jobs, r.company, r.kids, r.job_number), m, factor) : null)
   const priorMonth = rows.find((r) => r.revenue_month)?.revenue_month ?? null
 
   const ratingOf = useMemo(() => {

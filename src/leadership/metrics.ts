@@ -160,7 +160,8 @@ export const PROJECTED_VENDOR_BASES = new Set(['prior_month_prorated', 'trailing
 
 const DEFAULTS = { revenueMethod: 'monthly_div' as RevenueMethod, divisor: 4.33, watchBand: 0.1, budgetReliabilityRatio: 0.8 }
 
-const ratio = (a: number, b: number): number | null => (b > 0 ? a / b : null)
+// A denominator under a dollar is rounding residue (a catch-all job's spread invoicing), not a base for a percent.
+const ratio = (a: number, b: number): number | null => (b >= 1 ? a / b : null)
 
 export function statusOf(laborPct: number | null, target: number, watchBand = DEFAULTS.watchBand): LaborStatus {
   if (laborPct == null || !Number.isFinite(laborPct)) return 'no_billing'

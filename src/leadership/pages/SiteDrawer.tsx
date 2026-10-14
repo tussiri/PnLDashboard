@@ -100,7 +100,7 @@ export function SiteDrawer({ company, job }: { company: string; job: string }) {
         const b = weekBudgetOf(week, budget.data?.weeks, budget.data?.months, Boolean(route.payHolidays))
         const rows = rowsOfWeek(accountWeeks.data.rows, week)
         const invoice = b && rows.length ? accountSummary(rows, options, segmentOrder(account)).all.invoice : 0
-        cache.set(week, b && invoice > 0 ? b.labor / invoice : null)
+        cache.set(week, b && invoice >= 1 ? b.labor / invoice : null)
       }
       return cache.get(week)!
     }

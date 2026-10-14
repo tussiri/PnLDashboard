@@ -12,7 +12,8 @@ export const WINDOW = 12
 /** Months in each half of the revenue trend: the latest closed months against the ones before them. */
 export const TREND = 3
 
-const ratio = (a: number, b: number): number | null => (b > 0 ? a / b : null)
+// A denominator under a dollar is rounding residue (a catch-all job's spread invoicing), not a base for a percent.
+const ratio = (a: number, b: number): number | null => (b >= 1 ? a / b : null)
 const sum = <T>(xs: T[], f: (x: T) => number) => xs.reduce((a, x) => a + f(x), 0)
 const ym = (iso: string) => iso.slice(0, 7)
 
