@@ -6,7 +6,7 @@ from datetime import date
 from decimal import Decimal
 
 from app.imports import Parsed
-from app.native_exports import job_cost_gl, labor_summary, native_layout
+from app.native_exports import job_cost_gl, labor_summary, native_layout, paid_timekeeping
 
 ALIASES = {"ServiceMaster by Sarus Co": "Sarus", "Crane West Opco LLC": "Crane West", "ServiceMaster by Crane IFS": "Crane IFS"}
 NUMBERS = {"1": "Crane IFS", "2": "Crane West", "3": "Crane Southwest"}
@@ -95,3 +95,49 @@ def test_job_cost_gl_lines_pivot_into_one_job_month():
     sarus = by_job[("Sarus", "300")]
     assert sarus["direct_labor"] == Decimal("327906.38") and sarus["revenue_variable"] is None
     assert parsed.errors == ["GL accounts outside the job cost map, not loaded: 70100"]
+
+
+def paid_row(**extra):
+    """Shaped like the HR dashboard's Paid Timekeeping query with the labor dollar columns (2026-10-19)."""
+    return {"TenantDatabase": "WT_ServiceMasterCraneIFS_1532_1", "JobCompanyNumber": "1", "PayrollCompanyNumber": "2",
+            "JobNumber": "1", "EmployeeNumber": "50040", "WorkDate": "9/21/2026", "WeekStartDate": "9/21/2026",
+            "PayPeriodStart": "9/16/2026", "PayPeriodEnd": "9/30/2026", "HourCategoryID": "1", "HourCategoryName": "Operations",
+            "HoursTypeID": "15", "HoursTypeDescription": "Ops/Regular", "RecordTypeID": "5", "CheckStatus": "1",
+            "StatusDescription": "Normal", "BatchTypeID": "1", "CheckType": "1", "BatchPosted": "True",
+            "RequiresLifecycleReview": "True", "RequiresPaidSplitValidation": "True", "StoredTotalHours": "11.4700",
+            "CandidateRegularHours": "8.0000", "StoredOvertimeHours": "3.4700", "StoredDoubleTimeHours": "0.0000",
+            "RowsWithMissingHours": "0", "NegativeRegularRowCount": "0", "TimekeepingRowCount": "1", "PayRate": "25.091250",
+            "RegularLaborDollars": "200.73", "OvertimeLaborDollars": "117.43", "DoubletimeLaborDollars": "0.00",
+            "TotalLaborDollars": "318.16", **extra}
+
+
+def test_paid_timekeeping_layout_needs_the_dollar_columns():
+    assert native_layout(paid_row().keys()) == "paid_timekeeping"
+    hr_only = {k: v for k, v in paid_row().items() if not k.endswith("LaborDollars") and k != "PayRate"}
+    assert native_layout(hr_only.keys()) is None
+
+
+def test_paid_timekeeping_rows_become_pay_report_labor():
+    parsed = Parsed(kind="pay_report")
+    paid_timekeeping([paid_row()], ALIASES, NUMBERS, parsed)
+    assert parsed.errors == []
+    [r] = parsed.records
+    assert (r["company"], r["job_number"], r["employee_number"], r["work_date"]) == ("Crane IFS", "1", "50040", date(2026, 9, 21))
+    assert (r["total_hours"], r["overtime_hours"], r["regular_hours"]) == (Decimal("11.4700"), Decimal("3.4700"), Decimal("8.0000"))
+    assert (r["total_dollars"], r["overtime_dollars"], r["regular_dollars"]) == (Decimal("318.16"), Decimal("117.43"), Decimal("200.73"))
+
+
+def test_paid_timekeeping_company_comes_from_the_database_first():
+    parsed = Parsed(kind="pay_report")
+    paid_timekeeping([paid_row(TenantDatabase="WT_Sarus_1", JobCompanyNumber="1"),
+                      paid_row(TenantDatabase="WT_Other", JobCompanyNumber="2")],
+                     {**ALIASES, "WT_Other": "Crane Southwest"}, NUMBERS, parsed)
+    assert [r["company"] for r in parsed.records] == ["Sarus", "Crane Southwest"]
+
+
+def test_paid_timekeeping_skips_checks_hr_skips():
+    parsed = Parsed(kind="pay_report")
+    paid_timekeeping([paid_row(CheckStatus="2"), paid_row(BatchTypeID="3"), paid_row(BatchPosted="False"), paid_row()],
+                     ALIASES, NUMBERS, parsed)
+    assert len(parsed.records) == 1
+    assert parsed.errors == ["3 row(s) for void, replaced, unposted or manual checks were skipped"]

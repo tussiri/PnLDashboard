@@ -10,6 +10,10 @@
 * Job Cost Analysis by GL line (``job_cost_gl``): one row per job, fiscal period and GL account.
   GL accounts are pivoted into the job cost columns by account ranges (JOB_COST_GL_MAP, overridable
   with ops.app_setting 'job_cost_gl_map'); 34000 OS Revenue is the variable revenue line.
+* Paid timekeeping (``paid_timekeeping``): the HR dashboard's daily "Paid Timekeeping" scheduled query
+  (01b_paid_linked_timekeeping_daily), one row per employee, job, work date, hour category and check,
+  once it carries TotalLaborDollars. Loaded as pay report labor over the work dates it carries; rows of
+  checks that are not normal, posted, automatic or single-entry are skipped, the rule HR applies.
 
 Company labels come from the company_aliases setting by name first (Sarus and Crane are separate
 WinTeam databases whose company numbers overlap), then from company_numbers.
@@ -47,12 +51,14 @@ def native_layout(headers: Iterable[Any]) -> str | None:
     keys = {_key(h) for h in headers}
     if {"exportstartdate", "labordollars", "hours1"} <= keys:
         return "labor_summary"
+    if {"storedtotalhours", "workdate", "totallabordollars"} <= keys:
+        return "paid_timekeeping"
     if {"glaccountnumber", "actualdollars"} <= keys and ("periodstartdate" in keys or "fiscalperiod" in keys):
         return "job_cost_gl"
     return None
 
 
-LAYOUT_KIND = {"labor_summary": "pay_report", "job_cost_gl": "job_cost"}
+LAYOUT_KIND = {"labor_summary": "pay_report", "job_cost_gl": "job_cost", "paid_timekeeping": "pay_report"}
 
 
 class Rows:
@@ -144,6 +150,63 @@ def labor_summary(rows: list[dict[str, Any]], aliases: dict[str, str], numbers: 
         parsed.errors.insert(0, f"{unsplit} row(s) cannot be split into weeks, so nothing was loaded: run the export for one Monday-Sunday week")
         return {}
     return windows
+
+
+def _tenant_company(r: Rows, aliases: dict[str, str], numbers: dict[str, str]) -> str | None:
+    """Company of a paid timekeeping row. Each WinTeam database numbers its companies from 1, so the
+    database name decides first: an entry in company_aliases, else any name containing "sarus" is Sarus;
+    then the job's company number through company_numbers (the primary database's map)."""
+    from .imports import clean_text
+
+    tenant = clean_text(r.get("TenantDatabase"))
+    if tenant and tenant in aliases:
+        return aliases[tenant]
+    if tenant and "sarus" in tenant.lower():
+        return "Sarus"
+    number = clean_text(r.get("JobCompanyNumber", "PayrollCompanyNumber"))
+    return numbers.get(number.split(".")[0]) if number else None
+
+
+def _paid_check(r: Rows) -> bool:
+    """A normal check (status 1) in an automatic or single-entry batch (type 1 or 2) that is posted."""
+    from .imports import clean_text
+
+    status, batch = clean_text(r.get("CheckStatus")), clean_text(r.get("BatchTypeID"))
+    posted = clean_text(r.get("BatchPosted"))
+    return ((status is None or status.split(".")[0] == "1") and (batch is None or batch.split(".")[0] in ("1", "2"))
+            and (posted is None or posted.lower() in ("1", "true")))
+
+
+def paid_timekeeping(rows: list[dict[str, Any]], aliases: dict[str, str], numbers: dict[str, str], parsed: Any) -> None:
+    """Append pay report records to `parsed`, one per paid row."""
+    from .imports import clean_text, parse_date, parse_number
+
+    skipped = 0
+    for line, raw in enumerate(rows, start=2):
+        r = Rows(raw)
+        try:
+            if not _paid_check(r):
+                skipped += 1
+                continue
+            company = _tenant_company(r, aliases, numbers)
+            job, employee = clean_text(r.get("JobNumber")), clean_text(r.get("EmployeeNumber"))
+            if not company or not job or not employee:
+                raise ValueError("company, job number or employee number is empty")
+            num = lambda *names: parse_number(r.get(*names)) or Decimal(0)  # noqa: E731
+            total, ot, dt = num("StoredTotalHours"), num("StoredOvertimeHours"), num("StoredDoubleTimeHours")
+            ot_dollars, dt_dollars, dollars = num("OvertimeLaborDollars"), num("DoubletimeLaborDollars"), num("TotalLaborDollars")
+            parsed.records.append({
+                "company": company, "job_number": job, "employee_number": employee, "work_date": parse_date(r.get("WorkDate")),
+                "tk_hours_id": None, "hours_type_id": clean_text(r.get("HoursTypeID")),
+                "hours_type_description": clean_text(r.get("HoursTypeDescription")),
+                "regular_hours": total - ot - dt, "overtime_hours": ot, "doubletime_hours": dt, "total_hours": total,
+                "pay_rate": parse_number(r.get("PayRate")), "ot_rate": None, "dt_rate": None,
+                "regular_dollars": dollars - ot_dollars - dt_dollars, "overtime_dollars": ot_dollars, "doubletime_dollars": dt_dollars,
+                "total_dollars": dollars, "paid_by_check_id": None, "supervisor": None})
+        except ValueError as exc:
+            parsed.error(f"line {line}: {exc}")
+    if skipped:
+        parsed.error(f"{skipped} row(s) for void, replaced, unposted or manual checks were skipped")
 
 
 def _in(account: int, ranges: list[Any]) -> bool:

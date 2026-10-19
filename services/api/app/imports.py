@@ -655,6 +655,8 @@ def load_file(conn: Any, file_name: str, content: bytes, *, kind: str | None = N
             parsed = Parsed(kind=kind, rows_read=len(rows))
             if layout == "labor_summary":
                 windows = native_exports.labor_summary(rows, _company_aliases(cursor), _company_numbers(cursor), parsed)
+            elif layout == "paid_timekeeping":
+                native_exports.paid_timekeeping(rows, _company_aliases(cursor), _company_numbers(cursor), parsed)
             else:
                 native_exports.job_cost_gl(rows, _company_aliases(cursor), _company_numbers(cursor), parsed, _gl_map(cursor))
         elif kind == "qa_score":
