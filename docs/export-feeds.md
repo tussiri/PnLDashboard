@@ -58,6 +58,23 @@ OvtHrs, DTHrs, OvtDollars, DTDollars) is loaded as pay report labor, recognized 
   JobNumber, EmployeeNumber, TotalHours, HoursTypeDescription, Hours1..Hours16, LaborDollars, OvtHrs,
   DTHrs, OvtDollars, DTDollars. EmployeeName can be left out.
 
+### 1b. Paid timekeeping (the HR dashboard's daily query, with labor dollars)
+
+The HR dashboard's scheduled "Paid Timekeeping" query (`01b_paid_linked_timekeeping_daily`) is loaded as
+pay report labor once it carries PayRate, RegularLaborDollars, OvertimeLaborDollars,
+DoubletimeLaborDollars and TotalLaborDollars. The dollars price each day at the rates of the posted check
+that paid it, from `tblPAY_CHECKS_Wages_Distribution`. HR reads the same file and ignores the extra columns.
+
+- Recognized by StoredTotalHours, WorkDate and TotalLaborDollars. Without the dollar columns it is HR's
+  file only and the inbox ignores it.
+- Company: `company_aliases` on TenantDatabase first, else a database name containing "sarus" is Sarus,
+  else JobCompanyNumber through `company_numbers`.
+- Rows of checks other than normal (CheckStatus 1), automatic or single-entry (BatchTypeID 1 or 2) and
+  posted are skipped, the rule HR applies.
+- Covers each company's work dates in the file. Days payroll has not paid yet are not in it and keep
+  their estimate.
+- Mail rule: sender `QueryScheduler@TeamSoftware.com`, subject contains `Paid Timekeeping`, files `*.csv`.
+
 ## 2. Job Cost Analysis (required, monthly)
 
 Revenue, direct labor, subcontract and other direct costs by job and month. It is the source of
