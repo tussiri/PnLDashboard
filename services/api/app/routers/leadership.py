@@ -45,6 +45,8 @@ SELECT w.week_start, w.week_end, w.company, w.job_number, w.site_name, w.parent_
        w.prior_sub, w.prior_sub_basis, w.delivery_model, w.sub_week, w.sub_week_basis,
        w.consumables_cost, w.consumables_basis,
        j.latitude, j.longitude, j.city, j.state_province, j.parent_job_number,
+       coalesce(sr.region, nullif(btrim(j.region_name), '')) AS region,
+       coalesce(sr.subregion, nullif(btrim(j.state_province), '')) AS subregion,
        coalesce(jw.dt_hours, 0) AS dt_hours,
        rr.revenue_run_rate, rr.variable_run_rate, vm.revenue_variable AS revenue_month_variable,
        a.revenue_allocation AS _allocation, w.revenue_month_budget_hours AS _rm_budget_hours, w.revenue_month_hours AS _rm_hours,
@@ -53,6 +55,7 @@ FROM mart.leadership_week w
 LEFT JOIN ops.account_job aj ON aj.company = w.company AND aj.job_number = w.job_number
 LEFT JOIN ops.account a ON a.slug = aj.account_slug
 LEFT JOIN core.dim_job j ON j.job_key = w.job_key
+LEFT JOIN ops.site_region sr ON sr.company = w.company AND sr.job_number = w.job_number
 LEFT JOIN mart.job_week jw ON jw.job_key = w.job_key AND jw.week_start = w.week_start
 LEFT JOIN mart.v_job_cost_month_effective mw ON mw.job_number = w.job_number AND mw.month = w.revenue_month
 LEFT JOIN core.fact_job_cost_month vm ON vm.source = 'export_import' AND vm.company = w.company AND vm.job_number = w.job_number
@@ -1164,6 +1167,19 @@ class AccountPatch(BaseModel):
     group_by: str | None = None
     split_subcontracted: bool | None = None
     vendor_label: str | None = Field(None, min_length=1, max_length=30)
+    # An empty string clears the account's home region (it is then derived from its sites).
+    region: str | None = Field(None, max_length=40)
+    subregion: str | None = Field(None, max_length=40)
+
+
+class SiteRegionIn(BaseModel):
+    """A site's region override; null (or blank) keeps the WinTeam value for that field."""
+    region: str | None = Field(None, max_length=40)
+    subregion: str | None = Field(None, max_length=40)
+
+
+def _blank_to_none(value: str | None) -> str | None:
+    return (value.strip() or None) if value is not None else None
 
 
 class SegmentIn(BaseModel):
@@ -1199,6 +1215,9 @@ def update_account(slug: str, patch: AccountPatch, request: Request) -> dict[str
         raise HTTPException(status_code=422, detail=f"segment_source must be one of {accounts.SEGMENT_SOURCES}")
     if not changes:
         raise HTTPException(status_code=422, detail="Nothing to change")
+    for key in ("region", "subregion"):
+        if key in changes:
+            changes[key] = _blank_to_none(changes[key])
     with connection() as conn, conn.cursor() as cursor:
         if patch.fallback_segment is not None:
             cursor.execute("SELECT 1 FROM ops.account_segment WHERE account_slug = %s AND name = %s", (slug, patch.fallback_segment))
@@ -1303,6 +1322,47 @@ def map_job(company: str, job_number: str, body: JobMappingIn, request: Request)
             """,
             (company, job_number, body.account_slug, segment, body.role, body.companycam_project_id, _actor(request)),
         )
+        row = jsonable(dict(cursor.fetchone()))
+        conn.commit()
+    return row
+
+
+@router.get("/site-regions", dependencies=[Depends(require_admin)])
+def list_site_regions() -> dict[str, Any]:
+    """Every current job with its WinTeam region and state, the Admin override and the region in effect."""
+    with connection() as conn, conn.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT v.company, v.job_number, v.job_name, v.is_active, v.account_slug, v.winteam_region, v.winteam_subregion,
+                   v.region_override, v.subregion_override, v.region, v.subregion, v.updated_at, v.updated_by
+            FROM ops.v_site_region v
+            ORDER BY v.region NULLS LAST, v.subregion NULLS LAST, v.job_number
+            """
+        )
+        return {"sites": [jsonable(dict(r)) for r in cursor.fetchall()]}
+
+
+@router.put("/site-regions/{company}/{job_number}", dependencies=[Depends(require_admin)])
+def set_site_region(company: str, job_number: str, body: SiteRegionIn, request: Request) -> dict[str, Any]:
+    """Override a site's region and/or subregion; both blank removes the override (WinTeam values apply)."""
+    region, subregion = _blank_to_none(body.region), _blank_to_none(body.subregion)
+    with connection() as conn, conn.cursor() as cursor:
+        cursor.execute("SELECT 1 FROM ops.v_site_region WHERE company = %s AND job_number = %s", (company, job_number))
+        if cursor.fetchone() is None:
+            raise HTTPException(status_code=404, detail=f"Unknown job {company} {job_number}")
+        if region is None and subregion is None:
+            cursor.execute("DELETE FROM ops.site_region WHERE company = %s AND job_number = %s", (company, job_number))
+        else:
+            cursor.execute(
+                """
+                INSERT INTO ops.site_region (company, job_number, region, subregion, updated_at, updated_by)
+                VALUES (%s, %s, %s, %s, now(), %s)
+                ON CONFLICT (company, job_number) DO UPDATE SET region = EXCLUDED.region, subregion = EXCLUDED.subregion,
+                  updated_at = now(), updated_by = EXCLUDED.updated_by
+                """,
+                (company, job_number, region, subregion, _actor(request)),
+            )
+        cursor.execute("SELECT * FROM ops.v_site_region WHERE company = %s AND job_number = %s", (company, job_number))
         row = jsonable(dict(cursor.fetchone()))
         conn.commit()
     return row

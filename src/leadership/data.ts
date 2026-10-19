@@ -48,6 +48,22 @@ export const isSubcontracted = (r: LeadershipRow, account?: LeadershipAccount) =
   return vendorOnly
 }
 
+/** A site's region and subregion as grouped and filtered (WinTeam's, or the Admin override). */
+export const NO_REGION = 'No region'
+export const regionOf = (r: Pick<LeadershipRow, 'region'>) => r.region || NO_REGION
+export const subregionOf = (r: Pick<LeadershipRow, 'subregion'>) => r.subregion || NO_REGION
+export const inRegion = (r: Pick<LeadershipRow, 'region' | 'subregion'>, region?: string, subregion?: string) =>
+  (!region || regionOf(r) === region) && (!subregion || subregionOf(r) === subregion)
+
+/** An account's region: its Admin home region, else its sites' one region, else Multi-region. */
+export function accountRegion(account: Pick<LeadershipAccount, 'region' | 'subregion'> | undefined, rows: Pick<LeadershipRow, 'region' | 'subregion'>[]): { region: string; subregion: string | null } {
+  if (account?.region) return { region: account.region, subregion: account.subregion ?? null }
+  const regions = [...new Set(rows.map(regionOf))]
+  if (regions.length !== 1) return { region: regions.length ? 'Multi-region' : NO_REGION, subregion: null }
+  const subs = [...new Set(rows.map(subregionOf))]
+  return { region: regions[0], subregion: account?.subregion ?? (subs.length === 1 ? subs[0] : null) }
+}
+
 export const PALLET_GROUPS = ['Pallet sites', 'Janitorial only'] as const
 
 const ADDITIVE = ['labor', 'hours', 'ot_hours', 'ot_dollars', 'budget_hours', 'budget_dollars', 'revenue_month_amount', 'prior_revenue',

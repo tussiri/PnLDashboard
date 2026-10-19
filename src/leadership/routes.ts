@@ -17,7 +17,7 @@
 export type View = 'company' | 'account' | 'analytics' | 'admin'
 export const ACCOUNT_TABS = ['overview', 'compare', 'sites', 'pallet', 'over-target', 'overtime', 'income-statement', 'subcontracted', 'map', 'vendors', 'feedback', 'budget'] as const
 export type AccountTab = (typeof ACCOUNT_TABS)[number]
-export const ADMIN_TABS = ['accounts', 'jobs', 'budgets', 'calendars', 'allocations', 'imports', 'mailbox', 'data', 'users'] as const
+export const ADMIN_TABS = ['accounts', 'jobs', 'regions', 'budgets', 'calendars', 'allocations', 'imports', 'mailbox', 'data', 'users'] as const
 export const ANALYTICS_TABS = ['accounts', 'units'] as const
 export type AnalyticsTab = (typeof ANALYTICS_TABS)[number]
 export type AdminTab = (typeof ADMIN_TABS)[number]
@@ -37,6 +37,9 @@ export interface Route {
   q?: string
   status?: string
   segment?: string
+  /** Portfolio and an account's sites: one region, then one subregion within it. */
+  region?: string
+  subregion?: string
   /** Account view: hide subcontracted sites. */
   selfOnly?: boolean
   /** Account view: count stat-holiday pay in the weekly budget (off while staff are under 90 days). */
@@ -91,10 +94,11 @@ export function parseRoute(hash: string): Route {
     const i = site.lastIndexOf(SITE_SEP)
     route.site = { company: site.slice(0, i), job: site.slice(i + 1) }
   }
-  for (const key of ['q', 'status', 'segment'] as const) {
+  for (const key of ['q', 'status', 'segment', 'region'] as const) {
     const value = params.get(key)
     if (value) route[key] = value
   }
+  if (route.region && params.get('subregion')) route.subregion = params.get('subregion')!
   if (route.view === 'account' && params.get('delivery') === 'self') route.selfOnly = true
   if (route.view === 'account' && params.get('hol') === 'paid') route.payHolidays = true
   const tw = Number(params.get('tw'))
@@ -121,6 +125,10 @@ export function formatRoute(route: Route): string {
   if (route.target != null && route.view !== 'admin') params.set('target', String(route.target))
   if (route.site && route.view !== 'admin') params.set('site', `${route.site.company}${SITE_SEP}${route.site.job}`)
   if (route.view === 'analytics') for (const key of ['q', 'status', 'segment'] as const) if (route[key]) params.set(key, route[key]!)
+  if ((route.view === 'analytics' || route.view === 'account') && route.region) {
+    params.set('region', route.region)
+    if (route.subregion) params.set('subregion', route.subregion)
+  }
   if (route.view === 'account' && route.selfOnly) params.set('delivery', 'self')
   if (route.view === 'account' && route.payHolidays) params.set('hol', 'paid')
   if (route.view === 'account' && route.trendWeeks) params.set('tw', String(route.trendWeeks))

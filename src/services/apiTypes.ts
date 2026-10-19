@@ -1271,6 +1271,9 @@ export interface LeadershipAccount {
   group_by: 'segment' | 'pallet'
   /** Subcontracted sites leave the labor views for the Subcontracted Sites tab. */
   split_subcontracted: boolean
+  /** Home region set in Admin; null = derived from the account's sites (added 2026-10-19). */
+  region?: string | null
+  subregion?: string | null
   segments: LeadershipSegment[]
   sites: number
   needs_review: number
@@ -1350,6 +1353,10 @@ export interface LeadershipRow {
   longitude: number | null
   city: string | null
   state_province: string | null
+  /** WinTeam region (job tier 3) unless overridden in Admin; added 2026-10-19. */
+  region?: string | null
+  /** The site's state unless overridden in Admin. */
+  subregion?: string | null
   parent_job_number?: string | null
   /** Double-time hours; already inside ot_hours. */
   dt_hours?: number
@@ -1613,7 +1620,24 @@ export interface LeadershipAccountJob {
   is_active: boolean | null
 }
 
-export type LeadershipAccountPatch = Partial<Pick<LeadershipAccount, 'name' | 'featured' | 'sort' | 'target_labor_pct' | 'watch_band' | 'revenue_method' | 'revenue_divisor' | 'budget_reliability_ratio' | 'source_parent_accounts' | 'segment_source' | 'fallback_segment' | 'revenue_allocation' | 'cost_basis' | 'segment_label' | 'vendor_label' | 'vocabulary' | 'vendor_factor' | 'invoice_basis' | 'group_by' | 'split_subcontracted'>>
+/** A current job's region: WinTeam's, the Admin override, and the one in effect. */
+export interface SiteRegion {
+  company: string
+  job_number: string
+  job_name: string | null
+  is_active: boolean | null
+  account_slug: string | null
+  winteam_region: string | null
+  winteam_subregion: string | null
+  region_override: string | null
+  subregion_override: string | null
+  region: string | null
+  subregion: string | null
+  updated_at: string | null
+  updated_by: string | null
+}
+
+export type LeadershipAccountPatch = Partial<Pick<LeadershipAccount, 'region' | 'subregion' | 'name' | 'featured' | 'sort' | 'target_labor_pct' | 'watch_band' | 'revenue_method' | 'revenue_divisor' | 'budget_reliability_ratio' | 'source_parent_accounts' | 'segment_source' | 'fallback_segment' | 'revenue_allocation' | 'cost_basis' | 'segment_label' | 'vendor_label' | 'vocabulary' | 'vendor_factor' | 'invoice_basis' | 'group_by' | 'split_subcontracted'>>
 export interface LeadershipJobMapping { account_slug: string | null; segment?: string | null; role?: LeadershipRole; companycam_project_id?: string | null }
 
 // Staffing requests (PhotoValidation Contract B), added 2026-09-29

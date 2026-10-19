@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useApiQuery } from '../../hooks/useApiQuery'
 import { ApiError } from '../../services/api'
-import type { LeadershipAccount, LeadershipAccountJob, LeadershipAccountPatch, LeadershipImportFile, LeadershipImportKind, LeadershipRole, SyncRunsResponse, MailInboxStatus, MailRule } from '../../services/apiTypes'
+import type { LeadershipAccount, LeadershipAccountJob, LeadershipAccountPatch, SiteRegion, LeadershipImportFile, LeadershipImportKind, LeadershipRole, SyncRunsResponse, MailInboxStatus, MailRule } from '../../services/apiTypes'
 import { queryClient, queryKey } from '../../services/queryClient'
 import { inSentence } from '../data'
 import { ADMIN_TABS, type AdminTab } from '../routes'
@@ -13,7 +13,7 @@ import { AllocationsTab } from './Allocations'
 import { BudgetsAdmin } from './Budget'
 import { SchoolCalendarsAdmin } from './SchoolCalendars'
 
-const TAB_LABEL: Record<AdminTab, string> = { accounts: 'Accounts', jobs: 'Job mapping', budgets: 'Budgets', calendars: 'School calendars', allocations: 'Allocations', imports: 'Imports', mailbox: 'Mailbox', data: 'Data and sync', users: 'Users' }
+const TAB_LABEL: Record<AdminTab, string> = { accounts: 'Accounts', jobs: 'Job mapping', regions: 'Regions', budgets: 'Budgets', calendars: 'School calendars', allocations: 'Allocations', imports: 'Imports', mailbox: 'Mailbox', data: 'Data and sync', users: 'Users' }
 const ROLE_LABEL: Record<LeadershipRole, string> = { site: 'Site', catch_all: 'Catch-all', non_billed: 'Non-billed', pallet: 'Pallet' }
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e))
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
@@ -61,6 +61,7 @@ function AccountEditor({ account }: { account: LeadershipAccount }) {
       cost_basis: draft.cost_basis, revenue_allocation: draft.revenue_allocation, fallback_segment: draft.fallback_segment,
       segment_label: draft.segment_label.trim() || 'Segment', vendor_label: draft.vendor_label.trim() || 'Vendor',
       vocabulary: draft.vocabulary, vendor_factor: draft.vendor_factor, invoice_basis: draft.invoice_basis, group_by: draft.group_by, split_subcontracted: draft.split_subcontracted,
+      region: draft.region?.trim() ?? '', subregion: draft.subregion?.trim() ?? '',
     }
     void run(`Saved ${draft.name}`, () => api.leadershipUpdateAccount(account.slug, patch))
   }
@@ -94,6 +95,8 @@ function AccountEditor({ account }: { account: LeadershipAccount }) {
       <label className="field"><span>Budget reliability ratio</span><input type="number" step="0.05" value={draft.budget_reliability_ratio} onChange={(e) => setDraft({ ...draft, budget_reliability_ratio: num(e.target.value) })} /></label>
       <label className="field"><span>Fallback {inSentence(account.segment_label)}</span><select value={draft.fallback_segment} onChange={(e) => setDraft({ ...draft, fallback_segment: e.target.value })}>
         {account.segments.map((s) => <option key={s.name}>{s.name}</option>)}</select></label>
+      <label className="field" title="Blank: taken from the account's sites"><span>Region</span><input type="text" maxLength={40} placeholder="From sites" value={draft.region ?? ''} onChange={(e) => setDraft({ ...draft, region: e.target.value })} /></label>
+      <label className="field" title="Blank: taken from the account's sites"><span>Subregion</span><input type="text" maxLength={40} placeholder="From sites" value={draft.subregion ?? ''} onChange={(e) => setDraft({ ...draft, subregion: e.target.value })} /></label>
       <label className="field"><span>Sort</span><input type="number" value={draft.sort} onChange={(e) => setDraft({ ...draft, sort: num(e.target.value) })} /></label>
       <label className="field"><span>Featured</span><select value={draft.featured ? 'yes' : 'no'} onChange={(e) => setDraft({ ...draft, featured: e.target.value === 'yes' })}><option value="yes">Yes</option><option value="no">No</option></select></label>
       <div className="field"><button type="submit" className="btn primary" disabled={busy}>Save account</button></div>
@@ -166,6 +169,62 @@ function JobsTab() {
       <div className="card"><div className="tw"><table><caption className="sr-only">Job mapping</caption>
         <thead><tr><th className="nosort l">Job</th><th className="nosort l">Name</th><th className="nosort l">Account</th><th className="nosort l">Role</th><th className="nosort l">Segment</th><th className="nosort l">CompanyCam</th><th className="nosort l"></th></tr></thead>
         <tbody>{jobs.slice(0, 300).map((j) => <JobRow key={`${j.company}-${j.job_number}`} job={j} accounts={accounts} onSaved={refreshAll} />)}</tbody>
+      </table></div></div>}
+  </>
+}
+
+function RegionRow({ site, accountName, onSaved }: { site: SiteRegion; accountName: string; onSaved: () => void }) {
+  const { adminApi: api } = useLeadership()
+  const [region, setRegion] = useState(site.region_override ?? '')
+  const [subregion, setSubregion] = useState(site.subregion_override ?? '')
+  const [state, setState] = useState<string | null>(null)
+  useEffect(() => { setRegion(site.region_override ?? ''); setSubregion(site.subregion_override ?? '') }, [site])
+  const changed = region.trim() !== (site.region_override ?? '') || subregion.trim() !== (site.subregion_override ?? '')
+  const save = async (next: { region: string; subregion: string }) => {
+    setState('Saving')
+    try { await api.setSiteRegion(site.company, site.job_number, { region: next.region.trim() || null, subregion: next.subregion.trim() || null }); setState('Saved'); onSaved() }
+    catch (e) { setState(errorText(e)) }
+  }
+  const id = `${site.company}-${site.job_number}`
+  const edited = site.updated_by ? `Changed by ${site.updated_by}${site.updated_at ? ` on ${site.updated_at.slice(0, 10)}` : ''}` : undefined
+  return <tr className={site.is_active === false ? 'dim' : ''}>
+    <td className="l">{site.job_number}</td>
+    <td className="l nm">{site.job_name ?? ''}<br /><span className="neutral">{site.company}, {accountName}</span></td>
+    <td className="l"><label className="sr-only" htmlFor={`rg-${id}`}>Region</label><input id={`rg-${id}`} type="text" list="region-names" maxLength={40} value={region} placeholder={site.winteam_region ?? 'None'} onChange={(e) => setRegion(e.target.value)} style={{ width: 140 }} /></td>
+    <td className="l"><label className="sr-only" htmlFor={`sr-${id}`}>Subregion</label><input id={`sr-${id}`} type="text" list="subregion-names" maxLength={40} value={subregion} placeholder={site.winteam_subregion ?? 'None'} onChange={(e) => setSubregion(e.target.value)} style={{ width: 120 }} /></td>
+    <td className="l" title={edited}>
+      <button type="button" className="btn sm primary" disabled={!changed} onClick={() => save({ region, subregion })}>Save</button>{' '}
+      {(site.region_override || site.subregion_override) && <button type="button" className="btn sm" onClick={() => save({ region: '', subregion: '' })} title="Back to the WinTeam region and state">Reset</button>}
+      {' '}<span className="ks">{state}</span></td>
+  </tr>
+}
+
+function RegionsTab() {
+  const { adminApi: api, adminConfig: config, adminKeyPrefix: keyPrefix, decision } = useLeadership()
+  const q = useApiQuery(decision ? `${keyPrefix}/leadership/site-regions` : null, (signal) => api.siteRegions(signal), [api])
+  const [region, setRegion] = useState('All')
+  const [filter, setFilter] = useState('')
+  const [inactive, setInactive] = useState(false)
+  const accounts = config.data?.accounts ?? []
+  const nameOf = (slug: string | null) => accounts.find((a) => a.slug === slug)?.name ?? 'Other'
+  const all = useMemo(() => (q.data?.sites ?? []).filter((s) => inactive || s.is_active !== false), [q.data, inactive])
+  const regionNames = useMemo(() => [...new Set(all.map((s) => s.region ?? 'No region'))].sort(), [all])
+  const subregionNames = useMemo(() => [...new Set(all.map((s) => s.subregion).filter((x): x is string => !!x))].sort(), [all])
+  const sites = all.filter((s) => (region === 'All' || (s.region ?? 'No region') === region)
+    && (!filter || `${s.job_number} ${s.job_name ?? ''} ${nameOf(s.account_slug)} ${s.subregion ?? ''}`.toLowerCase().includes(filter.toLowerCase())))
+  return <>
+    <datalist id="region-names">{regionNames.filter((r) => r !== 'No region').map((r) => <option key={r} value={r} />)}</datalist>
+    <datalist id="subregion-names">{subregionNames.map((r) => <option key={r} value={r} />)}</datalist>
+    <Pills label="Region" value={region} onChange={setRegion} options={['All', ...regionNames].map((r) => ({ value: r, label: r === 'All' ? 'All' : `${r} (${all.filter((s) => (s.region ?? 'No region') === r).length})` }))} />
+    <div className="ctrl" style={{ marginBottom: 10 }}>
+      <label htmlFor="rf" className="sr-only">Search sites</label><input id="rf" type="search" placeholder="Search job, site, account, state" value={filter} onChange={(e) => setFilter(e.target.value)} />
+      <label className="check"><input type="checkbox" checked={inactive} onChange={(e) => setInactive(e.target.checked)} /> Inactive jobs</label>
+      <span className="ks">{sites.length} sites{sites.length > 300 ? ', first 300 shown' : ''}</span>
+    </div>
+    {q.error ? <LoadError error={q.error} onRetry={q.refetch} /> : !q.data ? <Skeleton height={300} /> : !sites.length ? <Empty>No sites.</Empty> :
+      <div className="card"><div className="tw"><table><caption className="sr-only">Site regions</caption>
+        <thead><tr><th className="nosort l">Job</th><th className="nosort l">Site</th><th className="nosort l" title="Blank uses the WinTeam region">Region</th><th className="nosort l" title="Blank uses the site's state">Subregion</th><th className="nosort l"></th></tr></thead>
+        <tbody>{sites.slice(0, 300).map((s) => <RegionRow key={`${s.company}-${s.job_number}`} site={s} accountName={nameOf(s.account_slug)} onSaved={refreshAll} />)}</tbody>
       </table></div></div>}
   </>
 }
@@ -328,7 +387,7 @@ export function Admin() {
       {ADMIN_TABS.map((t) => <button key={t} type="button" role="tab" className="tab" aria-selected={tab === t} onClick={() => navigate({ view: 'admin', adminTab: t })}>{TAB_LABEL[t]}</button>)}
     </nav>
     <section role="tabpanel" aria-label={TAB_LABEL[tab]}>
-      {tab === 'accounts' ? <AccountsTab /> : tab === 'jobs' ? <JobsTab /> : tab === 'imports' ? <ImportsTab /> : tab === 'budgets' ? <BudgetsAdmin /> : tab === 'calendars' ? <SchoolCalendarsAdmin /> : tab === 'mailbox' ? <MailboxTab /> : tab === 'users' ? <UsersTab /> : tab === 'allocations' ? <AllocationsTab /> : <DataTab />}
+      {tab === 'accounts' ? <AccountsTab /> : tab === 'jobs' ? <JobsTab /> : tab === 'regions' ? <RegionsTab /> : tab === 'imports' ? <ImportsTab /> : tab === 'budgets' ? <BudgetsAdmin /> : tab === 'calendars' ? <SchoolCalendarsAdmin /> : tab === 'mailbox' ? <MailboxTab /> : tab === 'users' ? <UsersTab /> : tab === 'allocations' ? <AllocationsTab /> : <DataTab />}
     </section>
   </>
 }
