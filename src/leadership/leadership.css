@@ -308,7 +308,8 @@ tr.dim td{color:var(--text3)}
 .fbt__sent .chips{margin-top:10px}
 .fbt__mood{font-size:26px;margin-top:4px}
 .fbt__sent .fbt__line{font-size:15px;margin-top:4px}
-.fbt__hd{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.fbt__hd{display:flex;align-items:center;gap:8px;flex-wrap:wrap;line-height:1.3}
+.fbt__hd>.kl,.fbt__hd>.ks{margin:0}
 .fbt__line{margin:6px 0 0;font-size:13px;color:var(--text)}
 .chip.ok{color:var(--ok)}.chip.warn{color:var(--warn)}.chip.bad{color:var(--bad)}
 .chip.linkbtn{border:none;cursor:pointer;font:inherit;font-size:11px}
