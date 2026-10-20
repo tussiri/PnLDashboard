@@ -41,6 +41,7 @@
      {"company": "Crane IFS", "job_number": "4", "segment": "Crane IFS", "role": "site"},
      {"company": "Crane IFS", "job_number": "503", "segment": "Crane IFS", "role": "site"},
      {"company": "Crane IFS", "job_number": "507", "segment": "Crane IFS", "role": "site"},
+     {"company": "Crane IFS", "job_number": "757", "segment": "Crane IFS", "role": "site"},
      {"company": "Crane West", "job_number": "146", "segment": "Crane West", "role": "site"},
      {"company": "Crane West", "job_number": "500", "segment": "Crane West", "role": "site"},
      {"company": "Crane West", "job_number": "504", "segment": "Crane West", "role": "site"},
@@ -63,7 +64,6 @@
      {"company": "Crane IFS", "job_number": "519"},
      {"company": "Crane IFS", "job_number": "520"},
      {"company": "Crane IFS", "job_number": "731"},
-     {"company": "Crane IFS", "job_number": "757"},
      {"company": "Crane West", "job_number": "502"},
      {"company": "Crane West", "job_number": "540"}
    ],

@@ -760,7 +760,8 @@ rebuild, replacing an automatic mapping, never an administrator's) and `exclude_
 every account, shown as Other). Auto-assignment skips excluded jobs, so `PUT /leadership/account-jobs/
 {company}/{job}` with `account_slug: null` now keeps a job in Other instead of it returning on the next
 rebuild; mapping it to an account removes the exclusion. Amazon lists the 14 Crane sites of the weekly
-Amazon report and excludes its project, management and closed jobs.
+Amazon report plus UIL2 (Crane IFS job 757, added 2026-10-20) and excludes its project, management and
+closed jobs.
 
 In the views a site counts as subcontracted by its delivery model only for accounts that split
 subcontracted sites out (FedEx, from Relay); elsewhere only when Crane has no payroll hours there and the
