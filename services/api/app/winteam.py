@@ -87,7 +87,7 @@ class WinTeamError(RuntimeError):
         self.errors = errors or []
 
 
-# ── resource catalogue ───────────────────────────────────────────────────────
+# ── resource catalog ───────────────────────────────────────────────────────
 def _text(record: dict[str, Any], key: str) -> str:
     value = record.get(key)
     return "" if value is None else str(value).strip()
@@ -528,7 +528,7 @@ class WinTeamClient:
     def get(self, path: str, params: dict[str, Any] | None = None, *, retry_server_errors: bool = True) -> Any:
         """GET and decode. Returns None for 204. Retries 429/5xx/transport errors with backoff.
 
-        retry_server_errors=False raises a 5xx at once (429 is still honoured): used where a 500 is
+        retry_server_errors=False raises a 5xx at once (429 is still honored): used where a 500 is
         a property of the record asked for, not a transient fault, so retrying only adds load.
         """
         attempt = 0
@@ -596,7 +596,7 @@ class PullResult:
 
 @dataclass(frozen=True)
 class PullOptions:
-    """Per-call overrides for a bounded pull (validation runs); None = configured behaviour."""
+    """Per-call overrides for a bounded pull (validation runs); None = configured behavior."""
 
     customer_numbers: tuple[str, ...] | None = None  # ar_invoices: only these customer numbers
     start_date: date | None = None                   # date-windowed resources: first day to pull
@@ -792,7 +792,7 @@ class WinTeamIngestion:
             self._pull_per_invoice(resource, client, conn, run_id, result, options)
         elif kind == "per_customer":
             self._pull_per_customer(resource, client, conn, run_id, result, options)
-        else:  # pragma: no cover - guarded by the catalogue
+        else:  # pragma: no cover - guarded by the catalog
             raise WinTeamError(f"Unknown resource kind {kind}")
         result.requests = client.requests_made
         return result

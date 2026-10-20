@@ -11,10 +11,10 @@ on the week a pull happened to run. So the week in progress always equals the sp
 open then, and a mart rebuild reproduces the same numbers. A line is:
 
 * pending from submitted_at until it was decided (decided_at), or closed without a decision
-  (closed_at: cancelled while submitted). A line that reached approval without any timestamp is
+  (closed_at: canceled while submitted). A line that reached approval without any timestamp is
   never pending.
 * active from its approval (decided_at, else posted_at, else submitted_at) until filled_at or
-  closed_at, when it was approved: status approved, posted or filled, or cancelled after a decision
+  closed_at, when it was approved: status approved, posted or filled, or canceled after a decision
   (decided_at set). Rejected lines are never active.
 
 Both sums use headcount_needed. `line_intervals` / `state_at` / `demand_at` are the pure mirror of

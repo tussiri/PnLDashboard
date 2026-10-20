@@ -263,7 +263,7 @@ def sub_account_rules_setting(value: Any) -> dict[str, dict[str, Any]]:
     """Validated sub_account_rules: {account: {basis, prefix_map, default}} (defaults when malformed).
 
     Account keys keep their case (they are matched to the parent account exactly, "*" = any);
-    prefix_map keys are lower-cased and stripped; a rule without a recognised basis gets
+    prefix_map keys are lower-cased and stripped; a rule without a recognized basis gets
     customer_name; an empty or non-object setting falls back to DEFAULT_SUB_ACCOUNT_RULES.
     """
     if not isinstance(value, dict):
@@ -642,7 +642,7 @@ def rebuild(cursor: Any) -> int:
     )
     rows = cursor.rowcount
     labelled = apply_sub_accounts(cursor)
-    logger.info("mart.job_week rebuilt: %s rows (agency_sub %s; %s job(s) labelled with a sub-account)",
+    logger.info("mart.job_week rebuilt: %s rows (agency_sub %s; %s job(s) labeled with a sub-account)",
                 rows, "on" if agency["enabled"] else "off", labelled)
     return rows
 

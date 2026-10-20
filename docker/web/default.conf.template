@@ -23,7 +23,7 @@ server {
     # every /api call answered 502, the front end read that as "API unreachable" and quietly served
     # the demo dataset, so a redeploy left a dashboard full of synthetic figures that still looked
     # like a working dashboard. Resolving through a variable defers the lookup to request time and
-    # honours the record's TTL, so the proxy follows the container across restarts.
+    # honors the record's TTL, so the proxy follows the container across restarts.
     # A proxy_pass whose value contains a variable carries NO URI part: nginx then forwards the
     # request URI unchanged instead of substituting the location prefix. That is what is wanted here
     # (this location and the API both live under /api/), but writing "$api_upstream/api/" would send

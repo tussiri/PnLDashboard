@@ -22,7 +22,7 @@ Design goals (from the forecasting audit + approved Phase 2 design):
   pooled across sites within a volatility class so a thin series still gets an honest
   band. Flat (fixed-fee) series additionally carry measured disruption statistics instead
   of a fake +/-$0 certainty claim.
-- **Track record** - every historical walk-forward call is materialised in
+- **Track record** - every historical walk-forward call is materialized in
   ``mart.forecast_track_record`` with its band and the eventual actual, so the UI can show
   the model's real performance, including measured interval coverage.
 - **Provenance** - every forecast row records the input periods, the excluded periods
@@ -163,7 +163,7 @@ def _quantile(sorted_vals: list[float], q: float) -> float:
 
 
 def _scale_of(values: list[float]) -> float:
-    """Robust size of a series, used to normalise errors across sites."""
+    """Robust size of a series, used to normalize errors across sites."""
     return max(statistics.median([abs(v) for v in values]), 1.0)
 
 
@@ -607,7 +607,7 @@ def compute_forecasts(
         "disruption": disruption,
         "portfolio": portfolio["meta"],
         "assumptions": [
-            "No seasonality is modelled: 12 months of history is a single cycle and "
+            "No seasonality is modeled: 12 months of history is a single cycle and "
             "cannot support a seasonal estimate. Revisit at >=24 months.",
             "Forecasts assume the current site roster: contract wins, losses and "
             "pipeline are not visible to the model.",
@@ -624,7 +624,7 @@ def compute_forecasts(
             "invoices are not job-linked, so the subcontract_cost metric is empty there.",
             "Fixed-fee sites: the interval reflects billing history and the measured "
             "disruption rate of similar flat sites; contract-termination risk beyond "
-            "that history is not modelled.",
+            "that history is not modeled.",
             "Interval coverage is measured by re-applying final bands to historical "
             "walk-forward calls (pseudo-out-of-sample); it is honest but slightly "
             "optimistic versus a fully frozen backtest.",
@@ -799,7 +799,7 @@ def _portfolio(series_list: list[Series], stale_series: list[Series],
                     f"{label}: sum of every active site's forecast ({point:,.0f}); "
                     f"range from {n} measured portfolio-level {h}-month backtest errors "
                     f"({src}). Assumes the current site roster; wins/losses not "
-                    f"modelled.{stale_txt}"
+                    f"modeled.{stale_txt}"
                 ),
                 "n_history": len(tot_pts),
                 "status": "forecast", "volatility_class": None,
@@ -1290,8 +1290,8 @@ def aggregate_account(
 
     ``aggregate_job`` / ``possessive`` / ``subject`` let the reporting scope reuse the identical
     arithmetic for a set of accounts: ``/forecasts?scope=key`` passes ``SCOPE_JOB``, "the key
-    accounts'" and "the scope", so the row is labelled ``__SCOPE__`` and the explanation reads
-    naturally. The defaults keep the single-account behaviour.
+    accounts'" and "the scope", so the row is labeled ``__SCOPE__`` and the explanation reads
+    naturally. The defaults keep the single-account behavior.
 
     ``forecast_coverage_pct`` is the share of the account's last-closed value of the metric's
     gate field (revenue for revenue/gross_profit, labor_cost, subcontract_cost) carried by the

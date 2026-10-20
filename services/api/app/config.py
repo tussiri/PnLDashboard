@@ -1,6 +1,6 @@
 """Validated server-side configuration.
 
-The WinTeam settings follow the documented TEAM/WinTeam ("wtnextgen") GET catalogue in
+The WinTeam settings follow the documented TEAM/WinTeam ("wtnextgen") GET catalog in
 WinTeamAPI.txt. Resource names are fixed (see `RESOURCE_NAMES`, dependency order); the tenant only
 supplies the base URL, the `tenantId` GUID, the optional gateway subscription key, and scoping
 inputs such as customer numbers and location ids. Nothing here is ever exposed with a VITE_ prefix
@@ -342,7 +342,7 @@ class Settings:
             # has been probed: job_number_in_name | address | project_map.
             companycam_match_rule=_text(env, "COMPANYCAM_MATCH_RULE"),
             # The mart rebuild empties and refills mart.*; behind a stuck writer it should fail fast
-            # with a diagnosable message rather than queue up. 0 = wait indefinitely (old behaviour).
+            # with a diagnosable message rather than queue up. 0 = wait indefinitely (old behavior).
             mart_rebuild_lock_timeout_seconds=_integer(
                 env, "MART_REBUILD_LOCK_TIMEOUT_SECONDS", 30, minimum=0, maximum=3600
             ),

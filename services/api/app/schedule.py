@@ -50,7 +50,7 @@ def interval_due(interval_minutes: int, last_started: datetime | None, now: date
 
 
 def light_resources(enabled: Sequence[str]) -> list[str]:
-    """LIGHT_RESOURCES the connector has enabled, in catalogue order; empty when timekeeping is off."""
+    """LIGHT_RESOURCES the connector has enabled, in catalog order; empty when timekeeping is off."""
     chosen = [name for name in LIGHT_RESOURCES if name in enabled]
     return chosen if TIMEKEEPING in chosen else []
 

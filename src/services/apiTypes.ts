@@ -1071,7 +1071,7 @@ export type LaborCostBasis = 'hours_x_rate' | 'employee_rate' | 'trailing_job_ra
 export interface ExecutiveBusinessUnit {
   key: string
   name: string
-  /** Hex colour the executive dashboard paints the BU with. */
+  /** Hex color the executive dashboard paints the BU with. */
   color: string
   /** Labor % of invoicing target (percentage points) and the "High" threshold. */
   target_pct: number
