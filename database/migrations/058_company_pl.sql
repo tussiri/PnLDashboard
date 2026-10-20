@@ -1,4 +1,4 @@
--- 056: the company P&L on Finance's basis (app/company_pl.py, docs/company-pl.md).
+-- 058: the company P&L on Finance's basis (app/company_pl.py, docs/company-pl.md).
 --
 -- core.fact_job_income_statement_month holds the WinTeam Cross Tab Income Statement by job: every GL line
 -- on every job for a month, each line classified into a category. It is the source of the full company
