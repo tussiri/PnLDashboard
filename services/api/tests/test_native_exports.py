@@ -6,7 +6,7 @@ from datetime import date
 from decimal import Decimal
 
 from app.imports import Parsed
-from app.native_exports import job_cost_gl, labor_summary, native_layout, paid_timekeeping
+from app.native_exports import job_cost_gl, labor_summary, native_layout, paid_timekeeping, trend_income_statement, trend_run_date
 
 ALIASES = {"ServiceMaster by Sarus Co": "Sarus", "Crane West Opco LLC": "Crane West", "ServiceMaster by Crane IFS": "Crane IFS"}
 NUMBERS = {"1": "Crane IFS", "2": "Crane West", "3": "Crane Southwest"}
@@ -141,3 +141,60 @@ def test_paid_timekeeping_skips_checks_hr_skips():
                      ALIASES, NUMBERS, parsed)
     assert len(parsed.records) == 1
     assert parsed.errors == ["3 row(s) for void, replaced, unposted or manual checks were skipped"]
+
+
+def trend_row(order, description, debit, *amounts, job=None):
+    row = {"tier1ID": None, "jobnumber": job, "PrintOrder": str(order), "Type": "2", "GLAccountDescription": description,
+           "NormallyADebit": "True" if debit else "False", "TotalAmount": "0.0000", "TotalTaxIns": "0.0000"}
+    row.update({f"amount{m}": f"{amounts[m - 1] if m <= len(amounts) else 0:.4f}" for m in range(1, 13)})
+    return row
+
+
+TREND = [
+    trend_row(70, "JANITORIAL: Indstrl, Mnftng, Warehouse", False, -1000, -1200),
+    trend_row(110, "JANITORIAL: Consumables ", False, 0, 50),  # a debit on a revenue line lowers revenue
+    trend_row(250, "DIRECT LABOR:Production Wages - Reg/OT", True, 400, 500),
+    trend_row(260, "DIRECT LABOR: Management & Supervisor - Hourly", True, 20, 20),
+    trend_row(320, "DIRECT PRODUCTION LABOR TAXES: Payroll Taxes", True, 40, 50),
+    trend_row(330, "Operation Workers Comp Insurance", True, 30, 30),
+    trend_row(410, "SUBCONTRACTOR: Core Service", True, 200, 250),
+    trend_row(750, "OTHER PRODUCTION EXPENSE:Travel Costs", True, 10, 10),
+    trend_row(930, "FACILITY EXPENSE:Rent", True, 100, 100),
+    trend_row(1520, "SUPPORT STAFF:Office Staff Wages/OT", True, 150, 150),
+    trend_row(1640, "SUPPORT STAFF:Payroll Taxes", True, 15, 15),
+]
+
+
+def test_trend_income_statement_is_recognized_from_the_export_as_is():
+    assert native_layout(TREND[0].keys()) == "trend_income_statement"
+    assert trend_run_date("GL Report Trend Income Statement - 20261020141521050.xlsx") == date(2026, 10, 20)
+    assert trend_run_date("statement.xlsx", today=date(2026, 3, 2)) == date(2026, 3, 2)
+
+
+def test_trend_income_statement_loads_company_months_with_summary_lines():
+    parsed = Parsed(kind="income_statement")
+    trend_income_statement(TREND, parsed, date(2026, 10, 20))
+    assert parsed.errors == []
+    assert {r["account"] for r in parsed.records} == {"Company"}
+    assert sorted({r["period"] for r in parsed.records}) == [date(2026, 1, 1), date(2026, 2, 1)]  # zero months are left alone
+    feb = {r["line"]: r["amount"] for r in parsed.records if r["period"] == date(2026, 2, 1)}
+    assert feb["revenue"] == Decimal(1150)
+    assert feb["wages"] == Decimal(520) and feb["management_wages"] == Decimal(20)
+    assert feb["payroll_taxes"] == Decimal(50)  # support staff taxes are G&A, not burden
+    assert feb["workers_comp"] == Decimal(30) and feb["subcontractors"] == Decimal(250) and feb["travel"] == Decimal(10)
+    assert feb["gross_profit"] == Decimal(1150 - 500 - 20 - 50 - 30 - 250 - 10)
+    assert feb["admin"] == Decimal(265)
+    assert feb["net_profit"] == feb["gross_profit"] - Decimal(265)
+    assert feb["gl:JANITORIAL: Indstrl, Mnftng, Warehouse"] == Decimal(1200)
+
+
+def test_trend_income_statement_year_steps_back_when_months_run_past_the_run_date():
+    parsed = Parsed(kind="income_statement")
+    trend_income_statement([trend_row(70, "Revenue", False, *([-1] * 12))], parsed, date(2027, 1, 5))
+    assert min(r["period"] for r in parsed.records) == date(2026, 1, 1)
+
+
+def test_trend_income_statement_by_job_is_refused():
+    parsed = Parsed(kind="income_statement")
+    trend_income_statement([trend_row(70, "Revenue", False, -1, job="300")], parsed, date(2026, 10, 20))
+    assert parsed.records == [] and "whole company" in parsed.errors[0]

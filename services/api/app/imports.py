@@ -657,6 +657,8 @@ def load_file(conn: Any, file_name: str, content: bytes, *, kind: str | None = N
                 windows = native_exports.labor_summary(rows, _company_aliases(cursor), _company_numbers(cursor), parsed)
             elif layout == "paid_timekeeping":
                 native_exports.paid_timekeeping(rows, _company_aliases(cursor), _company_numbers(cursor), parsed)
+            elif layout == "trend_income_statement":
+                native_exports.trend_income_statement(rows, parsed, native_exports.trend_run_date(file_name))
             else:
                 native_exports.job_cost_gl(rows, _company_aliases(cursor), _company_numbers(cursor), parsed, _gl_map(cursor))
         elif kind == "qa_score":
