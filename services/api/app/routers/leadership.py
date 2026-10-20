@@ -34,6 +34,35 @@ MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 ACCOUNT_SCOPES = ("all", "featured", "other")
 
 ROW_SQL = """
+-- The 3-month run rate (the FedEx report's invoice basis): the revenue month and the two before it,
+-- each month from job cost, else Relay AR where the week's revenue comes from Relay. A subcontracted
+-- Relay site takes Relay AR for any month it has some: from July 2026 its contract revenue is booked to a
+-- GL line with no job, so its job cost carries only the OS (variable) line (mart.leadership_week does the same).
+-- Worked out once per job and revenue month in the window, then joined: as a LATERAL per row it re-read
+-- both views for every job-week (26 FedEx weeks took 17s locally, past the browser's 20s on Render).
+WITH rr_key AS (
+  SELECT DISTINCT job_key, company, job_number, revenue_month, delivery_model, revenue_month_basis
+  FROM mart.leadership_week
+  WHERE week_start BETWEEN %(first)s AND %(last)s AND revenue_month IS NOT NULL
+),
+rr AS (
+  -- A month with neither a job-cost row nor Relay AR (the site was not billing yet) is left out, not averaged in as 0.
+  SELECT k.job_key, k.revenue_month, k.delivery_model, k.revenue_month_basis,
+         avg(CASE WHEN k.delivery_model = 'subcontracted' AND coalesce(r.ar_revenue, 0) > 0 THEN r.ar_revenue
+                  WHEN jc.job_number IS NULL AND r.ar_revenue IS NULL THEN NULL
+                  ELSE coalesce(nullif(jc.revenue, 0), CASE WHEN k.revenue_month_basis LIKE 'relay%%' THEN r.ar_revenue END, 0) END) AS revenue_run_rate,
+         avg(ex.revenue_variable) AS variable_run_rate
+  FROM rr_key k
+  -- Three months as VALUES, not generate_series: its default 1000-row estimate priced this past
+  -- jit_above_cost, and compiling it took longer than running it.
+  CROSS JOIN (VALUES (0), (1), (2)) AS b(back)
+  CROSS JOIN LATERAL (SELECT (k.revenue_month - b.back * interval '1 month')::date AS m) g
+  LEFT JOIN mart.v_job_cost_month_effective jc ON jc.company = k.company AND jc.job_number = k.job_number AND jc.month = g.m
+  LEFT JOIN mart.v_relay_job_month r ON r.job_number = k.job_number AND r.month = g.m AND k.company IS DISTINCT FROM 'Sarus'
+  LEFT JOIN core.fact_job_cost_month ex ON ex.source = 'export_import' AND ex.company = k.company AND ex.job_number = k.job_number
+                                       AND ex.month = g.m
+  GROUP BY k.job_key, k.company, k.job_number, k.revenue_month, k.delivery_model, k.revenue_month_basis
+)
 SELECT w.week_start, w.week_end, w.company, w.job_number, w.site_name, w.parent_account,
        aj.account_slug, CASE WHEN aj.role = 'site' THEN coalesce(aj.segment, a.fallback_segment) END AS segment,
        CASE WHEN aj.account_slug IS NULL THEN 'site' ELSE aj.role END AS role,
@@ -60,22 +89,8 @@ LEFT JOIN mart.job_week jw ON jw.job_key = w.job_key AND jw.week_start = w.week_
 LEFT JOIN mart.v_job_cost_month_effective mw ON mw.job_number = w.job_number AND mw.month = w.revenue_month
 LEFT JOIN core.fact_job_cost_month vm ON vm.source = 'export_import' AND vm.company = w.company AND vm.job_number = w.job_number
                                      AND vm.month = w.revenue_month
--- The 3-month run rate (the FedEx report's invoice basis): the revenue month and the two before it,
--- each month from job cost, else Relay AR where the week's revenue comes from Relay. A subcontracted
--- Relay site takes Relay AR for any month it has some: from July 2026 its contract revenue is booked to a
--- GL line with no job, so its job cost carries only the OS (variable) line (mart.leadership_week does the same).
-LEFT JOIN LATERAL (
-  -- A month with neither a job-cost row nor Relay AR (the site was not billing yet) is left out, not averaged in as 0.
-  SELECT avg(CASE WHEN w.delivery_model = 'subcontracted' AND coalesce(r.ar_revenue, 0) > 0 THEN r.ar_revenue
-                  WHEN jc.job_number IS NULL AND r.ar_revenue IS NULL THEN NULL
-                  ELSE coalesce(nullif(jc.revenue, 0), CASE WHEN w.revenue_month_basis LIKE 'relay%%' THEN r.ar_revenue END, 0) END) AS revenue_run_rate,
-         avg(ex.revenue_variable) AS variable_run_rate
-  FROM generate_series(w.revenue_month - interval '2 months', w.revenue_month, interval '1 month') AS g(m)
-  LEFT JOIN mart.v_job_cost_month_effective jc ON jc.company = w.company AND jc.job_number = w.job_number AND jc.month = g.m::date
-  LEFT JOIN mart.v_relay_job_month r ON r.job_number = w.job_number AND r.month = g.m::date AND w.company IS DISTINCT FROM 'Sarus'
-  LEFT JOIN core.fact_job_cost_month ex ON ex.source = 'export_import' AND ex.company = w.company AND ex.job_number = w.job_number
-                                       AND ex.month = g.m::date
-) rr ON w.revenue_month IS NOT NULL
+LEFT JOIN rr ON rr.job_key = w.job_key AND rr.revenue_month = w.revenue_month
+               AND rr.delivery_model IS NOT DISTINCT FROM w.delivery_model AND rr.revenue_month_basis IS NOT DISTINCT FROM w.revenue_month_basis
 WHERE w.week_start BETWEEN %(first)s AND %(last)s
 """
 
@@ -805,6 +820,24 @@ GROUP BY 1 ORDER BY 1
 """
 
 
+# The sites the sentiment tile names: lowest average over the summary's window (the WINDOW_DAYS days up to
+# the account's newest rating), at least two ratings and under 4 stars, more 1-2 star ratings first on a tie.
+FEEDBACK_CRITICAL_SQL = """
+WITH w AS (
+  SELECT * FROM mart.v_service_feedback
+  WHERE (account_slug = %(account)s OR (account_slug IS NULL AND %(account)s = 'fedex')) AND score IS NOT NULL
+)
+SELECT location_number, max(site_name) AS site_name, max(company) AS company, max(job_number) AS job_number,
+       round(avg(score), 2) AS average, count(*) AS ratings, count(*) FILTER (WHERE score <= 2) AS low
+FROM w
+WHERE feedback_date > (SELECT max(feedback_date) FROM w) - %(days)s
+GROUP BY location_number
+HAVING count(*) >= 2 AND avg(score) < 4
+ORDER BY avg(score), count(*) FILTER (WHERE score <= 2) DESC, location_number
+LIMIT 3
+"""
+
+
 @router.get("/feedback/overview", dependencies=[Depends(permissions.require_permission("tab.feedback"))])
 def leadership_feedback_overview(account: str = Query(..., description="An account slug"),
                                  month: str | None = Query(None, description="YYYY-MM; default this month"),
@@ -832,6 +865,8 @@ def leadership_feedback_overview(account: str = Query(..., description="An accou
                        " ORDER BY feedback_date DESC", {"since": first, "until": until, "account": account})
         low = [jsonable(dict(r)) for r in cursor.fetchall()]
         ai = feedback_ai.state(cursor, account)
+        cursor.execute(FEEDBACK_CRITICAL_SQL, {"account": account, "days": feedback_ai.WINDOW_DAYS})
+        critical = [{**jsonable(dict(r)), "average": float(r["average"])} for r in cursor.fetchall()]
     by_month = {m["month"]: m for m in months}
     prior = (first - timedelta(days=1)).replace(day=1).isoformat()
     scored = sum(m["scored"] for m in months)
@@ -840,7 +875,7 @@ def leadership_feedback_overview(account: str = Query(..., description="An accou
             "months": months, "year": {"ratings": sum(m["ratings"] for m in months), "average": year_avg, "since": since.isoformat()},
             "low_sites": [{"location_number": l["location_number"], "site_name": l["site_name"], "company": l["company"], "job_number": l["job_number"],
                            "score": float(l["score"]), "feedback_date": l["feedback_date"]} for l in low],
-            "summary": jsonable(ai)}
+            "summary": jsonable(ai), "critical_sites": critical}
 
 
 QA_SQL = """

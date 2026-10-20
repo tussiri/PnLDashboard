@@ -341,7 +341,7 @@ class Settings:
             # How a CompanyCam project is matched to a WinTeam job. Unset until the production data
             # has been probed: job_number_in_name | address | project_map.
             companycam_match_rule=_text(env, "COMPANYCAM_MATCH_RULE"),
-            # The mart rebuild TRUNCATEs and refills mart.*; behind a stuck writer it should fail fast
+            # The mart rebuild empties and refills mart.*; behind a stuck writer it should fail fast
             # with a diagnosable message rather than queue up. 0 = wait indefinitely (old behavior).
             mart_rebuild_lock_timeout_seconds=_integer(
                 env, "MART_REBUILD_LOCK_TIMEOUT_SECONDS", 30, minimum=0, maximum=3600

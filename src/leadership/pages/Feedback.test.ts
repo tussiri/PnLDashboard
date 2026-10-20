@@ -7,6 +7,10 @@ const line = (wo: string, trade: string, score: number | null, comment: string |
 })
 
 describe('groupVisits', () => {
+  it('drops the placeholders the export writes for a blank comment', () => {
+    const [v] = groupVisits([line('1', 'JANITORIAL DOCK', 1, '-'), line('2', 'JANITORIAL OFFICE', 1, "'-"), line('3', 'JANITORIAL PALLETS', 2, 'N/A')])
+    expect(v.comments).toEqual([])
+  })
   it('folds a visit\'s trade ratings into one row and keeps each distinct comment once', () => {
     const v = groupVisits([
       line('2', 'JANITORIAL OFFICE', 1, 'Warehouse not cleaned properly.'),

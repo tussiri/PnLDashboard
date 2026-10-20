@@ -618,7 +618,7 @@ def _setting(cursor: Any, key: str, default: Any) -> Any:
 
 
 def rebuild(cursor: Any) -> int:
-    """TRUNCATE and rebuild mart.job_week on the caller's cursor/transaction; returns the row count.
+    """Empty (DELETE, so readers are not blocked; see marts.rebuild_tables) and rebuild mart.job_week on the caller's cursor/transaction; returns the row count.
 
     Reads ops.app_setting.agency_sub for the agency labor rule and sub_account_rules for the
     sub-account labels (apply_sub_accounts). Runs after mart.job_month and
@@ -626,7 +626,7 @@ def rebuild(cursor: Any) -> int:
     come from mart.job_month.
     """
     agency = agency_sub_setting(_setting(cursor, "agency_sub", DEFAULT_AGENCY_SUB))
-    cursor.execute("TRUNCATE mart.job_week")
+    cursor.execute("DELETE FROM mart.job_week")
     cursor.execute(
         JOB_WEEK_SQL,
         {
