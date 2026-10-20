@@ -36,14 +36,32 @@ export function decideMode(status: SystemStatus | null, error: unknown = null): 
   return { mode: 'demo', reason: 'unreachable', banner: BANNERS.unreachable, status: null, error: message }
 }
 
-export async function detectMode(signal?: AbortSignal): Promise<ModeDecision> {
-  try {
-    const status = await liveApi.systemStatus(signal)
-    return decideMode(status)
-  } catch (error) {
-    if (signal?.aborted) throw error
-    return decideMode(null, error)
+/** Status checks before the views fall back to demo data: an API restart or a slow moment should not flip the page. */
+export const STATUS_ATTEMPTS = 3
+export const STATUS_RETRY_MS = 2_000
+/** While demo because the API did not answer, check again this often and switch to live once it does. */
+export const REDETECT_UNREACHABLE_MS = 30_000
+
+const wait = (ms: number, signal?: AbortSignal) => new Promise<void>((resolve, reject) => {
+  if (signal?.aborted) return reject(signal.reason)
+  const timer = setTimeout(resolve, ms)
+  signal?.addEventListener('abort', () => { clearTimeout(timer); reject(signal.reason) }, { once: true })
+})
+
+export async function detectMode(signal?: AbortSignal, { attempts = STATUS_ATTEMPTS, retryMs = STATUS_RETRY_MS } = {}): Promise<ModeDecision> {
+  let last: unknown = null
+  for (let i = 0; i < attempts; i++) {
+    if (i) await wait(retryMs * i, signal)
+    try {
+      return decideMode(await liveApi.systemStatus(signal))
+    } catch (error) {
+      if (signal?.aborted) throw error
+      last = error
+      // Signed out is an answer, not an outage.
+      if (error instanceof ApiError && error.isUnauthorized) break
+    }
   }
+  return decideMode(null, last)
 }
 
 export const LiveApi: DashboardApi = liveApi
