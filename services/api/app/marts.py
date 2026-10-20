@@ -81,6 +81,11 @@ class MartRebuildBlocked(RuntimeError):
     """The rebuild could not take its table locks before MART_REBUILD_LOCK_TIMEOUT_SECONDS elapsed."""
 
 
+# Transaction advisory lock that serializes rebuilds. TRUNCATE used to do that by locking the tables
+# outright; DELETE does not, and two overlapping rebuilds would each insert a full set of rows.
+MART_REBUILD_LOCK = 7_211_010
+
+
 API_SOURCE = "winteam_api"
 SARUS_SOURCE = "winteam_sarus"
 SARUS_COMPANY = "Sarus"
@@ -533,11 +538,16 @@ def _finish_log(log_id: int, status: str, job_rows: int | None, portfolio_rows: 
 
 
 def rebuild_tables() -> tuple[int, int, int]:
-    """TRUNCATE and rebuild the mart tables (job_month, portfolio_month, job_week) in one transaction; returns row counts.
+    """Empty and rebuild the mart tables (job_month, portfolio_month, job_week, leadership_week) in one transaction; returns row counts.
+
+    The tables are emptied with DELETE, not TRUNCATE: TRUNCATE holds an ACCESS EXCLUSIVE lock until
+    commit, so every dashboard read of mart.* (the /system/status check included) waited out the whole
+    rebuild, the status check timed out, and the browser fell back to demo data. Under DELETE readers
+    keep seeing the previous build until this one commits. Rebuilds are serialized by MART_REBUILD_LOCK.
 
     Runs under MART_REBUILD_LOCK_TIMEOUT_SECONDS (default 30) so that a session still holding locks
-    on the tables this reads or truncates makes the rebuild fail with a diagnosable message instead
-    of queueing behind it - a queued TRUNCATE blocks every reader of mart.* in turn.
+    on the tables this reads or empties makes the rebuild fail with a diagnosable message instead
+    of queueing behind it.
     """
     with connection(lock_timeout_ms=settings.mart_rebuild_lock_timeout_seconds * 1000) as conn:
         rate = _burden_rate(conn)
@@ -545,14 +555,15 @@ def rebuild_tables() -> tuple[int, int, int]:
         oth_low, oth_high = _gl_range(conn, "other_direct")
         try:
             with conn.cursor() as cursor:
-                cursor.execute("TRUNCATE mart.job_month")
+                cursor.execute("SELECT pg_advisory_xact_lock(%s)", (MART_REBUILD_LOCK,))
+                cursor.execute("DELETE FROM mart.job_month")
                 cursor.execute(JOB_MONTH_SQL, {"burden": rate,
                                                "subcontract_gl_low": sub_low,
                                                "subcontract_gl_high": sub_high,
                                                "other_direct_gl_low": oth_low,
                                                "other_direct_gl_high": oth_high})
                 job_rows = cursor.rowcount
-                cursor.execute("TRUNCATE mart.portfolio_month")
+                cursor.execute("DELETE FROM mart.portfolio_month")
                 cursor.execute(PORTFOLIO_MONTH_SQL)
                 portfolio_rows = cursor.rowcount
                 job_week_rows = weekly.rebuild(cursor)
