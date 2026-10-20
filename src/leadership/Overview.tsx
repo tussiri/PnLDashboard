@@ -70,7 +70,7 @@ export const directOf = (r: Row) => r.labor - palletOf(r)
  */
 export function variableWk(r: LeadershipRow, o: MetricOptions): number | null {
   if (!o.palletSplit) return null
-  const monthly = o.invoiceBasis === 'run_rate_3m' ? r.variable_run_rate : r.revenue_month_variable
+  const monthly = o.invoiceBasis === 'run_rate_3m' || o.invoiceBasis === 'latest_fixed_avg_variable' ? r.variable_run_rate : r.revenue_month_variable
   return monthly == null ? null : monthly / (o.divisor ?? 4.33)
 }
 const short = (name: string) => name.replace(/^[A-Z][A-Za-z]+ ?- ?/, '').replace(', CA 94534', '').replace(' - Cargo Bldg', ' Cargo').replace(/ (Elementary|Middle|High) School$/, ' $1')
@@ -148,9 +148,14 @@ export function Overview({ account, rows, summary, options, flags, headline = tr
     cur == null || before == null ? null : `${cur - before >= 0 ? '+' : '−'}${format(Math.abs(cur - before))} ${period === 'month' ? (vocab === 'fedex' ? 'vs prior month' : 'MoM') : vocab === 'fedex' ? 'vs prior wk' : 'WoW'}`
   const join = (...parts: (string | null | undefined | false)[]) => parts.filter(Boolean).join('; ')
 
+  const contractRows = options.invoiceBasis === 'contract' ? summary.sites.filter((r) => r.contract_month != null).length : 0
   const basis = period === 'month' ? billingSources(summary.sites) : account.revenue_method === 'weekly_billing' ? null : options.invoiceBasis === 'run_rate_3m'
     ? (variable != null ? `Fixed ${moneyK(summary.all.invoice - variable)} + variable ${moneyK(variable)} run rate ÷ ${account.revenue_divisor}` : `3-month run rate ÷ ${account.revenue_divisor}`)
-    : `${monthLabel(revenueMonth)} revenue ÷ ${account.revenue_divisor}`
+    : options.invoiceBasis === 'latest_fixed_avg_variable'
+      ? (variable != null ? `${monthShort(revenueMonth)} fixed ${moneyK(summary.all.invoice - variable)} + 3-month avg variable ${moneyK(variable)} ÷ ${account.revenue_divisor}` : `${monthLabel(revenueMonth)} revenue ÷ ${account.revenue_divisor}`)
+      : options.invoiceBasis === 'contract' && contractRows > 0
+        ? `Contract ÷ ${account.revenue_divisor}${contractRows < summary.sites.length ? `; ${monthLabel(revenueMonth)} revenue where no contract` : ''}`
+        : `${monthLabel(revenueMonth)} revenue ÷ ${account.revenue_divisor}`
   const laborParts = [palD > 0 ? `${w.direct} ${moneyK(a.labor - palD)} + pallet ${moneyK(palD)}` : null, a.vendor > 0 ? `${inSentence(vendorLabel(account))} ~${moneyK(a.vendor)}` : null,
     catchJobs.length ? `incl. ${moneyK(summary.catchAll.cost)} catch-all` : null].filter(Boolean).join(' + ')
 

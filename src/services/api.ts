@@ -1,6 +1,6 @@
 import type {
   FullSyncResult, LeadershipAccount, LeadershipAccountJob, LeadershipAccountPatch, LeadershipConfig, LeadershipImportFile, LeadershipImportKind,
-  LeadershipJobMapping, SiteRegion, LeadershipRowsQuery, LeadershipRowsResponse, LeadershipSegment, LeadershipSiteResponse, LeadershipVendorsResponse, LeadershipFeedbackResponse, FeedbackOverview, LeadershipQaResponse, LeadershipBudgetResponse, BudgetPlanRow, SchoolCalendarLoad, SchoolCalendarResponse, SchoolDayType, SchoolDistrict, BudgetWeekRow, LeadershipMonthlyResponse, MailInboxStatus, MailInboxSetting, MailPollResult, CompanyResponse, LeadershipMonthResponse, AllocationStatus, AllocationSettings, AllocationMonth,
+  LeadershipJobMapping, SiteRegion, LeadershipRowsQuery, LeadershipRowsResponse, LeadershipSegment, LeadershipSiteResponse, LeadershipVendorsResponse, LeadershipFeedbackResponse, FeedbackOverview, LeadershipQaResponse, LeadershipBudgetResponse, BudgetPlanRow, SchoolCalendarLoad, SchoolCalendarResponse, SchoolDayType, SchoolDistrict, BudgetWeekRow, LeadershipMonthlyResponse, MailInboxStatus, MailInboxSetting, MailPollResult, CompanyResponse, LeadershipMonthResponse, AllocationStatus, AllocationSettings, AllocationMonth, CompanyPlResponse, CompanyPlSettings, PlAdjustment, PlAdjustmentInput, PlAdjustmentsResponse, JobContract, PlCategory, SubAccrualSuggestion,
   PauseOverride, PhotoValidationSyncResult, RebuildResult, StaffingJobResponse, SyncOptions, SyncRunsResponse, SystemStatus } from './apiTypes'
 
 /**
@@ -165,6 +165,23 @@ export const api = {
   updateAllocationSettings: (settings: Partial<AllocationSettings>, signal?: AbortSignal) => request<{ settings: AllocationSettings }>('/leadership/allocations', { method: 'PUT', body: settings, admin: true, signal, rawRatios: true }),
   updateAllocationMonth: (month: string, values: { burden_rate: number | null; overhead_pool: number | null }, signal?: AbortSignal) =>
     request<{ months: AllocationMonth[] }>(`/leadership/allocations/months/${month.slice(0, 7)}`, { method: 'PUT', body: values, admin: true, signal, rawRatios: true }),
+  companyPl: (months = 12, signal?: AbortSignal) => request<CompanyPlResponse>('/leadership/company-pl', { query: { months }, signal, rawRatios: true }),
+  companyPlSettings: (signal?: AbortSignal) => request<{ settings: CompanyPlSettings; categories: PlCategory[] }>('/leadership/company-pl/settings', { admin: true, signal, rawRatios: true }),
+  updateCompanyPlSettings: (settings: Partial<CompanyPlSettings>, signal?: AbortSignal) =>
+    request<{ settings: CompanyPlSettings; categories: PlCategory[] }>('/leadership/company-pl/settings', { method: 'PUT', body: settings, admin: true, signal, rawRatios: true }),
+  plAdjustments: (months = 12, signal?: AbortSignal) => request<PlAdjustmentsResponse>('/leadership/adjustments', { query: { months }, admin: true, signal, rawRatios: true }),
+  createPlAdjustment: (input: PlAdjustmentInput, signal?: AbortSignal) => request<{ adjustment: PlAdjustment }>('/leadership/adjustments', { method: 'POST', body: input, admin: true, signal, rawRatios: true }),
+  updatePlAdjustment: (id: number, input: PlAdjustmentInput, signal?: AbortSignal) => request<{ adjustment: PlAdjustment }>(`/leadership/adjustments/${id}`, { method: 'PUT', body: input, admin: true, signal, rawRatios: true }),
+  clearPlAdjustment: (id: number, cleared: boolean, signal?: AbortSignal) => request<{ adjustment: PlAdjustment }>(`/leadership/adjustments/${id}/clear`, { method: 'POST', body: { cleared }, admin: true, signal, rawRatios: true }),
+  deletePlAdjustment: (id: number, signal?: AbortSignal) => request<{ deleted: number }>(`/leadership/adjustments/${id}`, { method: 'DELETE', admin: true, signal }),
+  subAccrualSuggestions: (month: string, signal?: AbortSignal) => request<{ month: string; suggestions: SubAccrualSuggestion[] }>('/leadership/adjustments/suggestions', { query: { month }, admin: true, signal, rawRatios: true }),
+  acceptSubAccruals: (month: string, items: { company: string; job_number: string; amount: number }[], signal?: AbortSignal) =>
+    request<{ created: number[] }>('/leadership/adjustments/suggestions', { method: 'POST', body: { month, items }, admin: true, signal, rawRatios: true }),
+  jobContracts: (account?: string, signal?: AbortSignal) => request<{ contracts: JobContract[] }>('/leadership/contracts', { query: { account }, admin: true, signal, rawRatios: true }),
+  saveJobContract: (company: string, jobNumber: string, body: { effective_from: string; monthly_amount: number; note?: string | null }, signal?: AbortSignal) =>
+    request<{ contracts: JobContract[] }>(`/leadership/contracts/${encodeURIComponent(company || '-')}/${encodeURIComponent(jobNumber)}`, { method: 'PUT', body, admin: true, signal, rawRatios: true }),
+  deleteJobContract: (company: string, jobNumber: string, effectiveFrom: string, signal?: AbortSignal) =>
+    request<{ contracts: JobContract[] }>(`/leadership/contracts/${encodeURIComponent(company || '-')}/${encodeURIComponent(jobNumber)}/${effectiveFrom.slice(0, 10)}`, { method: 'DELETE', admin: true, signal, rawRatios: true }),
   leadershipUpdateAccount: (slug: string, patch: LeadershipAccountPatch, signal?: AbortSignal) =>
     request<LeadershipAccount>(`/leadership/accounts/${encodeURIComponent(slug)}`, { method: 'PUT', body: patch, admin: true, signal }),
   leadershipReplaceSegments: (slug: string, segments: Pick<LeadershipSegment, 'name' | 'target_labor_pct'>[], signal?: AbortSignal) =>

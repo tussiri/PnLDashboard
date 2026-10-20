@@ -65,7 +65,7 @@ export function PalletTab({ account, summary, options, subcontracted = [] }: { a
   return <>
     {sites.length > 0 && <div className="kpi-lg">
       <Kpi label="Pallet labor" value={money(palD)} sub={`${pct(s.labor ? palD / s.labor : null)} of labor at pallet sites`} />
-      <Kpi label="Variable invoice" value={hasVariable ? money(varWk) : '–'} sub={hasVariable ? (options.invoiceBasis === 'run_rate_3m' ? `OS revenue run rate ÷ ${account.revenue_divisor}` : `${monthLabel(lastMonth ?? null)} OS revenue ÷ ${account.revenue_divisor}`) : 'Job Cost Analysis revenue split not loaded'} />
+      <Kpi label="Variable invoice" value={hasVariable ? money(varWk) : '–'} sub={hasVariable ? (options.invoiceBasis === 'run_rate_3m' || options.invoiceBasis === 'latest_fixed_avg_variable' ? `OS revenue run rate ÷ ${account.revenue_divisor}` : `${monthLabel(lastMonth ?? null)} OS revenue ÷ ${account.revenue_divisor}`) : 'Job Cost Analysis revenue split not loaded'} />
       <Kpi label="Pallet labor % of variable" value={hasVariable ? pct(varWk ? palD / varWk : null) : '–'} tone={hasVariable ? toneOf(statusOf(varWk ? palD / varWk : null, target, options.watchBand)) : ''}
         sub={monthTotals.variable ? `${monthLabel(lastMonth ?? null)} actual ${pct(monthTotals.labor / monthTotals.variable)}` : undefined} />
       <Kpi label="Pallet hours" value={hours(palHrs)} sub={`${hours(palOt)} OT/DT (${pct(palHrs ? palOt / palHrs : null)})`} tone={palHrs && palOt / palHrs > 0.15 ? 'bad' : palHrs && palOt / palHrs > 0.1 ? 'warn' : ''} />

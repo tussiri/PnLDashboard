@@ -18,7 +18,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from pydantic import BaseModel, Field
 
-from .. import allocations, accounts, companycam, imports, marts
+from .. import allocations, accounts, company_pl, companycam, imports, marts
 from .. import month as month_module
 from .. import budget as budget_module
 from .. import budget_file, feedback_ai, mail_inbox, permissions
@@ -44,6 +44,11 @@ WITH rr_key AS (
   SELECT DISTINCT job_key, company, job_number, revenue_month, delivery_model, revenue_month_basis
   FROM mart.leadership_week
   WHERE week_start BETWEEN %(first)s AND %(last)s AND revenue_month IS NOT NULL
+),
+ct AS (
+  SELECT company, job_number, monthly_amount, effective_from,
+         coalesce(lead(effective_from) OVER (PARTITION BY company, job_number ORDER BY effective_from), 'infinity'::date) AS effective_to
+  FROM ops.job_contract
 ),
 rr AS (
   -- A month with neither a job-cost row nor Relay AR (the site was not billing yet) is left out, not averaged in as 0.
@@ -79,7 +84,7 @@ SELECT w.week_start, w.week_end, w.company, w.job_number, w.site_name, w.parent_
        coalesce(jw.dt_hours, 0) AS dt_hours,
        rr.revenue_run_rate, rr.variable_run_rate, vm.revenue_variable AS revenue_month_variable,
        a.revenue_allocation AS _allocation, w.revenue_month_budget_hours AS _rm_budget_hours, w.revenue_month_hours AS _rm_hours,
-       mw.management_wages AS _mgmt_month
+       mw.management_wages AS _mgmt_month, coalesce(ctc.monthly_amount, cta.monthly_amount) AS contract_month
 FROM mart.leadership_week w
 LEFT JOIN ops.account_job aj ON aj.company = w.company AND aj.job_number = w.job_number
 LEFT JOIN ops.account a ON a.slug = aj.account_slug
@@ -91,6 +96,10 @@ LEFT JOIN core.fact_job_cost_month vm ON vm.source = 'export_import' AND vm.comp
                                      AND vm.month = w.revenue_month
 LEFT JOIN rr ON rr.job_key = w.job_key AND rr.revenue_month = w.revenue_month
                AND rr.delivery_model IS NOT DISTINCT FROM w.delivery_model AND rr.revenue_month_basis IS NOT DISTINCT FROM w.revenue_month_basis
+-- The contract invoice basis (migration 058): the monthly contract in effect on the week's last day; a
+-- contract row for the job's company wins over one without a company (any company).
+LEFT JOIN ct ctc ON ctc.company = w.company AND ctc.job_number = w.job_number AND w.week_end >= ctc.effective_from AND w.week_end < ctc.effective_to
+LEFT JOIN ct cta ON cta.company = '' AND cta.job_number = w.job_number AND w.week_end >= cta.effective_from AND w.week_end < cta.effective_to
 WHERE w.week_start BETWEEN %(first)s AND %(last)s
 """
 
@@ -585,6 +594,262 @@ def update_allocation_month(month: str, body: AllocationMonthIn, request: Reques
         allocations.set_month(cursor, first, body.burden_rate, body.overhead_pool, _actor(request))
         conn.commit()
         return {"months": jsonable(allocations.overview(cursor, _last_months(cursor, 12)))}
+
+
+# ------------------------------------------------------------------------------------- company P&L (056)
+
+@router.get("/company-pl", dependencies=[Depends(permissions.require_permission("view.company"))])
+def company_pl_report(request: Request, months: int = Query(12, ge=1, le=36)) -> dict[str, Any]:
+    """The company P&L on Finance's basis (app/company_pl.py): the months with a Cross Tab Income
+    Statement by job loaded, each with company lines, the overhead rule's charges by group, accounts
+    after overhead, and the adjustments that applied. Every account, so a user limited to accounts is refused."""
+    if allowed_accounts(request) is not None:
+        raise HTTPException(status_code=403, detail="The company view covers every account; your access is limited to some")
+    with connection() as conn, conn.cursor() as cursor:
+        return jsonable(company_pl.report(cursor, months))
+
+
+class CompanyPlSettingsIn(BaseModel):
+    overhead_jobs: list[str] | None = None
+    groups: list[dict[str, Any]] | None = None
+    pool_basis: str | None = None
+    gl_categories: list[dict[str, Any]] | None = None
+
+
+@router.get("/company-pl/settings", dependencies=[Depends(require_admin)])
+def company_pl_settings() -> dict[str, Any]:
+    with connection() as conn, conn.cursor() as cursor:
+        return {"settings": company_pl.settings_of(cursor), "categories": list(company_pl.CATEGORIES)}
+
+
+@router.put("/company-pl/settings", dependencies=[Depends(require_admin)])
+def update_company_pl_settings(body: CompanyPlSettingsIn, request: Request) -> dict[str, Any]:
+    """Replace the overhead rule: overhead jobs, P&L groups, pool basis and GL ranges (omitted keys keep their value).
+    Cross Tab lines already loaded keep the category they were loaded with; reload a file to reclassify it."""
+    with connection() as conn, conn.cursor() as cursor:
+        current = company_pl.settings_of(cursor)
+        patch = {k: v for k, v in body.model_dump().items() if v is not None}
+        try:
+            merged = company_pl.validate_settings({**current, **patch})
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        cursor.execute(
+            """
+            INSERT INTO ops.app_setting (key, value, description, updated_by) VALUES ('company_pl', %s, 'Company P&L', %s)
+            ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now(), updated_by = EXCLUDED.updated_by
+            """,
+            (json.dumps(merged), _actor(request)),
+        )
+        conn.commit()
+        return {"settings": merged, "categories": list(company_pl.CATEGORIES)}
+
+
+class AdjustmentIn(BaseModel):
+    month: str
+    kind: str
+    category: str | None = None
+    amount: float
+    description: str
+    from_company: str | None = None
+    from_job: str | None = None
+    to_company: str | None = None
+    to_job: str | None = None
+    group_key: str | None = None
+    reverse_month: str | None = None
+
+
+def _adjustment_out(cursor: Any, adjustment_id: int) -> dict[str, Any]:
+    cursor.execute(f"SELECT {', '.join(company_pl.ADJ_COLUMNS)} FROM ops.pl_adjustment WHERE adjustment_id = %s", (adjustment_id,))
+    row = cursor.fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Unknown adjustment")
+    return jsonable(dict(row))
+
+
+@router.get("/adjustments", dependencies=[Depends(require_admin)])
+def list_adjustments(months: int = Query(12, ge=1, le=36)) -> dict[str, Any]:
+    """Accruals, reclasses and staff charges for the last `months` months (by month or reversal month)."""
+    today = date.today().replace(day=1)
+    first = date(today.year + (today.month - 1 - months) // 12, (today.month - 1 - months) % 12 + 1, 1)
+    with connection() as conn, conn.cursor() as cursor:
+        return {"adjustments": jsonable(company_pl.load_adjustments(cursor, first, date(today.year + 1, today.month, 1))),
+                "groups": [{"key": g["key"], "name": g["name"]} for g in company_pl.settings_of(cursor)["groups"]],
+                "categories": list(company_pl.CATEGORIES)}
+
+
+@router.post("/adjustments", status_code=201, dependencies=[Depends(require_admin)])
+def create_adjustment(body: AdjustmentIn, request: Request) -> dict[str, Any]:
+    with connection() as conn, conn.cursor() as cursor:
+        try:
+            a = company_pl.validate_adjustment(body.model_dump(), company_pl.settings_of(cursor)["groups"])
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        actor = _actor(request)
+        cursor.execute(
+            """
+            INSERT INTO ops.pl_adjustment (month, kind, category, amount, from_company, from_job, to_company, to_job, group_key, description,
+                                           reverse_month, created_by, updated_by)
+            VALUES (%(month)s, %(kind)s, %(category)s, %(amount)s, %(from_company)s, %(from_job)s, %(to_company)s, %(to_job)s, %(group_key)s,
+                    %(description)s, %(reverse_month)s, %(actor)s, %(actor)s)
+            RETURNING adjustment_id
+            """,
+            {**a, "actor": actor},
+        )
+        new_id = cursor.fetchone()["adjustment_id"]
+        conn.commit()
+        return {"adjustment": _adjustment_out(cursor, new_id)}
+
+
+@router.get("/adjustments/suggestions", dependencies=[Depends(require_admin)])
+def adjustment_suggestions(month: str = Query(..., description="YYYY-MM")) -> dict[str, Any]:
+    """Subcontracted (Relay) sites billed in the month whose sub invoices have not posted to the GL: the
+    accrual Finance books at month end, at the prior month's cost less what has posted."""
+    try:
+        first = company_pl._month(month)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    with connection() as conn, conn.cursor() as cursor:
+        return {"month": first.isoformat()[:7], "suggestions": jsonable(company_pl.suggest_accruals(cursor, first))}
+
+
+class SuggestionIn(BaseModel):
+    company: str
+    job_number: str
+    amount: float = Field(..., gt=0)
+
+
+class AcceptSuggestionsIn(BaseModel):
+    month: str
+    items: list[SuggestionIn]
+    reverse_next_month: bool = True
+
+
+@router.post("/adjustments/suggestions", status_code=201, dependencies=[Depends(require_admin)])
+def accept_suggestions(body: AcceptSuggestionsIn, request: Request) -> dict[str, Any]:
+    """Book the chosen suggestions as subcontractor accruals, reversing next month unless told otherwise."""
+    try:
+        month = company_pl._month(body.month)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    actor = _actor(request)
+    with connection() as conn, conn.cursor() as cursor:
+        ids = []
+        for item in body.items:
+            cursor.execute(
+                """
+                INSERT INTO ops.pl_adjustment (month, kind, category, amount, to_company, to_job, description, reverse_month, created_by, updated_by)
+                VALUES (%s, 'accrual', 'subcontractors', %s, %s, %s, 'Sub invoice not posted; accrued at the prior month less what posted', %s, %s, %s)
+                RETURNING adjustment_id
+                """,
+                (month, item.amount, item.company or None, item.job_number, company_pl.next_month(month) if body.reverse_next_month else None, actor, actor),
+            )
+            ids.append(cursor.fetchone()["adjustment_id"])
+        conn.commit()
+    return {"created": ids}
+
+
+@router.put("/adjustments/{adjustment_id}", dependencies=[Depends(require_admin)])
+def update_adjustment(adjustment_id: int, body: AdjustmentIn, request: Request) -> dict[str, Any]:
+    with connection() as conn, conn.cursor() as cursor:
+        _adjustment_out(cursor, adjustment_id)
+        try:
+            a = company_pl.validate_adjustment(body.model_dump(), company_pl.settings_of(cursor)["groups"])
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        cursor.execute(
+            """
+            UPDATE ops.pl_adjustment SET month = %(month)s, kind = %(kind)s, category = %(category)s, amount = %(amount)s,
+              from_company = %(from_company)s, from_job = %(from_job)s, to_company = %(to_company)s, to_job = %(to_job)s,
+              group_key = %(group_key)s, description = %(description)s, reverse_month = %(reverse_month)s, updated_at = now(), updated_by = %(actor)s
+            WHERE adjustment_id = %(id)s
+            """,
+            {**a, "actor": _actor(request), "id": adjustment_id},
+        )
+        conn.commit()
+        return {"adjustment": _adjustment_out(cursor, adjustment_id)}
+
+
+class ClearIn(BaseModel):
+    cleared: bool = True
+
+
+@router.post("/adjustments/{adjustment_id}/clear", dependencies=[Depends(require_admin)])
+def clear_adjustment(adjustment_id: int, body: ClearIn, request: Request) -> dict[str, Any]:
+    """Mark an accrual cleared (the real invoice posted to the same month, so the accrual no longer applies), or undo that."""
+    with connection() as conn, conn.cursor() as cursor:
+        current = _adjustment_out(cursor, adjustment_id)
+        if current["kind"] != "accrual":
+            raise HTTPException(status_code=422, detail="Only an accrual is cleared")
+        if body.cleared:
+            cursor.execute("UPDATE ops.pl_adjustment SET cleared_at = now(), cleared_by = %s, updated_at = now() WHERE adjustment_id = %s",
+                           (_actor(request), adjustment_id))
+        else:
+            cursor.execute("UPDATE ops.pl_adjustment SET cleared_at = NULL, cleared_by = NULL, updated_at = now() WHERE adjustment_id = %s", (adjustment_id,))
+        conn.commit()
+        return {"adjustment": _adjustment_out(cursor, adjustment_id)}
+
+
+@router.delete("/adjustments/{adjustment_id}", dependencies=[Depends(require_admin)])
+def delete_adjustment(adjustment_id: int) -> dict[str, Any]:
+    with connection() as conn, conn.cursor() as cursor:
+        cursor.execute("DELETE FROM ops.pl_adjustment WHERE adjustment_id = %s RETURNING adjustment_id", (adjustment_id,))
+        if cursor.fetchone() is None:
+            raise HTTPException(status_code=404, detail="Unknown adjustment")
+        conn.commit()
+        return {"deleted": adjustment_id}
+
+
+class ContractIn(BaseModel):
+    effective_from: str
+    monthly_amount: float = Field(..., ge=0)
+    note: str | None = None
+
+
+@router.get("/contracts", dependencies=[Depends(require_admin)])
+def list_contracts(account: str | None = Query(None, description="An account slug")) -> dict[str, Any]:
+    """Monthly contract billing per job and effective date (the contract invoice basis), optionally one account's jobs."""
+    with connection() as conn, conn.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT c.company, c.job_number, c.effective_from, c.monthly_amount, c.note, c.updated_at, c.updated_by, aj.account_slug,
+                   (SELECT j.job_name FROM core.dim_job j WHERE j.job_number = c.job_number AND j.valid_to IS NULL
+                    AND (c.company = '' OR j.company = c.company) LIMIT 1) AS job_name
+            FROM ops.job_contract c
+            LEFT JOIN ops.account_job aj ON aj.job_number = c.job_number AND (c.company = '' OR aj.company = c.company)
+            WHERE %(account)s::text IS NULL OR aj.account_slug = %(account)s
+            ORDER BY c.job_number, c.effective_from
+            """,
+            {"account": account},
+        )
+        return {"contracts": jsonable([dict(r) for r in cursor.fetchall()])}
+
+
+@router.put("/contracts/{company}/{job_number}", dependencies=[Depends(require_admin)])
+def save_contract(company: str, job_number: str, body: ContractIn, request: Request) -> dict[str, Any]:
+    """Upsert one job's contract from a date. `company` '-' means any company."""
+    try:
+        start = date.fromisoformat(body.effective_from[:10])
+    except ValueError:
+        raise HTTPException(status_code=422, detail="effective_from must be YYYY-MM-DD") from None
+    with connection() as conn, conn.cursor() as cursor:
+        company_pl.load_contracts(cursor, [{"company": "" if company == "-" else company, "job_number": job_number, "effective_from": start,
+                                            "monthly_amount": body.monthly_amount}], _actor(request))
+        if body.note is not None:
+            cursor.execute("UPDATE ops.job_contract SET note = %s WHERE company = %s AND job_number = %s AND effective_from = %s",
+                           (body.note or None, "" if company == "-" else company, job_number, start))
+        conn.commit()
+    return list_contracts(None)
+
+
+@router.delete("/contracts/{company}/{job_number}/{effective_from}", dependencies=[Depends(require_admin)])
+def delete_contract(company: str, job_number: str, effective_from: str) -> dict[str, Any]:
+    with connection() as conn, conn.cursor() as cursor:
+        cursor.execute("DELETE FROM ops.job_contract WHERE company = %s AND job_number = %s AND effective_from = %s RETURNING job_number",
+                       ("" if company == "-" else company, job_number, effective_from[:10]))
+        if cursor.fetchone() is None:
+            raise HTTPException(status_code=404, detail="Unknown contract")
+        conn.commit()
+    return list_contracts(None)
 
 
 @router.get("/month", dependencies=[Depends(permissions.require_permission("data.month"))])

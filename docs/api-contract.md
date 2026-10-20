@@ -800,3 +800,39 @@ five days are school or early release).
 A projected trend week (labor still arriving) is scaled for a break: the four-week average labor times the
 week's budget labor over the base weeks' average budget labor when the account has a budget, else times its
 working days (school, early release and staff-only days) over the base weeks' average. Added 2026-10-13.
+
+## Company P&L on Finance's basis, added 2026-10-19
+
+Migration 058, app/company_pl.py, docs/company-pl.md. Source: the WinTeam Cross Tab Income Statement by
+job (import kind `job_income_statement`): every GL line on every job for a month, classified into a
+category: `revenue`, `direct_labor`, `payroll_taxes_insurance`, `subcontractors`, `supplies`,
+`other_direct`, `operating_expense`. Gross profit = revenue − the direct categories; before overhead =
+gross profit − operating expenses on the job. Corporate overhead = the net cost of the overhead jobs
+(setting `company_pl.overhead_jobs`). The overhead rule: each group pays its `fixed_monthly` and its
+direct staff; the rest (the pool) is spread over the groups with `shares_pool` by revenue. Adjustments
+apply first: an accrual adds a line to a job (dropped once cleared; reversed in `reverse_month`), a
+reclass moves an amount between jobs, a staff charge moves overhead to a group.
+
+| Route | Response |
+|---|---|
+| `GET /leadership/company-pl?months=12` | Permission `view.company`; `403` for a user limited to accounts. `{settings, months: [CompanyPlMonth], loaded: [{month, loaded_at, companies}]}` for the last `months` months with Cross Tab lines. `CompanyPlMonth = {month, company: {revenue (every job), operating_revenue (overhead jobs excluded), direct_labor, payroll_taxes_insurance, subcontractors, supplies, other_direct, direct_costs, gross_profit, operating_expense, before_overhead, overhead, net_profit, gross_margin, net_margin, overhead_pct}, overhead: {cost, revenue_on_overhead_jobs, fixed, direct_staff, pool}, groups: [{key, name, <categories>, direct_costs, gross_profit, before_overhead, fixed_charge, direct_staff, pool_charge, pool_share, overhead, after_overhead, margin}], accounts: {slug or other: {name, <categories>, direct_costs, gross_profit, before_overhead, overhead, after_overhead}}, adjustments: [{adjustment_id, kind, category, amount, effect, description, reversal}]}`. Groups add up to `net_profit`. An account carries its jobs' share of their group's overhead by revenue. Empty `months` when no Cross Tab is loaded. |
+| `GET /leadership/company-pl/settings` | Admin. `{settings: {overhead_jobs: [job], groups: [{key, name, accounts: [slug], delivery_model: null \| self_perform \| subcontracted, fixed_monthly, shares_pool, rest}], pool_basis: 'revenue', gl_categories: [{from, to, category}]}, categories}`. A job goes to the first group whose accounts (and delivery model, when set) match; the one `rest` group takes every other job. |
+| `PUT /leadership/company-pl/settings` | Admin. Any of the settings keys; `422` when no group or more than one takes the rest, no group shares the pool, a key repeats or a GL range is invalid. Lines already loaded keep their category; reload a file to reclassify. |
+| `GET /leadership/adjustments?months=12` | Admin. `{adjustments: [PlAdjustment], groups: [{key, name}], categories}`. `PlAdjustment = {adjustment_id, month, kind: accrual \| reclass \| staff, category, amount, from_company, from_job, to_company, to_job, group_key, description, reverse_month, cleared_at, cleared_by, created_at, created_by, updated_at, updated_by}`. |
+| `POST /leadership/adjustments` | Admin. Body `{month: YYYY-MM, kind, category, amount, description, to_job, to_company, from_job, from_company, group_key, reverse_month}`; `201 {adjustment}`. An accrual needs `to_job`; a reclass `from_job`, `to_job` and a positive amount; a staff charge a `group_key` (category is `operating_expense`); only an accrual reverses, in a later month. `422` otherwise. |
+| `GET /leadership/adjustments/suggestions?month=YYYY-MM` | Admin. `{month, suggestions: [{company, job_number, job_name, revenue, subcontractors, prior_subcontractors, relay_ap, relay_not_in_winteam, amount}]}`: subcontracted Relay (FedEx) sites billed in the month (GL revenue or Relay AR) whose subcontractor cost on the GL (the Cross Tab when the month is loaded, else job cost) is under 90% of the month before; `amount` = prior month − posted. Sites with an open subcontractor accrual for the month are left out. Largest first. |
+| `POST /leadership/adjustments/suggestions` | Admin. `{month, items: [{company, job_number, amount}], reverse_next_month: true}`; books each as a subcontractor accrual (reversing the next month by default); `201 {created: [id]}`. |
+| `PUT /leadership/adjustments/{id}` | Admin. Same body; `{adjustment}`; `404` unknown. |
+| `POST /leadership/adjustments/{id}/clear` | Admin. `{cleared: bool}`: the real invoice posted to the accrual's month, so it no longer applies (or undo). `422` for a non-accrual. |
+| `DELETE /leadership/adjustments/{id}` | Admin. `{deleted}`. |
+| `GET /leadership/contracts?account=` | Admin. `{contracts: [{company, job_number, job_name, account_slug, effective_from, monthly_amount, note, updated_at, updated_by}]}`. `company` '' applies to the job number in any company. |
+| `PUT /leadership/contracts/{company}/{job_number}` | Admin. `{effective_from: YYYY-MM-DD, monthly_amount, note}` (`company` `-` = any); upserts and returns the list. |
+| `DELETE /leadership/contracts/{company}/{job_number}/{effective_from}` | Admin. Returns the list; `404` unknown. |
+
+Invoice basis (`ops.account.invoice_basis`) adds `latest_fixed_avg_variable` (the revenue month's fixed
+billing, revenue − variable, plus the 3-month average variable billing; the revenue month when the Job Cost
+Analysis has no split) and `contract` (the job's contract in effect on the week's last day, else the revenue
+month). FedEx uses the first and Crowley ISD the second (migration 058). Rows of `GET /leadership/rows` and a
+site's weeks add `contract_month`. Import kinds add `job_income_statement`
+(file name `job_income_statement_*` or containing "Cross Tab"; a file replaces its month and company) and
+`contract` (columns Company, Job Number, Effective From, Monthly Amount; upserted).

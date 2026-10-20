@@ -18,6 +18,10 @@ Two feeds, CSV (UTF-8, header row) or XLSX (first sheet):
 * `income_statement` - Trend Income Statement lines by account and month (account, period, line,
   amount). A file replaces its accounts' months. Lines are normalized to IS_LINES keys. Account
   "Company" (or All, Total, Crane IFS) is the company-wide statement behind the allocations.
+* `job_income_statement` - the Cross Tab Income Statement by job: every GL line on every job for a
+  month (app/company_pl.py parses it, title rows included). A file replaces its month (and company).
+* `contract` - monthly contract billing per job with an effective date (company, job number,
+  effective from, monthly amount), the `contract` invoice basis. Upserted by job and date.
 
 Headers are matched case- and punctuation-insensitively against the WinTeam column names in
 FIELD_ALIASES, so "TotalLaborDollars", "Total Labor Dollars" and "total_labor_dollars" are the same
@@ -39,12 +43,12 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Iterable
 
-from . import native_exports
+from . import company_pl, native_exports
 from .sources import rules
 
 logger = logging.getLogger(__name__)
 
-KINDS = ("pay_report", "job_cost", "income_statement", "service_feedback", "qa_score")
+KINDS = ("pay_report", "job_cost", "income_statement", "service_feedback", "qa_score", "job_income_statement", "contract")
 # Income statement Account values that mean the company-wide statement (allocations, Company view).
 COMPANY_SCOPE = "__company__"
 COMPANY_WORDS = {"company", "all", "total", "crane ifs", "all companies", "consolidated"}
@@ -160,10 +164,14 @@ def header_map(kind: str, headers: Iterable[Any]) -> dict[str, str]:
 
 def detect_kind(file_name: str, headers: Iterable[Any]) -> str | None:
     name = file_name.lower()
-    for kind in KINDS:
+    for kind in sorted(KINDS, key=len, reverse=True):  # job_income_statement before income_statement
         if name.startswith(kind):
             return kind
+    if re.search(r"cross\s*tab", name):
+        return "job_income_statement"
     keys = {compact(h) for h in headers}
+    if keys & {"effectivefrom", "effectivedate"} and keys & {"monthlyamount", "monthlycontract", "contractamount"}:
+        return "contract"
     if {"totallabordollars", "workdate"} <= keys or {"totaldollars", "workdate"} <= keys:
         return "pay_report"
     if "revenue" in keys and ("directlabor" in keys or "grossprofit" in keys):
@@ -640,12 +648,16 @@ def load_file(conn: Any, file_name: str, content: bytes, *, kind: str | None = N
             read_error = f"could not read the file: {exc.__class__.__name__}"
         else:
             read_error = None
+        if kind == "job_income_statement" or (kind is None and detect_kind(file_name, headers) == "job_income_statement"):
+            return _load_job_income_statement(conn, cursor, file_name, content, digest, origin, uploaded_by)
+        if kind == "contract" or (kind is None and detect_kind(file_name, headers) == "contract"):
+            return _load_contract_file(conn, cursor, file_name, headers, rows, digest, origin, uploaded_by)
         layout = native_exports.native_layout(headers)
         if layout and kind not in (None, native_exports.LAYOUT_KIND[layout]):
             layout = None
         kind = native_exports.LAYOUT_KIND[layout] if layout else (kind or detect_kind(file_name, headers))
         if kind not in KINDS:
-            errors = [read_error or "unknown feed: name the file pay_report_*, job_cost_*, income_statement_*, service_feedback_* or qa_score_*, or use the documented column names"]
+            errors = [read_error or "unknown feed: name the file pay_report_*, job_cost_*, income_statement_*, job_income_statement_*, contract_*, service_feedback_* or qa_score_*, or use the documented column names"]
             return _log(cursor, conn, kind or "pay_report", file_name, digest, origin, "failed", len(rows), 0, [], None, None, errors, uploaded_by)
         cursor.execute("SELECT import_file_id FROM ops.import_file WHERE kind = %s AND sha256 = %s AND status = 'loaded'", (kind, digest))
         if cursor.fetchone():
@@ -704,6 +716,52 @@ def load_file(conn: Any, file_name: str, content: bytes, *, kind: str | None = N
             _load_job_cost(cursor, result["import_file_id"], parsed.records, replace_months=layout == "job_cost_gl")
     conn.commit()
     logger.info("Imported %s %s: %s of %s rows", kind, file_name, result["rows_loaded"], result["rows_read"])
+    return result
+
+
+def _company_names(cursor: Any) -> list[str]:
+    cursor.execute("SELECT DISTINCT company FROM core.dim_job WHERE company IS NOT NULL")
+    return [r["company"] for r in cursor.fetchall()] + list(_company_aliases(cursor).values())
+
+
+def _duplicate(cursor: Any, kind: str, digest: str) -> bool:
+    cursor.execute("SELECT import_file_id FROM ops.import_file WHERE kind = %s AND sha256 = %s AND status = 'loaded'", (kind, digest))
+    return cursor.fetchone() is not None
+
+
+def _load_job_income_statement(conn: Any, cursor: Any, file_name: str, content: bytes, digest: str, origin: str,
+                               uploaded_by: str | None) -> dict[str, Any]:
+    kind = "job_income_statement"
+    if _duplicate(cursor, kind, digest):
+        return _log(cursor, conn, kind, file_name, digest, origin, "duplicate", 0, 0, [], None, None, [], uploaded_by)
+    cfg = company_pl.settings_of(cursor)
+    parsed = company_pl.parse(file_name, content, cfg["gl_categories"], _company_names(cursor))
+    if not parsed.records:
+        return _log(cursor, conn, kind, file_name, digest, origin, "failed", parsed.rows_read, 0, [], None, None, parsed.errors or ["no rows"], uploaded_by)
+    months = [r["month"] for r in parsed.records]
+    companies = sorted({r["company"] for r in parsed.records if r["company"]})
+    result = _log(cursor, None, kind, file_name, digest, origin, "loaded", parsed.rows_read, len(parsed.records), companies,
+                  min(months), max(months), parsed.errors, uploaded_by)
+    company_pl.load_lines(cursor, result["import_file_id"], parsed.records)
+    conn.commit()
+    logger.info("Imported %s %s: %s lines", kind, file_name, len(parsed.records))
+    return result
+
+
+def _load_contract_file(conn: Any, cursor: Any, file_name: str, headers: list[str], rows: list[dict[str, Any]], digest: str,
+                        origin: str, uploaded_by: str | None) -> dict[str, Any]:
+    kind = "contract"
+    if _duplicate(cursor, kind, digest):
+        return _log(cursor, conn, kind, file_name, digest, origin, "duplicate", len(rows), 0, [], None, None, [], uploaded_by)
+    parsed = company_pl.parse_contracts(headers, rows)
+    if not parsed.records:
+        return _log(cursor, conn, kind, file_name, digest, origin, "failed", parsed.rows_read, 0, [], None, None, parsed.errors or ["no rows"], uploaded_by)
+    dates = [r["effective_from"] for r in parsed.records]
+    companies = sorted({r["company"] for r in parsed.records if r["company"]})
+    result = _log(cursor, None, kind, file_name, digest, origin, "loaded", parsed.rows_read, len(parsed.records), companies,
+                  min(dates), max(dates), parsed.errors, uploaded_by)
+    company_pl.load_contracts(cursor, parsed.records, uploaded_by)
+    conn.commit()
     return result
 
 

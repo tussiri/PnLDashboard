@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import fixture from './fixtures/plano-we-2026-09-20.json'
 import { hours, hours1, money, moneyK, pct, pts, rate } from './format'
-import { accountSummary, baseRateOf, cutRow, cutSummary, invoiceOf, siteMetrics, statusOf, type MetricOptions, type WeekRow } from './metrics'
+import { accountSummary, baseRateOf, cutRow, cutSummary, invoiceOf, monthlyInvoiceOf, siteMetrics, statusOf, type MetricOptions, type WeekRow } from './metrics'
 
 // Expected values were produced by running the reference dashboard's own script on its embedded data.
 const rows = fixture.rows as WeekRow[]
@@ -219,5 +219,21 @@ describe('leadership formats', () => {
     expect(pct(null)).toBe('–')
     expect(pts(-0.024)).toBe('−2.4pp')
     expect(rate(16.6)).toBe('$16.60')
+  })
+})
+
+describe('Finance invoice bases', () => {
+  const row = { revenue_month_amount: 70000, revenue_run_rate: 60000, revenue_month_variable: 30000, variable_run_rate: 24000, contract_month: 25575 }
+  it('latest fixed plus the 3-month average variable (FedEx)', () => {
+    expect(monthlyInvoiceOf(row, 'latest_fixed_avg_variable')).toBe(40000 + 24000)
+    expect(monthlyInvoiceOf({ ...row, revenue_month_variable: null }, 'latest_fixed_avg_variable')).toBe(70000)
+  })
+  it('the month contract, else the revenue month (Crowley)', () => {
+    expect(monthlyInvoiceOf(row, 'contract')).toBe(25575)
+    expect(monthlyInvoiceOf({ ...row, contract_month: null }, 'contract')).toBe(70000)
+  })
+  it('keeps last month and the run rate', () => {
+    expect(monthlyInvoiceOf(row, 'last_month')).toBe(70000)
+    expect(monthlyInvoiceOf(row, 'run_rate_3m')).toBe(60000)
   })
 })
