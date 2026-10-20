@@ -6,8 +6,12 @@ left alone.
 
 ## What it does
 
-- Every 30 minutes (and once in the nightly run), it lists inbox messages with attachments received
-  since the last one it handled, with a day of overlap.
+- Every 30 minutes (and once in the nightly run), it lists messages with attachments in **every
+  folder** of the mailbox received since the last one it handled, with a day of overlap. Every folder,
+  because the HR dashboard reads the same mailbox and moves what it processes into its imported,
+  failed and ignored folders, often before this poll runs. Message ids are requested immutable
+  (`Prefer: IdType="ImmutableId"`), so a moved message is still recognized as handled. The first
+  mailbox-wide poll reaches back 31 days to pick up mail moved before this change.
 - It opens only CSV and Excel attachments. A file is loaded when its columns match a dashboard feed
   (docs/export-feeds.md): the Pay Report or timekeeping labor summary, the Job Cost Analysis (either
   layout) or the Trend Income Statement. It goes through the same importer as an upload, so the
