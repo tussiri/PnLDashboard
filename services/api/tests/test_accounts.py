@@ -53,10 +53,10 @@ def test_resolve_segment_falls_back_to_the_account_fallback(source, company, sub
 
 
 def test_amazon_seed_matches_the_weekly_report():
-    """The Amazon P&L report (v6_56) carries 14 Crane sites; project, management and closed jobs are held out."""
+    """The Amazon P&L report (v6_56) carries 14 Crane sites, plus UIL2 (757); project, management and closed jobs are held out."""
     amazon = next(a for a in load_seed_file()["accounts"] if a["slug"] == "amazon")
     sites = {(j["company"], j["job_number"]) for j in amazon["jobs"]}
-    assert len(sites) == 14 and ("Crane West", "500") in sites and ("Sarus", "300") in sites
+    assert len(sites) == 15 and ("Crane West", "500") in sites and ("Crane IFS", "757") in sites and ("Sarus", "300") in sites
     excluded = {(j["company"], j["job_number"]) for j in amazon["exclude_jobs"]}
     assert ("Crane IFS", "506") in excluded and ("Crane West", "502") in excluded and not sites & excluded
     bad = copy.deepcopy(load_seed_file())
