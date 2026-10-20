@@ -190,21 +190,50 @@ export function OverTargetChart({ labels, premium, sub, extra, subLabel }: { lab
   return <Bar data={data} options={options} aria-label="Hours over target by site: OT premium, vendor cost and extra hours" role="img" />
 }
 
-/** Cumulative revenue and cost through the year, month by month (the running tally). */
-export function RunningTallyChart({ labels, revenue, labor, sub, subLabel }: { labels: string[]; revenue: number[]; labor: number[]; sub: number[]; subLabel: string }) {
+export function CutTrendChart({ labels, worked, premium, sub, allowance, subLabel }: {
+  labels: string[]; worked: (number | null)[]; premium: (number | null)[]; sub: (number | null)[]; allowance: (number | null)[]; subLabel: string
+}) {
+  const t = useTokens()
+  const o = base(t)
+  const stack = { ...bar, borderRadius: 0, stack: 'hours' }
+  const data = { labels, datasets: [
+    { type: 'bar' as const, label: 'Worked', data: worked, backgroundColor: t.accent2, ...stack },
+    { type: 'bar' as const, label: 'OT premium', data: premium, backgroundColor: t.warn, ...stack },
+    { type: 'bar' as const, label: subLabel, data: sub, backgroundColor: t.muted, ...stack },
+    { type: 'line' as const, label: 'Allowance', data: allowance, borderColor: t.text, borderDash: [5, 4], borderWidth: 1.5, pointRadius: 0, pointHitRadius: 6, spanGaps: true },
+  ] } as unknown as ChartData<'bar'>
+  const options: ChartOptions<'bar'> = { ...o,
+    interaction: { mode: 'index', intersect: false },
+    scales: { x: { ...o.scales!.x, stacked: true, grid: { display: false } }, y: { ...o.scales!.y, stacked: true, beginAtZero: true, title: { display: true, text: 'Hours', color: t.text3 } } },
+    plugins: { ...o.plugins, tooltip: { ...o.plugins!.tooltip, callbacks: { label: (c) => `${c.dataset.label}: ${c.parsed.y == null ? '–' : fmtHours(c.parsed.y)} h` } } } }
+  return <Chart type="bar" data={data} options={options} aria-label="Hours worked, OT premium and sub hours by week against the allowance" role="img" />
+}
+
+/** Weekly bars of one money series against a lighter comparison series (the CDO's labor cost vs budget, OT cost by week). */
+export function WeekBarsChart({ labels, values, compare, valueLabel, compareLabel, color, current }: { labels: string[]; values: (number | null)[]; compare?: (number | null)[]
+  valueLabel: string; compareLabel?: string; color: string; current: number }) {
+  const t = useTokens()
+  const o = base(t)
+  const data = { labels, datasets: [
+    ...(compare ? [{ label: compareLabel ?? '', data: compare, backgroundColor: withAlpha(color, 0.25), ...bar }] : []),
+    { label: valueLabel, data: values, backgroundColor: labels.map((_, i) => (i === current ? color : withAlpha(color, 0.6))), ...bar },
+  ] }
+  const options: ChartOptions<'bar'> = { ...o, interaction: { mode: 'index', intersect: false },
+    scales: { x: { ...o.scales!.x, grid: { display: false } }, y: { ...o.scales!.y, beginAtZero: true, ticks: { color: t.text2, callback: (v) => `$${Math.round(Number(v) / 1000)}K` } } },
+    plugins: { ...o.plugins, tooltip: { ...o.plugins!.tooltip, callbacks: { label: (c) => `${c.dataset.label}: ${money(c.parsed.y)}` } } } }
+  return <Bar data={data} options={options} aria-label={compare ? `${valueLabel} against ${compareLabel} by week` : `${valueLabel} by week`} role="img" />
+}
+
+/** A small filled line for a site trend grid; the selected week is the larger point. */
+export function Sparkline({ labels, values, color, current, format, min }: { labels: string[]; values: (number | null)[]; color: string; current: number; format: (v: number) => string; min?: number }) {
   const t = useTokens()
   const o = base(t) as unknown as ChartOptions<'line'>
-  const line = { borderWidth: 2, pointRadius: 3, pointHoverRadius: 5, pointBorderColor: t.bg, pointBorderWidth: 2, tension: 0 }
-  const data = { labels, datasets: [
-    { label: 'Revenue', data: revenue, borderColor: t.accent, backgroundColor: t.accent, ...line },
-    { label: 'Labor', data: labor, borderColor: t.bad, backgroundColor: t.bad, ...line },
-    ...(sub.some((v) => v > 0) ? [{ label: `Labor + ${subLabel.toLowerCase()}`, data: labor.map((v, i) => v + sub[i]), borderColor: t.warn, backgroundColor: t.warn, borderDash: [5, 4], ...line }] : []),
-  ] }
+  const data = { labels, datasets: [{ data: values, borderColor: color, backgroundColor: withAlpha(color, 0.13), fill: true, tension: 0.3, borderWidth: 1.5, spanGaps: true,
+    pointRadius: labels.map((_, i) => (i === current ? 4 : 2)), pointBackgroundColor: labels.map((_, i) => (i === current ? color : withAlpha(color, 0.55))), pointBorderWidth: 0 }] }
   const options: ChartOptions<'line'> = { ...o,
-    interaction: { mode: 'index', intersect: false },
-    scales: { x: { ...o.scales!.x, grid: { display: false } }, y: { ...o.scales!.y, beginAtZero: true, ticks: { color: t.text2, callback: (v) => (Number(v) >= 1_000_000 ? `$${(Number(v) / 1_000_000).toFixed(1)}M` : `$${Math.round(Number(v) / 1000)}K`) } } },
-    plugins: { ...o.plugins, tooltip: { ...o.plugins!.tooltip, callbacks: { label: (c) => `${c.dataset.label}: ${money(c.parsed.y)}` } } } }
-  return <Line data={data} options={options} aria-label="Cumulative revenue and labor through the year" role="img" />
+    scales: { x: { display: false }, y: { ...o.scales!.y, min, ticks: { color: t.text3, font: { size: 9 }, maxTicksLimit: 4, callback: (v) => format(Number(v)) } } },
+    plugins: { ...o.plugins, tooltip: { ...o.plugins!.tooltip, callbacks: { label: (c) => (c.parsed.y == null ? 'No data' : format(c.parsed.y)) } } } }
+  return <Line data={data} options={options} role="img" aria-label="Trend" />
 }
 
 const tone = (t: Tokens, x: 'ok' | 'warn' | 'bad' | 'neutral') => (x === 'neutral' ? t.muted : t[x])
