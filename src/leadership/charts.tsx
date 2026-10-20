@@ -173,23 +173,38 @@ export function TrendChart({ labels, values, target, label, targets }: { labels:
 }
 
 /** One site's weeks: worked, OT premium and sub hours stacked, against the allowance at target. */
-export function CutTrendChart({ labels, worked, premium, sub, allowance, subLabel }: {
-  labels: string[]; worked: (number | null)[]; premium: (number | null)[]; sub: (number | null)[]; allowance: (number | null)[]; subLabel: string
-}) {
+/** Hours over target by site, stacked by cause: OT premium, vendor cost and extra hours (the FedEx report's Over Target chart). */
+export function OverTargetChart({ labels, premium, sub, extra, subLabel }: { labels: string[]; premium: number[]; sub: number[]; extra: number[]; subLabel: string }) {
   const t = useTokens()
   const o = base(t)
-  const stack = { ...bar, borderRadius: 0, stack: 'hours' }
+  const stack = { ...bar, borderRadius: 0, stack: 'over' }
   const data = { labels, datasets: [
-    { type: 'bar' as const, label: 'Worked', data: worked, backgroundColor: t.accent2, ...stack },
-    { type: 'bar' as const, label: 'OT premium', data: premium, backgroundColor: t.warn, ...stack },
-    { type: 'bar' as const, label: subLabel, data: sub, backgroundColor: t.muted, ...stack },
-    { type: 'line' as const, label: 'Allowance', data: allowance, borderColor: t.text, borderDash: [5, 4], borderWidth: 1.5, pointRadius: 0, pointHitRadius: 6, spanGaps: true },
-  ] } as unknown as ChartData<'bar'>
-  const options: ChartOptions<'bar'> = { ...o,
+    { label: 'OT premium', data: premium, backgroundColor: t.warn, ...stack },
+    { label: subLabel, data: sub, backgroundColor: t.accent2, ...stack },
+    { label: 'Extra hours', data: extra, backgroundColor: t.bad, ...stack },
+  ] }
+  const options: ChartOptions<'bar'> = { ...o, indexAxis: 'y',
+    interaction: { mode: 'index', axis: 'y', intersect: false },
+    scales: { x: { ...o.scales!.x, stacked: true, title: { display: true, text: 'Base-rate equivalent hours', color: t.text3 } }, y: { ...o.scales!.y, stacked: true, grid: { display: false } } },
+    plugins: { ...o.plugins, tooltip: { ...o.plugins!.tooltip, callbacks: { label: (c) => `${c.dataset.label}: ${c.parsed.x.toFixed(1)} h` } } } }
+  return <Bar data={data} options={options} aria-label="Hours over target by site: OT premium, vendor cost and extra hours" role="img" />
+}
+
+/** Cumulative revenue and cost through the year, month by month (the running tally). */
+export function RunningTallyChart({ labels, revenue, labor, sub, subLabel }: { labels: string[]; revenue: number[]; labor: number[]; sub: number[]; subLabel: string }) {
+  const t = useTokens()
+  const o = base(t) as unknown as ChartOptions<'line'>
+  const line = { borderWidth: 2, pointRadius: 3, pointHoverRadius: 5, pointBorderColor: t.bg, pointBorderWidth: 2, tension: 0 }
+  const data = { labels, datasets: [
+    { label: 'Revenue', data: revenue, borderColor: t.accent, backgroundColor: t.accent, ...line },
+    { label: 'Labor', data: labor, borderColor: t.bad, backgroundColor: t.bad, ...line },
+    ...(sub.some((v) => v > 0) ? [{ label: `Labor + ${subLabel.toLowerCase()}`, data: labor.map((v, i) => v + sub[i]), borderColor: t.warn, backgroundColor: t.warn, borderDash: [5, 4], ...line }] : []),
+  ] }
+  const options: ChartOptions<'line'> = { ...o,
     interaction: { mode: 'index', intersect: false },
-    scales: { x: { ...o.scales!.x, stacked: true, grid: { display: false } }, y: { ...o.scales!.y, stacked: true, beginAtZero: true, title: { display: true, text: 'Hours', color: t.text3 } } },
-    plugins: { ...o.plugins, tooltip: { ...o.plugins!.tooltip, callbacks: { label: (c) => `${c.dataset.label}: ${c.parsed.y == null ? '–' : fmtHours(c.parsed.y)} h` } } } }
-  return <Chart type="bar" data={data} options={options} aria-label="Hours worked, OT premium and sub hours by week against the allowance" role="img" />
+    scales: { x: { ...o.scales!.x, grid: { display: false } }, y: { ...o.scales!.y, beginAtZero: true, ticks: { color: t.text2, callback: (v) => (Number(v) >= 1_000_000 ? `$${(Number(v) / 1_000_000).toFixed(1)}M` : `$${Math.round(Number(v) / 1000)}K`) } } },
+    plugins: { ...o.plugins, tooltip: { ...o.plugins!.tooltip, callbacks: { label: (c) => `${c.dataset.label}: ${money(c.parsed.y)}` } } } }
+  return <Line data={data} options={options} aria-label="Cumulative revenue and labor through the year" role="img" />
 }
 
 const tone = (t: Tokens, x: 'ok' | 'warn' | 'bad' | 'neutral') => (x === 'neutral' ? t.muted : t[x])

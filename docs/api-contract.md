@@ -417,7 +417,7 @@ do (White Settlement ISD on job 112, Crowley ISD on job 910), that revenue is sp
 present in the week by revenue-month budget hours, else revenue-month actual hours (migration 033,
 computed at read time): `revenue_month_amount` and `prior_revenue` include it and
 `revenue_allocated` shows the amount moved onto (+) or off (-) the row, `allocation_weight` the weight used
-(`budget_hours` | `actual_hours` | `week_hours`, null when nothing moved). `PUT /leadership/accounts/{slug}` also accepts `revenue_allocation`, `cost_basis`, `segment_label` and `vendor_label` (1 to 30 characters; migration 036). The views use the weekly reports' vocabulary: Invoicing, Direct labor, the account's `vendor_label` (Agency sub, Subcontractor), Total labor, Labor % = total labor ÷ invoicing, On track / Watch / High, pp WoW, Budget and $ Var, and Hours to cut (worked + OT premium + sub hours against the allowance at target, per day); groups are named by `segment_label` (BU for Amazon).
+(`budget_hours` | `actual_hours` | `week_hours`, null when nothing moved). `PUT /leadership/accounts/{slug}` also accepts `revenue_allocation`, `cost_basis`, `segment_label` and `vendor_label` (1 to 30 characters; migration 036). The views use the weekly reports' vocabulary: Invoicing, Direct labor, the account's `vendor_label` (Agency sub, Subcontractor), Total labor, Labor % = total labor ÷ invoicing, On track / Watch / High, pp WoW, Budget and $ Var, and Hours to cut / Over Target (hours over target split into OT premium, vendor cost and extra hours, as the FedEx report); groups are named by `segment_label` (BU for Amazon).
 
 ## Relay (FedEx) feeds, added 2026-09-24
 

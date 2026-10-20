@@ -192,6 +192,18 @@ describe('hours to cut (the weekly report model)', () => {
     expect(otOnly.fixedByOt).toBe(true)
     expect(cutRow(siteMetrics({ ...base, labor: 0, hours: 0, sub_week: 900 }, o))).toBeNull()
   })
+
+  it('splits hours over target into OT premium, sub cost and extra hours, as the FedEx Over Target tab', () => {
+    const base = { job_number: '1', site_name: 'S', segment: 'A', role: 'site' as const, revenue_month_amount: 4330, labor: 800, hours: 40, ot_hours: 0, ot_dollars: 0, budget_hours: 0, budget_dollars: 0, prior_revenue: 0, prior_labor: 0, prior_sub: 0 }
+    const withSub = siteMetrics({ ...base, sub_week: 200 }, { target: 0.5, costBasis: 'labor_plus_vendor' })
+    expect(withSub.overHours).toBeCloseTo(25, 10) // ($1,000 cost - $500 allowed) / $20
+    expect(withSub.overFromOtPremium).toBe(0)
+    expect(withSub.overFromSub).toBeCloseTo(10, 10)
+    expect(withSub.overFromExtraHours).toBeCloseTo(15, 10)
+    const small = siteMetrics({ ...base, labor: 520, hours: 24, ot_hours: 4, sub_week: 200 }, { target: 0.5, costBasis: 'labor_plus_vendor' })
+    expect(small.overFromOtPremium + small.overFromSub).toBeCloseTo(small.overHours, 10) // sub capped at what is left
+    expect(small.overFromExtraHours).toBeCloseTo(0, 10)
+  })
 })
 
 describe('leadership formats', () => {
