@@ -1,14 +1,14 @@
 import { useMemo, type ReactNode } from 'react'
 import type { BudgetMonth, BudgetWeek, LeadershipAccount, LeadershipMonthlyJob, LeadershipRow, SchoolWeek } from '../services/apiTypes'
 import { Badge, ChartCard, Kpi, Skeleton, Swatch, toneOf, useVocab } from './ui'
-import { LaborMixChart, MonthWeekTrendChart, SegmentTrendChart, SiteLpChart, useTokens } from './charts'
+import { GroupTrendGrid } from './AmazonCharts'
+import { LaborMixChart, MonthWeekTrendChart, SegmentTrendChart, SiteLpChart, useTokens, WeekBarsChart } from './charts'
 import { closedMonths, includesVendor, inSentence, isSubcontracted, monthLaborPct, monthRevenue, priorMonth, rowsOfWeek, schoolWeekNote, segmentLabel, segmentOrder, siteMonths, useMonthly, useMonthRows, useRows, vendorLabel, weekBudgetOf, type DataFlags, type WeekBudget } from './data'
 import { hours, hours1, money, moneyK, pct } from './format'
 import { accountSummary, statusOf, type AccountNote, type AccountSummary, type MetricOptions, type SiteMetrics } from './metrics'
 import { addDays, monthLabel, monthShort, TREND_WEEKS_DEFAULT, TREND_WEEKS_MAX, TREND_WEEKS_MIN, weekEndOf, weekTick } from './routes'
 import { projectRecentWeeks, PROJECTION_BASE_WEEKS } from './projection'
 import { QaCards } from './Qa'
-import { RunningTally } from './RunningTally'
 import { useLeadership } from './state'
 import { billingSources, invoiceLabel, weekChange, wordsFor } from './vocab'
 
@@ -51,7 +51,12 @@ export function Notes({ summary, account, flags, options, revenueMonth, extra = 
   add('', 'lp', 'Labor %', `(${w.direct} labor${summary.sites.some((r) => (r.pallet_labor ?? 0) > 0) ? ' + pallet' : ''}${vendorPart}) ÷ ${invoiceLabel(w, account.vocabulary ?? 'amazon', options.period).toLowerCase()}`)
   if (options.segmentTargets && Object.keys(options.segmentTargets).length) add('', 'segt', `${segmentLabel(account)} targets`, Object.entries(options.segmentTargets).map(([s, t]) => `${s} ${pct(t)}`).join(', '))
   if (!items.length) return null
-  return <dl className="notes">{items.map((i) => <div key={i.key}><dt className={i.tone}>{i.label}</dt><dd>{i.body}</dd></div>)}</dl>
+  // Collapsed to one line so the page leads with numbers; a warning or failure tints the line.
+  const worst = items.some((i) => i.tone === 'bad') ? 'bad' : items.some((i) => i.tone === 'warn') ? 'warn' : ''
+  return <details className="notes-box">
+    <summary className={worst}>Notes<span className="neutral"> · {items.map((i) => i.label).join(', ')}</span></summary>
+    <dl className="notes">{items.map((i) => <div key={i.key}><dt className={i.tone}>{i.label}</dt><dd>{i.body}</dd></div>)}</dl>
+  </details>
 }
 
 type Row = SiteMetrics<LeadershipRow>
@@ -202,6 +207,7 @@ export function Overview({ account, rows, summary, options, flags, headline = tr
     <input type="range" min={TREND_WEEKS_MIN} max={TREND_WEEKS_MAX} step={1} value={trendWeeks} aria-label="Weeks in the trends"
       onChange={(e) => { const n = Number(e.target.value); navigate({ trendWeeks: n === TREND_WEEKS_DEFAULT ? undefined : n }, { replace: true }) }} />
     <output>{trendWeeks}</output></label>
+  const otByWeek = shownWeeks.map((x) => weeks.find((w) => w.week === x.week)?.s?.otDollars ?? null)
   const trendCurrent = monthMode ? trend.findIndex((x) => month && x.key.slice(0, 7) === month) : trend.findIndex((x) => x.key === weekStart)
   const thisWeekBudget = period === 'week' && weekStart ? budgetOf(weekStart) : null
   const budgetWeek = thisWeekBudget?.labor ?? null
@@ -251,7 +257,6 @@ export function Overview({ account, rows, summary, options, flags, headline = tr
         lp={null} lpTone="" otCost={summary.nonBilled.otDollars} otPrior={prevSummary?.nonBilled.otDollars ?? null} otHours={summary.nonBilled.otHours} changeWord={changeWord} w={w} />}
     </div>
     {afterGroups}
-    <RunningTally account={account} />
     {(trend.length > 1 || !monthMode) && <ChartCard title={monthMode ? `${w.trendTitle} by month` : `${w.trendTitle}, last ${trendWeeks} weeks`} height={260}
       action={weeksSlider}
       legend={<><Swatch color={t.accent2} label={monthMode ? 'Month' : 'Week'} /><Swatch color={t.accent} label={monthMode ? 'Selected month' : 'Selected week'} /><Swatch line color={t.text2} label={invoiceLabel(w, vocab, period)} />
@@ -274,6 +279,11 @@ export function Overview({ account, rows, summary, options, flags, headline = tr
       table={<div className="tw"><table><thead><tr><th className="nosort l">{monthMode ? 'Month' : 'Week ending'}</th>{segSeries.map((s) => <th key={s.name} className="nosort">{s.name}</th>)}{weekTargets && <th className="nosort">Budget target</th>}</tr></thead>
         <tbody>{trend.map((x, i) => <tr key={x.key}><td className="l">{x.label}{projectedFlags?.[i] ? ' (projected)' : ''}</td>{segSeries.map((s) => <td key={s.name} className={toneOf(statusOf(s.values[i], s.target, options.watchBand))}>{pct(s.values[i])}</td>)}
           {weekTargets && <td>{pct(weekTargets[i])}</td>}</tr>)}</tbody></table></div>} />}
+    {vocab === 'amazon' && !monthMode && shownWeeks.length > 1 && <ChartCard title={`OT cost, last ${trendWeeks} weeks`} height={200} action={weeksSlider}
+      chart={<WeekBarsChart labels={trend.map((x) => x.label)} values={otByWeek} valueLabel="OT cost" color={t.warn} current={trendCurrent} />}
+      table={<table><thead><tr><th className="nosort l">Week ending</th><th className="nosort">OT cost</th></tr></thead>
+        <tbody>{trend.map((x, i) => <tr key={x.key}><td className="l">{x.label}</td><td>{money(otByWeek[i])}</td></tr>)}</tbody></table>} />}
+    {vocab === 'amazon' && <GroupTrendGrid labels={trend.map((x) => x.label)} series={segSeries} current={trendCurrent} />}
     {billed.length > 0 && <div className="charts2">
       <ChartCard title={`Labor % by ${subSites ? 'self-performed ' : ''}site this ${period}`} height={Math.max(200, sorted.length * 16 + 60)}
         legend={<><Swatch color={t.ok} label={vocab === 'fedex' ? 'On target' : 'On track'} /><Swatch color={t.warn} label="Watch" /><Swatch color={t.bad} label={vocab === 'fedex' ? 'Over' : 'High'} /><Swatch line label={`Target ${pct(target)}`} /></>}

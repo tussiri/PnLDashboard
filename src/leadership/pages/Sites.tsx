@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { LeadershipAccount, LeadershipFeedbackResponse, LeadershipRow } from '../../services/apiTypes'
+import { SiteCharts } from '../AmazonCharts'
 import { scoreTone, stars } from './Feedback'
 import { closedMonths, includesVendor, inRegion, monthLaborPct, regionOf, siteMonths, subregionOf, useMonthly, vendorLabel } from '../data'
 import { hours1, money, pct } from '../format'
@@ -23,7 +24,8 @@ export const roleBadge = (r: Row) => (r.role === 'catch_all' ? <Badge status="no
 export function Sites({ account, summary, options, selfOnly, ratings }: { account: LeadershipAccount; summary: AccountSummary<LeadershipRow>; options: MetricOptions; selfOnly: boolean
   /** Customer feedback by site over 12 months (Feedback tab data), when the account has any. */
   ratings?: LeadershipFeedbackResponse['by_site'] }) {
-  const { navigate, can, route } = useLeadership()
+  const { navigate, can, route, weekStart, monthMode } = useLeadership()
+  const charts = account.vocabulary === 'amazon' && !monthMode
   const w = wordsFor(useVocab())
   const [filter, setFilter] = useState('All')
   const monthly = useMonthly(account.slug)
@@ -107,8 +109,10 @@ export function Sites({ account, summary, options, selfOnly, ratings }: { accoun
         <select id="site-subregion" value={subregion ?? ''} onChange={(e) => setRegion({ subregion: e.target.value || undefined })}>
           <option value="">All of {region}</option>{subregions.map((r) => <option key={r}>{r}</option>)}</select></>}
     </div>
+    {charts && <SiteCharts account={account} rows={rows} options={options} weekStart={weekStart} part="top" />}
     <div className="card"><SortTable caption={`${account.name} sites`} rows={rows} columns={cols} defaultSort={{ key: 'lp', dir: -1 }} total={tot} pageSize={100}
       rowClass={(r) => (r.role !== 'site' || !(r.invoice > 0) ? 'dim' : '')} onRowClick={(r) => navigate({ site: { company: r.company ?? '', job: r.job_number } })}
       rowLabel={(r) => `Open ${r.site_name}`} csvName={`${account.slug}-sites`} /></div>
+    {charts && <SiteCharts account={account} rows={rows} options={options} weekStart={weekStart} part="bottom" />}
   </>
 }
