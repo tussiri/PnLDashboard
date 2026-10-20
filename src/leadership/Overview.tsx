@@ -8,6 +8,7 @@ import { accountSummary, statusOf, type AccountNote, type AccountSummary, type M
 import { addDays, monthLabel, monthShort, TREND_WEEKS_DEFAULT, TREND_WEEKS_MAX, TREND_WEEKS_MIN, weekEndOf, weekTick } from './routes'
 import { projectRecentWeeks, PROJECTION_BASE_WEEKS } from './projection'
 import { QaCards } from './Qa'
+import { RunningTally } from './RunningTally'
 import { useLeadership } from './state'
 import { billingSources, invoiceLabel, weekChange, wordsFor } from './vocab'
 
@@ -250,6 +251,7 @@ export function Overview({ account, rows, summary, options, flags, headline = tr
         lp={null} lpTone="" otCost={summary.nonBilled.otDollars} otPrior={prevSummary?.nonBilled.otDollars ?? null} otHours={summary.nonBilled.otHours} changeWord={changeWord} w={w} />}
     </div>
     {afterGroups}
+    <RunningTally account={account} />
     {(trend.length > 1 || !monthMode) && <ChartCard title={monthMode ? `${w.trendTitle} by month` : `${w.trendTitle}, last ${trendWeeks} weeks`} height={260}
       action={weeksSlider}
       legend={<><Swatch color={t.accent2} label={monthMode ? 'Month' : 'Week'} /><Swatch color={t.accent} label={monthMode ? 'Selected month' : 'Selected week'} /><Swatch line color={t.text2} label={invoiceLabel(w, vocab, period)} />
