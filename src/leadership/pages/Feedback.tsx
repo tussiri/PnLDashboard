@@ -26,6 +26,8 @@ export interface Visit {
   key: string; feedback_date: string; location_number: string; site_name: string | null; company: string | null; job_number: string | null
   ratings: { trade: string | null; score: number | null; wo_number: string }[]; comments: string[]; average: number | null; low: boolean
 }
+// Placeholders the export writes for a blank comment (as the importer's NO_COMMENT, after dropping punctuation).
+const NO_COMMENT = new Set(['', 'nocomment', 'nocomments', 'na', 'none'])
 export function groupVisits(lines: Line[]): Visit[] {
   const out = new Map<string, Visit>()
   for (const l of lines) {
@@ -34,7 +36,7 @@ export function groupVisits(lines: Line[]): Visit[] {
       job_number: l.job_number, ratings: [], comments: [], average: null, low: false }
     v.ratings.push({ trade: l.trade, score: l.score, wo_number: l.wo_number })
     const c = l.comment?.trim()
-    if (c && !v.comments.some((x) => x.toLowerCase() === c.toLowerCase())) v.comments.push(c)
+    if (c && !NO_COMMENT.has(c.toLowerCase().replace(/[^a-z0-9]/g, '')) && !v.comments.some((x) => x.toLowerCase() === c.toLowerCase())) v.comments.push(c)
     out.set(key, v)
   }
   for (const v of out.values()) {

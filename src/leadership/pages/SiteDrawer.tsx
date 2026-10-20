@@ -109,6 +109,8 @@ export function SiteDrawer({ company, job }: { company: string; job: string }) {
   const weekTargets = hasBudget && weeks.some((r) => targetOf(r.week_start) != null) ? weeks.map((r) => targetOf(r.week_start)) : undefined
   const current = weeks.find((r) => r.week_start === weekStart)
   const site = q.data?.site
+  const feedbackVisits = useMemo(() => (q.data?.feedback ? groupVisits(q.data.feedback) : undefined), [q.data?.feedback])
+  const hasComments = Boolean(feedbackVisits?.some((v) => v.comments.length))
   const m = 'Labor %'
 
   return <VocabContext.Provider value={vocabOf(account)}>
@@ -134,12 +136,14 @@ export function SiteDrawer({ company, job }: { company: string; job: string }) {
           chart={<TrendChart labels={weeks.map((r) => weekTick(r.week_start))} values={weeks.map((r) => r.measurePct)} target={current?.target ?? options.target} label={m} targets={weekTargets} />}
           table={<table><thead><tr><th className="nosort l">Week ending</th><th className="nosort">Invoicing</th><th className="nosort">Direct labor</th><th className="nosort">{m}</th>{weekTargets && <th className="nosort">Budget target</th>}<th className="nosort">Hours</th><th className="nosort">OT hrs</th></tr></thead>
             <tbody>{weeks.map((r, i) => <tr key={r.week_start}><td className="l">{weekTick(r.week_start)}</td><td>{money(r.invoice)}</td><td>{money(r.labor)}</td><td>{pct(r.measurePct)}</td>{weekTargets && <td>{pct(weekTargets[i])}</td>}<td>{hours1(r.hours)}</td><td>{hours1(r.ot_hours)}</td></tr>)}</tbody></table>} />}
-        {q.data.feedback && q.data.feedback.length > 0 && <div className="card">
-          <div className="ct"><span>Feedback, 12 months</span><span className={scoreTone(avgOf(q.data.feedback))}>{stars(avgOf(q.data.feedback))} avg, {q.data.feedback.length} ratings</span></div>
+        {feedbackVisits && feedbackVisits.length > 0 && <div className="card">
+          <div className="ct"><span>Feedback, 12 months</span><span className={scoreTone(avgOf(q.data.feedback!))}
+            title={`${feedbackVisits.length} ${feedbackVisits.length === 1 ? 'visit' : 'visits'}, one rating per trade${hasComments ? '' : '; no written comments'}`}>
+            {stars(avgOf(q.data.feedback!))} avg, {q.data.feedback!.length} ratings</span></div>
           <div className="tw"><table className="visits"><caption className="sr-only">Feedback and star ratings</caption>
-            <thead><tr><th className="nosort l">Date</th><th className="nosort l">Ratings</th><th className="nosort l">Comment</th></tr></thead>
-            <tbody>{groupVisits(q.data.feedback).map((v) => <tr key={v.key}><td className="l">{v.feedback_date}</td><td className="l">{visitScores(v)}</td>
-              <td className={`l wrap${v.comments.length ? '' : ' none'}`}>{v.comments.length ? v.comments.join(' / ') : '–'}</td></tr>)}</tbody>
+            <thead><tr><th className="nosort l">Date</th><th className="nosort l">Ratings</th>{hasComments && <th className="nosort l">Comment</th>}</tr></thead>
+            <tbody>{feedbackVisits.map((v) => <tr key={v.key}><td className="l">{v.feedback_date}</td><td className="l">{visitScores(v)}</td>
+              {hasComments && <td className={`l wrap${v.comments.length ? '' : ' none'}`}>{v.comments.length ? v.comments.join(' / ') : '–'}</td>}</tr>)}</tbody>
           </table></div>
         </div>}
         {can('data.staffing') && <StaffingCard company={company} job={job} />}
