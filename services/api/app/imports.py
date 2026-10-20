@@ -39,12 +39,12 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Iterable
 
-from . import native_exports
+from . import contract_billing, job_income_statement, native_exports
 from .sources import rules
 
 logger = logging.getLogger(__name__)
 
-KINDS = ("pay_report", "job_cost", "income_statement", "service_feedback", "qa_score")
+KINDS = ("pay_report", "job_cost", "income_statement", "service_feedback", "qa_score", "job_income_statement", "contract_billing")
 # Income statement Account values that mean the company-wide statement (allocations, Company view).
 COMPANY_SCOPE = "__company__"
 COMPANY_WORDS = {"company", "all", "total", "crane ifs", "all companies", "consolidated"}
@@ -160,6 +160,10 @@ def header_map(kind: str, headers: Iterable[Any]) -> dict[str, str]:
 
 def detect_kind(file_name: str, headers: Iterable[Any]) -> str | None:
     name = file_name.lower()
+    if job_income_statement.name_matches(file_name):
+        return "job_income_statement"
+    if contract_billing.name_matches(file_name):
+        return "contract_billing"
     for kind in KINDS:
         if name.startswith(kind):
             return kind
@@ -641,11 +645,11 @@ def load_file(conn: Any, file_name: str, content: bytes, *, kind: str | None = N
         else:
             read_error = None
         layout = native_exports.native_layout(headers)
-        if layout and kind not in (None, native_exports.LAYOUT_KIND[layout]):
+        if layout and (kind not in (None, native_exports.LAYOUT_KIND[layout]) or detect_kind(file_name, []) in ("job_income_statement", "contract_billing")):
             layout = None
         kind = native_exports.LAYOUT_KIND[layout] if layout else (kind or detect_kind(file_name, headers))
         if kind not in KINDS:
-            errors = [read_error or "unknown feed: name the file pay_report_*, job_cost_*, income_statement_*, service_feedback_* or qa_score_*, or use the documented column names"]
+            errors = [read_error or "unknown feed: name the file pay_report_*, job_cost_*, income_statement_*, job_income_statement_*, contract_billing_*, service_feedback_* or qa_score_*, or use the documented column names"]
             return _log(cursor, conn, kind or "pay_report", file_name, digest, origin, "failed", len(rows), 0, [], None, None, errors, uploaded_by)
         cursor.execute("SELECT import_file_id FROM ops.import_file WHERE kind = %s AND sha256 = %s AND status = 'loaded'", (kind, digest))
         if cursor.fetchone():
@@ -661,6 +665,10 @@ def load_file(conn: Any, file_name: str, content: bytes, *, kind: str | None = N
                 native_exports.job_cost_gl(rows, _company_aliases(cursor), _company_numbers(cursor), parsed, _gl_map(cursor))
         elif kind == "qa_score":
             parsed = normalize_qa(headers, rows)
+        elif kind in ("job_income_statement", "contract_billing"):
+            parsed = Parsed(kind=kind, rows_read=len(rows))
+            module = job_income_statement if kind == "job_income_statement" else contract_billing
+            module.parse(file_name, headers, rows, _company_aliases(cursor), _company_numbers(cursor), parsed)
         else:
             parsed = normalize_rows(kind, headers, rows, _company_numbers(cursor), _company_aliases(cursor))
         if kind == "income_statement":
@@ -681,7 +689,7 @@ def load_file(conn: Any, file_name: str, content: bytes, *, kind: str | None = N
             return _log(cursor, conn, kind, file_name, digest, origin, "failed", parsed.rows_read, 0, [], None, None,
                         parsed.errors or ["no rows"], uploaded_by)
         # The reports mailbox is shared with other tools: a mailed subset must not replace a company's data.
-        partial = partial_export(cursor, kind, parsed.records, windows) if origin == "mail" and kind != "income_statement" else None
+        partial = partial_export(cursor, kind, parsed.records, windows) if origin == "mail" and kind in ("pay_report", "job_cost") else None
         if partial:
             return _log(cursor, conn, kind, file_name, digest, origin, "failed", parsed.rows_read, 0, [], None, None,
                         [f"{partial}: upload it on Admin > Imports to load it"], uploaded_by)
@@ -698,6 +706,10 @@ def load_file(conn: Any, file_name: str, content: bytes, *, kind: str | None = N
             _load_service_feedback(cursor, result["import_file_id"], parsed.records)
         elif kind == "qa_score":
             _load_qa_scores(cursor, result["import_file_id"], parsed.records)
+        elif kind == "job_income_statement":
+            job_income_statement.load(cursor, result["import_file_id"], parsed.records)
+        elif kind == "contract_billing":
+            contract_billing.load(cursor, result["import_file_id"], parsed.records)
         else:
             _load_job_cost(cursor, result["import_file_id"], parsed.records, replace_months=layout == "job_cost_gl")
     conn.commit()

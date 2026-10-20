@@ -1266,7 +1266,7 @@ export interface LeadershipAccount {
   /** Share of agency or subcontractor cost counted in labor (both weekly reports: 0.70). */
   vendor_factor: number
   /** Weekly invoice from the last closed month, or the 3-month run rate. */
-  invoice_basis: 'last_month' | 'run_rate_3m'
+  invoice_basis: 'last_month' | 'run_rate_3m' | 'contract'
   /** Groups by segment, or Pallet sites vs Janitorial only. */
   group_by: 'segment' | 'pallet'
   /** Subcontracted sites leave the labor views for the Subcontracted Sites tab. */
@@ -1355,6 +1355,7 @@ export interface LeadershipRow {
   dt_hours?: number
   /** Average monthly revenue over the revenue month and the two before it. */
   revenue_run_rate?: number | null
+  contract_monthly?: number | null
   /** Average monthly variable (OS, pallet) revenue over the same months, when the Job Cost Analysis carries it. */
   variable_run_rate?: number | null
   revenue_month_variable?: number | null
@@ -1408,6 +1409,57 @@ export interface AllocationMonth {
   statement_loaded: boolean
 }
 export interface AllocationStatus { settings: AllocationSettings; months: AllocationMonth[] }
+
+/** GET /leadership/company-pnl: the company P&L the way finance builds it (app/company_pnl.py). */
+export interface PnlGroupAccount { account: string; revenue: number; before_overhead: number; overhead: number; after_overhead: number; jobs: number }
+export interface PnlGroup {
+  key: string
+  name: string
+  revenue: number
+  gross_profit: number
+  before_overhead: number
+  fixed_charge: number
+  direct_staff: number
+  pool_share: number
+  overhead: number
+  after_overhead: number
+  jobs: number
+  accounts: PnlGroupAccount[]
+}
+export interface PnlMonth {
+  month: string
+  /** income_statement: the Cross Tab Income Statement by job covers the month; job_cost: the Job Cost export; mixed: some companies. */
+  source: 'income_statement' | 'job_cost' | 'mixed'
+  revenue: number
+  operating_revenue: number
+  gross_profit: number
+  before_overhead: number
+  overhead: number
+  pool: number
+  net_profit: number
+  lines: { labor: number; payroll_taxes: number; other_direct: number; subcontractors: number; supplies: number; operating_expenses: number; payroll_taxes_estimated: number }
+  payroll_taxes_basis: 'income_statement' | 'estimate' | null
+  overhead_jobs: { revenue: number; cost: number; jobs: number }
+  groups: PnlGroup[]
+  adjustments: { count: number; accruals: number; reclasses: number; posted: number }
+}
+export interface CompanyPnlResponse { months: PnlMonth[]; groups: { key: string; name: string }[]; account_names: Record<string, string> }
+export interface PnlGroupSetting { key: string; name: string; accounts: string[]; delivery_model: 'subcontracted' | 'self_perform' | null; fixed_charge: number; direct_staff: number; shares_pool: boolean; default: boolean }
+export interface CompanyPnlSettings { overhead_jobs: string[]; groups: PnlGroupSetting[] }
+export interface CompanyPnlSettingsResponse { settings: CompanyPnlSettings; months: { month: string; groups: Record<string, { fixed_charge: number | null; direct_staff: number | null }> }[] }
+export type PnlAdjustmentLine = 'revenue' | 'labor' | 'payroll_taxes' | 'subcontractors' | 'supplies' | 'other'
+export interface PnlAdjustmentIn { month: string; kind: 'accrual' | 'reclass'; line: PnlAdjustmentLine; company: string; job_number: string; to_company?: string | null; to_job_number?: string | null; amount: number; auto_reverse: boolean; note?: string | null }
+export interface PnlAdjustment extends PnlAdjustmentIn {
+  adjustment_id: number
+  baseline: number | null
+  reversed_at: string | null
+  reversed_by: string | null
+  created_at: string
+  created_by: string | null
+  /** active; posted: the invoice came in and the accrual stopped counting; reversed: by a person. */
+  status: 'active' | 'posted' | 'reversed'
+}
+export interface PnlAccrualSuggestion { company: string; job_number: string; job_name: string | null; revenue: number; subcontractors: number; prior_subcontractors: number; amount: number }
 
 /** One job-month for GET /leadership/monthly. */
 export interface LeadershipMonth {
@@ -1579,7 +1631,7 @@ export interface LeadershipVendorsResponse {
   lines: (LeadershipInvoiceLine & { company: string; job_number: string; site_name: string })[]
 }
 
-export type LeadershipImportKind = 'pay_report' | 'job_cost' | 'income_statement' | 'service_feedback' | 'qa_score'
+export type LeadershipImportKind = 'pay_report' | 'job_cost' | 'income_statement' | 'service_feedback' | 'qa_score' | 'job_income_statement' | 'contract_billing'
 /** A row of the import log: the upload kinds, and 'budget' for a labor budget mailed to the reports mailbox. */
 export type LeadershipImportLogKind = LeadershipImportKind | 'budget'
 

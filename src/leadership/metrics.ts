@@ -8,8 +8,9 @@
 /** pallet rows are rolled into their parent site before metrics (data.ts rollupPallets). */
 export type SiteRole = 'site' | 'catch_all' | 'non_billed' | 'pallet'
 export type RevenueMethod = 'monthly_div' | 'weekly_billing'
-/** last_month: the revenue month ÷ divisor; run_rate_3m: the 3-month average ÷ divisor (the FedEx report). */
-export type InvoiceBasis = 'last_month' | 'run_rate_3m'
+/** last_month: the revenue month ÷ divisor; run_rate_3m: the 3-month average ÷ divisor (the FedEx report);
+ * contract: the contract schedule for the week's month ÷ divisor (the Crowley ISD report), else the revenue month. */
+export type InvoiceBasis = 'last_month' | 'run_rate_3m' | 'contract'
 export type LaborStatus = 'on_target' | 'watch' | 'over' | 'no_billing'
 export type LaborBasis = 'pay_report' | 'payroll_rate' | 'trailing_rate_estimate'
 /** What an account is measured by: labor % (the reference) or cost % = (labor + vendor) / invoice. */
@@ -51,6 +52,8 @@ export interface WeekRow {
   revenue_run_rate?: number | null
   /** Average monthly variable (OS, pallet) revenue over the same months. */
   variable_run_rate?: number | null
+  /** The contract schedule's monthly amount for the week's month (invoice basis `contract`). */
+  contract_monthly?: number | null
   /** Corporate allocations for the week: management wages, payroll burden, overhead. */
   alloc_management?: number
   alloc_burden?: number
@@ -172,7 +175,8 @@ export function statusOf(laborPct: number | null, target: number, watchBand = DE
 export function invoiceOf(row: WeekRow, opts: MetricOptions): number {
   const method = opts.revenueMethod ?? DEFAULTS.revenueMethod
   if (method === 'weekly_billing') return row.invoice_week ?? 0
-  const monthly = opts.invoiceBasis === 'run_rate_3m' && row.revenue_run_rate != null ? row.revenue_run_rate : row.revenue_month_amount
+  const monthly = opts.invoiceBasis === 'run_rate_3m' && row.revenue_run_rate != null ? row.revenue_run_rate
+    : opts.invoiceBasis === 'contract' && row.contract_monthly != null ? row.contract_monthly : row.revenue_month_amount
   return monthly / (opts.divisor ?? DEFAULTS.divisor)
 }
 

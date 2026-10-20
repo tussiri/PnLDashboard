@@ -144,6 +144,7 @@ export function Overview({ account, rows, summary, options, flags, headline = tr
 
   const basis = period === 'month' ? billingSources(summary.sites) : account.revenue_method === 'weekly_billing' ? null : options.invoiceBasis === 'run_rate_3m'
     ? (variable != null ? `Fixed ${moneyK(summary.all.invoice - variable)} + variable ${moneyK(variable)} run rate ÷ ${account.revenue_divisor}` : `3-month run rate ÷ ${account.revenue_divisor}`)
+    : options.invoiceBasis === 'contract' && sites.some((r) => r.contract_monthly != null) ? `Contract for ${monthLabel(weekStart ? `${addDays(weekStart, 3).slice(0, 7)}-01` : revenueMonth)} ÷ ${account.revenue_divisor}`
     : `${monthLabel(revenueMonth)} revenue ÷ ${account.revenue_divisor}`
   const laborParts = [palD > 0 ? `${w.direct} ${moneyK(a.labor - palD)} + pallet ${moneyK(palD)}` : null, a.vendor > 0 ? `${inSentence(vendorLabel(account))} ~${moneyK(a.vendor)}` : null,
     catchJobs.length ? `incl. ${moneyK(summary.catchAll.cost)} catch-all` : null].filter(Boolean).join(' + ')

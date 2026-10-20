@@ -147,6 +147,25 @@ GL-only subcontracted revenue line (Indstrl, Mnftng, Wrhs - Subcontracted), Wage
 Management Wages, Payroll Taxes, Workers Comp, Subcontractors, Supplies, Vehicle, Travel, Insurance,
 Gross Profit, Admin, Net Profit. Other lines are kept but not shown.
 
+### 3a. Cross Tab Income Statement by job (monthly, company P&L)
+
+Every GL line on every job for one month: the report finance builds the company P&L from. It carries
+the payroll taxes, insurance, supplies and operating expenses the Job Cost Analysis leaves out, and the
+overhead jobs (6325, 63252, 63253). Name the file with `cross tab` or `income statement by job` and the
+month (`Cross Tab IS 2026-09.xlsx`); a file replaces the companies and months it covers. Name a Sarus
+file with `Sarus`.
+
+Either layout works: one row per job and GL account (JobNumber, GLAccountNumber, Amount, optional
+CompanyName and FiscalYear + FiscalPeriod), or GL accounts down the first column with one column per
+job. Credit-signed revenue is flipped. Balance sheet accounts (below 30000) are ignored.
+
+### 3b. Contract schedule (when billing changes)
+
+The contracted monthly amount per job, for accounts whose invoice basis is the contract schedule
+(Crowley ISD). Name the file with `contract schedule`, `contract billing` or `monthly revenue`. Either
+JobNumber, Month, MonthlyAmount rows, or JobNumber plus one column per month (`Oct 2026`). A month's
+amount holds until a later month replaces it; amounts repeated for a job and month are summed.
+
 ## 4. Daily labor budget (optional)
 
 `GET jobs/{job}/budgets` already supplies budget hours by day of week. Send this feed only if

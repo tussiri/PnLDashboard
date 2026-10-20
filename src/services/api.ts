@@ -1,6 +1,6 @@
 import type {
   FullSyncResult, LeadershipAccount, LeadershipAccountJob, LeadershipAccountPatch, LeadershipConfig, LeadershipImportFile, LeadershipImportKind,
-  LeadershipJobMapping, LeadershipRowsQuery, LeadershipRowsResponse, LeadershipSegment, LeadershipSiteResponse, LeadershipVendorsResponse, LeadershipFeedbackResponse, FeedbackOverview, LeadershipQaResponse, LeadershipBudgetResponse, BudgetPlanRow, SchoolCalendarLoad, SchoolCalendarResponse, SchoolDayType, SchoolDistrict, BudgetWeekRow, LeadershipMonthlyResponse, MailInboxStatus, MailInboxSetting, MailPollResult, CompanyResponse, LeadershipMonthResponse, AllocationStatus, AllocationSettings, AllocationMonth,
+  LeadershipJobMapping, LeadershipRowsQuery, LeadershipRowsResponse, LeadershipSegment, LeadershipSiteResponse, LeadershipVendorsResponse, LeadershipFeedbackResponse, FeedbackOverview, LeadershipQaResponse, LeadershipBudgetResponse, BudgetPlanRow, SchoolCalendarLoad, SchoolCalendarResponse, SchoolDayType, SchoolDistrict, BudgetWeekRow, LeadershipMonthlyResponse, MailInboxStatus, MailInboxSetting, MailPollResult, CompanyResponse, LeadershipMonthResponse, AllocationStatus, AllocationSettings, AllocationMonth, CompanyPnlResponse, CompanyPnlSettings, CompanyPnlSettingsResponse, PnlAdjustment, PnlAdjustmentIn, PnlAccrualSuggestion,
   PauseOverride, PhotoValidationSyncResult, RebuildResult, StaffingJobResponse, SyncOptions, SyncRunsResponse, SystemStatus } from './apiTypes'
 
 /**
@@ -161,6 +161,20 @@ export const api = {
   leadershipMonthly: (account: string, months = 3, signal?: AbortSignal) => request<LeadershipMonthlyResponse>('/leadership/monthly', { query: { account, months }, signal, rawRatios: true }),
   leadershipMonth: (account: string, month: string, signal?: AbortSignal) => request<LeadershipMonthResponse>('/leadership/month', { query: { account, month }, signal, rawRatios: true }),
   leadershipCompany: (months = 14, signal?: AbortSignal) => request<CompanyResponse>('/leadership/company', { query: { months }, signal, rawRatios: true }),
+  companyPnl: (months = 7, signal?: AbortSignal) => request<CompanyPnlResponse>('/leadership/company-pnl', { query: { months }, signal, rawRatios: true }),
+  companyPnlSettings: (signal?: AbortSignal) => request<CompanyPnlSettingsResponse>('/leadership/company-pnl/settings', { admin: true, signal, rawRatios: true }),
+  updateCompanyPnlSettings: (settings: CompanyPnlSettings, signal?: AbortSignal) =>
+    request<{ settings: CompanyPnlSettings }>('/leadership/company-pnl/settings', { method: 'PUT', body: settings, admin: true, signal, rawRatios: true }),
+  updatePnlGroupMonth: (month: string, group: string, values: { fixed_charge: number | null; direct_staff: number | null }, signal?: AbortSignal) =>
+    request<{ ok: boolean }>(`/leadership/company-pnl/groups/${month.slice(0, 7)}/${encodeURIComponent(group)}`, { method: 'PUT', body: values, admin: true, signal, rawRatios: true }),
+  pnlAdjustments: (month: string, signal?: AbortSignal) => request<{ month: string; adjustments: PnlAdjustment[] }>('/leadership/adjustments', { query: { month: month.slice(0, 7) }, admin: true, signal, rawRatios: true }),
+  createPnlAdjustment: (adjustment: PnlAdjustmentIn, signal?: AbortSignal) =>
+    request<{ adjustment_id: number }>('/leadership/adjustments', { method: 'POST', body: adjustment, admin: true, signal, rawRatios: true }),
+  reversePnlAdjustment: (id: number, signal?: AbortSignal) => request<{ ok: boolean }>(`/leadership/adjustments/${id}/reverse`, { method: 'POST', admin: true, signal, rawRatios: true }),
+  pnlAccrualSuggestions: (month: string, signal?: AbortSignal) =>
+    request<{ month: string; suggestions: PnlAccrualSuggestion[] }>('/leadership/adjustments/suggestions', { query: { month: month.slice(0, 7) }, admin: true, signal, rawRatios: true }),
+  acceptPnlAccruals: (month: string, items: { company: string; job_number: string; amount: number }[], signal?: AbortSignal) =>
+    request<{ created: number[] }>('/leadership/adjustments/suggestions', { method: 'POST', body: { month: month.slice(0, 7), items }, admin: true, signal, rawRatios: true }),
   allocationStatus: (signal?: AbortSignal) => request<AllocationStatus>('/leadership/allocations', { admin: true, signal, rawRatios: true }),
   updateAllocationSettings: (settings: Partial<AllocationSettings>, signal?: AbortSignal) => request<{ settings: AllocationSettings }>('/leadership/allocations', { method: 'PUT', body: settings, admin: true, signal, rawRatios: true }),
   updateAllocationMonth: (month: string, values: { burden_rate: number | null; overhead_pool: number | null }, signal?: AbortSignal) =>

@@ -39,6 +39,8 @@ describe('leadership metrics against the Plano reference, week ending 2026-09-20
       expect(r.otPct).toBeCloseTo(e.otPct, 10)
     }
     expect(invoiceOf(rows[1], opts)).toBeCloseTo(12642 / 4.33, 10)
+    expect(invoiceOf({ ...rows[1], contract_monthly: 20000 }, { ...opts, invoiceBasis: 'contract' })).toBeCloseTo(20000 / 4.33, 10)
+    expect(invoiceOf({ ...rows[1], contract_monthly: null }, { ...opts, invoiceBasis: 'contract' })).toBeCloseTo(12642 / 4.33, 10)
     expect(baseRateOf(2431.26, 140.43, 12.26)).toBeCloseTo(2431.26 / (140.43 + 6.13), 10)
   })
 

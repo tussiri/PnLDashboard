@@ -13,12 +13,13 @@ import json
 import logging
 import re
 from datetime import date, timedelta
+from decimal import Decimal
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from pydantic import BaseModel, Field
 
-from .. import allocations, accounts, companycam, imports, marts
+from .. import allocations, accounts, company_pnl, companycam, imports, marts
 from .. import month as month_module
 from .. import budget as budget_module
 from .. import budget_file, feedback_ai, mail_inbox, permissions
@@ -48,7 +49,7 @@ SELECT w.week_start, w.week_end, w.company, w.job_number, w.site_name, w.parent_
        coalesce(jw.dt_hours, 0) AS dt_hours,
        rr.revenue_run_rate, rr.variable_run_rate, vm.revenue_variable AS revenue_month_variable,
        a.revenue_allocation AS _allocation, w.revenue_month_budget_hours AS _rm_budget_hours, w.revenue_month_hours AS _rm_hours,
-       mw.management_wages AS _mgmt_month
+       mw.management_wages AS _mgmt_month, cb.monthly_amount AS contract_monthly
 FROM mart.leadership_week w
 LEFT JOIN ops.account_job aj ON aj.company = w.company AND aj.job_number = w.job_number
 LEFT JOIN ops.account a ON a.slug = aj.account_slug
@@ -73,6 +74,14 @@ LEFT JOIN LATERAL (
   LEFT JOIN core.fact_job_cost_month ex ON ex.source = 'export_import' AND ex.company = w.company AND ex.job_number = w.job_number
                                        AND ex.month = g.m::date
 ) rr ON w.revenue_month IS NOT NULL
+-- The contract schedule for the week's month (invoice basis 'contract', migration 057): the latest
+-- effective month on or before it, an imported schedule before the restored reference table.
+LEFT JOIN LATERAL (
+  SELECT c.monthly_amount FROM core.contract_billing c
+  WHERE c.job_number = w.job_number AND c.effective_month <= date_trunc('month', w.week_start + 3)::date
+    AND (c.company IS NULL OR c.company = w.company OR w.company IS NULL)
+  ORDER BY c.effective_month DESC, (c.source = 'import') DESC LIMIT 1
+) cb ON true
 WHERE w.week_start BETWEEN %(first)s AND %(last)s
 """
 
@@ -1349,3 +1358,184 @@ async def upload_import(request: Request, file: UploadFile = File(...), kind: st
     if result["kind"] == "service_feedback" and result["status"] == "loaded":
         feedback_ai.warm()  # the comment summary is ready before anyone opens the page
     return {"file": jsonable({k: v for k, v in result.items() if k != "sha256"}), "marts": jsonable(marts_result)}
+
+
+# ── company P&L (app/company_pnl.py, migration 057) ──────────────────────────
+class CompanyPnlSettingsIn(BaseModel):
+    overhead_jobs: list[str]
+    groups: list[dict[str, Any]]
+
+
+class GroupMonthIn(BaseModel):
+    fixed_charge: float | None = Field(None, ge=0)
+    direct_staff: float | None = Field(None, ge=0)
+
+
+class AdjustmentIn(BaseModel):
+    month: str
+    kind: str = Field(..., pattern="^(accrual|reclass)$")
+    line: str
+    company: str
+    job_number: str
+    to_company: str | None = None
+    to_job_number: str | None = None
+    amount: float
+    auto_reverse: bool = True
+    note: str | None = Field(None, max_length=500)
+
+
+class SuggestionIn(BaseModel):
+    company: str
+    job_number: str
+    amount: float = Field(..., gt=0)
+
+
+class AcceptSuggestionsIn(BaseModel):
+    month: str
+    items: list[SuggestionIn]
+
+
+def _month_param(value: str) -> date:
+    try:
+        return date.fromisoformat(f"{value[:7]}-01")
+    except ValueError:
+        raise HTTPException(status_code=422, detail="month must be YYYY-MM") from None
+
+
+def _pnl_months(cursor: Any, count: int) -> list[date]:
+    cursor.execute("SELECT greatest((SELECT max(month) FROM mart.v_job_cost_month_effective WHERE revenue > 0), "
+                   "(SELECT max(month) FROM core.fact_job_income_statement_month)) AS last")
+    last = cursor.fetchone()["last"]
+    if last is None:
+        return []
+    return [date(last.year + (last.month - 1 - i) // 12, (last.month - 1 - i) % 12 + 1, 1) for i in reversed(range(count))]
+
+
+@router.get("/company-pnl", dependencies=[Depends(permissions.require_permission("view.company"))])
+def company_pnl_months(request: Request, months: int = Query(7, ge=1, le=24)) -> dict[str, Any]:
+    """The company P&L by month, built the way finance builds it (app/company_pnl.py): job lines from the
+    Cross Tab Income Statement by job when loaded (else job cost, payroll taxes estimated), adjustments,
+    groups, overhead charged out by the configured rule, and net profit. Every account, so a user limited to
+    accounts is refused."""
+    if allowed_accounts(request) is not None:
+        raise HTTPException(status_code=403, detail="The company P&L covers every account; your access is limited to some")
+    with connection() as conn, conn.cursor() as cursor:
+        cfg = company_pnl.settings_of(cursor)
+        out = [company_pnl.month_pnl(cursor, m, cfg) for m in _pnl_months(cursor, months)]
+        cursor.execute("SELECT slug, name FROM ops.account ORDER BY sort, name")
+        names = {r["slug"]: r["name"] for r in cursor.fetchall()}
+    return {"months": out, "groups": [{"key": g["key"], "name": g["name"]} for g in cfg["groups"]], "account_names": names}
+
+
+@router.get("/company-pnl/settings", dependencies=[Depends(require_admin)])
+def company_pnl_settings(months: int = Query(7, ge=1, le=24)) -> dict[str, Any]:
+    with connection() as conn, conn.cursor() as cursor:
+        keys = _pnl_months(cursor, months)
+        overrides = company_pnl.group_months(cursor, keys)
+        return {"settings": company_pnl.settings_of(cursor),
+                "months": [{"month": m.isoformat(), "groups": {k: v for (mm, k), v in overrides.items() if mm == m}} for m in keys]}
+
+
+@router.put("/company-pnl/settings", dependencies=[Depends(require_admin)])
+def update_company_pnl_settings(body: CompanyPnlSettingsIn, request: Request) -> dict[str, Any]:
+    try:
+        value = company_pnl.validate_settings(body.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    with connection() as conn, conn.cursor() as cursor:
+        cursor.execute(
+            """
+            INSERT INTO ops.app_setting (key, value, description, updated_by) VALUES ('company_pnl', %s, 'Company P&L groups and overhead rule', %s)
+            ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now(), updated_by = EXCLUDED.updated_by
+            """,
+            (json.dumps(value), _actor(request)),
+        )
+        conn.commit()
+    return {"settings": value}
+
+
+@router.put("/company-pnl/groups/{month}/{group_key}", dependencies=[Depends(require_admin)])
+def update_group_month(month: str, group_key: str, body: GroupMonthIn, request: Request) -> dict[str, Any]:
+    """A month's fixed charge and / or direct account staff for a group (both null returns to the setting)."""
+    first = _month_param(month)
+    with connection() as conn, conn.cursor() as cursor:
+        if group_key not in {g["key"] for g in company_pnl.settings_of(cursor)["groups"]}:
+            raise HTTPException(status_code=404, detail=f"Unknown group {group_key!r}")
+        company_pnl.set_group_month(cursor, first, group_key, body.fixed_charge, body.direct_staff, _actor(request))
+        conn.commit()
+    return {"ok": True}
+
+
+@router.get("/adjustments", dependencies=[Depends(require_admin)])
+def list_adjustments(month: str = Query(..., description="YYYY-MM")) -> dict[str, Any]:
+    """The month's accruals and reclasses, each with its status (active, posted: the invoice came in and an
+    auto-reversing accrual stopped counting, or reversed)."""
+    first = _month_param(month)
+    with connection() as conn, conn.cursor() as cursor:
+        jobs, _ = company_pnl.job_lines(cursor, first)
+        return {"month": first.isoformat()[:7], "adjustments": jsonable(company_pnl.apply_adjustments(jobs, company_pnl.adjustments_of(cursor, first)))}
+
+
+def _insert_adjustment(cursor: Any, month: date, body: AdjustmentIn, actor: str) -> int:
+    baseline = company_pnl.baseline_for(cursor, month, body.company, body.job_number, body.line) if body.kind == "accrual" else None
+    cursor.execute(
+        """
+        INSERT INTO ops.pnl_adjustment (month, kind, line, company, job_number, to_company, to_job_number, amount, auto_reverse,
+                                        baseline, note, created_by)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING adjustment_id
+        """,
+        (month, body.kind, body.line, body.company, body.job_number, body.to_company if body.kind == "reclass" else None,
+         body.to_job_number if body.kind == "reclass" else None, Decimal(str(body.amount)), body.auto_reverse and body.kind == "accrual",
+         None if baseline is None else Decimal(str(baseline)), body.note, actor),
+    )
+    return cursor.fetchone()["adjustment_id"]
+
+
+@router.post("/adjustments", dependencies=[Depends(require_admin)])
+def create_adjustment(body: AdjustmentIn, request: Request) -> dict[str, Any]:
+    """An accrual (an amount expected on a job's line but not posted yet) or a reclass (an amount moved
+    from one job to another). An accrual records the line's amount now, so it reverses itself once the
+    invoice posts (auto_reverse)."""
+    month = _month_param(body.month)
+    if body.line not in company_pnl.ADJUSTABLE:
+        raise HTTPException(status_code=422, detail=f"line must be one of {', '.join(company_pnl.ADJUSTABLE)}")
+    if body.kind == "reclass" and not (body.to_job_number or "").strip():
+        raise HTTPException(status_code=422, detail="a reclass needs the job it moves to")
+    if body.kind == "reclass" and body.amount <= 0:
+        raise HTTPException(status_code=422, detail="a reclass moves a positive amount")
+    with connection() as conn, conn.cursor() as cursor:
+        adjustment_id = _insert_adjustment(cursor, month, body, _actor(request))
+        conn.commit()
+    return {"adjustment_id": adjustment_id}
+
+
+@router.post("/adjustments/{adjustment_id}/reverse", dependencies=[Depends(require_admin)])
+def reverse_adjustment(adjustment_id: int, request: Request) -> dict[str, Any]:
+    with connection() as conn, conn.cursor() as cursor:
+        cursor.execute("UPDATE ops.pnl_adjustment SET reversed_at = now(), reversed_by = %s WHERE adjustment_id = %s AND reversed_at IS NULL",
+                       (_actor(request), adjustment_id))
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="No open adjustment with that id")
+        conn.commit()
+    return {"ok": True}
+
+
+@router.get("/adjustments/suggestions", dependencies=[Depends(require_admin)])
+def adjustment_suggestions(month: str = Query(..., description="YYYY-MM")) -> dict[str, Any]:
+    """Subcontracted sites billed in the month whose sub invoices are short of the month before: the
+    accrual finance books at month end."""
+    first = _month_param(month)
+    with connection() as conn, conn.cursor() as cursor:
+        return {"month": first.isoformat()[:7], "suggestions": company_pnl.suggest_accruals(cursor, first)}
+
+
+@router.post("/adjustments/suggestions", dependencies=[Depends(require_admin)])
+def accept_suggestions(body: AcceptSuggestionsIn, request: Request) -> dict[str, Any]:
+    month = _month_param(body.month)
+    actor = _actor(request)
+    with connection() as conn, conn.cursor() as cursor:
+        ids = [_insert_adjustment(cursor, month, AdjustmentIn(
+            month=body.month, kind="accrual", line="subcontractors", company=item.company, job_number=item.job_number, amount=item.amount,
+            auto_reverse=True, note="Sub invoice not posted; accrued at the prior month's amount"), actor) for item in body.items]
+        conn.commit()
+    return {"created": ids}
