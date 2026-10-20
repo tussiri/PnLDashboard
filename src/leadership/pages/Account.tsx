@@ -16,9 +16,11 @@ import { PageHeader, updatedLine } from '../Shell'
 import { useLeadership } from '../state'
 import { Empty, Kpi, LoadError, Skeleton, SortTable, toneOf, VocabContext, type Column } from '../ui'
 import { HoursToCut } from './HoursToCut'
+import { OverTarget } from './OverTarget'
 import { IncomeStatementTab, PalletTab, SubcontractedTab } from './ReportViews'
 import { Sites } from './Sites'
 import { tabLabel, tabsFor, vocabOf } from '../vocab'
+import { FiscalHero } from '../FiscalHero'
 import { MonthCompare } from '../MonthCompare'
 import { SiteDrawer } from './SiteDrawer'
 import { Vendors } from './Vendors'
@@ -151,7 +153,7 @@ export function Account() {
     footer={can('tab.feedback') && feedback.data && feedback.data.lines.length > 0 && <RatingMatrix lines={feedback.data.lines} since={feedback.data.since}
       action={<button type="button" className="linkbtn" onClick={() => setTab('feedback')}>All feedback</button>} />} />
   else if (tab === 'sites') body = <Sites account={account} summary={summary} options={options} selfOnly={selfOnly} ratings={feedback.data?.by_site} />
-  else if (tab === 'over-target') body = <HoursToCut account={account} summary={summary} options={options} />
+  else if (tab === 'over-target') body = account.vocabulary === 'amazon' ? <HoursToCut account={account} summary={summary} options={options} /> : <OverTarget account={account} summary={summary} />
   else if (tab === 'overtime') body = <OvertimeTab account={account} summary={summary} />
   else body = <Suspense fallback={<Skeleton height={520} />}><SiteMap account={account} summary={summary} /></Suspense>
   const basis = options.invoiceBasis ?? 'last_month'
@@ -169,6 +171,8 @@ export function Account() {
         onChange={(e) => navigate({ selfOnly: e.target.checked || undefined }, { replace: true })} />Hide {subcontracted} subcontracted</label>}
         {!monthMode && (budgetWeeks?.some((x) => x.holiday > 0) ?? false) && <label className="check"><input type="checkbox" checked={payHolidays}
           onChange={(e) => navigate({ payHolidays: e.target.checked || undefined }, { replace: true })} />Pay stat holidays</label>}</>} />
+    {account && !monthMode && weekStart && <FiscalHero account={account} options={options} weekStart={weekStart} startMonth={school.data?.weeks.length ? 7 : 1}
+      budgetWeeks={budgetWeeks} budgetMonths={budgetMonths} payHolidays={payHolidays} />}
     <nav className="tabs" role="tablist" aria-label="Account views">
       {tabs.map((t) => <button key={t} type="button" role="tab" className="tab" aria-selected={current === t} onClick={() => setTab(t)}>{tabLabel(t, account, vendorLabel(account))}</button>)}
     </nav>

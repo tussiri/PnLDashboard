@@ -1,4 +1,4 @@
-"""Connector behaviour against the documented envelopes; HTTP is faked with httpx.MockTransport."""
+"""Connector behavior against the documented envelopes; HTTP is faked with httpx.MockTransport."""
 from __future__ import annotations
 
 import json

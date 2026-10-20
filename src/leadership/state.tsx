@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useApiQuery, type QueryState } from '../hooks/useApiQuery'
 import type { LeadershipAccount, LeadershipConfig } from '../services/apiTypes'
-import { apiFor, detectMode, type DashboardApi, type ModeDecision } from '../services/dataSource'
+import { apiFor, detectMode, REDETECT_UNREACHABLE_MS, type DashboardApi, type ModeDecision } from '../services/dataSource'
 import { queryKey } from '../services/queryClient'
 import { can as canOf, type Permission } from '../auth/permissions'
 import type { AuthUser } from '../auth/roles'
@@ -100,6 +100,13 @@ export function LeadershipProvider({ user, signOut, children, forcedDecision }: 
     return () => controller.abort()
   }, [forcedDecision, detection])
   const redetect = useCallback(() => setDetection((n) => n + 1), [])
+  // Demo because the API did not answer: keep asking, and return to live data once it does.
+  const unreachable = decision?.reason === 'unreachable'
+  useEffect(() => {
+    if (forcedDecision || !unreachable) return
+    const timer = setInterval(redetect, REDETECT_UNREACHABLE_MS)
+    return () => clearInterval(timer)
+  }, [forcedDecision, unreachable, redetect])
 
   useEffect(() => {
     const sync = () => setRoute(parseRoute(location.hash))

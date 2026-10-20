@@ -4,8 +4,12 @@ Reads GRAPH_MAILBOX (reports@smcraneifs.com) through Microsoft Graph with an app
 (client credentials, application permission Mail.Read, limited to that mailbox by an Exchange
 application access policy; docs/mail-inbox.md). Read-only: nothing is moved, flagged, deleted or sent.
 
-Each poll lists inbox messages with attachments received since the last one handled (a day of
-overlap; ops.mail_attachment remembers every attachment, so each is handled once). CSV and Excel
+Each poll lists the messages with attachments in every folder of the mailbox, received since the last
+one handled (a day of overlap; ops.mail_attachment remembers every attachment, so each is handled
+once). Every folder, because other tools reading the same mailbox move what they process out of the
+inbox (the HR dashboard files mail into imported / failed / ignored folders). Message ids are
+requested immutable, so a message keeps its id when another tool moves it. The first mailbox-wide
+poll reaches back MAILBOX_CATCH_UP_DAYS to pick up mail that was moved before the inbox was read. CSV and Excel
 attachments are downloaded and loaded only when their columns match a dashboard feed (the Pay
 Report or timekeeping labor summary, the Job Cost Analysis, the Trend Income Statement) through the
 same importer as uploads (origin 'mail'), or when it is an account's labor budget workbook (a monthly
@@ -57,6 +61,8 @@ OVERLAP = timedelta(days=1)
 RULE_KEYS = ("senders", "subjects", "exclude_subjects", "files")
 DEFAULT_RULE: dict[str, list[str]] = {k: [] for k in RULE_KEYS}
 MAX_RULES = 25
+SCOPE = "mailbox"  # ops.integration_sync_run.resource_name of a mailbox-wide poll ('inbox' before)
+MAILBOX_CATCH_UP_DAYS = 31
 DEFAULT_SETTING: dict[str, Any] = {"enabled": True, "every_minutes": 30, "first_lookback_days": 14, "rules": []}
 
 
@@ -169,7 +175,7 @@ class Graph:
 
     def get(self, url: str, params: dict[str, str] | None = None) -> httpx.Response:
         response = self.client.get(url if url.startswith("http") else f"{GRAPH}{url}", params=params,
-                                   headers={"Authorization": f"Bearer {self._token()}"})
+                                   headers={"Authorization": f"Bearer {self._token()}", "Prefer": 'IdType="ImmutableId"'})
         if response.status_code in (401, 403):
             raise MailError(f"Microsoft Graph refused access to {settings.graph_mailbox} (HTTP {response.status_code}); "
                             "check the Mail.Read permission, admin consent and the mailbox access policy")
@@ -178,8 +184,8 @@ class Graph:
         return response
 
     def messages(self, since: datetime) -> Iterator[dict[str, Any]]:
-        """Inbox messages with attachments received since `since`, oldest first (all pages)."""
-        url: str | None = f"/users/{self.mailbox}/mailFolders/inbox/messages"
+        """Messages with attachments in any folder received since `since`, oldest first (all pages)."""
+        url: str | None = f"/users/{self.mailbox}/messages"
         params: dict[str, str] | None = {
             "$filter": f"receivedDateTime ge {since.astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')} and hasAttachments eq true",
             "$orderby": "receivedDateTime asc", "$select": "id,subject,from,receivedDateTime", "$top": "50"}
@@ -234,6 +240,16 @@ def _remember(cursor: Any, message: dict[str, Any], attachment: dict[str, Any], 
     )
 
 
+def poll_since(last: datetime | None, scanned: bool, first_lookback_days: int, now: datetime | None = None) -> datetime:
+    """Where a poll starts: a day before the last attachment handled; the first lookback on a new mailbox;
+    and, on the first mailbox-wide poll, at least MAILBOX_CATCH_UP_DAYS back."""
+    now = now or datetime.now(timezone.utc)
+    if last is None:
+        return now - timedelta(days=first_lookback_days)
+    since = last - OVERLAP
+    return since if scanned else min(since, now - timedelta(days=MAILBOX_CATCH_UP_DAYS))
+
+
 def poll(graph: Graph | None = None, rebuild: bool = True) -> dict[str, Any]:
     """Read the mailbox once. Returns counts per status and whether the marts were rebuilt."""
     from . import budget_file, imports, marts
@@ -247,8 +263,12 @@ def poll(graph: Graph | None = None, rebuild: bool = True) -> dict[str, Any]:
         with conn.cursor() as cursor:
             cursor.execute("SELECT max(received_at) AS last FROM ops.mail_attachment")
             last = cursor.fetchone()["last"]
+            cursor.execute(
+                "SELECT 1 FROM ops.integration_sync_run WHERE integration_name = %s AND resource_name = %s AND status = 'succeeded' LIMIT 1",
+                (INTEGRATION, SCOPE))
+            scanned = cursor.fetchone() is not None
             cfg = setting(cursor)
-            since = last - OVERLAP if last else datetime.now(timezone.utc) - timedelta(days=int(cfg["first_lookback_days"]))
+            since = poll_since(last, scanned, int(cfg["first_lookback_days"]))
         for message in graph.messages(since):
             counts["messages"] += 1
             sender = ((message.get("from") or {}).get("emailAddress") or {}).get("address")
@@ -300,9 +320,9 @@ def _record(run_id: str, status: str, started: datetime, loaded: int, fetched: i
             """
             INSERT INTO ops.integration_sync_run (id, integration_name, resource_name, status, started_at, completed_at,
                                                   records_fetched, records_inserted, error_message)
-            VALUES (%s, %s, 'inbox', %s, %s, now(), %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, now(), %s, %s, %s)
             """,
-            (run_id, INTEGRATION, status, started, fetched, loaded, error),
+            (run_id, INTEGRATION, SCOPE, status, started, fetched, loaded, error),
         )
         conn.commit()
 

@@ -490,7 +490,7 @@ def data_freshness() -> dict[str, Any]:
             )
     reference_names = {"load", "reset", "settings", "stage", "dim_job", "fact_job_cost_month", "fact_labor_budget_month",
                        "fact_timekeeping", "fact_ar_invoice", "fact_ap_invoice"}
-    resources.extend(v for k, v in by_name.items() if k not in reference_names)  # historical resource names no longer in the catalogue
+    resources.extend(v for k, v in by_name.items() if k not in reference_names)  # historical resource names no longer in the catalog
     resources = [_mark_overdue(r) for r in resources]
     reference = finance_reference.last_load()
     reference_age = (

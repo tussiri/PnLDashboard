@@ -1,4 +1,4 @@
-"""The company P&L on Finance's basis (migration 056, docs/company-pl.md).
+"""The company P&L on Finance's basis (migration 058, docs/company-pl.md).
 
 Source: the WinTeam Cross Tab Income Statement by job (import kind `job_income_statement`), every GL line on
 every job for a month, each line in a CATEGORY. Per month:
@@ -632,3 +632,86 @@ def validate_adjustment(body: dict[str, Any], groups: list[dict[str, Any]]) -> d
     if out["reverse_month"] is not None and (kind != "accrual" or out["reverse_month"] <= month):
         raise ValueError("only an accrual reverses, in a later month")
     return out
+
+
+# ----------------------------------------------------------------------------- missing sub invoice accruals
+
+SHORT_SHARE = 0.9
+
+
+def next_month(month: date) -> date:
+    return date(month.year + (month.month == 12), month.month % 12 + 1, 1)
+
+
+def prior_month(month: date) -> date:
+    return date(month.year - (month.month == 1), (month.month - 2) % 12 + 1, 1)
+
+
+def suggestions_from(now: dict[tuple[str, str], dict[str, Any]], before: dict[tuple[str, str], dict[str, Any]],
+                     candidates: dict[tuple[str, str], dict[str, Any]], open_accruals: set[str]) -> list[dict[str, Any]]:
+    """Subcontracted sites billed in the month whose subcontractor cost on the GL is under SHORT_SHARE of the
+    month before: the sub invoice has not posted. Suggested at the prior month's cost less what has posted
+    (Finance's month-end accrual). A site with an open subcontractor accrual for the month is left out.
+    `now` / `before`: (company, job) -> {revenue, subcontractors}; `candidates`: (company, job) -> {job_name,
+    relay_ar, relay_ap, relay_not_in_winteam}."""
+    out = []
+    for key, c in candidates.items():
+        if key[1] in open_accruals:
+            continue
+        cur, last = now.get(key, {}), before.get(key, {})
+        billed = max(float(cur.get("revenue") or 0), float(c.get("relay_ar") or 0))
+        sub_now, sub_before = float(cur.get("subcontractors") or 0), float(last.get("subcontractors") or 0)
+        if billed <= 0 or sub_before <= 0 or sub_now >= SHORT_SHARE * sub_before:
+            continue
+        out.append({"company": key[0], "job_number": key[1], "job_name": c.get("job_name"), "revenue": round(billed, 2),
+                    "subcontractors": round(sub_now, 2), "prior_subcontractors": round(sub_before, 2),
+                    "relay_ap": c.get("relay_ap"), "relay_not_in_winteam": c.get("relay_not_in_winteam"),
+                    "amount": round(sub_before - sub_now, 2)})
+    return sorted(out, key=lambda x: -x["amount"])
+
+
+def _gl_month(cursor: Any, month: date) -> dict[tuple[str, str], dict[str, float]]:
+    """Revenue and subcontractor cost per (company, job) on the GL for a month: the Cross Tab when that month
+    is loaded, else the Job Cost Analysis. Adjustments are not applied (the GL as posted)."""
+    cursor.execute("SELECT 1 FROM core.fact_job_income_statement_month WHERE month = %s LIMIT 1", (month,))
+    if cursor.fetchone():
+        cursor.execute("SELECT company, job_number, sum(amount) FILTER (WHERE category = 'revenue') AS revenue, "
+                       "sum(amount) FILTER (WHERE category = 'subcontractors') AS subcontractors "
+                       "FROM core.fact_job_income_statement_month WHERE month = %s GROUP BY company, job_number", (month,))
+    else:
+        cursor.execute("SELECT company, job_number, revenue, subcontractors FROM mart.v_job_cost_month_effective WHERE month = %s", (month,))
+    out: dict[tuple[str, str], dict[str, float]] = {}
+    for r in cursor.fetchall():
+        slot = out.setdefault((r["company"] or "", r["job_number"]), {"revenue": 0.0, "subcontractors": 0.0})
+        slot["revenue"] += float(r["revenue"] or 0)
+        slot["subcontractors"] += float(r["subcontractors"] or 0)
+    return out
+
+
+def suggest_accruals(cursor: Any, month: date) -> list[dict[str, Any]]:
+    """Accruals Finance books at month end for sub invoices not posted, for the subcontracted Relay (FedEx)
+    sites. Relay's AP for the month says whether the invoice is in Relay but not yet in WinTeam."""
+    now, before = _gl_month(cursor, month), _gl_month(cursor, prior_month(month))
+    cursor.execute(
+        """
+        SELECT j.company, rc.job_number, max(j.job_name) AS job_name, max(rm.ar_revenue) AS relay_ar, max(rm.ap_amount) AS relay_ap,
+               max(rm.payables_not_in_winteam) AS relay_not_in_winteam
+        FROM mart.v_relay_job_contract rc
+        JOIN core.dim_job j ON j.job_number = rc.job_number AND j.valid_to IS NULL AND j.company IS DISTINCT FROM 'Sarus'
+        LEFT JOIN mart.v_relay_job_month rm ON rm.job_number = rc.job_number AND rm.month = %s
+        WHERE NOT coalesce(rc.self_perform, false)
+        GROUP BY j.company, rc.job_number
+        """,
+        (month,),
+    )
+    candidates = {}
+    for r in cursor.fetchall():
+        key = (r["company"], r["job_number"])
+        candidates[key] = {"job_name": r["job_name"], **{k: (float(r[k]) if r[k] is not None else None) for k in ("relay_ar", "relay_ap", "relay_not_in_winteam")}}
+        # A Cross Tab loaded without a company keys its jobs by '' alone.
+        for gl in (now, before):
+            if key not in gl and ("", key[1]) in gl:
+                gl[key] = gl[("", key[1])]
+    open_accruals = {a["to_job"] for a in load_adjustments(cursor, month, month)
+                     if a["kind"] == "accrual" and a["category"] == "subcontractors" and a["month"] == month and not a.get("cleared_at")}
+    return suggestions_from(now, before, candidates, open_accruals)

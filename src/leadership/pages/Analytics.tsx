@@ -1,8 +1,8 @@
 import { useMemo } from 'react'
 import type { LeadershipAccount, LeadershipRow } from '../../services/apiTypes'
-import { includesVendor, rowsOfWeek, segmentLabel, segmentOrder, useRows, inSentence, vendorLabel } from '../data'
+import { accountRegion, includesVendor, inRegion, regionOf, rowsOfWeek, segmentLabel, segmentOrder, subregionOf, useRows, inSentence, vendorLabel } from '../data'
 import { hours, hours1, money, pct } from '../format'
-import { accountSummary, statusOf, type MetricOptions, type Rollup, type SiteMetrics as Metrics } from '../metrics'
+import { accountSummary, rollup, statusOf, type MetricOptions, type Rollup, type SiteMetrics as Metrics } from '../metrics'
 import { ANALYTICS_TABS, weekLabel } from '../routes'
 import { PageHeader, updatedLine } from '../Shell'
 import { useLeadership } from '../state'
@@ -54,18 +54,33 @@ export function Analytics() {
     })
   }
 
+  // Region rollup: each site keeps its own account's labor basis (its cost), so the % is cost / invoicing.
+  const regionGroups = (keyOf: (s: Site) => string): Group[] => {
+    const map = new Map<string, Site[]>()
+    for (const s of sites) if (inRegion(s, route.region)) map.set(keyOf(s), [...(map.get(keyOf(s)) ?? []), s])
+    return [...map.entries()].map(([key, ss]) => ({ key, name: key, rollup: rollup(ss.filter((s) => s.role !== 'non_billed'), otherOptions.target, 'labor_plus_vendor'),
+      target: otherOptions.target, sites: ss.length, measureName: 'Account basis' }))
+  }
+  const regions = route.region ? regionGroups(subregionOf) : regionGroups(regionOf)
+  const inRegionSites = sites.filter((s) => inRegion(s, route.region, route.subregion))
+
   const scopeAccount: LeadershipAccount | undefined = scope && scope !== OTHER ? accountBySlug(scope) : undefined
-  const inScope = sites.filter((s) => !scope || (scope === OTHER ? s.accountName === 'Other' : s.account_slug === scope))
-  const level1 = groupsFor(sites, (s) => (s.accountName === 'Other' ? OTHER : s.account_slug!), (s) => s.accountName,
+  const inScope = inRegionSites.filter((s) => !scope || (scope === OTHER ? s.accountName === 'Other' : s.account_slug === scope))
+  const level1 = groupsFor(inRegionSites, (s) => (s.accountName === 'Other' ? OTHER : s.account_slug!), (s) => s.accountName,
     (k) => (k === OTHER ? otherOptions : optionsFor(accountBySlug(k))), (k) => { const acct = k === OTHER ? undefined : accountBySlug(k); return includesVendor(acct) ? `Direct + ${inSentence(vendorLabel(acct))}` : 'Direct' })
     .sort((a, b) => (a.key === OTHER ? 1 : b.key === OTHER ? -1 : (accountBySlug(a.key)?.sort ?? 0) - (accountBySlug(b.key)?.sort ?? 0)))
+  const regionByAccount = useMemo(() => {
+    const m = new Map<string, Site[]>()
+    for (const s of sites) { const k = s.accountName === 'Other' ? OTHER : s.account_slug!; m.set(k, [...(m.get(k) ?? []), s]) }
+    return new Map([...m].map(([k, ss]) => [k, accountRegion(k === OTHER ? undefined : accountBySlug(k), ss)]))
+  }, [sites, accountBySlug])
   const level2 = scope ? groupsFor(inScope, (s) => s.groupName, (s) => s.groupName, (k) => {
     const o = scopeAccount ? optionsFor(scopeAccount) : otherOptions
     return { ...o, target: o.segmentTargets?.[k] ?? o.target }
   }, () => (includesVendor(scopeAccount) ? `Direct + ${inSentence(vendorLabel(scopeAccount))}` : 'Direct')) : []
   const filtered = inScope.filter((s) => (!route.segment || s.groupName === route.segment)
     && (!route.status || route.status === 'all' || (s.role === 'site' && s.status === route.status))
-    && (!route.q || `${s.job_number} ${s.site_name} ${s.accountName} ${s.groupName} ${s.city ?? ''}`.toLowerCase().includes(route.q.toLowerCase())))
+    && (!route.q || `${s.job_number} ${s.site_name} ${s.accountName} ${s.groupName} ${s.city ?? ''} ${s.region ?? ''} ${s.subregion ?? ''}`.toLowerCase().includes(route.q.toLowerCase())))
 
   const groupCols = (label: string): Column<Group>[] => [
     { key: 'name', header: label, left: true, value: (g) => g.name, className: 'nm' },
@@ -81,11 +96,18 @@ export function Analytics() {
     { key: 'prior', header: 'Prior month', value: (g) => g.rollup.priorLaborPct, render: (g) => <span className="neutral">{pct(g.rollup.priorLaborPct)}</span> },
     { key: 'st', header: 'Status', value: (g) => g.rollup.measurePct, render: (g) => <Badge status={statusOf(g.rollup.measurePct, g.target, g.watchBand)} />, csv: (g) => statusOf(g.rollup.measurePct, g.target, g.watchBand) },
   ]
+  const accountCols = (() => {
+    const cols = groupCols('Account')
+    const region: Column<Group> = { key: 'reg', header: 'Region', left: true, value: (g) => { const r = regionByAccount.get(g.key); return r ? `${r.region} ${r.subregion ?? ''}` : '' },
+      render: (g) => { const r = regionByAccount.get(g.key); return r ? <>{r.region}{r.subregion && <span className="neutral"> {r.subregion}</span>}</> : null } }
+    return [cols[0], region, ...cols.slice(1)]
+  })()
   const siteCols: Column<Site>[] = [
     { key: 'acct', header: 'Account', left: true, value: (s) => s.accountName },
     { key: 'grp', header: scope === OTHER ? 'Account group' : segmentLabel(scopeAccount), left: true, value: (s) => s.groupName, className: 'nm' },
     { key: 'job', header: 'Job', left: true, value: (s) => s.job_number },
     { key: 'name', header: 'Site', left: true, value: (s) => s.site_name, className: 'nm' },
+    { key: 'reg', header: 'Region', left: true, value: (s) => `${regionOf(s)} ${subregionOf(s)}`, render: (s) => <>{regionOf(s)} <span className="neutral">{subregionOf(s)}</span></>, csv: (s) => `${regionOf(s)} / ${subregionOf(s)}` },
     { key: 'co', header: 'Company', left: true, value: (s) => s.company, render: (s) => <span className="neutral">{s.company}</span> },
     { key: 'inv', header: 'Invoicing', value: (s) => s.invoice, render: (s) => money(s.invoice) },
     { key: 'lab', header: 'Direct labor', value: (s) => s.labor, render: (s) => money(s.labor) },
@@ -109,8 +131,15 @@ export function Analytics() {
     {route.analyticsTab === 'units' ? <AnalyticsUnits /> : <>
     {q.error ? <LoadError error={q.error} onRetry={q.refetch} /> : !q.data ? <Skeleton height={400} /> : !sites.length ? <Empty>No data for this week.</Empty> : <>
       <div className="card">
+        <div className="ct"><span title="Labor % uses each site's own account basis; status is against the portfolio target">{route.region ? `${route.region} by subregion` : 'Regions'}</span>
+          {route.region && <button type="button" className="linkbtn" onClick={() => set({ region: undefined, subregion: undefined })}>All regions</button>}</div>
+        <SortTable caption="Regions" rows={regions} columns={groupCols(route.region ? 'Subregion' : 'Region').filter((c) => c.key !== 'basis')} defaultSort={{ key: 'inv', dir: -1 }} csvName={route.region ? `${route.region}-subregions` : 'regions'}
+          onRowClick={(g) => set(route.region ? { subregion: g.key === route.subregion ? undefined : g.key } : { region: g.key, subregion: undefined })}
+          rowLabel={(g) => (route.region ? `Show sites in ${g.name}` : `Drill into ${g.name}`)} rowClass={(g) => (g.key === route.subregion ? 'tot' : '')} />
+      </div>
+      <div className="card">
         <div className="ct"><span>Accounts</span>{scope && <button type="button" className="linkbtn" onClick={() => set({ account: undefined, segment: undefined })}>All accounts</button>}</div>
-        <SortTable caption="Accounts" rows={level1} columns={groupCols('Account')} defaultSort={{ key: 'inv', dir: -1 }} csvName="accounts"
+        <SortTable caption="Accounts" rows={level1} columns={accountCols} defaultSort={{ key: 'inv', dir: -1 }} csvName="accounts"
           onRowClick={(g) => set({ account: g.key, segment: undefined })} rowLabel={(g) => `Drill into ${g.name}`} rowClass={(g) => (g.key === scope ? 'tot' : '')} />
       </div>
       {scope && <div className="card">
@@ -119,7 +148,7 @@ export function Analytics() {
           onRowClick={(g) => set({ segment: g.key })} rowLabel={(g) => `Show sites in ${g.name}`} rowClass={(g) => (g.key === route.segment ? 'tot' : '')} />
       </div>}
       <div className="card">
-        <div className="ct"><span>{route.segment ?? (scope ? (scope === OTHER ? 'Other' : scopeAccount?.name) : 'All')} sites</span></div>
+        <div className="ct"><span>{[route.subregion ?? route.region, route.segment ?? (scope ? (scope === OTHER ? 'Other' : scopeAccount?.name) : null)].filter(Boolean).join(' · ') || 'All'} sites</span></div>
         <Pills label="Status" value={(route.status ?? 'all') as (typeof STATUSES)[number]} onChange={(v) => set({ status: v === 'all' ? undefined : v })}
           options={STATUSES.map((s) => ({ value: s, label: s === 'all' ? 'All' : STATUS_LABEL[s] }))} />
         <SortTable caption="Sites" rows={filtered} columns={siteCols} defaultSort={{ key: 'over', dir: -1 }} csvName={`sites-${scope ?? 'all'}`}

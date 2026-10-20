@@ -34,6 +34,40 @@ MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 ACCOUNT_SCOPES = ("all", "featured", "other")
 
 ROW_SQL = """
+-- The 3-month run rate (the FedEx report's invoice basis): the revenue month and the two before it,
+-- each month from job cost, else Relay AR where the week's revenue comes from Relay. A subcontracted
+-- Relay site takes Relay AR for any month it has some: from July 2026 its contract revenue is booked to a
+-- GL line with no job, so its job cost carries only the OS (variable) line (mart.leadership_week does the same).
+-- Worked out once per job and revenue month in the window, then joined: as a LATERAL per row it re-read
+-- both views for every job-week (26 FedEx weeks took 17s locally, past the browser's 20s on Render).
+WITH rr_key AS (
+  SELECT DISTINCT job_key, company, job_number, revenue_month, delivery_model, revenue_month_basis
+  FROM mart.leadership_week
+  WHERE week_start BETWEEN %(first)s AND %(last)s AND revenue_month IS NOT NULL
+),
+ct AS (
+  SELECT company, job_number, monthly_amount, effective_from,
+         coalesce(lead(effective_from) OVER (PARTITION BY company, job_number ORDER BY effective_from), 'infinity'::date) AS effective_to
+  FROM ops.job_contract
+),
+rr AS (
+  -- A month with neither a job-cost row nor Relay AR (the site was not billing yet) is left out, not averaged in as 0.
+  SELECT k.job_key, k.revenue_month, k.delivery_model, k.revenue_month_basis,
+         avg(CASE WHEN k.delivery_model = 'subcontracted' AND coalesce(r.ar_revenue, 0) > 0 THEN r.ar_revenue
+                  WHEN jc.job_number IS NULL AND r.ar_revenue IS NULL THEN NULL
+                  ELSE coalesce(nullif(jc.revenue, 0), CASE WHEN k.revenue_month_basis LIKE 'relay%%' THEN r.ar_revenue END, 0) END) AS revenue_run_rate,
+         avg(ex.revenue_variable) AS variable_run_rate
+  FROM rr_key k
+  -- Three months as VALUES, not generate_series: its default 1000-row estimate priced this past
+  -- jit_above_cost, and compiling it took longer than running it.
+  CROSS JOIN (VALUES (0), (1), (2)) AS b(back)
+  CROSS JOIN LATERAL (SELECT (k.revenue_month - b.back * interval '1 month')::date AS m) g
+  LEFT JOIN mart.v_job_cost_month_effective jc ON jc.company = k.company AND jc.job_number = k.job_number AND jc.month = g.m
+  LEFT JOIN mart.v_relay_job_month r ON r.job_number = k.job_number AND r.month = g.m AND k.company IS DISTINCT FROM 'Sarus'
+  LEFT JOIN core.fact_job_cost_month ex ON ex.source = 'export_import' AND ex.company = k.company AND ex.job_number = k.job_number
+                                       AND ex.month = g.m
+  GROUP BY k.job_key, k.company, k.job_number, k.revenue_month, k.delivery_model, k.revenue_month_basis
+)
 SELECT w.week_start, w.week_end, w.company, w.job_number, w.site_name, w.parent_account,
        aj.account_slug, CASE WHEN aj.role = 'site' THEN coalesce(aj.segment, a.fallback_segment) END AS segment,
        CASE WHEN aj.account_slug IS NULL THEN 'site' ELSE aj.role END AS role,
@@ -45,41 +79,27 @@ SELECT w.week_start, w.week_end, w.company, w.job_number, w.site_name, w.parent_
        w.prior_sub, w.prior_sub_basis, w.delivery_model, w.sub_week, w.sub_week_basis,
        w.consumables_cost, w.consumables_basis,
        j.latitude, j.longitude, j.city, j.state_province, j.parent_job_number,
+       coalesce(sr.region, nullif(btrim(j.region_name), '')) AS region,
+       coalesce(sr.subregion, nullif(btrim(j.state_province), '')) AS subregion,
        coalesce(jw.dt_hours, 0) AS dt_hours,
        rr.revenue_run_rate, rr.variable_run_rate, vm.revenue_variable AS revenue_month_variable,
        a.revenue_allocation AS _allocation, w.revenue_month_budget_hours AS _rm_budget_hours, w.revenue_month_hours AS _rm_hours,
-       mw.management_wages AS _mgmt_month, ct.monthly_amount AS contract_month
+       mw.management_wages AS _mgmt_month, coalesce(ctc.monthly_amount, cta.monthly_amount) AS contract_month
 FROM mart.leadership_week w
 LEFT JOIN ops.account_job aj ON aj.company = w.company AND aj.job_number = w.job_number
 LEFT JOIN ops.account a ON a.slug = aj.account_slug
 LEFT JOIN core.dim_job j ON j.job_key = w.job_key
+LEFT JOIN ops.site_region sr ON sr.company = w.company AND sr.job_number = w.job_number
 LEFT JOIN mart.job_week jw ON jw.job_key = w.job_key AND jw.week_start = w.week_start
 LEFT JOIN mart.v_job_cost_month_effective mw ON mw.job_number = w.job_number AND mw.month = w.revenue_month
 LEFT JOIN core.fact_job_cost_month vm ON vm.source = 'export_import' AND vm.company = w.company AND vm.job_number = w.job_number
                                      AND vm.month = w.revenue_month
--- The 3-month run rate (the FedEx report's invoice basis): the revenue month and the two before it,
--- each month from job cost, else Relay AR where the week's revenue comes from Relay. A subcontracted
--- Relay site takes Relay AR for any month it has some: from July 2026 its contract revenue is booked to a
--- GL line with no job, so its job cost carries only the OS (variable) line (mart.leadership_week does the same).
-LEFT JOIN LATERAL (
-  -- A month with neither a job-cost row nor Relay AR (the site was not billing yet) is left out, not averaged in as 0.
-  SELECT avg(CASE WHEN w.delivery_model = 'subcontracted' AND coalesce(r.ar_revenue, 0) > 0 THEN r.ar_revenue
-                  WHEN jc.job_number IS NULL AND r.ar_revenue IS NULL THEN NULL
-                  ELSE coalesce(nullif(jc.revenue, 0), CASE WHEN w.revenue_month_basis LIKE 'relay%%' THEN r.ar_revenue END, 0) END) AS revenue_run_rate,
-         avg(ex.revenue_variable) AS variable_run_rate
-  FROM generate_series(w.revenue_month - interval '2 months', w.revenue_month, interval '1 month') AS g(m)
-  LEFT JOIN mart.v_job_cost_month_effective jc ON jc.company = w.company AND jc.job_number = w.job_number AND jc.month = g.m::date
-  LEFT JOIN mart.v_relay_job_month r ON r.job_number = w.job_number AND r.month = g.m::date AND w.company IS DISTINCT FROM 'Sarus'
-  LEFT JOIN core.fact_job_cost_month ex ON ex.source = 'export_import' AND ex.company = w.company AND ex.job_number = w.job_number
-                                       AND ex.month = g.m::date
-) rr ON w.revenue_month IS NOT NULL
--- The contract invoice basis (migration 056): the monthly contract in effect on the week's last day.
--- A contract row without a company applies to the job number in any company.
-LEFT JOIN LATERAL (
-  SELECT c.monthly_amount FROM ops.job_contract c
-  WHERE c.job_number = w.job_number AND c.company IN (w.company, '') AND c.effective_from <= w.week_end
-  ORDER BY c.effective_from DESC, (c.company = w.company) DESC LIMIT 1
-) ct ON true
+LEFT JOIN rr ON rr.job_key = w.job_key AND rr.revenue_month = w.revenue_month
+               AND rr.delivery_model IS NOT DISTINCT FROM w.delivery_model AND rr.revenue_month_basis IS NOT DISTINCT FROM w.revenue_month_basis
+-- The contract invoice basis (migration 058): the monthly contract in effect on the week's last day; a
+-- contract row for the job's company wins over one without a company (any company).
+LEFT JOIN ct ctc ON ctc.company = w.company AND ctc.job_number = w.job_number AND w.week_end >= ctc.effective_from AND w.week_end < ctc.effective_to
+LEFT JOIN ct cta ON cta.company = '' AND cta.job_number = w.job_number AND w.week_end >= cta.effective_from AND w.week_end < cta.effective_to
 WHERE w.week_start BETWEEN %(first)s AND %(last)s
 """
 
@@ -680,6 +700,54 @@ def create_adjustment(body: AdjustmentIn, request: Request) -> dict[str, Any]:
         return {"adjustment": _adjustment_out(cursor, new_id)}
 
 
+@router.get("/adjustments/suggestions", dependencies=[Depends(require_admin)])
+def adjustment_suggestions(month: str = Query(..., description="YYYY-MM")) -> dict[str, Any]:
+    """Subcontracted (Relay) sites billed in the month whose sub invoices have not posted to the GL: the
+    accrual Finance books at month end, at the prior month's cost less what has posted."""
+    try:
+        first = company_pl._month(month)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    with connection() as conn, conn.cursor() as cursor:
+        return {"month": first.isoformat()[:7], "suggestions": jsonable(company_pl.suggest_accruals(cursor, first))}
+
+
+class SuggestionIn(BaseModel):
+    company: str
+    job_number: str
+    amount: float = Field(..., gt=0)
+
+
+class AcceptSuggestionsIn(BaseModel):
+    month: str
+    items: list[SuggestionIn]
+    reverse_next_month: bool = True
+
+
+@router.post("/adjustments/suggestions", status_code=201, dependencies=[Depends(require_admin)])
+def accept_suggestions(body: AcceptSuggestionsIn, request: Request) -> dict[str, Any]:
+    """Book the chosen suggestions as subcontractor accruals, reversing next month unless told otherwise."""
+    try:
+        month = company_pl._month(body.month)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    actor = _actor(request)
+    with connection() as conn, conn.cursor() as cursor:
+        ids = []
+        for item in body.items:
+            cursor.execute(
+                """
+                INSERT INTO ops.pl_adjustment (month, kind, category, amount, to_company, to_job, description, reverse_month, created_by, updated_by)
+                VALUES (%s, 'accrual', 'subcontractors', %s, %s, %s, 'Sub invoice not posted; accrued at the prior month less what posted', %s, %s, %s)
+                RETURNING adjustment_id
+                """,
+                (month, item.amount, item.company or None, item.job_number, company_pl.next_month(month) if body.reverse_next_month else None, actor, actor),
+            )
+            ids.append(cursor.fetchone()["adjustment_id"])
+        conn.commit()
+    return {"created": ids}
+
+
 @router.put("/adjustments/{adjustment_id}", dependencies=[Depends(require_admin)])
 def update_adjustment(adjustment_id: int, body: AdjustmentIn, request: Request) -> dict[str, Any]:
     with connection() as conn, conn.cursor() as cursor:
@@ -1017,6 +1085,24 @@ GROUP BY 1 ORDER BY 1
 """
 
 
+# The sites the sentiment tile names: lowest average over the summary's window (the WINDOW_DAYS days up to
+# the account's newest rating), at least two ratings and under 4 stars, more 1-2 star ratings first on a tie.
+FEEDBACK_CRITICAL_SQL = """
+WITH w AS (
+  SELECT * FROM mart.v_service_feedback
+  WHERE (account_slug = %(account)s OR (account_slug IS NULL AND %(account)s = 'fedex')) AND score IS NOT NULL
+)
+SELECT location_number, max(site_name) AS site_name, max(company) AS company, max(job_number) AS job_number,
+       round(avg(score), 2) AS average, count(*) AS ratings, count(*) FILTER (WHERE score <= 2) AS low
+FROM w
+WHERE feedback_date > (SELECT max(feedback_date) FROM w) - %(days)s
+GROUP BY location_number
+HAVING count(*) >= 2 AND avg(score) < 4
+ORDER BY avg(score), count(*) FILTER (WHERE score <= 2) DESC, location_number
+LIMIT 3
+"""
+
+
 @router.get("/feedback/overview", dependencies=[Depends(permissions.require_permission("tab.feedback"))])
 def leadership_feedback_overview(account: str = Query(..., description="An account slug"),
                                  month: str | None = Query(None, description="YYYY-MM; default this month"),
@@ -1044,6 +1130,8 @@ def leadership_feedback_overview(account: str = Query(..., description="An accou
                        " ORDER BY feedback_date DESC", {"since": first, "until": until, "account": account})
         low = [jsonable(dict(r)) for r in cursor.fetchall()]
         ai = feedback_ai.state(cursor, account)
+        cursor.execute(FEEDBACK_CRITICAL_SQL, {"account": account, "days": feedback_ai.WINDOW_DAYS})
+        critical = [{**jsonable(dict(r)), "average": float(r["average"])} for r in cursor.fetchall()]
     by_month = {m["month"]: m for m in months}
     prior = (first - timedelta(days=1)).replace(day=1).isoformat()
     scored = sum(m["scored"] for m in months)
@@ -1052,7 +1140,7 @@ def leadership_feedback_overview(account: str = Query(..., description="An accou
             "months": months, "year": {"ratings": sum(m["ratings"] for m in months), "average": year_avg, "since": since.isoformat()},
             "low_sites": [{"location_number": l["location_number"], "site_name": l["site_name"], "company": l["company"], "job_number": l["job_number"],
                            "score": float(l["score"]), "feedback_date": l["feedback_date"]} for l in low],
-            "summary": jsonable(ai)}
+            "summary": jsonable(ai), "critical_sites": critical}
 
 
 QA_SQL = """
@@ -1379,6 +1467,19 @@ class AccountPatch(BaseModel):
     group_by: str | None = None
     split_subcontracted: bool | None = None
     vendor_label: str | None = Field(None, min_length=1, max_length=30)
+    # An empty string clears the account's home region (it is then derived from its sites).
+    region: str | None = Field(None, max_length=40)
+    subregion: str | None = Field(None, max_length=40)
+
+
+class SiteRegionIn(BaseModel):
+    """A site's region override; null (or blank) keeps the WinTeam value for that field."""
+    region: str | None = Field(None, max_length=40)
+    subregion: str | None = Field(None, max_length=40)
+
+
+def _blank_to_none(value: str | None) -> str | None:
+    return (value.strip() or None) if value is not None else None
 
 
 class SegmentIn(BaseModel):
@@ -1414,6 +1515,9 @@ def update_account(slug: str, patch: AccountPatch, request: Request) -> dict[str
         raise HTTPException(status_code=422, detail=f"segment_source must be one of {accounts.SEGMENT_SOURCES}")
     if not changes:
         raise HTTPException(status_code=422, detail="Nothing to change")
+    for key in ("region", "subregion"):
+        if key in changes:
+            changes[key] = _blank_to_none(changes[key])
     with connection() as conn, conn.cursor() as cursor:
         if patch.fallback_segment is not None:
             cursor.execute("SELECT 1 FROM ops.account_segment WHERE account_slug = %s AND name = %s", (slug, patch.fallback_segment))
@@ -1518,6 +1622,47 @@ def map_job(company: str, job_number: str, body: JobMappingIn, request: Request)
             """,
             (company, job_number, body.account_slug, segment, body.role, body.companycam_project_id, _actor(request)),
         )
+        row = jsonable(dict(cursor.fetchone()))
+        conn.commit()
+    return row
+
+
+@router.get("/site-regions", dependencies=[Depends(require_admin)])
+def list_site_regions() -> dict[str, Any]:
+    """Every current job with its WinTeam region and state, the Admin override and the region in effect."""
+    with connection() as conn, conn.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT v.company, v.job_number, v.job_name, v.is_active, v.account_slug, v.winteam_region, v.winteam_subregion,
+                   v.region_override, v.subregion_override, v.region, v.subregion, v.updated_at, v.updated_by
+            FROM ops.v_site_region v
+            ORDER BY v.region NULLS LAST, v.subregion NULLS LAST, v.job_number
+            """
+        )
+        return {"sites": [jsonable(dict(r)) for r in cursor.fetchall()]}
+
+
+@router.put("/site-regions/{company}/{job_number}", dependencies=[Depends(require_admin)])
+def set_site_region(company: str, job_number: str, body: SiteRegionIn, request: Request) -> dict[str, Any]:
+    """Override a site's region and/or subregion; both blank removes the override (WinTeam values apply)."""
+    region, subregion = _blank_to_none(body.region), _blank_to_none(body.subregion)
+    with connection() as conn, conn.cursor() as cursor:
+        cursor.execute("SELECT 1 FROM ops.v_site_region WHERE company = %s AND job_number = %s", (company, job_number))
+        if cursor.fetchone() is None:
+            raise HTTPException(status_code=404, detail=f"Unknown job {company} {job_number}")
+        if region is None and subregion is None:
+            cursor.execute("DELETE FROM ops.site_region WHERE company = %s AND job_number = %s", (company, job_number))
+        else:
+            cursor.execute(
+                """
+                INSERT INTO ops.site_region (company, job_number, region, subregion, updated_at, updated_by)
+                VALUES (%s, %s, %s, %s, now(), %s)
+                ON CONFLICT (company, job_number) DO UPDATE SET region = EXCLUDED.region, subregion = EXCLUDED.subregion,
+                  updated_at = now(), updated_by = EXCLUDED.updated_by
+                """,
+                (company, job_number, region, subregion, _actor(request)),
+            )
+        cursor.execute("SELECT * FROM ops.v_site_region WHERE company = %s AND job_number = %s", (company, job_number))
         row = jsonable(dict(cursor.fetchone()))
         conn.commit()
     return row

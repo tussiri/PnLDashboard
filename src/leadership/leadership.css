@@ -189,32 +189,7 @@ tr.dim td{color:var(--text3)}
 .rowbtn:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:2px}
 .rowbtn:hover{text-decoration:underline}
 
-/* Hours to cut: one row per site, a bar of worked / OT premium / sub hours against the allowance mark */
 .kv .of{font-size:13px;font-weight:400;color:var(--text3)}
-.card.cut{padding:4px 16px}
-.cut-grp+.cut-grp{border-top:0.5px solid var(--border2)}
-.cut-grp-h{display:flex;flex-wrap:wrap;gap:6px 16px;align-items:baseline;padding:12px 0 4px;font-size:12px;color:var(--text2)}
-.cut-grp-h>b:first-child{font-size:13px;color:var(--text);margin-right:4px}
-.cut-row{padding:10px 0;border-top:0.5px solid var(--border)}
-.cut-grp-h+.cut-row{border-top:none}
-.cut-head{all:unset;box-sizing:border-box;display:flex;justify-content:space-between;align-items:flex-start;gap:12px;width:100%;cursor:pointer}
-.cut-head:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:2px}
-.cut-site{font-size:13px;font-weight:600;display:flex;flex-wrap:wrap;align-items:center;gap:6px;min-width:0}
-.cut-bu{font-size:11px;font-weight:500;color:var(--text3)}
-.cut-flag{font-size:11px;font-weight:600;color:var(--warn);background:var(--warn-bg);border-radius:20px;padding:1px 8px}
-.cut-num{font-size:13px;font-weight:600;text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums;flex:none}
-.cut-num small{display:block;font-size:11px;font-weight:400;color:var(--text3);white-space:normal}
-.cut-bar{position:relative;display:flex;height:10px;margin:8px 0 18px;background:var(--bg2);border-radius:3px}
-.cut-bar .seg{height:100%}
-.cut-bar .seg:first-child{border-radius:3px 0 0 3px}
-.cut-bar .worked{background:var(--accent2)}.cut-bar .premium{background:var(--warn)}.cut-bar .sub{background:var(--muted)}
-.cut-bar .mark{position:absolute;top:-3px;bottom:-3px;width:0;border-left:1.5px dashed var(--text)}
-.cut-bar .mark small{position:absolute;top:15px;left:0;transform:translateX(-50%);font-size:10.5px;color:var(--text3);white-space:nowrap}
-.cut-bar .mark.end small{transform:translateX(-100%)}
-.cut-bar .mark.start small{transform:none}
-.cut-meta{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:11.5px;color:var(--text2);font-variant-numeric:tabular-nums}
-.cut-meta b{color:var(--text);font-weight:600}
-.cut-detail{margin-top:10px;background:var(--bg2);border-radius:var(--r);padding:10px 12px}
 
 /* Drawer */
 .scrim{position:fixed;inset:0;background:rgba(0,0,0,.28);z-index:40;border:none}
@@ -303,8 +278,14 @@ tr.dim td{color:var(--text3)}
 .kpi-grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
 .chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:10px}
 .fbt{margin-bottom:12px}
-.fbt__ai{margin-top:12px;padding-top:12px;border-top:0.5px solid var(--border)}
-.fbt__hd{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.fbt__sent{color:var(--text);margin-bottom:10px;padding:14px 16px;background:var(--bg2);border:none;border-left:4px solid var(--border);border-radius:var(--r)}
+.fbt__sent.ok{border-left-color:var(--ok)}.fbt__sent.warn{border-left-color:var(--warn)}.fbt__sent.bad{border-left-color:var(--bad)}
+.fbt__sent .chips{margin-top:10px}
+.fbt__crit{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:10px}.fbt__crit>.kl{margin:0 2px 0 0}
+.fbt__mood{font-size:26px;margin-top:4px}
+.fbt__sent .fbt__line{font-size:15px;margin-top:4px}
+.fbt__hd{display:flex;align-items:center;gap:8px;flex-wrap:wrap;line-height:1.3}
+.fbt__hd>.kl,.fbt__hd>.ks{margin:0}
 .fbt__line{margin:6px 0 0;font-size:13px;color:var(--text)}
 .chip.ok{color:var(--ok)}.chip.warn{color:var(--warn)}.chip.bad{color:var(--bad)}
 .chip.linkbtn{border:none;cursor:pointer;font:inherit;font-size:11px}
@@ -421,3 +402,47 @@ rect.on{opacity:.8}
   [data-reveal='play'] .story-pop{animation:story-pop var(--story-dur) var(--story-ease) calc(200ms + var(--story-delay,0ms)) both}
 }
 .month-compare .ct{flex-wrap:wrap;gap:8px}.month-compare .ct .pills{margin-bottom:0}
+/* Hours to cut: one row per site, a bar of worked / OT premium / sub hours against the allowance mark */
+.card.cut{padding:4px 16px}
+.cut-grp+.cut-grp{border-top:0.5px solid var(--border2)}
+.cut-grp-h{display:flex;flex-wrap:wrap;gap:6px 16px;align-items:baseline;padding:12px 0 4px;font-size:12px;color:var(--text2)}
+.cut-grp-h>b:first-child{font-size:13px;color:var(--text);margin-right:4px}
+.cut-row{padding:10px 0;border-top:0.5px solid var(--border)}
+.cut-grp-h+.cut-row{border-top:none}
+.cut-head{all:unset;box-sizing:border-box;display:flex;justify-content:space-between;align-items:flex-start;gap:12px;width:100%;cursor:pointer}
+.cut-head:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:2px}
+.cut-site{font-size:13px;font-weight:600;display:flex;flex-wrap:wrap;align-items:center;gap:6px;min-width:0}
+.cut-bu{font-size:11px;font-weight:500;color:var(--text3)}
+.cut-flag{font-size:11px;font-weight:600;color:var(--warn);background:var(--warn-bg);border-radius:20px;padding:1px 8px}
+.cut-num{font-size:13px;font-weight:600;text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums;flex:none}
+.cut-num small{display:block;font-size:11px;font-weight:400;color:var(--text3);white-space:normal}
+.cut-bar{position:relative;display:flex;height:10px;margin:8px 0 18px;background:var(--bg2);border-radius:3px}
+.cut-bar .seg{height:100%}
+.cut-bar .seg:first-child{border-radius:3px 0 0 3px}
+.cut-bar .worked{background:var(--accent2)}.cut-bar .premium{background:var(--warn)}.cut-bar .sub{background:var(--muted)}
+.cut-bar .mark{position:absolute;top:-3px;bottom:-3px;width:0;border-left:1.5px dashed var(--text)}
+.cut-bar .mark small{position:absolute;top:15px;left:0;transform:translateX(-50%);font-size:10.5px;color:var(--text3);white-space:nowrap}
+.cut-bar .mark.end small{transform:translateX(-100%)}
+.cut-bar .mark.start small{transform:none}
+.cut-meta{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:11.5px;color:var(--text2);font-variant-numeric:tabular-nums}
+.cut-meta b{color:var(--text);font-weight:600}
+.cut-detail{margin-top:10px;background:var(--bg2);border-radius:var(--r);padding:10px 12px}
+/* The fiscal-year-to-date headline above the account tabs */
+.hero{display:flex;flex-wrap:wrap;gap:10px;align-items:stretch;background:var(--bg);border:0.5px solid var(--border);border-left:3px solid var(--ok);border-radius:var(--rl);padding:14px 16px;margin-bottom:16px}
+.hero.neg{border-left-color:var(--bad)}
+.hero__main{flex:1.6 1 240px;display:flex;flex-direction:column;justify-content:center;min-width:0}
+.hero__v{font-size:28px;font-weight:600;font-variant-numeric:tabular-nums;line-height:1.2}
+.hero>.kpi{flex:1 1 140px;display:flex;flex-direction:column;justify-content:center}
+/* Small-multiple trend grids (the CDO Amazon report's site trends) */
+.spark-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:12px}
+.spark-grid.groups{grid-template-columns:repeat(auto-fit,minmax(220px,1fr));margin-bottom:12px}
+.spark-grid .card+.card{margin-top:0}
+.spark{min-width:0}
+.spark__n{font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.spark__v{font-size:11px;margin-bottom:2px;font-variant-numeric:tabular-nums}
+/* Account notes, collapsed to one line */
+.notes-box{margin-bottom:14px}
+.notes-box>summary{cursor:pointer;font-size:12px;font-weight:600;color:var(--text2);padding:6px 2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.notes-box>summary .neutral{font-weight:400}
+.notes-box>summary.warn{color:var(--warn)}.notes-box>summary.bad{color:var(--bad)}
+.notes-box[open]>summary{margin-bottom:6px}

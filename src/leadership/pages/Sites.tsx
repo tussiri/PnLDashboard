@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react'
 import type { LeadershipAccount, LeadershipFeedbackResponse, LeadershipRow } from '../../services/apiTypes'
+import { SiteCharts } from '../AmazonCharts'
 import { scoreTone, stars } from './Feedback'
-import { closedMonths, includesVendor, monthLaborPct, siteMonths, useMonthly, vendorLabel } from '../data'
+import { closedMonths, includesVendor, inRegion, monthLaborPct, regionOf, siteMonths, subregionOf, useMonthly, vendorLabel } from '../data'
 import { hours1, money, pct } from '../format'
 import { accountSummary, statusOf, type AccountSummary, type MetricOptions, type SiteMetrics } from '../metrics'
 import { directOf, palletOf, variableWk } from '../Overview'
@@ -23,7 +24,8 @@ export const roleBadge = (r: Row) => (r.role === 'catch_all' ? <Badge status="no
 export function Sites({ account, summary, options, selfOnly, ratings }: { account: LeadershipAccount; summary: AccountSummary<LeadershipRow>; options: MetricOptions; selfOnly: boolean
   /** Customer feedback by site over 12 months (Feedback tab data), when the account has any. */
   ratings?: LeadershipFeedbackResponse['by_site'] }) {
-  const { navigate, can } = useLeadership()
+  const { navigate, can, route, weekStart, monthMode } = useLeadership()
+  const charts = account.vocabulary === 'amazon' && !monthMode
   const w = wordsFor(useVocab())
   const [filter, setFilter] = useState('All')
   const monthly = useMonthly(account.slug)
@@ -32,7 +34,14 @@ export function Sites({ account, summary, options, selfOnly, ratings }: { accoun
   const hasCatch = summary.sites.some((r) => r.role === 'catch_all')
   const hasNb = summary.sites.some((r) => r.role === 'non_billed')
   const groups = ['All', ...summary.segments.map((s) => s.segment), ...(hasCatch ? ['Catch-all'] : []), ...(hasNb ? ['Non-billed'] : [])]
-  const rows = summary.sites.filter((r) => filter === 'All' || (filter === 'Catch-all' ? r.role === 'catch_all' : filter === 'Non-billed' ? r.role === 'non_billed' : r.segment === filter && r.role === 'site'))
+  // Region filter (carried from the Portfolio in the URL); a region none of this account's sites is in is ignored.
+  const regions = [...new Set(summary.sites.map(regionOf))].sort()
+  const hasRegions = regions.length > 1 || summary.sites.some((r) => r.region)
+  const region = route.region && regions.includes(route.region) ? route.region : undefined
+  const subregions = region ? [...new Set(summary.sites.filter((r) => regionOf(r) === region).map(subregionOf))].sort() : []
+  const subregion = route.subregion && subregions.includes(route.subregion) ? route.subregion : undefined
+  const setRegion = (next: { region?: string; subregion?: string }) => navigate(next, { replace: true })
+  const rows = summary.sites.filter((r) => inRegion(r, region, subregion)).filter((r) => filter === 'All' || (filter === 'Catch-all' ? r.role === 'catch_all' : filter === 'Non-billed' ? r.role === 'non_billed' : r.segment === filter && r.role === 'site'))
   const hasVariable = summary.sites.some((r) => variableWk(r, options) != null)
   const hasPallet = summary.sites.some((r) => palletOf(r) > 0 || (r.kids?.length ?? 1) > 1)
   const vendor = includesVendor(account) && !selfOnly
@@ -51,6 +60,7 @@ export function Sites({ account, summary, options, selfOnly, ratings }: { accoun
   const cols: Column<Row>[] = [
     { key: 'job', header: 'Job', left: true, value: (r) => Number(r.job_number) || r.job_number, render: (r) => <>{r.job_number}{(r.kids?.length ?? 1) > 1 && <span className="neutral"> +{r.kids!.slice(1).join(',')}</span>}</> },
     { key: 'name', header: 'Site', left: true, value: (r) => r.site_name, className: 'nm', render: (r) => <>{r.site_name}{r.labor > 0 && r.labor_basis === 'trailing_rate_estimate' && <span className="warn"> ~</span>}</> },
+    ...(hasRegions ? [{ key: 'reg', header: 'Region', left: true, value: (r: Row) => `${regionOf(r)} ${subregionOf(r)}`, render: (r: Row) => <>{regionOf(r)} <span className="neutral">{subregionOf(r)}</span></>, csv: (r: Row) => `${regionOf(r)} / ${subregionOf(r)}` }] : []),
     ...(hasVariable ? [
       { key: 'fix', header: 'Fixed inv', value: fixed, render: (r: Row) => money(fixed(r)) },
       { key: 'var', header: 'Var inv', value: (r: Row) => variableWk(r, options), render: (r: Row) => (variableWk(r, options) ? money(variableWk(r, options)) : '–') },
@@ -82,7 +92,7 @@ export function Sites({ account, summary, options, selfOnly, ratings }: { accoun
   const sum = (f: (r: Row) => number | null) => rows.reduce((a, r) => a + (f(r) ?? 0), 0)
   const totalVar = sum(variance)
   const priorCols = closed.length || 1
-  const tot = <tr className="tot"><td></td><td className="l">Total ({rows.length})</td>
+  const tot = <tr className="tot"><td></td><td className="l">Total ({rows.length})</td>{hasRegions && <td></td>}
     {hasVariable && <><td>{money(sum(fixed))}</td><td>{money(sum((r) => variableWk(r, options)))}</td></>}
     <td>{money(s.invoice)}</td><td>{money(sum(directOf))}</td>{hasPallet && <td>{money(sum(palletOf))}</td>}{vendor && <td>{money(s.vendor)}</td>}<td>{money(s.cost)}</td>
     <td className={toneOf(statusOf(s.measurePct, options.target, options.watchBand))}>{pct(s.measurePct)}</td>{Array.from({ length: priorCols }, (_, i) => <td key={i} />)}
@@ -90,9 +100,19 @@ export function Sites({ account, summary, options, selfOnly, ratings }: { accoun
     {allocated && <><td className="neutral">{money(s.allocation)}</td><td className={s.margin < 0 ? 'bad' : ''}>{money(s.margin)}</td></>}
     <td>{hours1(s.hours)}</td><td>{hours1(s.otHours)}</td><td>{pct(s.otPct)}</td><td>{hours1(sum((r) => r.overHours))}</td>{ratings?.length ? <td></td> : null}<td></td></tr>
   return <>
-    <Pills label="Filter sites" options={groups.map((o) => ({ value: o, label: o }))} value={filter} onChange={setFilter} />
+    <div className="ctrl" style={{ marginBottom: 12 }}>
+      <Pills label="Filter sites" options={groups.map((o) => ({ value: o, label: o }))} value={filter} onChange={setFilter} />
+      {regions.length > 1 && <><label htmlFor="site-region" className="sr-only">Region</label>
+        <select id="site-region" value={region ?? ''} onChange={(e) => setRegion({ region: e.target.value || undefined, subregion: undefined })}>
+          <option value="">All regions</option>{regions.map((r) => <option key={r}>{r}</option>)}</select></>}
+      {subregions.length > 1 && <><label htmlFor="site-subregion" className="sr-only">Subregion</label>
+        <select id="site-subregion" value={subregion ?? ''} onChange={(e) => setRegion({ subregion: e.target.value || undefined })}>
+          <option value="">All of {region}</option>{subregions.map((r) => <option key={r}>{r}</option>)}</select></>}
+    </div>
+    {charts && <SiteCharts account={account} rows={rows} options={options} weekStart={weekStart} part="top" />}
     <div className="card"><SortTable caption={`${account.name} sites`} rows={rows} columns={cols} defaultSort={{ key: 'lp', dir: -1 }} total={tot} pageSize={100}
       rowClass={(r) => (r.role !== 'site' || !(r.invoice > 0) ? 'dim' : '')} onRowClick={(r) => navigate({ site: { company: r.company ?? '', job: r.job_number } })}
       rowLabel={(r) => `Open ${r.site_name}`} csvName={`${account.slug}-sites`} /></div>
+    {charts && <SiteCharts account={account} rows={rows} options={options} weekStart={weekStart} part="bottom" />}
   </>
 }

@@ -9,7 +9,7 @@ const errorText = (e: unknown) => (e instanceof ApiError ? (e.isNetwork ? `API u
 
 /** Why a Microsoft sign-in came back without a session (`?signin_error=` from /auth/callback/entra). */
 const MICROSOFT_ERRORS: Record<string, string> = {
-  cancelled: 'Microsoft sign-in was cancelled.',
+  cancelled: 'Microsoft sign-in was canceled.',
   expired: 'The Microsoft sign-in took too long or was started in another window. Try again.',
   not_provisioned: 'Your Microsoft account cannot use this dashboard: it has been disabled, or its email cannot be a username. Ask an administrator.',
   off: 'Microsoft sign-in is not set up on this dashboard.',

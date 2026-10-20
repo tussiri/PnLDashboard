@@ -245,7 +245,7 @@ FROM relay a
 
 
 def rebuild(cursor: Any, subcontract_gl: tuple[int, int]) -> int:
-    """TRUNCATE and refill mart.leadership_week inside the caller's transaction; returns the row count."""
-    cursor.execute("TRUNCATE mart.leadership_week")
+    """Empty (DELETE, so readers are not blocked; see marts.rebuild_tables) and refill mart.leadership_week inside the caller's transaction; returns the row count."""
+    cursor.execute("DELETE FROM mart.leadership_week")
     cursor.execute(REBUILD_SQL, {"subcontract_gl_low": subcontract_gl[0], "subcontract_gl_high": subcontract_gl[1]})
     return cursor.rowcount

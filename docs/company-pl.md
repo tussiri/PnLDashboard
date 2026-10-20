@@ -1,6 +1,6 @@
 # Company P&L on Finance's basis
 
-Migration 056, `services/api/app/company_pl.py`, Company page section "Company P&L", Admin tabs
+Migration 058, `services/api/app/company_pl.py`, Company page section "Company P&L", Admin tabs
 Overhead rule, Adjustments and Contracts. Built to reproduce Finance's Company P&L workbook
 (`Company_PL_ex_Education_FedEx_Subs.xlsx`, built from the WinTeam Cross Tab Income Statement by job and
 tied to the GL Trend).
@@ -60,6 +60,11 @@ GL account ranges on Admin > Overhead rule win over names. Set them once from th
 | Amazon account management fee posted to 6325 | Reclass, Revenue, from 6325 to the Amazon job |
 | Growing Up Care invoices on Amazon project 502 | Reclass, Revenue, from 502 to Whole Foods 701 |
 | Direct account staff (Education, FedEx subs, Amazon, Projects) | Direct staff, group, monthly amount |
+
+Missing sub invoices (top of Admin > Adjustments): for a month, every subcontracted Relay site that was
+billed but whose subcontractor cost on the GL is under 90% of the month before, with the gap as the
+suggested accrual and what Relay holds that is not in WinTeam yet. Checked rows are booked as accruals
+reversing the next month.
 
 ## Weekly invoice basis (Admin > Accounts)
 

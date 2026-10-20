@@ -115,7 +115,9 @@ export interface Derived {
   otPremiumHours: number
   /** The part of the hours over target explained by the OT premium (capped at hours over). */
   overFromOtPremium: number
-  /** Hours over target beyond the OT premium. */
+  /** The part left after the OT premium explained by vendor cost (vendor ÷ base rate, capped). */
+  overFromSub: number
+  /** Hours over target beyond the OT premium and vendor cost: hours worked past what billing supports. */
   overFromExtraHours: number
   otPct: number
   /** The half-time portion of OT pay: OT $ ÷ 3. */
@@ -215,6 +217,7 @@ export function siteMetrics<R extends WeekRow>(row: R, opts: MetricOptions): Sit
   const overDollars = invoice > 0 ? Math.max(0, cost - invoice * target) : 0
   const overHours = baseRate > 0 ? overDollars / baseRate : 0
   const overFromOtPremium = Math.min(otPremiumHours, overHours)
+  const overFromSub = baseRate > 0 ? Math.min(vendor / baseRate, overHours - overFromOtPremium) : 0
   return {
     ...row,
     invoice,
@@ -228,7 +231,8 @@ export function siteMetrics<R extends WeekRow>(row: R, opts: MetricOptions): Sit
     overHours,
     otPremiumHours,
     overFromOtPremium,
-    overFromExtraHours: overHours - overFromOtPremium,
+    overFromSub,
+    overFromExtraHours: overHours - overFromOtPremium - overFromSub,
     otPct: row.hours > 0 ? row.ot_hours / row.hours : 0,
     otPremiumDollars: row.ot_dollars / 3,
     priorLaborPct: ratio(row.prior_labor + row.prior_sub, row.prior_revenue),
@@ -338,7 +342,7 @@ export interface AccountSummary<R extends WeekRow = WeekRow> {
   /** Header hours over target: sites over target plus the catch-all in full. */
   headerOverHours: number
   segments: SegmentSummary[]
-  overTarget: { rows: SiteMetrics<R>[]; billedCount: number; rollup: Rollup; fromOtPremium: number; fromExtraHours: number }
+  overTarget: { rows: SiteMetrics<R>[]; billedCount: number; rollup: Rollup; fromOtPremium: number; fromSub: number; fromExtraHours: number }
   /** Hours to cut, per billed site with labor hours; `unrated` billed sites have none (fully subcontracted). */
   cut: { rows: CutRow<R>[]; unrated: number }
   overtime: { hours: number; dollars: number; premiumDollars: number; pctOfHours: number; pctOfLabor: number; rowsWithOt: number; rowsWithLabor: number; unbilledOtHours: number }
@@ -376,6 +380,7 @@ export function accountSummary<R extends WeekRow>(rows: R[], opts: MetricOptions
   const invoiced = billedRows.filter((r) => r.invoice > 0)
   const overRows = invoiced.filter((r) => r.overHours > 0.5)
   const fromOtPremium = overRows.reduce((a, r) => a + r.overFromOtPremium, 0)
+  const fromSub = overRows.reduce((a, r) => a + r.overFromSub, 0)
   const overRollup = rollup(overRows, target, basis)
   const cutRows = invoiced.map((r) => cutRow(r)).filter((r): r is CutRow<R> => r != null)
 
@@ -407,7 +412,7 @@ export function accountSummary<R extends WeekRow>(rows: R[], opts: MetricOptions
     catchAllOverHours: catchHours,
     headerOverHours: billed.overHours + catchHours,
     segments,
-    overTarget: { rows: overRows, billedCount: invoiced.length, rollup: overRollup, fromOtPremium, fromExtraHours: overRollup.overHours - fromOtPremium },
+    overTarget: { rows: overRows, billedCount: invoiced.length, rollup: overRollup, fromOtPremium, fromSub, fromExtraHours: overRollup.overHours - fromOtPremium - fromSub },
     cut: { rows: cutRows, unrated: invoiced.length - cutRows.length },
     overtime: {
       hours: all.otHours,

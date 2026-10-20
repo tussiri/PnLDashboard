@@ -263,7 +263,7 @@ def sub_account_rules_setting(value: Any) -> dict[str, dict[str, Any]]:
     """Validated sub_account_rules: {account: {basis, prefix_map, default}} (defaults when malformed).
 
     Account keys keep their case (they are matched to the parent account exactly, "*" = any);
-    prefix_map keys are lower-cased and stripped; a rule without a recognised basis gets
+    prefix_map keys are lower-cased and stripped; a rule without a recognized basis gets
     customer_name; an empty or non-object setting falls back to DEFAULT_SUB_ACCOUNT_RULES.
     """
     if not isinstance(value, dict):
@@ -618,7 +618,7 @@ def _setting(cursor: Any, key: str, default: Any) -> Any:
 
 
 def rebuild(cursor: Any) -> int:
-    """TRUNCATE and rebuild mart.job_week on the caller's cursor/transaction; returns the row count.
+    """Empty (DELETE, so readers are not blocked; see marts.rebuild_tables) and rebuild mart.job_week on the caller's cursor/transaction; returns the row count.
 
     Reads ops.app_setting.agency_sub for the agency labor rule and sub_account_rules for the
     sub-account labels (apply_sub_accounts). Runs after mart.job_month and
@@ -626,7 +626,7 @@ def rebuild(cursor: Any) -> int:
     come from mart.job_month.
     """
     agency = agency_sub_setting(_setting(cursor, "agency_sub", DEFAULT_AGENCY_SUB))
-    cursor.execute("TRUNCATE mart.job_week")
+    cursor.execute("DELETE FROM mart.job_week")
     cursor.execute(
         JOB_WEEK_SQL,
         {
@@ -642,7 +642,7 @@ def rebuild(cursor: Any) -> int:
     )
     rows = cursor.rowcount
     labelled = apply_sub_accounts(cursor)
-    logger.info("mart.job_week rebuilt: %s rows (agency_sub %s; %s job(s) labelled with a sub-account)",
+    logger.info("mart.job_week rebuilt: %s rows (agency_sub %s; %s job(s) labeled with a sub-account)",
                 rows, "on" if agency["enabled"] else "off", labelled)
     return rows
 

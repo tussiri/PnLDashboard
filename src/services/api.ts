@@ -1,6 +1,6 @@
 import type {
   FullSyncResult, LeadershipAccount, LeadershipAccountJob, LeadershipAccountPatch, LeadershipConfig, LeadershipImportFile, LeadershipImportKind,
-  LeadershipJobMapping, LeadershipRowsQuery, LeadershipRowsResponse, LeadershipSegment, LeadershipSiteResponse, LeadershipVendorsResponse, LeadershipFeedbackResponse, FeedbackOverview, LeadershipQaResponse, LeadershipBudgetResponse, BudgetPlanRow, SchoolCalendarLoad, SchoolCalendarResponse, SchoolDayType, SchoolDistrict, BudgetWeekRow, LeadershipMonthlyResponse, MailInboxStatus, MailInboxSetting, MailPollResult, CompanyResponse, LeadershipMonthResponse, AllocationStatus, AllocationSettings, AllocationMonth, CompanyPlResponse, CompanyPlSettings, PlAdjustment, PlAdjustmentInput, PlAdjustmentsResponse, JobContract, PlCategory,
+  LeadershipJobMapping, SiteRegion, LeadershipRowsQuery, LeadershipRowsResponse, LeadershipSegment, LeadershipSiteResponse, LeadershipVendorsResponse, LeadershipFeedbackResponse, FeedbackOverview, LeadershipQaResponse, LeadershipBudgetResponse, BudgetPlanRow, SchoolCalendarLoad, SchoolCalendarResponse, SchoolDayType, SchoolDistrict, BudgetWeekRow, LeadershipMonthlyResponse, MailInboxStatus, MailInboxSetting, MailPollResult, CompanyResponse, LeadershipMonthResponse, AllocationStatus, AllocationSettings, AllocationMonth, CompanyPlResponse, CompanyPlSettings, PlAdjustment, PlAdjustmentInput, PlAdjustmentsResponse, JobContract, PlCategory, SubAccrualSuggestion,
   PauseOverride, PhotoValidationSyncResult, RebuildResult, StaffingJobResponse, SyncOptions, SyncRunsResponse, SystemStatus } from './apiTypes'
 
 /**
@@ -174,6 +174,9 @@ export const api = {
   updatePlAdjustment: (id: number, input: PlAdjustmentInput, signal?: AbortSignal) => request<{ adjustment: PlAdjustment }>(`/leadership/adjustments/${id}`, { method: 'PUT', body: input, admin: true, signal, rawRatios: true }),
   clearPlAdjustment: (id: number, cleared: boolean, signal?: AbortSignal) => request<{ adjustment: PlAdjustment }>(`/leadership/adjustments/${id}/clear`, { method: 'POST', body: { cleared }, admin: true, signal, rawRatios: true }),
   deletePlAdjustment: (id: number, signal?: AbortSignal) => request<{ deleted: number }>(`/leadership/adjustments/${id}`, { method: 'DELETE', admin: true, signal }),
+  subAccrualSuggestions: (month: string, signal?: AbortSignal) => request<{ month: string; suggestions: SubAccrualSuggestion[] }>('/leadership/adjustments/suggestions', { query: { month }, admin: true, signal, rawRatios: true }),
+  acceptSubAccruals: (month: string, items: { company: string; job_number: string; amount: number }[], signal?: AbortSignal) =>
+    request<{ created: number[] }>('/leadership/adjustments/suggestions', { method: 'POST', body: { month, items }, admin: true, signal, rawRatios: true }),
   jobContracts: (account?: string, signal?: AbortSignal) => request<{ contracts: JobContract[] }>('/leadership/contracts', { query: { account }, admin: true, signal, rawRatios: true }),
   saveJobContract: (company: string, jobNumber: string, body: { effective_from: string; monthly_amount: number; note?: string | null }, signal?: AbortSignal) =>
     request<{ contracts: JobContract[] }>(`/leadership/contracts/${encodeURIComponent(company || '-')}/${encodeURIComponent(jobNumber)}`, { method: 'PUT', body, admin: true, signal, rawRatios: true }),
@@ -187,6 +190,9 @@ export const api = {
     request<{ jobs: LeadershipAccountJob[] }>('/leadership/account-jobs', { query: { ...query }, admin: true, signal, rawRatios: true }),
   leadershipMapJob: (company: string, jobNumber: string, mapping: LeadershipJobMapping, signal?: AbortSignal) =>
     request<LeadershipAccountJob>(`/leadership/account-jobs/${encodeURIComponent(company)}/${encodeURIComponent(jobNumber)}`, { method: 'PUT', body: mapping, admin: true, signal }),
+  siteRegions: (signal?: AbortSignal) => request<{ sites: SiteRegion[] }>('/leadership/site-regions', { admin: true, signal, rawRatios: true }),
+  setSiteRegion: (company: string, jobNumber: string, value: { region: string | null; subregion: string | null }, signal?: AbortSignal) =>
+    request<SiteRegion>(`/leadership/site-regions/${encodeURIComponent(company)}/${encodeURIComponent(jobNumber)}`, { method: 'PUT', body: value, admin: true, signal }),
   leadershipReloadSeed: (signal?: AbortSignal) => request<{ added: { accounts: number; segments: number; jobs: number } }>('/leadership/accounts/seed', { method: 'POST', admin: true, signal }),
   leadershipImports: (limit = 25, signal?: AbortSignal) => request<{ files: LeadershipImportFile[] }>('/leadership/imports', { query: { limit }, admin: true, signal, rawRatios: true }),
   leadershipUpload: (file: File, kind?: LeadershipImportKind, signal?: AbortSignal, options?: PauseOverride) => uploadImport(file, kind, signal, options),

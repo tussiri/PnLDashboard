@@ -130,26 +130,35 @@ export function SubcontractedTab({ account }: { account: LeadershipAccount }) {
   const t = useTokens()
   const data = monthly.data
   const months = data?.months ?? []
+  // A month with Relay payables but no Relay AR at all has not had its invoices loaded yet: it would read
+  // as every site billed $0 and upside down, so it is left out rather than shown as a loss.
+  const arMissing = useMemo(() => new Set((data?.months ?? []).filter((m) => {
+    const sum = (k: 'relay_ar' | 'relay_ap') => (data?.jobs ?? []).reduce((a, j) => a + (j.months[m]?.[k] ?? 0), 0)
+    return sum('relay_ap') > 0 && sum('relay_ar') === 0
+  })), [data])
   const rows: SubSite[] = useMemo(() => {
     if (!data) return []
-    const picked = scope === 'all' ? data.months : [scope]
+    const picked = (scope === 'all' ? data.months : [scope]).filter((m) => !arMissing.has(m))
     return data.jobs.filter((j) => j.delivery_model === 'subcontracted' && j.role === 'site').map((j) => {
       let ar = 0, ap = 0, direct = 0
       for (const m of picked) { const x = j.months[m]; ar += monthRevenue(x, true); ap += x ? (x.relay_ap > 0 ? x.relay_ap : x.subcontractors) : 0; direct += x?.direct_labor ?? 0 }
       const margin = ar - ap - direct
       return { company: j.company, job_number: j.job_number, name: (j.job_name ?? '').replace(/^FedEx - /, '') || j.job_number, ar, ap, direct, margin, marginPct: ar > 0 ? margin / ar : null }
     }).filter((r) => r.ar > 0 || r.ap + r.direct > 0)
-  }, [data, scope])
+  }, [data, scope, arMissing])
   if (monthly.error) return <LoadError error={monthly.error} onRetry={monthly.refetch} />
   if (!data) return <Skeleton height={400} />
-  if (!rows.length) return <Empty>No subcontracted sites with billing or cost in these months.</Empty>
+  const loaded = months.filter((m) => !arMissing.has(m))
+  const pills = <Pills label="Months" options={[...months.map((m) => ({ value: m, label: arMissing.has(m) ? `${monthLabel(m)} (AR not loaded)` : monthLabel(m) })), { value: 'all', label: `${loaded.length} months` }]} value={scope} onChange={setScope} />
+  if (arMissing.has(scope)) return <>{pills}<Empty>{monthLabel(scope)} AR has not loaded from Relay yet.</Empty></>
+  if (!rows.length) return <>{pills}<Empty>No subcontracted sites with billing or cost in these months.</Empty></>
   const T = rows.reduce((a, r) => ({ ar: a.ar + r.ar, ap: a.ap + r.ap, direct: a.direct + r.direct }), { ar: 0, ap: 0, direct: 0 })
   const margin = T.ar - T.ap - T.direct
   const upside = rows.filter((r) => r.margin < 0)
   const thin = rows.filter((r) => r.margin >= 0 && (r.marginPct ?? 0) < 0.05)
   const noAr = rows.filter((r) => r.ar === 0)
   const worst = [...rows].sort((a, b) => a.margin - b.margin).slice(0, 25)
-  const scopeLabel = scope === 'all' ? `${months.length} months` : monthLabel(scope)
+  const scopeLabel = scope === 'all' ? `${loaded.length} months` : monthLabel(scope)
   const cols: Column<SubSite>[] = [
     { key: 'job', header: 'Job', left: true, value: (r) => Number(r.job_number) || r.job_number },
     { key: 'name', header: 'Site', left: true, value: (r) => r.name, className: 'nm' },
@@ -162,7 +171,7 @@ export function SubcontractedTab({ account }: { account: LeadershipAccount }) {
   ]
   const tot = <tr className="tot"><td></td><td className="l">Total ({rows.length})</td><td>{money(T.ar)}</td><td>{money(T.ap)}</td><td>{T.direct ? money(T.direct) : '–'}</td><td>{money(margin)}</td><td>{pct(T.ar ? margin / T.ar : null)}</td><td></td></tr>
   return <>
-    <Pills label="Months" options={[...months.map((m) => ({ value: m, label: monthLabel(m) })), { value: 'all', label: `${months.length} months` }]} value={scope} onChange={setScope} />
+    {pills}
     <div className="kpi-lg">
       <Kpi label="Sites" value={rows.length} sub={scopeLabel} />
       <Kpi label="AR" value={money(T.ar)} sub="Relay AR, else job cost revenue" />

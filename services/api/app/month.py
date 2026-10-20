@@ -67,6 +67,8 @@ last_jc AS (SELECT DISTINCT ON (job_number) job_number, revenue FROM jcm WHERE m
 rjm AS MATERIALIZED (SELECT * FROM mart.v_relay_job_month WHERE month <= %(first)s::date),
 last_ar AS (SELECT DISTINCT ON (job_number) job_number, ar_revenue FROM rjm WHERE month < %(first)s::date AND ar_revenue > 0 ORDER BY job_number, month DESC)
 SELECT m.*, j.latitude, j.longitude, j.city, j.state_province, j.parent_job_number,
+       coalesce(sr.region, nullif(btrim(j.region_name), '')) AS region,
+       coalesce(sr.subregion, nullif(btrim(j.state_province), '')) AS subregion,
        jc.revenue AS jc_revenue, jc.subcontractors AS jc_sub, jc.management_wages,
        r.ar_revenue, r.ar_invoices, r.ap_amount AS relay_ap, r.payables,
        pj.revenue AS prior_revenue, pj.direct_labor AS prior_labor, pj.subcontractors AS prior_sub,
@@ -74,6 +76,7 @@ SELECT m.*, j.latitude, j.longitude, j.city, j.state_province, j.parent_job_numb
        c.ap_monthly > 0 AND NOT coalesce(c.self_perform, false) AS sub_expected
 FROM m
 LEFT JOIN core.dim_job j ON j.job_key = m.job_key
+LEFT JOIN ops.site_region sr ON sr.company = m.company AND sr.job_number = m.job_number
 LEFT JOIN jcm jc ON jc.job_number = m.job_number AND jc.month = %(first)s::date
 LEFT JOIN jcm pj ON pj.job_number = m.job_number AND pj.month = %(prior)s::date
 -- Relay (FedEx) is keyed by Crane's WinTeam job numbers; Sarus reuses some of them (300 is FXE Pittsburgh
@@ -141,7 +144,7 @@ def month_row(r: dict[str, Any], mapping: dict[tuple[str, str], dict[str, Any]],
         "prior_sub": _f(r["prior_sub"]), "prior_sub_basis": "job_cost" if r["prior_sub"] is not None else None,
         "delivery_model": r["delivery_model"], "sub_week": round(vendor, 2), "sub_week_basis": vendor_source,
         "consumables_cost": None, "consumables_basis": None, "latitude": r["latitude"], "longitude": r["longitude"],
-        "city": r["city"], "state_province": r["state_province"], "parent_job_number": r["parent_job_number"], "dt_hours": 0,
+        "city": r["city"], "state_province": r["state_province"], "region": r.get("region"), "subregion": r.get("subregion"), "parent_job_number": r["parent_job_number"], "dt_hours": 0,
         "sub_expected": bool(r["sub_expected"]), "sub_received": int(r["payables"] or 0) > 0, "ar_invoices": int(r["ar_invoices"] or 0),
         "_allocation": a.get("revenue_allocation"), "_rm_budget_hours": _f(r["rm_budget_hours"]), "_rm_hours": _f(r["hours"]),
         "_mgmt_month": _f(r["management_wages"]),

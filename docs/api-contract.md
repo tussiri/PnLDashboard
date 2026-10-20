@@ -253,7 +253,7 @@ unit, labor % of invoicing vs BU target) for every account. Weeks are Monday-bas
 ```
 Rules: `hours` = timekeeping total hours; `ot_hours`/`dt_hours` from timekeeping; `direct_dollars` = labor at each
 punch's own WinTeam rate at full pay (rate × (hours + ½ OT + DT), as the Pay Report's TotalLaborDollars), else
-the employee's latest rate, else hours × the job's trailing rate (changed 2026-10-06; it was always the trailing rate); `ot_dollars` = ot_hours × rate × 0.5 premium + dt_hours × rate × 1.0 (estimate, labelled);
+the employee's latest rate, else hours × the job's trailing rate (changed 2026-10-06; it was always the trailing rate); `ot_dollars` = ot_hours × rate × 0.5 premium + dt_hours × rate × 1.0 (estimate, labeled);
 `sub_dollars` = the site's monthly subcontract cost apportioned by calendar days (sub_estimated = true when the month
 is not closed and the latest closed month's rate is carried forward); `invoicing` = closed-month job-cost revenue
 apportioned by calendar days, else contract billing x 12/53 x day-share, else AR invoices for the service month
@@ -417,7 +417,7 @@ do (White Settlement ISD on job 112, Crowley ISD on job 910), that revenue is sp
 present in the week by revenue-month budget hours, else revenue-month actual hours (migration 033,
 computed at read time): `revenue_month_amount` and `prior_revenue` include it and
 `revenue_allocated` shows the amount moved onto (+) or off (-) the row, `allocation_weight` the weight used
-(`budget_hours` | `actual_hours` | `week_hours`, null when nothing moved). `PUT /leadership/accounts/{slug}` also accepts `revenue_allocation`, `cost_basis`, `segment_label` and `vendor_label` (1 to 30 characters; migration 036). The views use the weekly reports' vocabulary: Invoicing, Direct labor, the account's `vendor_label` (Agency sub, Subcontractor), Total labor, Labor % = total labor ÷ invoicing, On track / Watch / High, pp WoW, Budget and $ Var, and Hours to cut (worked + OT premium + sub hours against the allowance at target, per day); groups are named by `segment_label` (BU for Amazon).
+(`budget_hours` | `actual_hours` | `week_hours`, null when nothing moved). `PUT /leadership/accounts/{slug}` also accepts `revenue_allocation`, `cost_basis`, `segment_label` and `vendor_label` (1 to 30 characters; migration 036). The views use the weekly reports' vocabulary: Invoicing, Direct labor, the account's `vendor_label` (Agency sub, Subcontractor), Total labor, Labor % = total labor ÷ invoicing, On track / Watch / High, pp WoW, Budget and $ Var, and Hours to cut / Over Target (hours over target split into OT premium, vendor cost and extra hours, as the FedEx report); groups are named by `segment_label` (BU for Amazon).
 
 ## Relay (FedEx) feeds, added 2026-09-24
 
@@ -760,7 +760,8 @@ rebuild, replacing an automatic mapping, never an administrator's) and `exclude_
 every account, shown as Other). Auto-assignment skips excluded jobs, so `PUT /leadership/account-jobs/
 {company}/{job}` with `account_slug: null` now keeps a job in Other instead of it returning on the next
 rebuild; mapping it to an account removes the exclusion. Amazon lists the 14 Crane sites of the weekly
-Amazon report and excludes its project, management and closed jobs.
+Amazon report plus UIL2 (Crane IFS job 757, added 2026-10-20) and excludes its project, management and
+closed jobs.
 
 In the views a site counts as subcontracted by its delivery model only for accounts that split
 subcontracted sites out (FedEx, from Relay); elsewhere only when Crane has no payroll hours there and the
@@ -802,7 +803,7 @@ working days (school, early release and staff-only days) over the base weeks' av
 
 ## Company P&L on Finance's basis, added 2026-10-19
 
-Migration 056, app/company_pl.py, docs/company-pl.md. Source: the WinTeam Cross Tab Income Statement by
+Migration 058, app/company_pl.py, docs/company-pl.md. Source: the WinTeam Cross Tab Income Statement by
 job (import kind `job_income_statement`): every GL line on every job for a month, classified into a
 category: `revenue`, `direct_labor`, `payroll_taxes_insurance`, `subcontractors`, `supplies`,
 `other_direct`, `operating_expense`. Gross profit = revenue − the direct categories; before overhead =
@@ -819,6 +820,8 @@ reclass moves an amount between jobs, a staff charge moves overhead to a group.
 | `PUT /leadership/company-pl/settings` | Admin. Any of the settings keys; `422` when no group or more than one takes the rest, no group shares the pool, a key repeats or a GL range is invalid. Lines already loaded keep their category; reload a file to reclassify. |
 | `GET /leadership/adjustments?months=12` | Admin. `{adjustments: [PlAdjustment], groups: [{key, name}], categories}`. `PlAdjustment = {adjustment_id, month, kind: accrual \| reclass \| staff, category, amount, from_company, from_job, to_company, to_job, group_key, description, reverse_month, cleared_at, cleared_by, created_at, created_by, updated_at, updated_by}`. |
 | `POST /leadership/adjustments` | Admin. Body `{month: YYYY-MM, kind, category, amount, description, to_job, to_company, from_job, from_company, group_key, reverse_month}`; `201 {adjustment}`. An accrual needs `to_job`; a reclass `from_job`, `to_job` and a positive amount; a staff charge a `group_key` (category is `operating_expense`); only an accrual reverses, in a later month. `422` otherwise. |
+| `GET /leadership/adjustments/suggestions?month=YYYY-MM` | Admin. `{month, suggestions: [{company, job_number, job_name, revenue, subcontractors, prior_subcontractors, relay_ap, relay_not_in_winteam, amount}]}`: subcontracted Relay (FedEx) sites billed in the month (GL revenue or Relay AR) whose subcontractor cost on the GL (the Cross Tab when the month is loaded, else job cost) is under 90% of the month before; `amount` = prior month − posted. Sites with an open subcontractor accrual for the month are left out. Largest first. |
+| `POST /leadership/adjustments/suggestions` | Admin. `{month, items: [{company, job_number, amount}], reverse_next_month: true}`; books each as a subcontractor accrual (reversing the next month by default); `201 {created: [id]}`. |
 | `PUT /leadership/adjustments/{id}` | Admin. Same body; `{adjustment}`; `404` unknown. |
 | `POST /leadership/adjustments/{id}/clear` | Admin. `{cleared: bool}`: the real invoice posted to the accrual's month, so it no longer applies (or undo). `422` for a non-accrual. |
 | `DELETE /leadership/adjustments/{id}` | Admin. `{deleted}`. |
@@ -829,7 +832,7 @@ reclass moves an amount between jobs, a staff charge moves overhead to a group.
 Invoice basis (`ops.account.invoice_basis`) adds `latest_fixed_avg_variable` (the revenue month's fixed
 billing, revenue − variable, plus the 3-month average variable billing; the revenue month when the Job Cost
 Analysis has no split) and `contract` (the job's contract in effect on the week's last day, else the revenue
-month). FedEx uses the first and Crowley ISD the second (migration 056). Rows of `GET /leadership/rows` and a
+month). FedEx uses the first and Crowley ISD the second (migration 058). Rows of `GET /leadership/rows` and a
 site's weeks add `contract_month`. Import kinds add `job_income_statement`
 (file name `job_income_statement_*` or containing "Cross Tab"; a file replaces its month and company) and
 `contract` (columns Company, Job Number, Effective From, Monthly Amount; upserted).

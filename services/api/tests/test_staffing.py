@@ -44,9 +44,9 @@ def test_a_line_moves_from_pending_to_active_to_closed():
 def test_rejected_and_cancelled_lines():
     rejected = ln("rejected", decided_at=at(4), closed_at=at(4))
     assert staffing.state_at(rejected, at(3)) == "pending" and staffing.state_at(rejected, at(5)) is None
-    withdrawn = ln("cancelled", closed_at=at(6))                     # cancelled while submitted
+    withdrawn = ln("cancelled", closed_at=at(6))                     # canceled while submitted
     assert staffing.state_at(withdrawn, at(5)) == "pending" and staffing.state_at(withdrawn, at(7)) is None
-    dropped = ln("cancelled", decided_at=at(4), closed_at=at(9))     # cancelled after approval
+    dropped = ln("cancelled", decided_at=at(4), closed_at=at(9))     # canceled after approval
     assert staffing.state_at(dropped, at(6)) == "active" and staffing.state_at(dropped, at(10)) is None
 
 

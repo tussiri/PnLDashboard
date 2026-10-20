@@ -139,3 +139,16 @@ def test_contract_rows():
     assert parsed.records == [{"company": "Crane Southwest", "job_number": "918", "effective_from": date(2026, 10, 1), "period": date(2026, 10, 1),
                                "monthly_amount": 25575}]
     assert len(parsed.errors) == 1
+
+
+def test_missing_sub_invoices_are_suggested_at_the_prior_month_less_what_posted():
+    key, other, quiet = ("Crane IFS", "246"), ("Crane IFS", "250"), ("Crane IFS", "251")
+    now = {key: {"revenue": 0.0, "subcontractors": 2000.0}, other: {"revenue": 9000.0, "subcontractors": 7000.0}, quiet: {"revenue": 0.0, "subcontractors": 0.0}}
+    before = {key: {"revenue": 10000.0, "subcontractors": 8000.0}, other: {"revenue": 9000.0, "subcontractors": 7200.0}, quiet: {"revenue": 0.0, "subcontractors": 500.0}}
+    candidates = {key: {"job_name": "FedEx JANRT", "relay_ar": 10000.0, "relay_ap": 8000.0, "relay_not_in_winteam": 8000.0},
+                  other: {"job_name": "FedEx ABC", "relay_ar": 9000.0}, quiet: {"job_name": "Not billed", "relay_ar": None}}
+    out = company_pl.suggestions_from(now, before, candidates, set())
+    # Billed through Relay AR, sub cost a quarter of last month's: accrue the 6,000 gap. 7,000 of 7,200 is not short; an unbilled site is skipped.
+    assert [(s["job_number"], s["amount"], s["relay_not_in_winteam"]) for s in out] == [("246", 6000.0, 8000.0)]
+    assert company_pl.suggestions_from(now, before, candidates, {"246"}) == []  # already accrued
+    assert company_pl.next_month(date(2026, 12, 1)) == date(2027, 1, 1) and company_pl.prior_month(date(2026, 1, 1)) == date(2025, 12, 1)

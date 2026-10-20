@@ -12,7 +12,7 @@ Source of truth: the authenticated TEAM/WinTeam API documentation (`WinTeamAPI.t
 | Required header | `tenantId: <GUID>` from `WINTEAM_TENANT_ID` (every documented endpoint lists it). |
 | Gateway key | The gateway is Azure API Management, which conventionally needs `Ocp-Apim-Subscription-Key`. The header name is `WINTEAM_SUBSCRIPTION_KEY_HEADER` and it is only sent when `WINTEAM_SUBSCRIPTION_KEY` is set. **The documentation does not mention this header; confirm with TEAM.** |
 | Extra headers | `WINTEAM_HEADERS_JSON` (JSON object) is merged into every request. |
-| Retries | 429, 5xx, timeouts and connection errors are retried up to `WINTEAM_MAX_RETRIES` times with exponential backoff; `Retry-After` is honoured. |
+| Retries | 429, 5xx, timeouts and connection errors are retried up to `WINTEAM_MAX_RETRIES` times with exponential backoff; `Retry-After` is honored. |
 | Errors | 400/422 bodies `{"errors":[{fieldName,errorMessage,attemptedValue}],success:false,serverResponse}` are surfaced in the sync run's `error_message`. 204 means "no records". |
 | Entitlements | HTTP 403 on a resource = the subscription does not include that endpoint (verified 2026-09-03: `job_schedules`, `ap_payments`). The run is `failed` with `error_message = "not_entitled: HTTP 403"`, `GET /integrations/winteam` reports `entitled: false`, `sync_all` continues with the other resources and the worker warns once per resource. |
 | Raw only | `WINTEAM_NORMALIZE=false` (or `?normalize=false` on the sync endpoints) lands payloads in `raw.winteam_record` without promoting them to `core`; see `docs/winteam-live-source.md` for how API rows coexist with the `finance_reference` export rows. |

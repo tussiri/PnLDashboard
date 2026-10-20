@@ -10,7 +10,7 @@ The dashboard has two server-side sources that fill the same warehouse (`core`, 
 | `finance_reference` | the real WinTeam **report exports** restored from the Finance_Dashboard PostgreSQL dump into a read-only database `finance_reference` | `services/api/app/sources/finance_reference.py` | `finance_reference` |
 
 They coexist: every fact/dim row carries `source`, a reference load first clears only the previous
-reference load (`reset_warehouse`, see "Reset behaviour"), and the marts read the
+reference load (`reset_warehouse`, see "Reset behavior"), and the marts read the
 `mart.v_*_effective` views that arbitrate between the two (docs/winteam-live-source.md
 "Precedence"). The browser reads `source.primary_source` on every payload to know which one last
 filled the marts.
@@ -38,7 +38,7 @@ curl -X POST -H "X-Admin-Token: $INGESTION_ADMIN_TOKEN" http://127.0.0.1:15173/a
 `ops.integration_sync_run` row (`integration_name = 'finance_reference'`; the whole load also gets a
 parent row with `resource_name = 'load'` whose id is the returned `run_id`):
 
-1. **reset** - deletes the previous reference load only (see "Reset behaviour" below): fact rows
+1. **reset** - deletes the previous reference load only (see "Reset behavior" below): fact rows
    `WHERE source = 'finance_reference'`, reference-only dimension rows, and empties the derived
    marts (`mart.job_month`, `mart.portfolio_month`, `mart.job_week`, `mart.forecast_run_meta` which
    cascades to every forecast table). Never touched: `raw.winteam_record`, `ops.source_watermark`,
@@ -65,7 +65,7 @@ If a step fails the load stops, its run row carries the error, `primary_source` 
 the marts stay empty (the reset already happened): fix the cause and run the load again - every
 load is a full replace of this source, there is no watermark to reset.
 
-### Reset behaviour (changed 2026-09-03 for the live API source)
+### Reset behavior (changed 2026-09-03 for the live API source)
 
 `reset_warehouse` used to `TRUNCATE` the raw landings, the watermarks and every core table. Since
 the live WinTeam API shares the warehouse (`docs/winteam-live-source.md`) it is scoped to this
@@ -148,7 +148,7 @@ export carries it (rows from 2026-05 on), else `row:<reference row id>`. `hours`
 -37k hours, are kept so corrections net out); `regular_hours` = `regular_hours` else hours - overtime
 - double time; overtime / double time from the export (`overtime_basis = 'category'`), components
 clipped at 0 for negative rows. `hours_type` = `hours_type_description` (PTO, holiday, training rows
-are kept and labelled), `category_detail_id` = `hours_type_id`, in/out = work date + `HH:MM` (out
+are kept and labeled), `category_detail_id` = `hours_type_id`, in/out = work date + `HH:MM` (out
 before in -> next day; unparseable -> null), lunch, `pay_week_start` = Sunday of the work date,
 `company` = aliased row company.
 
@@ -323,7 +323,7 @@ The job-cost P&L is the sole revenue/cost basis only for **closed** months (mont
 `close_lag_days` in the past). An in-progress month's job-cost import is partial (invoicing still
 running: e.g. the Sep 1 August file carried $1.49M of revenue against $4.05M of timekeeping labor),
 so for such months the marts use timekeeping labor at the trailing job rate, revenue =
-greatest(AR invoices, partial job cost) labelled `job_cost_partial`, and gross profit is computed
+greatest(AR invoices, partial job cost) labeled `job_cost_partial`, and gross profit is computed
 from those components. The default reporting anchor stays on the latest closed month.
 
 ## Dump provenance caveat

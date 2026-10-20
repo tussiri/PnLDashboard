@@ -26,8 +26,10 @@ export function Badge({ status, label }: { status: LaborStatus | 'none'; label?:
   return <span className={`badge ${BADGE_CLASS[status]}`}>{label ?? statusLabel(status, vocab)}</span>
 }
 
-export function Kpi({ label, value, sub, tone, small }: { label: string; value: ReactNode; sub?: ReactNode; tone?: string; small?: boolean }) {
-  return <div className={`kpi${small ? ' sm' : ''}`}>
+export function Kpi({ label, value, sub, tone, small, tip }: { label: string; value: ReactNode; sub?: ReactNode; tone?: string; small?: boolean
+  /** Detail shown on hover, kept off the page. */
+  tip?: string }) {
+  return <div className={`kpi${small ? ' sm' : ''}`} title={tip}>
     <div className="kl">{label}</div>
     <div className={`kv ${tone ?? ''}`}>{value}</div>
     {sub != null && sub !== '' && <div className="ks">{sub}</div>}

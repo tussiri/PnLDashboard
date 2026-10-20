@@ -19,7 +19,7 @@ const ratio = (a: number, b: number) => (b ? a / b : null)
 const sumBy = (months: CompanyMonth[], f: (m: CompanyMonth) => number) => months.reduce((a, m) => a + f(m), 0)
 const allocOf = (m: CompanyMonth) => m.allocations.management_wages + m.allocations.burden + m.allocations.overhead
 
-interface AccountLine { slug: string; name: string; summary: AccountSummary<LeadershipRow> | null; target: number; watchBand?: number; ytdRevenue: number; ytdProfit: number }
+interface AccountLine { slug: string; name: string; summary: AccountSummary<LeadershipRow> | null; target: number; watchBand?: number; ytdRevenue: number; ytdLabor: number; ytdProfit: number }
 
 /** Months the story reads (two 12-month windows' worth); the supporting detail shows the last DETAIL_MONTHS. */
 const STORY_MONTHS = 24
@@ -59,7 +59,7 @@ export function Company() {
     const rows = week.filter((r) => r.account_slug === a.slug)
     const o = optionsFor(a)
     return { slug: a.slug, name: a.name, summary: rows.length ? accountSummary(rows, o, segmentOrder(a)) : null, target: o.target, watchBand: o.watchBand,
-      ytdRevenue: sumBy(ytd, (m) => m.by_account[a.slug]?.revenue ?? 0), ytdProfit: sumBy(ytd, (m) => m.by_account[a.slug]?.gross_profit ?? 0) }
+      ytdRevenue: sumBy(ytd, (m) => m.by_account[a.slug]?.revenue ?? 0), ytdLabor: sumBy(ytd, (m) => m.by_account[a.slug]?.direct_labor ?? 0), ytdProfit: sumBy(ytd, (m) => m.by_account[a.slug]?.gross_profit ?? 0) }
   }), [featured, week, optionsFor, ytd])
   const weekTotals = lines.reduce((acc, l) => {
     const s = l.summary?.account
@@ -91,6 +91,8 @@ export function Company() {
     { key: 'over', header: 'Hrs to cut', value: (l) => l.summary?.headerOverHours ?? null, render: (l) => (l.summary ? hours(l.summary.headerOverHours) : '–') },
     { key: 'mgn', header: 'Margin', value: (l) => l.summary?.account.margin ?? null, render: (l) => <span className={(l.summary?.account.margin ?? 0) < 0 ? 'bad' : ''}>{money(l.summary?.account.margin)}</span> },
     { key: 'ytd', header: `Revenue ${year ?? ''} YTD`, value: (l) => l.ytdRevenue, render: (l) => money(l.ytdRevenue) },
+    { key: 'ylab', header: 'Labor YTD', value: (l) => l.ytdLabor, render: (l) => money(l.ytdLabor) },
+    { key: 'ylp', header: 'Labor % YTD', value: (l) => ratio(l.ytdLabor, l.ytdRevenue), render: (l) => pct(ratio(l.ytdLabor, l.ytdRevenue)) },
     { key: 'gp', header: 'GP YTD', value: (l) => l.ytdProfit, render: (l) => <span className={l.ytdProfit < 0 ? 'bad' : ''}>{money(l.ytdProfit)}</span> },
     { key: 'st', header: 'Status', value: (l) => l.summary?.account.measurePct ?? null,
       render: (l) => (l.summary ? <VocabContext.Provider value={vocabOf(featured.find((a) => a.slug === l.slug))}><Badge status={statusOf(l.summary.account.measurePct, l.target, l.watchBand)} /></VocabContext.Provider> : <Badge status="none" label="No data" />) },

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
-import type { AdjustmentKind, CompanyPlGroupSetting, CompanyPlSettings, JobContract, PlAdjustment, PlAdjustmentInput, PlAdjustmentsResponse, PlCategory } from '../../services/apiTypes'
+import type { AdjustmentKind, CompanyPlGroupSetting, CompanyPlSettings, JobContract, PlAdjustment, PlAdjustmentInput, PlAdjustmentsResponse, PlCategory, SubAccrualSuggestion } from '../../services/apiTypes'
 import { money } from '../format'
 import { monthLabel } from '../routes'
 import { useLeadership } from '../state'
@@ -128,6 +128,52 @@ function AdjustmentForm({ groups, initial, onDone, onCancel }: { groups: PlAdjus
 const target = (a: PlAdjustment, groups: PlAdjustmentsResponse['groups']) => a.kind === 'staff' ? groups.find((g) => g.key === a.group_key)?.name ?? a.group_key
   : a.kind === 'reclass' ? `${a.from_job} to ${a.to_job}` : `Job ${a.to_job}`
 
+const lastMonth = () => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 1); return d.toISOString().slice(0, 7) }
+
+/** Subcontracted sites billed in a month whose sub invoices have not posted: book the chosen ones as accruals reversing next month. */
+function SubAccrualSuggestions({ onDone }: { onDone: (m: Message) => void }) {
+  const { adminApi: api } = useLeadership()
+  const [month, setMonth] = useState(lastMonth())
+  const [rows, setRows] = useState<SubAccrualSuggestion[] | null>(null)
+  const [picked, setPicked] = useState<Set<string>>(new Set())
+  const [error, setError] = useState<unknown>(null)
+  const [busy, setBusy] = useState(false)
+  const key = (r: SubAccrualSuggestion) => `${r.company}|${r.job_number}`
+  const load = useCallback(() => {
+    setError(null); setRows(null)
+    api.subAccrualSuggestions(month).then((r) => { setRows(r.suggestions); setPicked(new Set(r.suggestions.map(key))) }).catch(setError)
+  }, [api, month])
+  useEffect(() => { load() }, [load])
+  const book = async () => {
+    if (!rows) return
+    setBusy(true)
+    try {
+      const items = rows.filter((r) => picked.has(key(r))).map((r) => ({ company: r.company, job_number: r.job_number, amount: r.amount }))
+      const res = await api.acceptSubAccruals(month, items)
+      onDone({ ok: true, text: `Added ${res.created.length} accruals for ${monthLabel(`${month}-01`)}` })
+      load()
+    } catch (e) { onDone({ ok: false, text: errorText(e) }) } finally { setBusy(false) }
+  }
+  const total = (rows ?? []).filter((r) => picked.has(key(r))).reduce((a, r) => a + r.amount, 0)
+  return <div className="card">
+    <div className="ct"><span>Missing sub invoices</span>
+      <label className="field"><span className="sr-only">Month</span><input type="month" value={month} onChange={(e) => setMonth(e.target.value)} /></label></div>
+    {error ? <LoadError error={error} onRetry={load} /> : !rows ? <Skeleton height={120} /> : rows.length === 0 ? <Empty>No missing sub invoices.</Empty> : <>
+      <div className="tw"><table><caption className="sr-only">Missing sub invoices</caption>
+        <thead><tr><th className="nosort"></th><th className="nosort l">Job</th><th className="nosort l">Site</th><th className="nosort">Billed</th><th className="nosort">Sub cost posted</th>
+          <th className="nosort">Prior month</th><th className="nosort">In Relay, not WinTeam</th><th className="nosort">Accrual</th></tr></thead>
+        <tbody>{rows.map((r) => <tr key={key(r)}>
+          <td><input type="checkbox" aria-label={`Accrue job ${r.job_number}`} checked={picked.has(key(r))} onChange={() => { const n = new Set(picked); if (n.has(key(r))) n.delete(key(r)); else n.add(key(r)); setPicked(n) }} /></td>
+          <td className="l">{r.job_number}</td><td className="l">{r.job_name ?? ''}</td><td>{money(r.revenue)}</td><td>{money(r.subcontractors)}</td>
+          <td className="neutral">{money(r.prior_subcontractors)}</td><td className="neutral">{r.relay_not_in_winteam == null ? '–' : money(r.relay_not_in_winteam)}</td><td><b>{money(r.amount)}</b></td>
+        </tr>)}</tbody>
+        <tfoot><tr className="tot"><td colSpan={7} className="l">{picked.size} of {rows.length} selected</td><td>{money(total)}</td></tr></tfoot>
+      </table></div>
+      <div className="field"><button type="button" className="btn primary" disabled={busy || picked.size === 0} onClick={book}>Add accruals</button></div>
+    </>}
+  </div>
+}
+
 /** Admin > Adjustments: Finance's accruals, reclasses and direct staff charges on top of the GL. */
 export function AdjustmentsTab() {
   const { adminApi: api, apiReachable } = useLeadership()
@@ -143,6 +189,7 @@ export function AdjustmentsTab() {
   const done = (m: Message) => { setMessage(m); if (m?.ok) { setEditing(null); load() } }
   const act = async (f: () => Promise<unknown>, text: string) => { try { await f(); done({ ok: true, text }) } catch (err) { done({ ok: false, text: errorText(err) }) } }
   return <>
+    <SubAccrualSuggestions onDone={done} />
     <div className="card"><div className="ct"><span>New adjustment</span></div><AdjustmentForm groups={data.groups} initial={EMPTY} onDone={done} /></div>
     {message && <p className={`msg ${message.ok ? 'ok' : 'bad'}`} role="status">{message.text}</p>}
     <div className="card"><div className="ct"><span>Adjustments</span></div>

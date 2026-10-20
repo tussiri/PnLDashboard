@@ -173,6 +173,23 @@ export function TrendChart({ labels, values, target, label, targets }: { labels:
 }
 
 /** One site's weeks: worked, OT premium and sub hours stacked, against the allowance at target. */
+/** Hours over target by site, stacked by cause: OT premium, vendor cost and extra hours (the FedEx report's Over Target chart). */
+export function OverTargetChart({ labels, premium, sub, extra, subLabel }: { labels: string[]; premium: number[]; sub: number[]; extra: number[]; subLabel: string }) {
+  const t = useTokens()
+  const o = base(t)
+  const stack = { ...bar, borderRadius: 0, stack: 'over' }
+  const data = { labels, datasets: [
+    { label: 'OT premium', data: premium, backgroundColor: t.warn, ...stack },
+    { label: subLabel, data: sub, backgroundColor: t.accent2, ...stack },
+    { label: 'Extra hours', data: extra, backgroundColor: t.bad, ...stack },
+  ] }
+  const options: ChartOptions<'bar'> = { ...o, indexAxis: 'y',
+    interaction: { mode: 'index', axis: 'y', intersect: false },
+    scales: { x: { ...o.scales!.x, stacked: true, title: { display: true, text: 'Base-rate equivalent hours', color: t.text3 } }, y: { ...o.scales!.y, stacked: true, grid: { display: false } } },
+    plugins: { ...o.plugins, tooltip: { ...o.plugins!.tooltip, callbacks: { label: (c) => `${c.dataset.label}: ${c.parsed.x.toFixed(1)} h` } } } }
+  return <Bar data={data} options={options} aria-label="Hours over target by site: OT premium, vendor cost and extra hours" role="img" />
+}
+
 export function CutTrendChart({ labels, worked, premium, sub, allowance, subLabel }: {
   labels: string[]; worked: (number | null)[]; premium: (number | null)[]; sub: (number | null)[]; allowance: (number | null)[]; subLabel: string
 }) {
@@ -190,6 +207,33 @@ export function CutTrendChart({ labels, worked, premium, sub, allowance, subLabe
     scales: { x: { ...o.scales!.x, stacked: true, grid: { display: false } }, y: { ...o.scales!.y, stacked: true, beginAtZero: true, title: { display: true, text: 'Hours', color: t.text3 } } },
     plugins: { ...o.plugins, tooltip: { ...o.plugins!.tooltip, callbacks: { label: (c) => `${c.dataset.label}: ${c.parsed.y == null ? '–' : fmtHours(c.parsed.y)} h` } } } }
   return <Chart type="bar" data={data} options={options} aria-label="Hours worked, OT premium and sub hours by week against the allowance" role="img" />
+}
+
+/** Weekly bars of one money series against a lighter comparison series (the CDO's labor cost vs budget, OT cost by week). */
+export function WeekBarsChart({ labels, values, compare, valueLabel, compareLabel, color, current }: { labels: string[]; values: (number | null)[]; compare?: (number | null)[]
+  valueLabel: string; compareLabel?: string; color: string; current: number }) {
+  const t = useTokens()
+  const o = base(t)
+  const data = { labels, datasets: [
+    ...(compare ? [{ label: compareLabel ?? '', data: compare, backgroundColor: withAlpha(color, 0.25), ...bar }] : []),
+    { label: valueLabel, data: values, backgroundColor: labels.map((_, i) => (i === current ? color : withAlpha(color, 0.6))), ...bar },
+  ] }
+  const options: ChartOptions<'bar'> = { ...o, interaction: { mode: 'index', intersect: false },
+    scales: { x: { ...o.scales!.x, grid: { display: false } }, y: { ...o.scales!.y, beginAtZero: true, ticks: { color: t.text2, callback: (v) => `$${Math.round(Number(v) / 1000)}K` } } },
+    plugins: { ...o.plugins, tooltip: { ...o.plugins!.tooltip, callbacks: { label: (c) => `${c.dataset.label}: ${money(c.parsed.y)}` } } } }
+  return <Bar data={data} options={options} aria-label={compare ? `${valueLabel} against ${compareLabel} by week` : `${valueLabel} by week`} role="img" />
+}
+
+/** A small filled line for a site trend grid; the selected week is the larger point. */
+export function Sparkline({ labels, values, color, current, format, min }: { labels: string[]; values: (number | null)[]; color: string; current: number; format: (v: number) => string; min?: number }) {
+  const t = useTokens()
+  const o = base(t) as unknown as ChartOptions<'line'>
+  const data = { labels, datasets: [{ data: values, borderColor: color, backgroundColor: withAlpha(color, 0.13), fill: true, tension: 0.3, borderWidth: 1.5, spanGaps: true,
+    pointRadius: labels.map((_, i) => (i === current ? 4 : 2)), pointBackgroundColor: labels.map((_, i) => (i === current ? color : withAlpha(color, 0.55))), pointBorderWidth: 0 }] }
+  const options: ChartOptions<'line'> = { ...o,
+    scales: { x: { display: false }, y: { ...o.scales!.y, min, ticks: { color: t.text3, font: { size: 9 }, maxTicksLimit: 4, callback: (v) => format(Number(v)) } } },
+    plugins: { ...o.plugins, tooltip: { ...o.plugins!.tooltip, callbacks: { label: (c) => (c.parsed.y == null ? 'No data' : format(c.parsed.y)) } } } }
+  return <Line data={data} options={options} role="img" aria-label="Trend" />
 }
 
 const tone = (t: Tokens, x: 'ok' | 'warn' | 'bad' | 'neutral') => (x === 'neutral' ? t.muted : t[x])
