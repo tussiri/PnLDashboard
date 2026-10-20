@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { LeadershipAccount, LeadershipRow } from '../services/apiTypes'
-import { closedMonths, isSubcontracted, monthRevenue, prepareRows, schoolWeekNote, syncConcerns, weekBudgetOf, weekdaysIn } from './data'
+import { accountRegion, closedMonths, inRegion, isSubcontracted, monthRevenue, prepareRows, schoolWeekNote, syncConcerns, weekBudgetOf, weekdaysIn } from './data'
 
 const row = (job: string, extra: Partial<LeadershipRow> = {}): LeadershipRow => ({
   week_start: '2026-09-14', week_end: '2026-09-20', company: 'Crane West', job_number: job, site_name: `Site ${job}`, parent_account: 'FedEx',
@@ -122,5 +122,21 @@ describe('schoolWeekNote', () => {
   })
   it('notes an early release day without a warning', () => {
     expect(schoolWeekNote(week({ school: 4, early_release: 1 }))).toEqual({ tone: '', body: '4 school days; 1 early release' })
+  })
+})
+
+describe('regions', () => {
+  const r = (region: string | null, subregion: string | null) => ({ region, subregion })
+  it('filters by region, then subregion, with missing values as No region', () => {
+    expect(inRegion(r('Southeast', 'GA'), 'Southeast')).toBe(true)
+    expect(inRegion(r('Southeast', 'GA'), 'Southeast', 'FL')).toBe(false)
+    expect(inRegion(r(null, null), 'No region')).toBe(true)
+    expect(inRegion(r('West', 'CA'))).toBe(true)
+  })
+  it('takes the account home region, else its sites\' one region, else Multi-region', () => {
+    expect(accountRegion({ region: 'Central', subregion: null }, [r('West', 'CA')])).toEqual({ region: 'Central', subregion: null })
+    expect(accountRegion(undefined, [r('Southwest', 'TX'), r('Southwest', 'TX')])).toEqual({ region: 'Southwest', subregion: 'TX' })
+    expect(accountRegion(undefined, [r('Southwest', 'TX'), r('Southwest', 'OK')])).toEqual({ region: 'Southwest', subregion: null })
+    expect(accountRegion(undefined, [r('Southwest', 'TX'), r('Southeast', 'GA')])).toEqual({ region: 'Multi-region', subregion: null })
   })
 })

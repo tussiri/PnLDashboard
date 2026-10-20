@@ -10,6 +10,9 @@ describe('leadership routes', () => {
       { view: 'account', account: 'fedex', tab: 'sites', selfOnly: true, basis: 'last_month' },
       { view: 'analytics', week: '2026-09-20', account: 'other', status: 'over', q: 'elementary', segment: 'High School' },
       { view: 'admin', adminTab: 'imports' },
+      { view: 'analytics', week: '2026-09-20', region: 'Southeast', subregion: 'GA' },
+      { view: 'account', account: 'fedex', tab: 'sites', region: 'Midwest' },
+      { view: 'admin', adminTab: 'regions' },
       { view: 'admin', adminTab: 'allocations' },
       { view: 'company', week: '2026-09-20' },
       { view: 'account', account: 'fedex', tab: 'sites', period: 'month', month: '2026-08' },
@@ -56,5 +59,10 @@ describe('navigation', () => {
     expect(parseRoute('#/analytics/units').analyticsTab).toBe('units')
     expect(formatRoute({ view: 'analytics', analyticsTab: 'units' })).toBe('#/portfolio/units')
     expect(parseRoute('#/portfolio').view).toBe('analytics')
+  })
+  it('keeps a subregion only inside a region', () => {
+    expect(parseRoute('#/portfolio?subregion=GA').subregion).toBeUndefined()
+    expect(parseRoute('#/portfolio?region=Southeast&subregion=GA')).toMatchObject({ region: 'Southeast', subregion: 'GA' })
+    expect(formatRoute({ view: 'admin', adminTab: 'jobs', region: 'Southeast' })).toBe('#/admin/jobs')
   })
 })

@@ -53,6 +53,8 @@ export function createDemoApi(options: DemoApiOptions = {}): DashboardApi {
     leadershipReplaceSegments: () => notAvailable('Segment update'),
     leadershipAccountJobs: () => notAvailable('Job mapping'),
     leadershipMapJob: () => notAvailable('Job mapping'),
+    siteRegions: () => notAvailable('Regions'),
+    setSiteRegion: () => notAvailable('Regions'),
     leadershipReloadSeed: () => notAvailable('Seed reload'),
     leadershipImports: (_limit, signal) => settle(() => ({ files: [] }), signal),
     leadershipUpload: () => notAvailable('File import'),
