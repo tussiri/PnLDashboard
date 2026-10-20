@@ -194,6 +194,15 @@ export function FeedbackTile({ account, month }: { account: LeadershipAccount; m
   const href = formatRoute({ view: 'account', account: account.slug, tab: 'feedback' })
   return <section className="card fbt" aria-label={`${account.name} customer feedback`}>
     <div className="ct"><span>Customer feedback</span><a className="ks" href={href}>All feedback</a></div>
+    {s.status === 'ready' && s.summary && <div className={`fbt__sent ${SENTIMENT[s.summary.sentiment].tone}`}
+      title={`Claude's read of ${s.comments} comments from the ${s.window_days} days up to the newest rating`}>
+      <div className="fbt__hd"><span className="kl">Customer sentiment, {Math.round((s.window_days ?? 90) / 30)}-month</span><span className="ks">{s.comments} comments</span></div>
+      <div className={`fbt__mood kv ${SENTIMENT[s.summary.sentiment].tone}`}>{SENTIMENT[s.summary.sentiment].label}</div>
+      <p className="fbt__line">{s.summary.headline}</p>
+      {s.summary.themes.length > 0 && <div className="chips">{s.summary.themes.map((t) => <span key={t.theme} className={`chip ${SENTIMENT[t.sentiment].tone}`}
+        title={t.locations.join(', ')}>{t.theme} ({t.mentions})</span>)}</div>}
+    </div>}
+    {s.status === 'pending' && <div className="fbt__sent"><span className="kl">Customer sentiment updating</span></div>}
     <div className="kpi4">
       <Kpi label={`Avg rating, ${monthLabel(d.month)} MTD`} value={cur?.average != null ? <>{stars(cur.average)}<span className="of"> / 5</span></> : '–'}
         tone={scoreTone(cur?.average ?? null)} sub={cur ? `${cur.ratings} ratings${change != null ? `; ${signed(change)} vs prior month` : ''}` : 'No ratings yet'} />
@@ -203,15 +212,6 @@ export function FeedbackTile({ account, month }: { account: LeadershipAccount; m
       <Kpi label="1-2 stars MTD" value={cur?.low ?? 0} tone={cur?.low ? 'bad' : 'ok'}
         sub={lows.length ? lows.slice(0, 4).map((l) => l.location_number).join(', ') + (lows.length > 4 ? `, ${lows.length - 4} more` : '') : undefined} />
     </div>
-    {s.status === 'ready' && s.summary && <div className="fbt__ai">
-      <div className="fbt__hd"><span className="kl">AI summary, {s.window_days} days of comments</span>
-        <span className={`badge ${{ ok: 'bok', warn: 'bwarn', bad: 'bbad' }[SENTIMENT[s.summary.sentiment].tone]}`}>{SENTIMENT[s.summary.sentiment].label}</span>
-        <span className="ks">{s.comments} comments</span></div>
-      <p className="fbt__line">{s.summary.headline}</p>
-      {s.summary.themes.length > 0 && <div className="chips">{s.summary.themes.map((t) => <span key={t.theme} className={`chip ${SENTIMENT[t.sentiment].tone}`}
-        title={t.locations.join(', ')}>{t.theme} ({t.mentions})</span>)}</div>}
-    </div>}
-    {s.status === 'pending' && <div className="fbt__ai"><span className="kl">AI summary updating</span></div>}
     {lows.length > 0 && <div className="chips">{lows.slice(0, 8).map((l) => <button key={l.location_number} type="button" className="chip linkbtn"
       onClick={() => l.company && l.job_number && navigate({ site: { company: l.company, job: l.job_number } })}>{l.site_name ?? l.location_number}: {stars(l.score)}</button>)}</div>}
   </section>

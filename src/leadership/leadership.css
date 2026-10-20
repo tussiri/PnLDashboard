@@ -303,7 +303,11 @@ tr.dim td{color:var(--text3)}
 .kpi-grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
 .chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:10px}
 .fbt{margin-bottom:12px}
-.fbt__ai{margin-top:12px;padding-top:12px;border-top:0.5px solid var(--border)}
+.fbt__sent{color:var(--text);margin-bottom:10px;padding:14px 16px;background:var(--bg2);border:none;border-left:4px solid var(--border);border-radius:var(--r)}
+.fbt__sent.ok{border-left-color:var(--ok)}.fbt__sent.warn{border-left-color:var(--warn)}.fbt__sent.bad{border-left-color:var(--bad)}
+.fbt__sent .chips{margin-top:10px}
+.fbt__mood{font-size:26px;margin-top:4px}
+.fbt__sent .fbt__line{font-size:15px;margin-top:4px}
 .fbt__hd{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .fbt__line{margin:6px 0 0;font-size:13px;color:var(--text)}
 .chip.ok{color:var(--ok)}.chip.warn{color:var(--warn)}.chip.bad{color:var(--bad)}
