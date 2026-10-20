@@ -153,6 +153,7 @@ export function Feedback({ account }: { account: LeadershipAccount }) {
     { key: 'wo', header: 'Work orders', left: true, value: (r) => r.ratings.map((x) => x.wo_number).join(', '), className: 'neutral' },
   ]
   return <>
+    <TabSentiment account={account} />
     <div className="kpi-lg">
       <Kpi label="Avg rating" value={<>{stars(d.average)}<span className="of"> / 5</span></>} tone={scoreTone(d.average)} sub={`Since ${monthLabel(d.since)}`} />
       <Kpi label="Ratings" value={d.ratings.toLocaleString('en-US')} sub={`${d.sites} sites`} />
@@ -173,10 +174,9 @@ const SENTIMENT: Record<FeedbackSentiment, { label: string; tone: string }> = {
   positive: { label: 'Positive', tone: 'ok' }, mixed: { label: 'Mixed', tone: 'warn' }, negative: { label: 'Negative', tone: 'bad' } }
 const signed = (n: number) => `${n >= 0 ? '+' : '−'}${Math.abs(n).toFixed(2)}`
 
-/** Home: the account's customer feedback at a glance. Scores for the month to date, the prior month and 12 months
- * (computed from the ratings), and Claude's summary of the last 90 days of comments, labeled as such. */
-export function FeedbackTile({ account, month }: { account: LeadershipAccount; month: string | undefined }) {
-  const { api, keyPrefix, decision, navigate } = useLeadership()
+/** The account's feedback overview (scores and the comment summary), refetched while the summary is being rebuilt. */
+function useFeedbackOverview(account: LeadershipAccount, month: string | undefined) {
+  const { api, keyPrefix, decision } = useLeadership()
   const q = useApiQuery<FeedbackOverview>(decision ? queryKey(`${keyPrefix}/leadership/feedback/overview`, { account: account.slug, month }) : null,
     (signal) => api.leadershipFeedbackOverview(account.slug, month, signal), [api, account.slug, month])
   const pending = q.data?.summary.status === 'pending'
@@ -185,15 +185,12 @@ export function FeedbackTile({ account, month }: { account: LeadershipAccount; m
     const t = window.setTimeout(() => q.refetch(), 15_000)
     return () => window.clearTimeout(t)
   }, [pending, q])
-  const d = q.data
-  if (q.error || !d || !d.year.ratings) return null
-  const cur = d.current
-  const change = cur?.average != null && d.prior?.average != null ? cur.average - d.prior.average : null
-  const s = d.summary
-  const lows = [...new Map(d.low_sites.map((l) => [l.location_number, l])).values()]
-  const href = formatRoute({ view: 'account', account: account.slug, tab: 'feedback' })
-  return <section className="card fbt" aria-label={`${account.name} customer feedback`}>
-    <div className="ct"><span>Customer feedback</span><a className="ks" href={href}>All feedback</a></div>
+  return q
+}
+
+/** Claude's read of the recent comments: sentiment, headline and themes, on Home and the Feedback tab. */
+function SentimentTile({ summary: s }: { summary: FeedbackOverview['summary'] }) {
+  return <>
     {s.status === 'ready' && s.summary && <div className={`fbt__sent ${SENTIMENT[s.summary.sentiment].tone}`}
       title={`Claude's read of ${s.comments} comments from the ${s.window_days} days up to the newest rating`}>
       <div className="fbt__hd"><span className="kl">Customer sentiment, {Math.round((s.window_days ?? 90) / 30)}-month</span><span className="ks">{s.comments} comments</span></div>
@@ -203,6 +200,30 @@ export function FeedbackTile({ account, month }: { account: LeadershipAccount; m
         title={t.locations.join(', ')}>{t.theme} ({t.mentions})</span>)}</div>}
     </div>}
     {s.status === 'pending' && <div className="fbt__sent"><span className="kl">Customer sentiment updating</span></div>}
+  </>
+}
+
+/** The Feedback tab's sentiment tile; the summary covers the newest ratings whatever month is picked. */
+function TabSentiment({ account }: { account: LeadershipAccount }) {
+  const q = useFeedbackOverview(account, undefined)
+  return q.data ? <SentimentTile summary={q.data.summary} /> : null
+}
+
+/** Home: the account's customer feedback at a glance. Scores for the month to date, the prior month and 12 months
+ * (computed from the ratings), and Claude's summary of the last 90 days of comments, labeled as such. */
+export function FeedbackTile({ account, month }: { account: LeadershipAccount; month: string | undefined }) {
+  const { navigate } = useLeadership()
+  const q = useFeedbackOverview(account, month)
+  const d = q.data
+  if (q.error || !d || !d.year.ratings) return null
+  const cur = d.current
+  const change = cur?.average != null && d.prior?.average != null ? cur.average - d.prior.average : null
+  const s = d.summary
+  const lows = [...new Map(d.low_sites.map((l) => [l.location_number, l])).values()]
+  const href = formatRoute({ view: 'account', account: account.slug, tab: 'feedback' })
+  return <section className="card fbt" aria-label={`${account.name} customer feedback`}>
+    <div className="ct"><span>Customer feedback</span><a className="ks" href={href}>All feedback</a></div>
+    <SentimentTile summary={s} />
     <div className="kpi4">
       <Kpi label={`Avg rating, ${monthLabel(d.month)} MTD`} value={cur?.average != null ? <>{stars(cur.average)}<span className="of"> / 5</span></> : '–'}
         tone={scoreTone(cur?.average ?? null)} sub={cur ? `${cur.ratings} ratings${change != null ? `; ${signed(change)} vs prior month` : ''}` : 'No ratings yet'} />
