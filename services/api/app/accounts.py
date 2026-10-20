@@ -21,7 +21,7 @@ from typing import Any
 
 ROLES = ("site", "catch_all", "non_billed", "pallet")
 VOCABULARIES = ("amazon", "fedex")
-INVOICE_BASES = ("last_month", "run_rate_3m")
+INVOICE_BASES = ("last_month", "run_rate_3m", "latest_fixed_avg_variable", "contract")
 GROUP_BYS = ("segment", "pallet")
 # A WinTeam child job named "... Pallet" rolls into its parent site (migration 037).
 PALLET_NAME = r"pallet\s*$"

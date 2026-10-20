@@ -108,7 +108,7 @@
    "vendor_label": "Subcontractor",
    "vocabulary": "fedex",
    "vendor_factor": 0.7,
-   "invoice_basis": "run_rate_3m",
+   "invoice_basis": "latest_fixed_avg_variable",
    "group_by": "pallet",
    "split_subcontracted": true
   },
@@ -965,6 +965,7 @@
    "slug": "crowley-isd",
    "name": "Crowley ISD",
    "sort": 6,
+   "invoice_basis": "contract",
    "jobs": [
     {
      "company": "Crane Southwest",

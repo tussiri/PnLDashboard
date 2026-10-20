@@ -1,5 +1,5 @@
 import { lazy, Suspense, useMemo } from 'react'
-import type { LeadershipAccount, LeadershipRow } from '../../services/apiTypes'
+import type { InvoiceBasis, LeadershipAccount, LeadershipRow } from '../../services/apiTypes'
 import { ChartCard, Swatch } from '../ui'
 import { OtHoursChart, OtWeekChart, useTokens } from '../charts'
 import { Feedback, FeedbackTile, RatingMatrix } from './Feedback'
@@ -157,8 +157,9 @@ export function Account() {
   const basis = options.invoiceBasis ?? 'last_month'
   const basisControl = !monthMode && account?.revenue_method !== 'weekly_billing' && tab !== 'vendors' && tab !== 'feedback' && tab !== 'budget' && tab !== 'subcontracted' && tab !== 'income-statement' && <>
     <label htmlFor="basis">Invoice basis</label>
-    <select id="basis" value={basis} onChange={(e) => navigate({ basis: e.target.value === account?.invoice_basis ? undefined : e.target.value as 'run_rate_3m' | 'last_month' }, { replace: true })}>
-      <option value="run_rate_3m">3-month run rate</option><option value="last_month">{monthLabel(rows.find((r) => r.revenue_month)?.revenue_month ?? null)} actual</option>
+    <select id="basis" value={basis} onChange={(e) => navigate({ basis: e.target.value === account?.invoice_basis ? undefined : e.target.value as InvoiceBasis }, { replace: true })}>
+      <option value="run_rate_3m">3-month run rate</option><option value="latest_fixed_avg_variable">Latest fixed + avg variable</option>
+      <option value="contract">Contract</option><option value="last_month">{monthLabel(rows.find((r) => r.revenue_month)?.revenue_month ?? null)} actual</option>
     </select></>
   const current = tabs.includes(tab) ? tab : 'overview'
   return <VocabContext.Provider value={vocab}>

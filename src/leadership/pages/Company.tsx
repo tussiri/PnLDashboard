@@ -3,6 +3,7 @@ import { useApiQuery } from '../../hooks/useApiQuery'
 import type { BudgetMonth, CompanyMonth, CompanyResponse, LeadershipRow } from '../../services/apiTypes'
 import { queryKey } from '../../services/queryClient'
 import { RevenueMarginChart, seriesColor, StackedMoneyChart, useTokens } from '../charts'
+import { CompanyPl } from '../CompanyPl'
 import { CompanyStory, STORY_PERIODS } from '../CompanyStory'
 import { rowsOfWeek, segmentOrder, useRows } from '../data'
 import { hours, money, moneyK, pct } from '../format'
@@ -115,8 +116,9 @@ export function Company() {
           week={{ start: weekStart, loading: !rowsQuery.data && !rowsQuery.error,
             lines: lines.map((l) => ({ slug: l.slug, name: l.name, laborPct: l.summary?.account.measurePct ?? null, target: l.target, watchBand: l.watchBand, overHours: l.summary?.headerOverHours ?? null })) }}
           budgets={budgetsQuery.data ?? null} budgetsLoading={budgetsQuery.loading} period={period} />
-        <h2 className="sect-h">Supporting detail</h2>
       </>}
+      <CompanyPl />
+      {story && <h2 className="sect-h">Supporting detail</h2>}
       <div className="kpi-lg">
         <Kpi label={`Revenue ${year} YTD`} value={money(revenue)} sub={`${ytd.length} closed months`} />
         <Kpi label="Gross profit YTD" value={money(profit)} tone={profit < 0 ? 'bad' : ''} sub={`${pct(ratio(profit, revenue))} margin`} />

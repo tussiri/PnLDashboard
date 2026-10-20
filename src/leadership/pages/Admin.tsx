@@ -10,10 +10,11 @@ import { useLeadership } from '../state'
 import { Empty, LoadError, Pills, Skeleton, SortTable, type Column } from '../ui'
 import { UsersTab } from './Users'
 import { AllocationsTab } from './Allocations'
+import { AdjustmentsTab, ContractsTab, OverheadRuleTab } from './CompanyPlAdmin'
 import { BudgetsAdmin } from './Budget'
 import { SchoolCalendarsAdmin } from './SchoolCalendars'
 
-const TAB_LABEL: Record<AdminTab, string> = { accounts: 'Accounts', jobs: 'Job mapping', budgets: 'Budgets', calendars: 'School calendars', allocations: 'Allocations', imports: 'Imports', mailbox: 'Mailbox', data: 'Data and sync', users: 'Users' }
+const TAB_LABEL: Record<AdminTab, string> = { accounts: 'Accounts', jobs: 'Job mapping', budgets: 'Budgets', calendars: 'School calendars', allocations: 'Allocations', overhead: 'Overhead rule', adjustments: 'Adjustments', contracts: 'Contracts', imports: 'Imports', mailbox: 'Mailbox', data: 'Data and sync', users: 'Users' }
 const ROLE_LABEL: Record<LeadershipRole, string> = { site: 'Site', catch_all: 'Catch-all', non_billed: 'Non-billed', pallet: 'Pallet' }
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e))
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
@@ -21,7 +22,7 @@ const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 /** Refresh every cached query after a change (configuration applies at read time). */
 const refreshAll = () => queryClient.invalidate()
 
-const FEED_NAME: Record<string, string> = { pay_report: 'Labor', job_cost: 'Job cost', income_statement: 'Income statement', service_feedback: 'Feedback', qa_score: 'QA scores', budget: 'Budget' }
+const FEED_NAME: Record<string, string> = { pay_report: 'Labor', job_cost: 'Job cost', income_statement: 'Income statement', job_income_statement: 'Cross Tab income statement', contract: 'Contracts', service_feedback: 'Feedback', qa_score: 'QA scores', budget: 'Budget' }
 
 function useAction() {
   const { decision, redetect } = useLeadership()
@@ -81,7 +82,8 @@ function AccountEditor({ account }: { account: LeadershipAccount }) {
       <label className="field"><span>Report wording</span><select value={draft.vocabulary} onChange={(e) => setDraft({ ...draft, vocabulary: e.target.value as LeadershipAccount['vocabulary'] })}>
         <option value="amazon">Amazon report</option><option value="fedex">FedEx report</option></select></label>
       <label className="field"><span>Invoice basis</span><select value={draft.invoice_basis} onChange={(e) => setDraft({ ...draft, invoice_basis: e.target.value as LeadershipAccount['invoice_basis'] })}>
-        <option value="last_month">Last closed month</option><option value="run_rate_3m">3-month run rate</option></select></label>
+        <option value="last_month">Last closed month</option><option value="run_rate_3m">3-month run rate</option>
+        <option value="latest_fixed_avg_variable">Latest fixed + 3-month avg variable</option><option value="contract">Contract (Admin, Contracts)</option></select></label>
       <label className="field"><span>Groups</span><select value={draft.group_by} onChange={(e) => setDraft({ ...draft, group_by: e.target.value as LeadershipAccount['group_by'] })}>
         <option value="segment">{draft.segment_label}s</option><option value="pallet">Pallet sites / Janitorial only</option></select></label>
       <label className="field"><span>Subcontracted sites</span><select value={draft.split_subcontracted ? 'split' : 'in'} onChange={(e) => setDraft({ ...draft, split_subcontracted: e.target.value === 'split' })}>
@@ -278,7 +280,7 @@ function ImportsTab() {
       <div className="ct"><span>Upload</span></div>
       <form className="form-grid" onSubmit={(e) => { e.preventDefault(); if (file) void run(`Imported ${file.name}`, (o) => api.leadershipUpload(file, kind || undefined, undefined, { overridePause: o })) }}>
         <label className="field"><span>File (CSV or XLSX)</span><input type="file" accept=".csv,.xlsx,.xlsm" onChange={(e) => setFile(e.target.files?.[0] ?? null)} /></label>
-        <label className="field"><span>Feed</span><select value={kind} onChange={(e) => setKind(e.target.value as '' | LeadershipImportKind)}><option value="">Auto-detect</option><option value="pay_report">Timekeeping labor (Pay Report or labor summary)</option><option value="job_cost">Job Cost Analysis</option><option value="income_statement">Trend Income Statement</option><option value="service_feedback">Feedback and star ratings</option><option value="qa_score">QA scores</option></select></label>
+        <label className="field"><span>Feed</span><select value={kind} onChange={(e) => setKind(e.target.value as '' | LeadershipImportKind)}><option value="">Auto-detect</option><option value="pay_report">Timekeeping labor (Pay Report or labor summary)</option><option value="job_cost">Job Cost Analysis</option><option value="income_statement">Trend Income Statement</option><option value="job_income_statement">Cross Tab Income Statement by job</option><option value="contract">Contracts</option><option value="service_feedback">Feedback and star ratings</option><option value="qa_score">QA scores</option></select></label>
         <div className="field"><button type="submit" className="btn primary" disabled={!file || busy}>{busy ? 'Importing' : 'Import'}</button></div>
       </form>
       {view}
@@ -328,7 +330,7 @@ export function Admin() {
       {ADMIN_TABS.map((t) => <button key={t} type="button" role="tab" className="tab" aria-selected={tab === t} onClick={() => navigate({ view: 'admin', adminTab: t })}>{TAB_LABEL[t]}</button>)}
     </nav>
     <section role="tabpanel" aria-label={TAB_LABEL[tab]}>
-      {tab === 'accounts' ? <AccountsTab /> : tab === 'jobs' ? <JobsTab /> : tab === 'imports' ? <ImportsTab /> : tab === 'budgets' ? <BudgetsAdmin /> : tab === 'calendars' ? <SchoolCalendarsAdmin /> : tab === 'mailbox' ? <MailboxTab /> : tab === 'users' ? <UsersTab /> : tab === 'allocations' ? <AllocationsTab /> : <DataTab />}
+      {tab === 'accounts' ? <AccountsTab /> : tab === 'jobs' ? <JobsTab /> : tab === 'imports' ? <ImportsTab /> : tab === 'budgets' ? <BudgetsAdmin /> : tab === 'calendars' ? <SchoolCalendarsAdmin /> : tab === 'mailbox' ? <MailboxTab /> : tab === 'users' ? <UsersTab /> : tab === 'allocations' ? <AllocationsTab /> : tab === 'overhead' ? <OverheadRuleTab /> : tab === 'adjustments' ? <AdjustmentsTab /> : tab === 'contracts' ? <ContractsTab /> : <DataTab />}
     </section>
   </>
 }

@@ -1266,7 +1266,7 @@ export interface LeadershipAccount {
   /** Share of agency or subcontractor cost counted in labor (both weekly reports: 0.70). */
   vendor_factor: number
   /** Weekly invoice from the last closed month, or the 3-month run rate. */
-  invoice_basis: 'last_month' | 'run_rate_3m'
+  invoice_basis: InvoiceBasis
   /** Groups by segment, or Pallet sites vs Janitorial only. */
   group_by: 'segment' | 'pallet'
   /** Subcontracted sites leave the labor views for the Subcontracted Sites tab. */
@@ -1358,6 +1358,8 @@ export interface LeadershipRow {
   /** Average monthly variable (OS, pallet) revenue over the same months, when the Job Cost Analysis carries it. */
   variable_run_rate?: number | null
   revenue_month_variable?: number | null
+  /** The monthly contract in effect on the week's last day (Admin > Contracts), the `contract` invoice basis. */
+  contract_month?: number | null
   /** Month rollup only (GET /leadership/month): a subcontracted station with a contract, whether its
    * sub invoices for the month are in, and the month's AR invoices. */
   sub_expected?: boolean
@@ -1408,6 +1410,102 @@ export interface AllocationMonth {
   statement_loaded: boolean
 }
 export interface AllocationStatus { settings: AllocationSettings; months: AllocationMonth[] }
+
+/** last_month: the revenue month; run_rate_3m: the 3-month average; latest_fixed_avg_variable: the revenue month's fixed billing plus the 3-month average variable billing; contract: the month's contract (Admin > Contracts), else the revenue month. Each ÷ the divisor. */
+export type InvoiceBasis = 'last_month' | 'run_rate_3m' | 'latest_fixed_avg_variable' | 'contract'
+
+export type PlCategory = 'revenue' | 'direct_labor' | 'payroll_taxes_insurance' | 'subcontractors' | 'supplies' | 'other_direct' | 'operating_expense'
+export type AdjustmentKind = 'accrual' | 'reclass' | 'staff'
+
+export interface CompanyPlGroupSetting {
+  key: string
+  name: string
+  accounts: string[]
+  delivery_model: 'self_perform' | 'subcontracted' | null
+  fixed_monthly: number
+  shares_pool: boolean
+  rest: boolean
+}
+
+export interface CompanyPlSettings {
+  overhead_jobs: string[]
+  groups: CompanyPlGroupSetting[]
+  pool_basis: 'revenue'
+  gl_categories: { from: string; to: string; category: PlCategory }[]
+}
+
+/** One line set of the company P&L: categories, direct costs, gross profit and net before overhead. */
+export interface PlLines extends Record<PlCategory, number> {
+  direct_costs: number
+  gross_profit: number
+  before_overhead: number
+}
+
+export interface CompanyPlGroup extends PlLines {
+  key: string
+  name: string
+  fixed_charge: number
+  direct_staff: number
+  pool_charge: number
+  pool_share: number | null
+  overhead: number
+  after_overhead: number
+  margin: number | null
+}
+
+export interface CompanyPlAccount extends PlLines { name: string; overhead: number; after_overhead: number }
+
+export interface CompanyPlMonth {
+  month: string
+  company: {
+    revenue: number; operating_revenue: number; direct_labor: number; payroll_taxes_insurance: number; subcontractors: number; supplies: number; other_direct: number
+    direct_costs: number; gross_profit: number; operating_expense: number; before_overhead: number; overhead: number; net_profit: number
+    gross_margin: number | null; net_margin: number | null; overhead_pct: number | null
+  }
+  overhead: { cost: number; revenue_on_overhead_jobs: number; fixed: number; direct_staff: number; pool: number }
+  groups: CompanyPlGroup[]
+  accounts: Record<string, CompanyPlAccount>
+  adjustments: { adjustment_id: number; kind: AdjustmentKind; category: PlCategory; amount: number; effect: number; description: string; reversal: boolean }[]
+}
+
+export interface CompanyPlResponse { settings: CompanyPlSettings; months: CompanyPlMonth[]; loaded: { month: string; loaded_at: string | null; companies: string[] }[] }
+
+export interface PlAdjustment {
+  adjustment_id: number
+  month: string
+  kind: AdjustmentKind
+  category: PlCategory
+  amount: number
+  from_company: string | null
+  from_job: string | null
+  to_company: string | null
+  to_job: string | null
+  group_key: string | null
+  description: string
+  reverse_month: string | null
+  cleared_at: string | null
+  cleared_by: string | null
+  created_at: string
+  created_by: string | null
+  updated_at: string
+  updated_by: string | null
+}
+
+export type PlAdjustmentInput = Pick<PlAdjustment, 'month' | 'kind' | 'amount' | 'description'> & Partial<Pick<PlAdjustment, 'category' | 'from_company' | 'from_job' | 'to_company' | 'to_job' | 'group_key' | 'reverse_month'>>
+
+export interface PlAdjustmentsResponse { adjustments: PlAdjustment[]; groups: { key: string; name: string }[]; categories: PlCategory[] }
+
+export interface JobContract {
+  company: string
+  job_number: string
+  job_name: string | null
+  account_slug: string | null
+  effective_from: string
+  monthly_amount: number
+  note: string | null
+  updated_at: string
+  updated_by: string | null
+}
 
 /** One job-month for GET /leadership/monthly. */
 export interface LeadershipMonth {
@@ -1579,7 +1677,7 @@ export interface LeadershipVendorsResponse {
   lines: (LeadershipInvoiceLine & { company: string; job_number: string; site_name: string })[]
 }
 
-export type LeadershipImportKind = 'pay_report' | 'job_cost' | 'income_statement' | 'service_feedback' | 'qa_score'
+export type LeadershipImportKind = 'pay_report' | 'job_cost' | 'income_statement' | 'job_income_statement' | 'contract' | 'service_feedback' | 'qa_score'
 /** A row of the import log: the upload kinds, and 'budget' for a labor budget mailed to the reports mailbox. */
 export type LeadershipImportLogKind = LeadershipImportKind | 'budget'
 

@@ -14,10 +14,11 @@
  */
 
 /** company: the landing page. analytics: the Portfolio pages (#/portfolio; #/analytics still opens them). */
+import type { InvoiceBasis } from '../services/apiTypes'
 export type View = 'company' | 'account' | 'analytics' | 'admin'
 export const ACCOUNT_TABS = ['overview', 'compare', 'sites', 'pallet', 'over-target', 'overtime', 'income-statement', 'subcontracted', 'map', 'vendors', 'feedback', 'budget'] as const
 export type AccountTab = (typeof ACCOUNT_TABS)[number]
-export const ADMIN_TABS = ['accounts', 'jobs', 'budgets', 'calendars', 'allocations', 'imports', 'mailbox', 'data', 'users'] as const
+export const ADMIN_TABS = ['accounts', 'jobs', 'budgets', 'calendars', 'allocations', 'overhead', 'adjustments', 'contracts', 'imports', 'mailbox', 'data', 'users'] as const
 export const ANALYTICS_TABS = ['accounts', 'units'] as const
 export type AnalyticsTab = (typeof ANALYTICS_TABS)[number]
 export type AdminTab = (typeof ADMIN_TABS)[number]
@@ -42,7 +43,7 @@ export interface Route {
   /** Account view: count stat-holiday pay in the weekly budget (off while staff are under 90 days). */
   payHolidays?: boolean
   /** Invoice basis override (the FedEx report's toggle); the account's own basis when absent. */
-  basis?: 'run_rate_3m' | 'last_month'
+  basis?: InvoiceBasis
   /** Home and Account: the month-end rollup instead of a week. */
   period?: 'month'
   /** The month shown in the month-end rollup (YYYY-MM); the selected week's month when absent. */
@@ -100,7 +101,7 @@ export function parseRoute(hash: string): Route {
   const tw = Number(params.get('tw'))
   if (route.view === 'account' && Number.isInteger(tw) && tw >= TREND_WEEKS_MIN && tw <= TREND_WEEKS_MAX && tw !== TREND_WEEKS_DEFAULT) route.trendWeeks = tw
   const basis = params.get('basis')
-  if (basis === 'run_rate_3m' || basis === 'last_month') route.basis = basis
+  if (basis === 'run_rate_3m' || basis === 'last_month' || basis === 'latest_fixed_avg_variable' || basis === 'contract') route.basis = basis
   if (params.get('period') === 'month' && route.view === 'account') route.period = 'month'
   const month = params.get('month')
   if (route.period && month && /^\d{4}-\d{2}$/.test(month)) route.month = month

@@ -8,8 +8,12 @@
 /** pallet rows are rolled into their parent site before metrics (data.ts rollupPallets). */
 export type SiteRole = 'site' | 'catch_all' | 'non_billed' | 'pallet'
 export type RevenueMethod = 'monthly_div' | 'weekly_billing'
-/** last_month: the revenue month ÷ divisor; run_rate_3m: the 3-month average ÷ divisor (the FedEx report). */
-export type InvoiceBasis = 'last_month' | 'run_rate_3m'
+/**
+ * last_month: the revenue month ÷ divisor; run_rate_3m: the 3-month average ÷ divisor;
+ * latest_fixed_avg_variable: the revenue month's fixed billing plus the 3-month average variable billing ÷ divisor
+ * (Finance's FedEx report); contract: the month's contract ÷ divisor, else the revenue month (Finance's Crowley report).
+ */
+export type InvoiceBasis = 'last_month' | 'run_rate_3m' | 'latest_fixed_avg_variable' | 'contract'
 export type LaborStatus = 'on_target' | 'watch' | 'over' | 'no_billing'
 export type LaborBasis = 'pay_report' | 'payroll_rate' | 'trailing_rate_estimate'
 /** What an account is measured by: labor % (the reference) or cost % = (labor + vendor) / invoice. */
@@ -51,6 +55,10 @@ export interface WeekRow {
   revenue_run_rate?: number | null
   /** Average monthly variable (OS, pallet) revenue over the same months. */
   variable_run_rate?: number | null
+  /** The revenue month's variable (OS, pallet) revenue, when the Job Cost Analysis carries the split. */
+  revenue_month_variable?: number | null
+  /** The monthly contract in effect on the week's last day. */
+  contract_month?: number | null
   /** Corporate allocations for the week: management wages, payroll burden, overhead. */
   alloc_management?: number
   alloc_burden?: number
@@ -172,8 +180,18 @@ export function statusOf(laborPct: number | null, target: number, watchBand = DE
 export function invoiceOf(row: WeekRow, opts: MetricOptions): number {
   const method = opts.revenueMethod ?? DEFAULTS.revenueMethod
   if (method === 'weekly_billing') return row.invoice_week ?? 0
-  const monthly = opts.invoiceBasis === 'run_rate_3m' && row.revenue_run_rate != null ? row.revenue_run_rate : row.revenue_month_amount
-  return monthly / (opts.divisor ?? DEFAULTS.divisor)
+  return monthlyInvoiceOf(row, opts.invoiceBasis) / (opts.divisor ?? DEFAULTS.divisor)
+}
+
+/** The monthly billing a row's weekly invoice is derived from, under an invoice basis. */
+export function monthlyInvoiceOf(row: Pick<WeekRow, 'revenue_month_amount' | 'revenue_run_rate' | 'variable_run_rate' | 'revenue_month_variable' | 'contract_month'>, basis?: InvoiceBasis): number {
+  if (basis === 'run_rate_3m' && row.revenue_run_rate != null) return row.revenue_run_rate
+  if (basis === 'contract' && row.contract_month != null) return row.contract_month
+  if (basis === 'latest_fixed_avg_variable' && row.revenue_month_variable != null) {
+    const fixed = row.revenue_month_amount - row.revenue_month_variable
+    return fixed + (row.variable_run_rate ?? row.revenue_month_variable)
+  }
+  return row.revenue_month_amount
 }
 
 export function baseRateOf(labor: number, hours: number, otHours: number): number {
