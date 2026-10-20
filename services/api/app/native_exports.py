@@ -14,12 +14,19 @@
   (01b_paid_linked_timekeeping_daily), one row per employee, job, work date, hour category and check,
   once it carries TotalLaborDollars. Loaded as pay report labor over the work dates it carries; rows of
   checks that are not normal, posted, automatic or single-entry are skipped, the rule HR applies.
+* GL Report Trend Income Statement (``trend_income_statement``): WinTeam's statement as exported, one
+  row per GL line with amount1..amount12 for the fiscal year's months (January first) and no period,
+  account or line columns. Loaded as the company income statement: every GL line under
+  ``gl:<description>`` plus the summary lines the allocations and views read (TREND_GROUPS). The year
+  is the run date's in the file name ("... - 20261020141521050.xlsx"), else today's; months whose
+  every line is zero are left alone.
 
 Company labels come from the company_aliases setting by name first (Sarus and Crane are separate
 WinTeam databases whose company numbers overlap), then from company_numbers.
 """
 from __future__ import annotations
 
+import re
 from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any, Iterable
@@ -53,12 +60,15 @@ def native_layout(headers: Iterable[Any]) -> str | None:
         return "labor_summary"
     if {"storedtotalhours", "workdate", "totallabordollars"} <= keys:
         return "paid_timekeeping"
+    if {"glaccountdescription", "normallyadebit", "amount1", "amount12"} <= keys:
+        return "trend_income_statement"
     if {"glaccountnumber", "actualdollars"} <= keys and ("periodstartdate" in keys or "fiscalperiod" in keys):
         return "job_cost_gl"
     return None
 
 
-LAYOUT_KIND = {"labor_summary": "pay_report", "job_cost_gl": "job_cost", "paid_timekeeping": "pay_report"}
+LAYOUT_KIND = {"labor_summary": "pay_report", "job_cost_gl": "job_cost", "paid_timekeeping": "pay_report",
+               "trend_income_statement": "income_statement"}
 
 
 class Rows:
@@ -273,3 +283,90 @@ def job_cost_gl(rows: list[dict[str, Any]], aliases: dict[str, str], numbers: di
         parsed.records.append(rec)
     if unmapped:
         parsed.error(f"GL accounts outside the job cost map, not loaded: {', '.join(str(a) for a in sorted(unmapped))}")
+
+
+# Trend Income Statement GL groups (the text before the colon in GLAccountDescription, or the whole
+# description) -> summary lines. Lines below gross profit start at the first G&A group in print order.
+TREND_GA_GROUPS = ("facility expense", "finance cost", "interest expense", "marketing expense", "office & other",
+                   "professional fees", "support staff", "officers compensation", "vehicle expense")
+TREND_GROUPS: dict[str, tuple[str, ...]] = {
+    "wages": ("direct labor",),
+    "payroll_taxes": ("direct production labor taxes", "fica expense", "medicare expense", "futa expense", "suta expense"),
+    "workers_comp": ("operation workers comp",),
+    "subcontractors": ("subcontractor",),
+    "supplies": ("direct production resources", "sarus: production supplies"),
+    "vehicle": ("production vehicle expenses",),
+    "insurance": ("operation liability insurance",),
+}
+RUN_STAMP = re.compile(r"(20\d{2})(\d{2})(\d{2})\d*(?:\.\w+)?$")
+
+
+def trend_run_date(file_name: str, today: date | None = None) -> date:
+    """The run date in WinTeam's file name ("GL Report Trend Income Statement - 20261020141521050.xlsx")."""
+    match = RUN_STAMP.search(file_name.strip())
+    if match:
+        try:
+            return date(int(match[1]), int(match[2]), int(match[3]))
+        except ValueError:
+            pass
+    return today or date.today()
+
+
+def trend_income_statement(rows: list[dict[str, Any]], parsed: Any, run_date: date) -> None:
+    """Append company income statement records (account Company, one per month and line) to `parsed`."""
+    from .imports import clean_text, parse_number
+
+    lines: list[tuple[int, str, bool, list[Decimal]]] = []
+    for n, raw in enumerate(rows, start=2):
+        r = Rows(raw)
+        description = clean_text(r.get("GLAccountDescription"))
+        if not description:
+            continue
+        if clean_text(r.get("jobnumber")):
+            parsed.error("the statement is by job: run the Trend Income Statement for the whole company")
+            return
+        try:
+            order = int(Decimal(str(r.get("PrintOrder") or n)))
+            debit = str(r.get("NormallyADebit") or "").strip().lower() in ("true", "1", "yes")
+            amounts = [parse_number(r.get(f"amount{m}")) or Decimal(0) for m in range(1, 13)]
+        except (ValueError, ArithmeticError) as exc:
+            parsed.error(f"line {n}: {exc}")
+            continue
+        # Credit lines (revenue) are negative in WinTeam; the statement keeps revenue positive.
+        lines.append((order, " ".join(description.split()), debit, amounts if debit else [-a for a in amounts]))
+    lines.sort(key=lambda x: x[0])
+    ga_start = next((o for o, d, debit, _ in lines if debit and _group(d).startswith(TREND_GA_GROUPS)), None)
+    months = [m for m in range(12) if any(a[m] for *_, a in lines)]
+    if not months:
+        return
+    year = run_date.year if months[-1] + 1 <= run_date.month else run_date.year - 1
+    for m in months:
+        period = date(year, m + 1, 1)
+        summary = {k: Decimal(0) for k in ("revenue", "wages", "management_wages", "payroll_taxes", "workers_comp", "subcontractors",
+                                           "supplies", "vehicle", "travel", "insurance", "gross_profit", "admin", "net_profit")}
+        for order, description, debit, amounts in lines:
+            amount = amounts[m]
+            parsed.records.append({"account": "Company", "period": period, "line": f"gl:{description}", "amount": amount, "company": "Company"})
+            if not debit:
+                summary["revenue"] += amount
+                continue
+            if ga_start is not None and order >= ga_start:
+                summary["admin"] += amount
+                continue
+            summary["gross_profit"] -= amount
+            low = description.lower()
+            key = next((k for k, groups in TREND_GROUPS.items() if low.startswith(groups)), None)
+            if key:
+                summary[key] += amount
+            if key == "wages" and "management" in low:
+                summary["management_wages"] += amount
+            if "travel" in low:
+                summary["travel"] += amount
+        summary["gross_profit"] += summary["revenue"]
+        summary["net_profit"] = summary["gross_profit"] - summary["admin"]
+        parsed.records.extend({"account": "Company", "period": period, "line": k, "amount": v, "company": "Company"}
+                              for k, v in summary.items())
+
+
+def _group(description: str) -> str:
+    return description.split(":")[0].strip().lower()
