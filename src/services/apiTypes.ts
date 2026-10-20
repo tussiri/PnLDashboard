@@ -1539,6 +1539,8 @@ export interface FeedbackOverview {
   account: string; month: string; current: FeedbackMonth | null; prior: FeedbackMonth | null; months: FeedbackMonth[]
   year: { ratings: number; average: number | null; since: string }
   low_sites: { location_number: string; site_name: string | null; company: string | null; job_number: string | null; score: number; feedback_date: string }[]
+  /** Lowest average over the summary's window, at least two ratings and under 4 stars; at most three. */
+  critical_sites?: { location_number: string; site_name: string | null; company: string | null; job_number: string | null; average: number; ratings: number; low: number }[]
   summary: {
     status: 'off' | 'none' | 'pending' | 'ready' | 'failed'; stale?: boolean; window_days?: number; comments?: number
     model?: string | null; generated_at?: string | null; error?: string | null

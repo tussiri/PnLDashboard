@@ -189,7 +189,8 @@ function useFeedbackOverview(account: LeadershipAccount, month: string | undefin
 }
 
 /** Claude's read of the recent comments: sentiment, headline and themes, on Home and the Feedback tab. */
-function SentimentTile({ summary: s }: { summary: FeedbackOverview['summary'] }) {
+function SentimentTile({ overview: { summary: s, critical_sites: critical = [] } }: { overview: FeedbackOverview }) {
+  const { navigate } = useLeadership()
   return <>
     {s.status === 'ready' && s.summary && <div className={`fbt__sent ${SENTIMENT[s.summary.sentiment].tone}`}
       title={`Claude's read of ${s.comments} comments from the ${s.window_days} days up to the newest rating`}>
@@ -198,6 +199,10 @@ function SentimentTile({ summary: s }: { summary: FeedbackOverview['summary'] })
       <p className="fbt__line">{s.summary.headline}</p>
       {s.summary.themes.length > 0 && <div className="chips">{s.summary.themes.map((t) => <span key={t.theme} className={`chip ${SENTIMENT[t.sentiment].tone}`}
         title={t.locations.join(', ')}>{t.theme} ({t.mentions})</span>)}</div>}
+      {critical.length > 0 && <div className="fbt__crit"><span className="kl">Most critical</span>
+        {critical.map((c) => <button key={c.location_number} type="button" className={`chip linkbtn ${scoreTone(c.average)}`}
+          title={`${c.ratings} ratings, ${c.low} at 1-2 stars`} onClick={() => c.company && c.job_number && navigate({ site: { company: c.company, job: c.job_number } })}>
+          {c.site_name ?? c.location_number}: {stars(c.average)}</button>)}</div>}
     </div>}
     {s.status === 'pending' && <div className="fbt__sent"><span className="kl">Customer sentiment updating</span></div>}
   </>
@@ -206,7 +211,7 @@ function SentimentTile({ summary: s }: { summary: FeedbackOverview['summary'] })
 /** The Feedback tab's sentiment tile; the summary covers the newest ratings whatever month is picked. */
 function TabSentiment({ account }: { account: LeadershipAccount }) {
   const q = useFeedbackOverview(account, undefined)
-  return q.data ? <SentimentTile summary={q.data.summary} /> : null
+  return q.data ? <SentimentTile overview={q.data} /> : null
 }
 
 /** Home: the account's customer feedback at a glance. Scores for the month to date, the prior month and 12 months
@@ -223,7 +228,7 @@ export function FeedbackTile({ account, month }: { account: LeadershipAccount; m
   const href = formatRoute({ view: 'account', account: account.slug, tab: 'feedback' })
   return <section className="card fbt" aria-label={`${account.name} customer feedback`}>
     <div className="ct"><span>Customer feedback</span><a className="ks" href={href}>All feedback</a></div>
-    <SentimentTile summary={s} />
+    <SentimentTile overview={d} />
     <div className="kpi4">
       <Kpi label={`Avg rating, ${monthLabel(d.month)} MTD`} value={cur?.average != null ? <>{stars(cur.average)}<span className="of"> / 5</span></> : '–'}
         tone={scoreTone(cur?.average ?? null)} sub={cur ? `${cur.ratings} ratings${change != null ? `; ${signed(change)} vs prior month` : ''}` : 'No ratings yet'} />

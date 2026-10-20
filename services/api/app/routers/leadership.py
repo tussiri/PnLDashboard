@@ -805,6 +805,24 @@ GROUP BY 1 ORDER BY 1
 """
 
 
+# The sites the sentiment tile names: lowest average over the summary's window (the WINDOW_DAYS days up to
+# the account's newest rating), at least two ratings and under 4 stars, more 1-2 star ratings first on a tie.
+FEEDBACK_CRITICAL_SQL = """
+WITH w AS (
+  SELECT * FROM mart.v_service_feedback
+  WHERE (account_slug = %(account)s OR (account_slug IS NULL AND %(account)s = 'fedex')) AND score IS NOT NULL
+)
+SELECT location_number, max(site_name) AS site_name, max(company) AS company, max(job_number) AS job_number,
+       round(avg(score), 2) AS average, count(*) AS ratings, count(*) FILTER (WHERE score <= 2) AS low
+FROM w
+WHERE feedback_date > (SELECT max(feedback_date) FROM w) - %(days)s
+GROUP BY location_number
+HAVING count(*) >= 2 AND avg(score) < 4
+ORDER BY avg(score), count(*) FILTER (WHERE score <= 2) DESC, location_number
+LIMIT 3
+"""
+
+
 @router.get("/feedback/overview", dependencies=[Depends(permissions.require_permission("tab.feedback"))])
 def leadership_feedback_overview(account: str = Query(..., description="An account slug"),
                                  month: str | None = Query(None, description="YYYY-MM; default this month"),
@@ -832,6 +850,8 @@ def leadership_feedback_overview(account: str = Query(..., description="An accou
                        " ORDER BY feedback_date DESC", {"since": first, "until": until, "account": account})
         low = [jsonable(dict(r)) for r in cursor.fetchall()]
         ai = feedback_ai.state(cursor, account)
+        cursor.execute(FEEDBACK_CRITICAL_SQL, {"account": account, "days": feedback_ai.WINDOW_DAYS})
+        critical = [{**jsonable(dict(r)), "average": float(r["average"])} for r in cursor.fetchall()]
     by_month = {m["month"]: m for m in months}
     prior = (first - timedelta(days=1)).replace(day=1).isoformat()
     scored = sum(m["scored"] for m in months)
@@ -840,7 +860,7 @@ def leadership_feedback_overview(account: str = Query(..., description="An accou
             "months": months, "year": {"ratings": sum(m["ratings"] for m in months), "average": year_avg, "since": since.isoformat()},
             "low_sites": [{"location_number": l["location_number"], "site_name": l["site_name"], "company": l["company"], "job_number": l["job_number"],
                            "score": float(l["score"]), "feedback_date": l["feedback_date"]} for l in low],
-            "summary": jsonable(ai)}
+            "summary": jsonable(ai), "critical_sites": critical}
 
 
 QA_SQL = """
