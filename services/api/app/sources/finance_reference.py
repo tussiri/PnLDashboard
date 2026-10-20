@@ -3,7 +3,7 @@
 Source: the read-only `finance_reference` database (FINANCE_REFERENCE_DATABASE_URL). The loader
 copies the relevant reference tables into TEMP tables on the application connection, derives the
 core facts and dimensions from them (SQL for the bulk copies, the pure rules in `rules.py` for the
-judgement calls), and finally rebuilds the marts. Every load is a full replace OF THIS SOURCE: the previous
+judgment calls), and finally rebuilds the marts. Every load is a full replace OF THIS SOURCE: the previous
 reference rows are removed first so two export loads can never mix, while everything the live
 WinTeam API landed (source 'winteam_api') stays in place (docs/finance-reference-source.md).
 

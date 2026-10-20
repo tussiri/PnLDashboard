@@ -292,7 +292,7 @@ jc_months AS (
   -- already exist for exactly this; mixed bases within a month are disclosed, not prevented.
   --
   -- A month is closed once month_end + close_lag_days is in the past; an in-progress month's
-  -- job-cost import is partial (invoicing still running) and is labelled job_cost_partial.
+  -- job-cost import is partial (invoicing still running) and is labeled job_cost_partial.
   SELECT DISTINCT month FROM core.fact_job_cost_month
   WHERE (month + interval '1 month' - interval '1 day')::date
         + coalesce((SELECT (value #>> '{}')::int FROM ops.app_setting WHERE key = 'close_lag_days'), 5) < current_date

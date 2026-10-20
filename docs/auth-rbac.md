@@ -194,7 +194,7 @@ returns to the login page.
 
 ## Modes
 
-| `APP_AUTH_MODE` | Behaviour                                                                                                  |
+| `APP_AUTH_MODE` | Behavior                                                                                                  |
 |-----------------|------------------------------------------------------------------------------------------------------------|
 | `dev`           | Adds the fixed development users below and falls back to a fixed development session secret. Compose default for the local stack. |
 | `required`      | Database users and `APP_USERS_JSON` users; the API refuses to start unless `APP_SESSION_SECRET` is at least 32 characters. |

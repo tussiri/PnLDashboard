@@ -4,7 +4,7 @@
 Checks:
   1. every distinct (JobCity, JobState) pair in the export has an entry,
   2. every entry's lat/lng falls inside the state's plausible bounding box,
-  3. every entry has a recognised precision value,
+  3. every entry has a recognized precision value,
 and prints counts by precision. Exit status is non-zero when a check fails.
 """
 from __future__ import annotations

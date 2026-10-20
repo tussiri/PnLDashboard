@@ -26,7 +26,7 @@ the field names/formats from the API documentation:
 | `GET /accounts/v1/api/payables/payments?startDate&endDate` | paged |
 | `GET /vendors/v1/api/vendors/` | paged; `vendorNumber`; with or without the trailing slash |
 
-Behaviour shared by every endpoint:
+Behavior shared by every endpoint:
 
 * `tenantId` header required. Missing -> `400`, not a GUID -> `422`, both with
   the documented `errors[{attemptedValue, fieldName, errorMessage}]` envelope.
@@ -66,10 +66,10 @@ Operator endpoints (no tenant header needed):
   +/-15 % of actuals.
 * AR invoices per job per month (bi-weekly for the logistics account), revenue
   = hours x bill rate (1.45-1.75x pay), sales tax in TX/OH/Canada, account-level
-  payment behaviour, one 90+ day slow payer, one credit memo with
+  payment behavior, one 90+ day slow payer, one credit memo with
   `invoiceBeingCredited`.
 * 25 vendors, monthly AP invoices with due dates, payments 30-45 days later
-  (utilities pay several invoices per cheque), a few unpaid recent invoices.
+  (utilities pay several invoices per check), a few unpaid recent invoices.
 
 Customer numbers are fixed and simple: **1001 .. 1010** (one per parent
 account, in the order above). Every site's AR invoices carry its account's

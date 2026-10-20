@@ -7,7 +7,7 @@ any parent account. Weeks are Monday-based ("Week of Aug 24").
 | Piece | Where |
 |---|---|
 | Inputs added for it | `core.fact_daily_budget`, `core.contract_billing` (migration 007; loaded by `sources/finance_reference.py`) |
-| Mart | `mart.job_week`, one row per (job, Monday week), rebuilt by `app/weekly.py::rebuild` at the end of every `marts.rebuild_all`; `sub_account` (migration 014) labelled by `weekly.apply_sub_accounts` in the same transaction |
+| Mart | `mart.job_week`, one row per (job, Monday week), rebuilt by `app/weekly.py::rebuild` at the end of every `marts.rebuild_all`; `sub_account` (migration 014) labeled by `weekly.apply_sub_accounts` in the same transaction |
 | API | `GET /api/v1/executive/labor-pl`, `GET /api/v1/executive/accounts` (`routers/executive.py`; contract in `docs/api-contract.md`) |
 | Settings | `bu_targets`, `bu_colors`, `agency_sub`, `ot_bands` (007), `bu_order` (012), `key_accounts` (013), `sub_account_rules` (014), `subcontractor_vendor_types` (015), `vendor_type_labels` (016) in `ops.app_setting`, editable through the admin API |
 | Tests | `services/api/tests/test_weekly.py` (pure: overlap shares, 12/53, OT estimate, basis order, site codes, sub-account rules, delivery scoping SQL, accounts shape, the sub projection, vendor-type matching, the vendor block) |
@@ -95,7 +95,7 @@ Both tables and `mart.job_week` are in `RESET_TABLES`, so a reload replaces them
 * `notes`: every derivation above, the selected week's invoicing / subcontract / budget basis mix,
   how many of the selected week's sites are on the carry-forward basis (and the estimated $), the
   selected week's delivery split (self-performed sites and their labor, subcontracted sites and
-  their vendor cost, and how unlabelled jobs were counted), the contract-billing state, the daily
+  their vendor cost, and how unlabeled jobs were counted), the contract-billing state, the daily
   budget span, and that QA scores are unavailable.
 * `qa`: always null.
 
@@ -244,7 +244,7 @@ but a site flagged subcontracted that still books punches keeps them - e.g. FedE
 `sub_dollars` is the vendor cost apportioned from the job-cost P&L or the agency rule; vendor
 identity is not job-linked in WinTeam, so the split is per site, not per vendor.
 
-### Verification (2026-09-04, after `POST /marts/rebuild`: 16,191 rows, 706 jobs labelled)
+### Verification (2026-09-04, after `POST /marts/rebuild`: 16,191 rows, 706 jobs labeled)
 
 Distinct `sub_account` values (sites = distinct jobs in `mart.job_week`):
 

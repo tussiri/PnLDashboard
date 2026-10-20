@@ -345,7 +345,7 @@ def latest_mart_month() -> date | None:
 
     The current month has labor but no invoices until several days after month end, so
     anchoring on it would silently understate revenue and margin. In-progress months stay
-    selectable through the month picker and are labelled as such by /dimensions."""
+    selectable through the month picker and are labeled as such by /dimensions."""
     rows = month_status_rows()
     closed = [r["month"] for r in rows if r["status"] == "closed"]
     if closed:

@@ -333,7 +333,7 @@ def test_build_accounts_shape() -> None:
         {"name": "FedEx Express (FXE)", "sites": 2, "delivery": {"self_perform": 1, "subcontracted": 1}},
         {"name": "FedEx Ground (FXG)", "sites": 1, "delivery": {"self_perform": 0, "subcontracted": 1}},
     ]
-    # a job not yet labelled (NULL sub_account) is listed under the account name
+    # a job not yet labeled (NULL sub_account) is listed under the account name
     assert accounts[2]["sub_accounts"] == [{"name": "Education", "sites": 1, "delivery": {"self_perform": 1, "subcontracted": 0}}]
     assert accounts[2]["business_units"] == []
 
@@ -389,7 +389,7 @@ def test_vendor_types_setting_and_matching() -> None:
     assert match_subcontractor_vendor(None, "Georgia Power", 3, terms) is None
     assert match_subcontractor_vendor(None, None, None, terms) is None
     assert match_subcontractor_vendor("Agency", "Jobble", None, DEFAULT_SUBCONTRACTOR_VENDOR_TYPES) == "Agency"
-    # vendor_type_labels (migration 016): the id's label replaces "type N" and a name-matched term when the id is labelled
+    # vendor_type_labels (migration 016): the id's label replaces "type N" and a name-matched term when the id is labeled
     labels = vendor_type_labels_setting({"6": "Subcontractor", 9: "Professional", "": "x", "7": ""})
     assert labels == {"6": "Subcontractor", "9": "Professional"}
     assert vendor_type_labels_setting(None) == {} and vendor_type_labels_setting(["6"]) == {}

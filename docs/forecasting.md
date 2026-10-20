@@ -188,7 +188,7 @@ account, optional job):
 - Once `as_of >= month_end` the month is complete: projection = actual,
   `projection_method = none`, `month_complete = true`.
 
-## 3. Deliberately not modelled
+## 3. Deliberately not modeled
 
 - **Seasonality.** Twelve months is a single cycle; revisit at 24+ months of closed history.
 - **Contract wins, losses, pipeline.** The roster is assumed unchanged.

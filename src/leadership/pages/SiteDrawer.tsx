@@ -16,6 +16,8 @@ import { useTokens } from '../charts'
 
 const cap = (s: string | null) => (s ? s.charAt(0).toUpperCase() + s.slice(1).replace(/_/g, ' ') : '–')
 const STATUS_TONE: Record<string, string> = { submitted: 'warn', approved: 'neutral', posted: 'neutral', filled: 'ok', rejected: 'bad', cancelled: 'neutral' }
+/** Status values are the HR app's data keys; this is how they read on screen. */
+const STATUS_LABEL: Record<string, string> = { cancelled: 'Canceled' }
 const shiftLabel = (l: StaffingRequestLine) => [cap(l.shift), l.shift_start && l.shift_end ? `${l.shift_start}-${l.shift_end}` : null].filter(Boolean).join(' ')
 
 const POSITIONS_SOURCE: Record<string, string> = { tracker: 'Staffing tracker', budget: 'Estimated from budget', observed: 'Estimated from roster' }
@@ -58,7 +60,7 @@ function StaffingCard({ company, job }: { company: string; job: string }) {
           <thead><tr><th className="nosort l">Role</th><th className="nosort l">Shift</th><th className="nosort">Needed</th><th className="nosort l">Status</th><th className="nosort">Pay rate</th><th className="nosort l">Needed by</th><th className="nosort">Days open</th></tr></thead>
           <tbody>{q.data.lines.map((l) => <tr key={l.line_id}>
             <td className="l nm">{l.role ?? '–'}</td><td className="l">{shiftLabel(l)}</td><td>{l.headcount_needed}</td>
-            <td className={`l ${STATUS_TONE[l.status] ?? 'neutral'}`}>{cap(l.status)}</td><td>{rate(l.pay_rate)}</td>
+            <td className={`l ${STATUS_TONE[l.status] ?? 'neutral'}`}>{STATUS_LABEL[l.status] ?? cap(l.status)}</td><td>{rate(l.pay_rate)}</td>
             <td className="l">{l.needed_by ?? '–'}</td><td>{l.days_open ?? '–'}</td></tr>)}</tbody>
         </table></div> : <Empty>No staffing requests.</Empty>}
       </>}

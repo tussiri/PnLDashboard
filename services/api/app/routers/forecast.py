@@ -174,7 +174,7 @@ def list_forecasts(metric: str = Query("revenue"),
                    filters: MartFilters = Depends(resolve_filters)) -> dict[str, Any]:
     """Forecast rows for the requested scope (default: the key accounts).
 
-    `scope=all` with no account is the historical behaviour: the `__ALL__` portfolio row leads.
+    `scope=all` with no account is the historical behavior: the `__ALL__` portfolio row leads.
     An `account` leads with `__ACCOUNT__`; a narrowing scope with no account leads with `__SCOPE__`
     (the same aggregate over the scope's sites). Whatever leads, `account_summary` describes it.
     """

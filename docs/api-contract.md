@@ -253,7 +253,7 @@ unit, labor % of invoicing vs BU target) for every account. Weeks are Monday-bas
 ```
 Rules: `hours` = timekeeping total hours; `ot_hours`/`dt_hours` from timekeeping; `direct_dollars` = labor at each
 punch's own WinTeam rate at full pay (rate × (hours + ½ OT + DT), as the Pay Report's TotalLaborDollars), else
-the employee's latest rate, else hours × the job's trailing rate (changed 2026-10-06; it was always the trailing rate); `ot_dollars` = ot_hours × rate × 0.5 premium + dt_hours × rate × 1.0 (estimate, labelled);
+the employee's latest rate, else hours × the job's trailing rate (changed 2026-10-06; it was always the trailing rate); `ot_dollars` = ot_hours × rate × 0.5 premium + dt_hours × rate × 1.0 (estimate, labeled);
 `sub_dollars` = the site's monthly subcontract cost apportioned by calendar days (sub_estimated = true when the month
 is not closed and the latest closed month's rate is carried forward); `invoicing` = closed-month job-cost revenue
 apportioned by calendar days, else contract billing x 12/53 x day-share, else AR invoices for the service month
