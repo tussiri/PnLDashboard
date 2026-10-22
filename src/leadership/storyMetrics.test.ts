@@ -156,11 +156,18 @@ describe('planStory', () => {
 })
 
 describe('allocationsStory', () => {
-  it('takes allocations off gross profit', () => {
+  it('takes burden and overhead off gross profit, not management wages already in labor', () => {
     const alloc = { management_wages: 10, burden: 5, overhead: 15, burden_rate: null, burden_source: null, overhead_source: null }
     const s = allocationsStory([month('2026-01', { revenue: 200, gross_profit: 50, allocations: alloc })])!
-    expect(s.after).toBe(20)
-    expect(s.share).toBeCloseTo(0.1)
+    expect(s.after).toBe(30)
+    expect(s.share).toBeCloseTo(0.15)
+  })
+  it("takes net profit from the month's income statement when it is loaded", () => {
+    const alloc = { management_wages: 10, burden: 5, overhead: 15, burden_rate: null, burden_source: null, overhead_source: null }
+    const s = allocationsStory([month('2026-07', { revenue: 200, gross_profit: 50, allocations: alloc, statement: { net_profit: -12 } })])!
+    expect(s.after).toBe(-12)
+    expect(s.allocated).toBe(62)
+    expect(s.months[0].fromStatement).toBe(true)
   })
   it('is null when nothing is allocated', () => {
     expect(allocationsStory([month('2026-01', { revenue: 200, gross_profit: 50 })])).toBeNull()

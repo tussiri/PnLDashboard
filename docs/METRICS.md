@@ -130,22 +130,22 @@ Actual is job cost when the month is closed, else the month rollup from timekeep
 
 Accounts with a labor budget and an actual for at least one finished month in the window.
 
-## After allocations (when no account has a budget for two finished months)
+## Net profit (when no account has a budget for two finished months)
 
-### After allocations
+### Net profit
 
-Gross profit less management wages, burden and overhead, over the closed months in the window.
+Company net profit over the closed months in the window: the GL Trend Income Statement's net profit for each month it is loaded, else gross profit less payroll burden and overhead.
 
 ```text
-sum(gross_profit - management_wages - burden - overhead)
+sum(statement net_profit, else gross_profit - burden - overhead)
 ```
 
-Only the allocations turned on in Admin, Allocations. Job-cost-closed months only: a month is closed when it has revenue and its job cost direct labor is at least 70% of timekeeping labor (or there is no timekeeping), and cost on jobs with no revenue that month is under 20% of revenue. Open months are shown but not counted.
+Management wages are not taken again: job cost labor already holds them. Job-cost-closed months only: a month is closed when it has revenue and its job cost direct labor is at least 70% of timekeeping labor (or there is no timekeeping), and cost on jobs with no revenue that month is under 20% of revenue. Open months are shown but not counted.
 
 ### Share of revenue
 
-Gross profit after allocations as a share of revenue, over the same closed months.
+Net profit as a share of revenue, over the same closed months.
 
 ```text
-sum(after allocations) / sum(revenue)
+sum(net profit) / sum(revenue)
 ```

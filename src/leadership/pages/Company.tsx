@@ -5,8 +5,9 @@ import { queryKey } from '../../services/queryClient'
 import { RevenueMarginChart, seriesColor, StackedMoneyChart, useTokens } from '../charts'
 import { CompanyPl } from '../CompanyPl'
 import { CompanyStory, STORY_PERIODS } from '../CompanyStory'
+import { hasStatement, netProfitOf } from '../storyMetrics'
 import { rowsOfWeek, segmentOrder, useRows } from '../data'
-import { hours, money, moneyK, pct } from '../format'
+import { hours, money, pct } from '../format'
 import { accountSummary, statusOf, type AccountSummary } from '../metrics'
 import { monthLabel, monthShort, weekRange } from '../routes'
 import { useRefreshOnRebuild } from '../refresh'
@@ -17,7 +18,6 @@ import { vocabOf } from '../vocab'
 
 const ratio = (a: number, b: number) => (b ? a / b : null)
 const sumBy = (months: CompanyMonth[], f: (m: CompanyMonth) => number) => months.reduce((a, m) => a + f(m), 0)
-const allocOf = (m: CompanyMonth) => m.allocations.management_wages + m.allocations.burden + m.allocations.overhead
 
 interface AccountLine { slug: string; name: string; summary: AccountSummary<LeadershipRow> | null; target: number; watchBand?: number; ytdRevenue: number; ytdLabor: number; ytdProfit: number }
 
@@ -53,7 +53,9 @@ export function Company() {
   const revenue = sumBy(ytd, (m) => m.revenue)
   const profit = sumBy(ytd, (m) => m.gross_profit)
   const labor = sumBy(ytd, (m) => m.direct_labor)
-  const alloc = sumBy(ytd, allocOf)
+  const net = sumBy(ytd, netProfitOf)
+  const fromStatement = ytd.filter(hasStatement).length
+  const allocated = ytd.some((m) => hasStatement(m) || m.allocations.burden + m.allocations.overhead > 0)
 
   const lines: AccountLine[] = useMemo(() => featured.map((a) => {
     const rows = week.filter((r) => r.account_slug === a.slug)
@@ -125,7 +127,8 @@ export function Company() {
         <Kpi label={`Revenue ${year} YTD`} value={money(revenue)} sub={`${ytd.length} closed months`} />
         <Kpi label="Gross profit YTD" value={money(profit)} tone={profit < 0 ? 'bad' : ''} sub={`${pct(ratio(profit, revenue))} margin`} />
         <Kpi label="Labor % YTD" value={pct(ratio(labor, revenue))} sub="Direct labor ÷ revenue" />
-        {alloc > 0 && <Kpi label="After allocations YTD" value={money(profit - alloc)} tone={profit - alloc < 0 ? 'bad' : ''} sub={`${moneyK(alloc)} allocated`} />}
+        {allocated && <Kpi label="Net profit YTD" value={money(net)} tone={net < 0 ? 'bad' : ''} sub={`${pct(ratio(net, revenue))} margin`}
+          tip={`${fromStatement} of ${ytd.length} months from the GL income statement${fromStatement < ytd.length ? '; the rest are gross profit less burden and overhead' : ''}`} />}
         {last && <Kpi label={`${monthShort(last.month)} revenue`} value={money(last.revenue)}
           sub={prev ? `${last.revenue >= prev.revenue ? '+' : '−'}${pct(Math.abs(ratio(last.revenue - prev.revenue, prev.revenue) ?? 0))} vs ${monthShort(prev.month)}` : undefined} />}
         <Kpi label="Labor % this week" value={pct(weekLp)} tone={toneOf(statusOf(weekLp, blendedTarget))}

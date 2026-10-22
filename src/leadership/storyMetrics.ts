@@ -245,17 +245,29 @@ export function planStory(budgets: { slug: string; months: BudgetMonth[] }[], wi
   return { months, accounts: used.size, budget, actual, variancePct: budget > 0 ? actual / budget - 1 : null, last: months.at(-1)! }
 }
 
-export interface AllocationsMonth { month: string; grossProfit: number; allocated: number; after: number; revenue: number }
+export interface AllocationsMonth { month: string; grossProfit: number; allocated: number; after: number; revenue: number; fromStatement: boolean }
 export interface AllocationsStory { months: AllocationsMonth[]; after: number; allocated: number; share: number | null }
 
-/** Gross profit less management wages, burden and overhead per closed month; null when nothing is allocated. */
+/** True when the month's company Trend Income Statement is loaded (it carries net profit). */
+export const hasStatement = (m: CompanyMonth) => m.statement?.net_profit != null
+
+/**
+ * A month's company net profit: the Trend Income Statement's when it is loaded (it ties to finance's figure),
+ * else gross profit less burden and overhead. Management wages are not taken again: job cost direct labor
+ * (GL 40000-40999) already holds them.
+ */
+export function netProfitOf(m: CompanyMonth): number {
+  return hasStatement(m) ? m.statement.net_profit : m.gross_profit - m.allocations.burden - m.allocations.overhead
+}
+
+/** Net profit per closed month and what sits between it and job cost gross profit; null when nothing is allocated. */
 export function allocationsStory(closed: CompanyMonth[]): AllocationsStory | null {
   const months = closed.map((m) => {
-    const allocated = m.allocations.management_wages + m.allocations.burden + m.allocations.overhead
-    return { month: m.month, grossProfit: m.gross_profit, allocated, after: m.gross_profit - allocated, revenue: m.revenue }
+    const after = netProfitOf(m)
+    return { month: m.month, grossProfit: m.gross_profit, allocated: m.gross_profit - after, after, revenue: m.revenue, fromStatement: hasStatement(m) }
   })
+  if (!closed.some((m) => hasStatement(m) || m.allocations.burden + m.allocations.overhead > 0)) return null
   const allocated = sum(months, (m) => m.allocated)
-  if (!(allocated > 0)) return null
   const after = sum(months, (m) => m.after)
   return { months, after, allocated, share: ratio(after, sum(months, (m) => m.revenue)) }
 }

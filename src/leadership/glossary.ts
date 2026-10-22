@@ -79,15 +79,15 @@ export const GLOSSARY = {
     definition: 'Accounts with a labor budget and an actual for at least one finished month in the window.',
   },
   storyAfterAllocations: {
-    term: 'After allocations',
-    definition: 'Gross profit less management wages, burden and overhead, over the closed months in the window.',
-    formula: 'sum(gross_profit - management_wages - burden - overhead)',
-    caveat: 'Only the allocations turned on in Admin, Allocations. ' + CLOSED,
+    term: 'Net profit',
+    definition: "Company net profit over the closed months in the window: the GL Trend Income Statement's net profit for each month it is loaded, else gross profit less payroll burden and overhead.",
+    formula: 'sum(statement net_profit, else gross_profit - burden - overhead)',
+    caveat: 'Management wages are not taken again: job cost labor already holds them. ' + CLOSED,
   },
   storyAfterAllocationsShare: {
     term: 'Share of revenue',
-    definition: 'Gross profit after allocations as a share of revenue, over the same closed months.',
-    formula: 'sum(after allocations) / sum(revenue)',
+    definition: 'Net profit as a share of revenue, over the same closed months.',
+    formula: 'sum(net profit) / sum(revenue)',
   },
 } satisfies Record<string, MetricDefinition>
 

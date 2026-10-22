@@ -18,7 +18,7 @@
   row per GL line with amount1..amount12 for the fiscal year's periods and no period, account or line
   columns. Loaded as the company income statement: every GL line under ``gl:<description>`` plus the
   summary lines the allocations and views read (TREND_GROUPS). The fiscal year is the latest one
-  (FISCAL_YEAR_STARTS) whose filled periods end by the run date in the file name
+  (fiscal_year_start) whose filled periods end by the run date in the file name
   ("... - 20261020141521050.xlsx", else today); the run date's own month is still open and is skipped,
   and months whose every line is zero are left alone.
 
