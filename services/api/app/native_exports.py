@@ -15,11 +15,12 @@
   once it carries TotalLaborDollars. Loaded as pay report labor over the work dates it carries; rows of
   checks that are not normal, posted, automatic or single-entry are skipped, the rule HR applies.
 * GL Report Trend Income Statement (``trend_income_statement``): WinTeam's statement as exported, one
-  row per GL line with amount1..amount12 for the fiscal year's months (January first) and no period,
-  account or line columns. Loaded as the company income statement: every GL line under
-  ``gl:<description>`` plus the summary lines the allocations and views read (TREND_GROUPS). The year
-  is the run date's in the file name ("... - 20261020141521050.xlsx"), else today's; months whose
-  every line is zero are left alone.
+  row per GL line with amount1..amount12 for the fiscal year's periods and no period, account or line
+  columns. Loaded as the company income statement: every GL line under ``gl:<description>`` plus the
+  summary lines the allocations and views read (TREND_GROUPS). The fiscal year is the latest one
+  (FISCAL_YEAR_STARTS) whose filled periods end by the run date in the file name
+  ("... - 20261020141521050.xlsx", else today); the run date's own month is still open and is skipped,
+  and months whose every line is zero are left alone.
 
 Company labels come from the company_aliases setting by name first (Sarus and Crane are separate
 WinTeam databases whose company numbers overlap), then from company_numbers.
@@ -301,6 +302,37 @@ TREND_GROUPS: dict[str, tuple[str, ...]] = {
 RUN_STAMP = re.compile(r"(20\d{2})(\d{2})(\d{2})\d*(?:\.\w+)?$")
 
 
+# Crane's GL fiscal years: calendar years through 2025, a six-period FY26 (Jan-Jun 2026), then July to
+# June from FY27. A Trend Income Statement's amount1 is the first period of the year it was run for.
+FY27_START = date(2026, 7, 1)
+
+
+def fiscal_year_start(month: date) -> date:
+    """The first month of the GL fiscal year holding `month`."""
+    if month >= FY27_START:
+        return date(month.year if month.month >= 7 else month.year - 1, 7, 1)
+    return date(month.year, 1, 1)
+
+
+def _add_months(month: date, n: int) -> date:
+    total = month.year * 12 + month.month - 1 + n
+    return date(total // 12, total % 12 + 1, 1)
+
+
+def trend_periods(filled: list[int], run_date: date) -> dict[int, date] | None:
+    """Map the filled amount columns (0 = amount1) to months: the latest fiscal year whose filled
+    periods all fall inside it and end by the run date's month. None when no fiscal year fits."""
+    run_month = run_date.replace(day=1)
+    start = fiscal_year_start(run_month)
+    for _ in range(30):
+        following = fiscal_year_start(_add_months(start, 12))
+        last = _add_months(start, filled[-1])
+        if last <= run_month and last < following:
+            return {i: _add_months(start, i) for i in filled}
+        start = fiscal_year_start(_add_months(start, -1))
+    return None
+
+
 def trend_run_date(file_name: str, today: date | None = None) -> date:
     """The run date in WinTeam's file name ("GL Report Trend Income Statement - 20261020141521050.xlsx")."""
     match = RUN_STAMP.search(file_name.strip())
@@ -339,9 +371,17 @@ def trend_income_statement(rows: list[dict[str, Any]], parsed: Any, run_date: da
     months = [m for m in range(12) if any(a[m] for *_, a in lines)]
     if not months:
         return
-    year = run_date.year if months[-1] + 1 <= run_date.month else run_date.year - 1
+    periods = trend_periods(months, run_date)
+    if periods is None:
+        parsed.error(f"the filled months do not fit a fiscal year ending by the run date {run_date.isoformat()}")
+        return
+    open_month = run_date.replace(day=1)
+    if periods[months[-1]] == open_month:
+        parsed.error(f"{open_month:%B %Y} is still open and was skipped")
     for m in months:
-        period = date(year, m + 1, 1)
+        period = periods[m]
+        if period == open_month:
+            continue
         summary = {k: Decimal(0) for k in ("revenue", "wages", "management_wages", "payroll_taxes", "workers_comp", "subcontractors",
                                            "supplies", "vehicle", "travel", "insurance", "gross_profit", "admin", "net_profit")}
         for order, description, debit, amounts in lines:
