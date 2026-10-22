@@ -29,7 +29,7 @@ export const GLOSSARY = {
   },
   storyGrossMargin: {
     term: 'Gross margin',
-    definition: 'Gross profit as a share of revenue, over the same closed months.',
+    definition: 'Gross profit as a share of revenue, over the same closed months. Both come from the GL Trend Income Statement for each month it is loaded, else from job cost.',
     formula: 'sum(gross_profit) / sum(revenue)',
     caveat: CLOSED,
   },

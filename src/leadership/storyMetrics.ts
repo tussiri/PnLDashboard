@@ -252,6 +252,17 @@ export interface AllocationsStory { months: AllocationsMonth[]; after: number; a
 export const hasStatement = (m: CompanyMonth) => m.statement?.net_profit != null
 
 /**
+ * A month on the GL basis once its Trend Income Statement is loaded: revenue and gross profit from the
+ * statement (they tie to finance's), and closed, since the books are. Job cost labor, subcontractors and the
+ * account and business unit splits stay as they are.
+ */
+export function onStatementBasis(m: CompanyMonth): CompanyMonth {
+  const s = m.statement
+  if (s?.revenue == null || s.gross_profit == null) return m
+  return { ...m, revenue: s.revenue, gross_profit: s.gross_profit, closed: true }
+}
+
+/**
  * A month's company net profit: the Trend Income Statement's when it is loaded (it ties to finance's figure),
  * else gross profit less burden and overhead. Management wages are not taken again: job cost direct labor
  * (GL 40000-40999) already holds them.

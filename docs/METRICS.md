@@ -42,7 +42,7 @@ A dash until there are 6 closed months in the window.
 
 ### Gross margin
 
-Gross profit as a share of revenue, over the same closed months.
+Gross profit as a share of revenue, over the same closed months. Both come from the GL Trend Income Statement for each month it is loaded, else from job cost.
 
 ```text
 sum(gross_profit) / sum(revenue)

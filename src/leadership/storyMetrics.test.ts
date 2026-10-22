@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { BudgetMonth, CompanyMonth } from '../services/apiTypes'
-import { accountsStory, allocationsStory, largestRemainder, per100, planStory, revenueStory, storyWindow, weekStory } from './storyMetrics'
+import { accountsStory, allocationsStory, largestRemainder, onStatementBasis, per100, planStory, revenueStory, storyWindow, weekStory } from './storyMetrics'
 
 const money = { revenue: 0, direct_labor: 0, management_wages: 0, subcontractors: 0, payroll_taxes: 0, gross_profit: 0 }
 function month(m: string, v: Partial<CompanyMonth> = {}): CompanyMonth {
@@ -171,6 +171,21 @@ describe('allocationsStory', () => {
   })
   it('is null when nothing is allocated', () => {
     expect(allocationsStory([month('2026-01', { revenue: 200, gross_profit: 50 })])).toBeNull()
+  })
+})
+
+describe('onStatementBasis', () => {
+  it("takes revenue and gross profit from the month's income statement and counts the month closed", () => {
+    const m = onStatementBasis(month('2026-09', { revenue: 9_580_000, gross_profit: 2_600_000, direct_labor: 4_000_000, closed: false,
+      statement: { revenue: 9_270_124, gross_profit: 1_183_539, net_profit: 220_178 } }))
+    expect(m.revenue).toBe(9_270_124)
+    expect(m.gross_profit).toBe(1_183_539)
+    expect(m.direct_labor).toBe(4_000_000)
+    expect(m.closed).toBe(true)
+  })
+  it('keeps job cost when no statement is loaded', () => {
+    const m = month('2026-09', { revenue: 100, gross_profit: 20, closed: false })
+    expect(onStatementBasis(m)).toBe(m)
   })
 })
 

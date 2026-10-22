@@ -5,7 +5,7 @@ import { queryKey } from '../../services/queryClient'
 import { RevenueMarginChart, seriesColor, StackedMoneyChart, useTokens } from '../charts'
 import { CompanyPl } from '../CompanyPl'
 import { CompanyStory, STORY_PERIODS } from '../CompanyStory'
-import { hasStatement, netProfitOf } from '../storyMetrics'
+import { hasStatement, netProfitOf, onStatementBasis } from '../storyMetrics'
 import { rowsOfWeek, segmentOrder, useRows } from '../data'
 import { hours, money, pct } from '../format'
 import { accountSummary, statusOf, type AccountSummary } from '../metrics'
@@ -43,7 +43,7 @@ export function Company() {
     (signal) => Promise.all(slugs.split(',').map((slug) => api.leadershipBudget(slug, signal).then((b) => ({ slug, months: b.months })))), [api, slugs])
   useRefreshOnRebuild(config, [q.reload, rowsQuery.reload, budgetsQuery.reload])
   const week = useMemo(() => rowsOfWeek(rowsQuery.data?.rows, weekStart), [rowsQuery.data, weekStart])
-  const allMonths = q.data?.months ?? []
+  const allMonths = useMemo(() => (q.data?.months ?? []).map(onStatementBasis), [q.data])
   const months = allMonths.slice(-DETAIL_MONTHS)
   const closed = months.filter((m) => m.closed)
   const last = closed.at(-1)
@@ -125,7 +125,8 @@ export function Company() {
       {story && <h2 className="sect-h">Supporting detail</h2>}
       <div className="kpi-lg">
         <Kpi label={`Revenue ${year} YTD`} value={money(revenue)} sub={`${ytd.length} closed months`} />
-        <Kpi label="Gross profit YTD" value={money(profit)} tone={profit < 0 ? 'bad' : ''} sub={`${pct(ratio(profit, revenue))} margin`} />
+        <Kpi label="Gross profit YTD" value={money(profit)} tone={profit < 0 ? 'bad' : ''} sub={`${pct(ratio(profit, revenue))} margin`}
+          tip={fromStatement ? `${fromStatement} of ${ytd.length} months from the GL income statement${fromStatement < ytd.length ? '; the rest from job cost' : ''}` : undefined} />
         <Kpi label="Labor % YTD" value={pct(ratio(labor, revenue))} sub="Direct labor ÷ revenue" />
         {allocated && <Kpi label="Net profit YTD" value={money(net)} tone={net < 0 ? 'bad' : ''} sub={`${pct(ratio(net, revenue))} margin`}
           tip={`${fromStatement} of ${ytd.length} months from the GL income statement${fromStatement < ytd.length ? '; the rest are gross profit less burden and overhead' : ''}`} />}

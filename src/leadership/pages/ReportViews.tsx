@@ -197,7 +197,7 @@ export function IncomeStatementTab({ account, options }: { account: LeadershipAc
   if (!monthly.data) return <Skeleton height={400} />
   const { months, jobs, income_statement: IS } = monthly.data
   const loaded = months.filter((m) => IS[m] && IS[m].revenue != null)
-  if (!loaded.length) return <Empty>No Trend Income Statement loaded for {months.length ? `${monthLabel(months[0])} to ${monthLabel(months.at(-1)!)}` : 'these months'}. Import it in Admin, Imports.</Empty>
+  if (!loaded.length) return <Empty>No income statement for {account.name} in {months.length ? `${monthLabel(months[0])} to ${monthLabel(months.at(-1)!)}` : 'these months'}.</Empty>
   const factor = options.vendorFactor ?? 1
   const onDashboard = new Set(laborJobs(account, jobs).filter((j) => j.delivery_model !== 'subcontracted').map((j) => `${j.company}|${j.job_number}`))
   const C = Object.fromEntries(loaded.map((m) => {
