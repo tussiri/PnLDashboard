@@ -170,17 +170,17 @@ export function CompanyStory({ months, accountNames, week, budgets, budgetsLoadi
         <tbody>{wk.rows.map((r) => <tr key={r.slug}><td className="l">{r.name}</td><td>{pct(r.laborPct)}</td><td>{pct(r.target)}</td><td>{hours(r.overHours)}</td></tr>)}</tbody></table>}
       note={`Featured accounts with billing that week${wk.noData ? `; ${wk.noData} without` : ''}. Labor from the Pay Report, else payroll rates, else a trailing-rate estimate.`} />
 
-    {budgetsLoading ? <div className="card story-card"><div className="skel" style={{ height: 320 }} aria-hidden="true" /></div> : plan ? <PlanSection plan={plan} /> : alloc ? <Section id="plan" title="After allocations" subtitle={`Gross profit less allocations by month, ${range}`}
+    {budgetsLoading ? <div className="card story-card"><div className="skel" style={{ height: 320 }} aria-hidden="true" /></div> : plan ? <PlanSection plan={plan} /> : alloc ? <Section id="plan" title="Net profit" subtitle={range}
       figures={[
-        { metric: 'storyAfterAllocations', value: money(alloc.after), tone: alloc.after < 0 ? 'bad' : '', detail: `${compact(alloc.allocated)} allocated` },
+        { metric: 'storyAfterAllocations', value: money(alloc.after), tone: alloc.after < 0 ? 'bad' : '', detail: `${compact(alloc.allocated)} below gross profit` },
         { metric: 'storyAfterAllocationsShare', value: pct(alloc.share), detail: 'Of revenue' },
       ]}
-      legend={<><Swatch color="var(--accent)" label="After allocations" /><Swatch color="var(--muted)" label="Gross profit" /></>}
-      chart={<StoryLine caption="Gross profit after allocations by closed month, over gross profit." format={compact}
+      legend={<><Swatch color="var(--accent)" label="Net profit" /><Swatch color="var(--muted)" label="Gross profit" /></>}
+      chart={<StoryLine caption="Net profit by closed month, over gross profit." format={compact}
         endLabel={compact(alloc.months.at(-1)!.after)}
         points={alloc.months.map((m) => ({ key: m.month, label: monthShort(m.month), value: m.after, band: m.grossProfit,
-          tip: <><b>{monthLabel(m.month)}</b><span>Gross profit {money(m.grossProfit)}</span><span>Allocated {money(m.allocated)}</span><span>After {money(m.after)}</span></> }))} />}
-      table={<table><thead><tr><th className="nosort l">Month</th><th className="nosort">Gross profit</th><th className="nosort">Allocated</th><th className="nosort">After allocations</th></tr></thead>
+          tip: <><b>{monthLabel(m.month)}</b><span>Gross profit {money(m.grossProfit)}</span><span>Below gross profit {money(m.allocated)}</span><span>Net profit {money(m.after)}{m.fromStatement ? ', GL income statement' : ', estimated'}</span></> }))} />}
+      table={<table><thead><tr><th className="nosort l">Month</th><th className="nosort">Gross profit</th><th className="nosort">Below gross profit</th><th className="nosort">Net profit</th></tr></thead>
         <tbody>{alloc.months.map((m) => <tr key={m.month}><td className="l">{monthLabel(m.month)}</td><td>{money(m.grossProfit)}</td><td>{money(m.allocated)}</td><td>{money(m.after)}</td></tr>)}</tbody></table>}
       note={budgets ? 'No account has a labor budget for two finished months in this window.' : 'Closed months only.'} />
       : <Section id="plan" title="Against plan" subtitle={range} figures={[{ metric: 'storyPlanVariance', value: pct(null), detail: 'Not yet knowable' }]}
