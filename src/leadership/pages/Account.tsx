@@ -131,7 +131,7 @@ export function Account() {
     budget: Boolean(budget.data?.months.length),
     pallet: rows.some((r) => (r.kids?.length ?? 1) > 1),
     subcontracted: Boolean(account?.split_subcontracted) || subcontracted > 0,
-    incomeStatement: Boolean(account?.split_subcontracted) || Object.keys(monthly.data?.income_statement ?? {}).length > 0,
+    incomeStatement: Object.keys(monthly.data?.income_statement ?? {}).length > 0,
     month: monthMode,
   }).filter((t) => (!monthMode || t !== 'over-target') && (t === 'overview' || t === 'compare' || can(`tab.${t}`)))
   const vocab = vocabOf(account)
