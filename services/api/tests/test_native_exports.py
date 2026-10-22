@@ -6,7 +6,8 @@ from datetime import date
 from decimal import Decimal
 
 from app.imports import Parsed
-from app.native_exports import job_cost_gl, labor_summary, native_layout, paid_timekeeping, trend_income_statement, trend_run_date
+from app.native_exports import (fiscal_year_start, job_cost_gl, labor_summary, native_layout, paid_timekeeping, trend_income_statement,
+                                trend_periods, trend_run_date)
 
 ALIASES = {"ServiceMaster by Sarus Co": "Sarus", "Crane West Opco LLC": "Crane West", "ServiceMaster by Crane IFS": "Crane IFS"}
 NUMBERS = {"1": "Crane IFS", "2": "Crane West", "3": "Crane Southwest"}
@@ -173,7 +174,7 @@ def test_trend_income_statement_is_recognized_from_the_export_as_is():
 
 def test_trend_income_statement_loads_company_months_with_summary_lines():
     parsed = Parsed(kind="income_statement")
-    trend_income_statement(TREND, parsed, date(2026, 10, 20))
+    trend_income_statement(TREND, parsed, date(2026, 3, 20))
     assert parsed.errors == []
     assert {r["account"] for r in parsed.records} == {"Company"}
     assert sorted({r["period"] for r in parsed.records}) == [date(2026, 1, 1), date(2026, 2, 1)]  # zero months are left alone
@@ -188,10 +189,28 @@ def test_trend_income_statement_loads_company_months_with_summary_lines():
     assert feb["gl:JANITORIAL: Indstrl, Mnftng, Warehouse"] == Decimal(1200)
 
 
-def test_trend_income_statement_year_steps_back_when_months_run_past_the_run_date():
+def test_fiscal_years_are_calendar_until_a_six_period_fy26_then_july_to_june():
+    assert fiscal_year_start(date(2025, 11, 1)) == date(2025, 1, 1)
+    assert fiscal_year_start(date(2026, 6, 1)) == date(2026, 1, 1)
+    assert fiscal_year_start(date(2026, 9, 1)) == date(2026, 7, 1)
+    assert fiscal_year_start(date(2027, 3, 1)) == date(2026, 7, 1)
+
+
+def test_trend_periods_pick_the_latest_fiscal_year_the_filled_columns_fit():
+    run = date(2026, 10, 22)
+    # FY27 run in October: amount1..4 are Jul..Oct
+    assert trend_periods([0, 1, 2, 3], run) == {0: date(2026, 7, 1), 1: date(2026, 8, 1), 2: date(2026, 9, 1), 3: date(2026, 10, 1)}
+    # six filled periods cannot be FY27 by October, so they are FY26 (Jan..Jun)
+    assert trend_periods(list(range(6)), run)[5] == date(2026, 6, 1)
+    # twelve filled periods do not fit the six-period FY26, so they are calendar 2025
+    assert trend_periods(list(range(12)), run)[0] == date(2025, 1, 1)
+
+
+def test_trend_income_statement_skips_the_open_month():
     parsed = Parsed(kind="income_statement")
-    trend_income_statement([trend_row(70, "Revenue", False, *([-1] * 12))], parsed, date(2027, 1, 5))
-    assert min(r["period"] for r in parsed.records) == date(2026, 1, 1)
+    trend_income_statement([trend_row(70, "Revenue", False, -1, -1, -1, -1)], parsed, date(2026, 10, 22))
+    assert sorted({r["period"] for r in parsed.records}) == [date(2026, 7, 1), date(2026, 8, 1), date(2026, 9, 1)]
+    assert "October 2026 is still open" in parsed.errors[0]
 
 
 def test_trend_income_statement_by_job_is_refused():
