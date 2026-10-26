@@ -829,10 +829,11 @@ reclass moves an amount between jobs, a staff charge moves overhead to a group.
 | `PUT /leadership/contracts/{company}/{job_number}` | Admin. `{effective_from: YYYY-MM-DD, monthly_amount, note}` (`company` `-` = any); upserts and returns the list. |
 | `DELETE /leadership/contracts/{company}/{job_number}/{effective_from}` | Admin. Returns the list; `404` unknown. |
 
-Invoice basis (`ops.account.invoice_basis`) adds `latest_fixed_avg_variable` (the revenue month's fixed
-billing, revenue − variable, plus the 3-month average variable billing; the revenue month when the Job Cost
-Analysis has no split) and `contract` (the job's contract in effect on the week's last day, else the revenue
+Invoice basis (`ops.account.invoice_basis`) adds `latest_fixed_avg_variable` (for a site with a Relay contract,
+`relay_fixed`, the contract's monthly fee, plus `variable_avg`, Relay AR less the contract, else the OS line,
+averaged over the revenue month and the two before it; otherwise the revenue month's fixed billing, revenue −
+variable, plus the 3-month average variable billing; the revenue month when the Job Cost Analysis has no split) and `contract` (the job's contract in effect on the week's last day, else the revenue
 month). FedEx uses the first and Crowley ISD the second (migration 058). Rows of `GET /leadership/rows` and a
-site's weeks add `contract_month`. Import kinds add `job_income_statement`
+site's weeks add `contract_month`, `relay_fixed` and `variable_avg`. Import kinds add `job_income_statement`
 (file name `job_income_statement_*` or containing "Cross Tab"; a file replaces its month and company) and
 `contract` (columns Company, Job Number, Effective From, Monthly Amount; upserted).

@@ -88,6 +88,8 @@ export function prepareRows(rows: LeadershipRow[], accountBySlug: (slug: string 
     parent.dt_hours = (parent.dt_hours ?? 0) + (r.dt_hours ?? 0)
     parent.revenue_run_rate = (parent.revenue_run_rate ?? 0) + (r.revenue_run_rate ?? 0)
     if (r.variable_run_rate != null) parent.variable_run_rate = (parent.variable_run_rate ?? 0) + r.variable_run_rate
+    // relay_fixed / variable_avg stay the parent's: Relay maps a station to both the site and its pallet job
+    // with the same contract fee, and bills the site's AR to the site, so adding the pallet job would double it.
     parent.pallet_labor = (parent.pallet_labor ?? 0) + r.labor
     parent.pallet_hours = (parent.pallet_hours ?? 0) + r.hours
     parent.pallet_ot_hours = (parent.pallet_ot_hours ?? 0) + r.ot_hours

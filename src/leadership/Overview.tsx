@@ -5,7 +5,7 @@ import { GroupTrendGrid } from './AmazonCharts'
 import { LaborMixChart, MonthWeekTrendChart, SegmentTrendChart, SiteLpChart, useTokens, WeekBarsChart } from './charts'
 import { closedMonths, includesVendor, inSentence, isSubcontracted, monthLaborPct, monthRevenue, priorMonth, rowsOfWeek, schoolWeekNote, segmentLabel, segmentOrder, siteMonths, useMonthly, useMonthRows, useRows, vendorLabel, weekBudgetOf, type DataFlags, type WeekBudget } from './data'
 import { hours, hours1, money, moneyK, pct } from './format'
-import { accountSummary, statusOf, type AccountNote, type AccountSummary, type MetricOptions, type SiteMetrics } from './metrics'
+import { accountSummary, invoiceParts, statusOf, type AccountNote, type AccountSummary, type MetricOptions, type SiteMetrics } from './metrics'
 import { addDays, monthLabel, monthShort, TREND_WEEKS_DEFAULT, TREND_WEEKS_MAX, TREND_WEEKS_MIN, weekEndOf, weekTick } from './routes'
 import { projectRecentWeeks, PROJECTION_BASE_WEEKS } from './projection'
 import { QaCards } from './Qa'
@@ -70,7 +70,7 @@ export const directOf = (r: Row) => r.labor - palletOf(r)
  */
 export function variableWk(r: LeadershipRow, o: MetricOptions): number | null {
   if (!o.palletSplit) return null
-  const monthly = o.invoiceBasis === 'run_rate_3m' || o.invoiceBasis === 'latest_fixed_avg_variable' ? r.variable_run_rate : r.revenue_month_variable
+  const monthly = invoiceParts(r, o.invoiceBasis).variable
   return monthly == null ? null : monthly / (o.divisor ?? 4.33)
 }
 const short = (name: string) => name.replace(/^[A-Z][A-Za-z]+ ?- ?/, '').replace(', CA 94534', '').replace(' - Cargo Bldg', ' Cargo').replace(/ (Elementary|Middle|High) School$/, ' $1')
@@ -152,7 +152,7 @@ export function Overview({ account, rows, summary, options, flags, headline = tr
   const basis = period === 'month' ? billingSources(summary.sites) : account.revenue_method === 'weekly_billing' ? null : options.invoiceBasis === 'run_rate_3m'
     ? (variable != null ? `Fixed ${moneyK(summary.all.invoice - variable)} + variable ${moneyK(variable)} run rate ÷ ${account.revenue_divisor}` : `3-month run rate ÷ ${account.revenue_divisor}`)
     : options.invoiceBasis === 'latest_fixed_avg_variable'
-      ? (variable != null ? `${monthShort(revenueMonth)} fixed ${moneyK(summary.all.invoice - variable)} + 3-month avg variable ${moneyK(variable)} ÷ ${account.revenue_divisor}` : `${monthLabel(revenueMonth)} revenue ÷ ${account.revenue_divisor}`)
+      ? (variable != null ? `${summary.sites.some((r) => r.relay_fixed != null) ? 'Contract' : monthShort(revenueMonth)} fixed ${moneyK(summary.all.invoice - variable)} + 3-month avg variable ${moneyK(variable)} ÷ ${account.revenue_divisor}` : `${monthLabel(revenueMonth)} revenue ÷ ${account.revenue_divisor}`)
       : options.invoiceBasis === 'contract' && contractRows > 0
         ? `Contract ÷ ${account.revenue_divisor}${contractRows < summary.sites.length ? `; ${monthLabel(revenueMonth)} revenue where no contract` : ''}`
         : `${monthLabel(revenueMonth)} revenue ÷ ${account.revenue_divisor}`

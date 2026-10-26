@@ -59,6 +59,10 @@ export interface WeekRow {
   revenue_month_variable?: number | null
   /** The monthly contract in effect on the week's last day. */
   contract_month?: number | null
+  /** The Relay contract's monthly fee (FedEx sites), the fixed part of latest_fixed_avg_variable. */
+  relay_fixed?: number | null
+  /** Average monthly billing above the fixed fee over the revenue month and the two before it (Relay AR less the contract, else the OS line). */
+  variable_avg?: number | null
   /** Corporate allocations for the week: management wages, payroll burden, overhead. */
   alloc_management?: number
   alloc_burden?: number
@@ -185,15 +189,28 @@ export function invoiceOf(row: WeekRow, opts: MetricOptions): number {
   return monthlyInvoiceOf(row, opts.invoiceBasis) / (opts.divisor ?? DEFAULTS.divisor)
 }
 
-/** The monthly billing a row's weekly invoice is derived from, under an invoice basis. */
-export function monthlyInvoiceOf(row: Pick<WeekRow, 'revenue_month_amount' | 'revenue_run_rate' | 'variable_run_rate' | 'revenue_month_variable' | 'contract_month'>, basis?: InvoiceBasis): number {
-  if (basis === 'run_rate_3m' && row.revenue_run_rate != null) return row.revenue_run_rate
-  if (basis === 'contract' && row.contract_month != null) return row.contract_month
-  if (basis === 'latest_fixed_avg_variable' && row.revenue_month_variable != null) {
-    const fixed = row.revenue_month_amount - row.revenue_month_variable
-    return fixed + (row.variable_run_rate ?? row.revenue_month_variable)
+type InvoiceRow = Pick<WeekRow, 'revenue_month_amount' | 'revenue_run_rate' | 'variable_run_rate' | 'revenue_month_variable' | 'contract_month' | 'relay_fixed' | 'variable_avg'>
+
+/**
+ * The monthly billing behind a row's weekly invoice under a basis, as fixed + variable (variable null when the
+ * basis does not split it). latest_fixed_avg_variable: the Relay contract plus the average billing above it,
+ * else the revenue month's fixed (revenue less the OS line) plus the average OS line, else the revenue month.
+ */
+export function invoiceParts(row: InvoiceRow, basis?: InvoiceBasis): { fixed: number; variable: number | null } {
+  if (basis === 'run_rate_3m' && row.revenue_run_rate != null) return { fixed: row.revenue_run_rate - (row.variable_run_rate ?? 0), variable: row.variable_run_rate ?? null }
+  if (basis === 'contract' && row.contract_month != null) return { fixed: row.contract_month, variable: null }
+  if (basis === 'latest_fixed_avg_variable') {
+    if (row.relay_fixed != null) return { fixed: row.relay_fixed, variable: row.variable_avg ?? 0 }
+    if (row.revenue_month_variable != null) return { fixed: row.revenue_month_amount - row.revenue_month_variable, variable: row.variable_run_rate ?? row.revenue_month_variable }
   }
-  return row.revenue_month_amount
+  if (basis !== 'contract' && basis !== 'latest_fixed_avg_variable' && row.revenue_month_variable != null) return { fixed: row.revenue_month_amount - row.revenue_month_variable, variable: row.revenue_month_variable }
+  return { fixed: row.revenue_month_amount, variable: null }
+}
+
+/** The monthly billing a row's weekly invoice is derived from, under an invoice basis. */
+export function monthlyInvoiceOf(row: InvoiceRow, basis?: InvoiceBasis): number {
+  const p = invoiceParts(row, basis)
+  return p.fixed + (p.variable ?? 0)
 }
 
 export function baseRateOf(labor: number, hours: number, otHours: number): number {

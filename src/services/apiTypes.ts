@@ -1367,6 +1367,10 @@ export interface LeadershipRow {
   revenue_month_variable?: number | null
   /** The monthly contract in effect on the week's last day (Admin > Contracts), the `contract` invoice basis. */
   contract_month?: number | null
+  /** The Relay contract's monthly fee (FedEx sites). */
+  relay_fixed?: number | null
+  /** Average monthly billing above the fixed fee over the revenue month and the two before it. */
+  variable_avg?: number | null
   /** Month rollup only (GET /leadership/month): a subcontracted station with a contract, whether its
    * sub invoices for the month are in, and the month's AR invoices. */
   sub_expected?: boolean
