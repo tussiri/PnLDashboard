@@ -111,8 +111,8 @@ export function AnalyticsUnits() {
           return <div className="card" key={u.name}>
             <div className="seg-hdr"><div><div className="seg-name"><i className="dot" style={{ background: seriesColor(t, names.indexOf(u.name)) }} aria-hidden="true" />{u.name}</div><div className="seg-sub">{u.sites.length} sites{u.subSites ? `, ${u.subSites} subcontracted` : ''}</div></div><Badge status={status} /></div>
             <div className="kpi-grid3">
-              <Kpi small label="Total labor" value={money(u.now.cost)} sub={u.now.measurePct == null ? undefined : `${signed(u.now.measurePct - u.target)}pp vs ${pct(u.target)}`} />
               <Kpi small label="Invoicing" value={money(u.now.invoice)} />
+              <Kpi small label="Total labor" value={money(u.now.cost)} sub={u.now.measurePct == null ? undefined : `${signed(u.now.measurePct - u.target)}pp vs ${pct(u.target)}`} />
               <Kpi small label="Labor %" value={pct(u.now.measurePct)} tone={toneOf(status)} sub={u.prev?.measurePct != null && u.now.measurePct != null ? `${signed(u.now.measurePct - u.prev.measurePct)}pp WoW` : undefined} />
               <Kpi small label="OT cost" value={money(u.now.otDollars)} sub={`${hours(u.now.otHours)} hrs${otChange != null ? `, ${signed(otChange)}% WoW` : ''}`} />
               <Kpi small label="Vendor" value={money(vendor)} sub={u.subSites ? `${u.subSites} sites` : undefined} />
