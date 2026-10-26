@@ -56,7 +56,14 @@ rr AS (
          avg(CASE WHEN k.delivery_model = 'subcontracted' AND coalesce(r.ar_revenue, 0) > 0 THEN r.ar_revenue
                   WHEN jc.job_number IS NULL AND r.ar_revenue IS NULL THEN NULL
                   ELSE coalesce(nullif(jc.revenue, 0), CASE WHEN k.revenue_month_basis LIKE 'relay%%' THEN r.ar_revenue END, 0) END) AS revenue_run_rate,
-         avg(ex.revenue_variable) AS variable_run_rate
+         avg(ex.revenue_variable) AS variable_run_rate,
+         -- Finance's FedEx basis (latest_fixed_avg_variable): the fixed fee is the Relay contract (the current
+         -- rate) and the variable is each month's billing above it, Relay AR less the contract, else the Job
+         -- Cost Analysis OS line; averaged over the months that have one. From September 2026 the OS billing
+         -- reaches job cost after the month's fixed fee, so job cost alone read only the fixed fee.
+         max(rc.ar_monthly) AS relay_fixed,
+         avg(CASE WHEN r.ar_revenue IS NOT NULL AND rc.ar_monthly IS NOT NULL THEN greatest(r.ar_revenue - rc.ar_monthly, 0)
+                  ELSE ex.revenue_variable END) AS variable_avg
   FROM rr_key k
   -- Three months as VALUES, not generate_series: its default 1000-row estimate priced this past
   -- jit_above_cost, and compiling it took longer than running it.
@@ -66,6 +73,7 @@ rr AS (
   LEFT JOIN mart.v_relay_job_month r ON r.job_number = k.job_number AND r.month = g.m AND k.company IS DISTINCT FROM 'Sarus'
   LEFT JOIN core.fact_job_cost_month ex ON ex.source = 'export_import' AND ex.company = k.company AND ex.job_number = k.job_number
                                        AND ex.month = g.m
+  LEFT JOIN mart.v_relay_job_contract rc ON rc.job_number = k.job_number AND k.company IS DISTINCT FROM 'Sarus' AND rc.ar_monthly > 0
   GROUP BY k.job_key, k.company, k.job_number, k.revenue_month, k.delivery_model, k.revenue_month_basis
 )
 SELECT w.week_start, w.week_end, w.company, w.job_number, w.site_name, w.parent_account,
@@ -82,7 +90,7 @@ SELECT w.week_start, w.week_end, w.company, w.job_number, w.site_name, w.parent_
        coalesce(sr.region, nullif(btrim(j.region_name), '')) AS region,
        coalesce(sr.subregion, nullif(btrim(j.state_province), '')) AS subregion,
        coalesce(jw.dt_hours, 0) AS dt_hours,
-       rr.revenue_run_rate, rr.variable_run_rate, vm.revenue_variable AS revenue_month_variable,
+       rr.revenue_run_rate, rr.variable_run_rate, vm.revenue_variable AS revenue_month_variable, rr.relay_fixed, rr.variable_avg,
        a.revenue_allocation AS _allocation, w.revenue_month_budget_hours AS _rm_budget_hours, w.revenue_month_hours AS _rm_hours,
        mw.management_wages AS _mgmt_month, coalesce(ctc.monthly_amount, cta.monthly_amount) AS contract_month
 FROM mart.leadership_week w

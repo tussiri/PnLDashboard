@@ -140,3 +140,14 @@ describe('regions', () => {
     expect(accountRegion(undefined, [r('Southwest', 'TX'), r('Southeast', 'GA')])).toEqual({ region: 'Multi-region', subregion: null })
   })
 })
+
+describe('Relay contract on a site with a pallet job', () => {
+  it('keeps the site contract when the pallet job rolls in', () => {
+    const base = { week_start: '2026-10-12', company: 'Crane IFS', account_slug: 'fedex', segment: null, hours: 10, ot_hours: 0, labor: 100, revenue_month_amount: 0 }
+    const rows = [{ ...base, job_number: '39', role: 'site', relay_fixed: 42966.74, variable_avg: 28000 },
+      { ...base, job_number: '391', role: 'pallet', parent_job_number: '39', relay_fixed: 42966.74, variable_avg: null }] as unknown as LeadershipRow[]
+    const [site] = prepareRows(rows, () => undefined)
+    expect(site.relay_fixed).toBe(42966.74)
+    expect(site.labor).toBe(200)
+  })
+})

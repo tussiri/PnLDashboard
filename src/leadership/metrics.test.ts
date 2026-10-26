@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import fixture from './fixtures/plano-we-2026-09-20.json'
 import { hours, hours1, money, moneyK, pct, pts, rate } from './format'
-import { accountSummary, baseRateOf, cutRow, cutSummary, invoiceOf, monthlyInvoiceOf, siteMetrics, statusOf, type MetricOptions, type WeekRow } from './metrics'
+import { accountSummary, baseRateOf, cutRow, cutSummary, invoiceOf, invoiceParts, monthlyInvoiceOf, siteMetrics, statusOf, type MetricOptions, type WeekRow } from './metrics'
 
 // Expected values were produced by running the reference dashboard's own script on its embedded data.
 const rows = fixture.rows as WeekRow[]
@@ -235,5 +235,13 @@ describe('Finance invoice bases', () => {
   it('keeps last month and the run rate', () => {
     expect(monthlyInvoiceOf(row, 'last_month')).toBe(70000)
     expect(monthlyInvoiceOf(row, 'run_rate_3m')).toBe(60000)
+  })
+})
+
+describe('FedEx basis from the Relay contract', () => {
+  it('takes the contract as fixed and the average billing above it as variable', () => {
+    const row = { revenue_month_amount: 42967, revenue_month_variable: null, variable_run_rate: null, relay_fixed: 42966.74, variable_avg: 28198.67 }
+    expect(invoiceParts(row, 'latest_fixed_avg_variable')).toEqual({ fixed: 42966.74, variable: 28198.67 })
+    expect(monthlyInvoiceOf(row, 'last_month')).toBe(42967)
   })
 })
