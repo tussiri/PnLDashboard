@@ -1,6 +1,7 @@
 /**
  * The words each weekly report uses, so an account's pages read like the report its leadership
- * already gets. 'amazon' (Amazon Labor P&L) is the default; 'fedex' follows the FedEx Labor P&L.
+ * already gets. 'amazon' (Amazon Labor P&L) is the default; 'fedex' follows the FedEx Labor P&L and
+ * 'school' the school district Labor P&L.
  */
 import type { LeadershipAccount } from '../services/apiTypes'
 import type { AccountTab } from './routes'
@@ -10,6 +11,7 @@ export const vocabOf = (account: LeadershipAccount | undefined): Vocabulary => a
 
 const TABS: Record<Vocabulary, Record<AccountTab, string>> = {
   amazon: { overview: 'Overview', compare: 'Compare months', sites: 'Sites', pallet: 'Pallet', 'over-target': 'Hours to cut', overtime: 'Overtime', 'income-statement': 'Income Statement', subcontracted: 'Subcontracted Sites', map: 'Map', vendors: 'Vendors', feedback: 'Feedback', budget: 'Budget' },
+  school: { overview: 'District Overview', compare: 'Compare months', sites: 'Campuses', pallet: 'Pallet', 'over-target': 'Over Target', overtime: 'Overtime', 'income-statement': 'Income Statement', subcontracted: 'Subcontracted Sites', map: 'Map', vendors: 'Vendors', feedback: 'Feedback', budget: 'Budget' },
   fedex: { overview: 'Account Overview', compare: 'Compare months', sites: 'Sites', pallet: 'Pallet', 'over-target': 'Over Target', overtime: 'Overtime', 'income-statement': 'Income Statement', subcontracted: 'Subcontracted Sites', map: 'Map', vendors: 'Sub invoices', feedback: 'Feedback', budget: 'Budget' },
 }
 
@@ -28,13 +30,13 @@ export function tabsFor(_account: LeadershipAccount | undefined, all: readonly A
 export function weekChange(change: number | null, vocab: Vocabulary, period: 'week' | 'month' = 'week'): string {
   if (change == null || !Number.isFinite(change)) return '–'
   const n = `${change >= 0 ? '+' : '−'}${Math.abs(change * 100).toFixed(1)}`
-  if (period === 'month') return vocab === 'fedex' ? `${n} pts vs prior month` : `${n}pp MoM`
-  return vocab === 'fedex' ? `${n} pts vs prior wk` : `${n}pp WoW`
+  if (period === 'month') return vocab !== 'amazon' ? `${n} pts vs prior month` : `${n}pp MoM`
+  return vocab !== 'amazon' ? `${n} pts vs prior wk` : `${n}pp WoW`
 }
 
 /** The invoice label for the period: FedEx's "Weekly invoice" reads "Monthly invoice" in the rollup. */
 export const invoiceLabel = (words: Words, vocab: Vocabulary, period: 'week' | 'month' = 'week') =>
-  period === 'month' && vocab === 'fedex' ? 'Monthly invoice' : words.invoice
+  period === 'month' && vocab !== 'amazon' ? 'Monthly invoice' : words.invoice
 
 const SOURCE: Record<string, string> = { job_cost: 'Job cost', relay_ar: 'Relay AR', contract: 'Contract', prior_month: 'Prior month' }
 /** Where a month's billing came from, by site count: "Relay AR 301, contract 27". */
@@ -71,6 +73,13 @@ const WORDS: Record<Vocabulary, Words> = {
     accountLaborPct: 'Labor %', hours: 'Hours', hoursOver: 'Hours to cut', hoursOverCol: 'Hrs to cut',
     over: (n, of) => `${n} of ${of} over`, prior: (m) => `${m} actual`,
     trendTitle: 'Total labor vs invoicing',
+    subCol: (label) => label,
+  },
+  school: {
+    invoice: 'Weekly invoice', invoiceCol: 'Invoice', labor: 'Contract labor', laborCol: 'Contract labor $', direct: 'Direct', directCol: 'Direct labor',
+    accountLaborPct: 'Contract labor %', hours: 'Hours worked', hoursOver: 'Hours over target', hoursOverCol: 'Hrs over',
+    over: (n, of) => `${n} of ${of} campuses over`, prior: (m) => `${m} actual`,
+    trendTitle: 'Weekly trend: labor vs invoice',
     subCol: (label) => label,
   },
   fedex: {

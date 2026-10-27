@@ -81,7 +81,7 @@ function AccountEditor({ account }: { account: LeadershipAccount }) {
       <label className="field"><span>Non-payroll labor name</span><input type="text" maxLength={30} value={draft.vendor_label} onChange={(e) => setDraft({ ...draft, vendor_label: e.target.value })} /></label>
       <label className="field"><span>{draft.vendor_label} counted (%)</span><input type="number" step="5" min="0" max="100" value={Math.round(draft.vendor_factor * 100)} onChange={(e) => setDraft({ ...draft, vendor_factor: num(e.target.value) / 100 })} /></label>
       <label className="field"><span>Report wording</span><select value={draft.vocabulary} onChange={(e) => setDraft({ ...draft, vocabulary: e.target.value as LeadershipAccount['vocabulary'] })}>
-        <option value="amazon">Amazon report</option><option value="fedex">FedEx report</option></select></label>
+        <option value="amazon">Amazon report</option><option value="fedex">FedEx report</option><option value="school">School district report</option></select></label>
       <label className="field"><span>Invoice basis</span><select value={draft.invoice_basis} onChange={(e) => setDraft({ ...draft, invoice_basis: e.target.value as LeadershipAccount['invoice_basis'] })}>
         <option value="last_month">Last closed month</option><option value="run_rate_3m">3-month run rate</option>
         <option value="latest_fixed_avg_variable">Latest fixed + 3-month avg variable</option><option value="contract">Contract (Admin, Contracts)</option></select></label>
