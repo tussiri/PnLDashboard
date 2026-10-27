@@ -1262,7 +1262,7 @@ export interface LeadershipAccount {
   /** What the non-payroll labor cost is called ("Agency sub", "Subcontractor", "Vendor"). */
   vendor_label: string
   /** Which weekly report's words the account's pages use. */
-  vocabulary: 'amazon' | 'fedex'
+  vocabulary: 'amazon' | 'fedex' | 'school'
   /** Share of agency or subcontractor cost counted in labor (both weekly reports: 0.70). */
   vendor_factor: number
   /** Weekly invoice from the last closed month, or the 3-month run rate. */

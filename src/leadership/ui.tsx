@@ -8,12 +8,13 @@ export const toneOf = (status: LaborStatus) => ({ on_target: 'ok', watch: 'warn'
  * Each account's pages use the words of its own weekly report: 'amazon' (On track / Watch / High,
  * Invoicing, Hours to cut) or 'fedex' (On target / Watch / Over, Weekly invoice, Over Target).
  */
-export type Vocabulary = 'amazon' | 'fedex'
+export type Vocabulary = 'amazon' | 'fedex' | 'school'
 export const VocabContext = createContext<Vocabulary>('amazon')
 export const useVocab = () => useContext(VocabContext)
 const STATUS_WORDS: Record<Vocabulary, Record<LaborStatus, string>> = {
   amazon: { on_target: 'On track', watch: 'Watch', over: 'High', no_billing: 'No billing' },
   fedex: { on_target: 'On target', watch: 'Watch', over: 'Over', no_billing: 'No billing' },
+  school: { on_target: 'On track', watch: 'Watch', over: 'High', no_billing: 'No billing' },
 }
 export const statusLabel = (status: LaborStatus, vocab: Vocabulary = 'amazon') => STATUS_WORDS[vocab][status]
 /** The Amazon wording; views inside an account use statusLabel with the account's vocabulary. */
