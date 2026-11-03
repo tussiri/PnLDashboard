@@ -719,6 +719,17 @@ another provider) are kept but appear on no account.
 |---|---|
 | `GET /leadership/qa?account=&weeks=16&week=YYYY-MM-DD` | Permission `data.qa`, account scope. `{account, weeks: [YYYY-MM-DD], sites: [{site_code, site_name, company, job_number, scores: {week: score}}]}`. `weeks` are the Mondays of the last `weeks` QA weeks up to the one holding `week` (default the latest loaded), oldest first. |
 
+## Why labor changed, added 2026-11-03
+
+Migration 060, app/week_changes.py. One week's labor against the week before, on the same scope as the account's Labor figure
+(no non-billed jobs, no split-out subcontracted sites, vendor cost at the account's factor where labor % counts it). Effects are
+computed in code and add up to `change`: `hours` (hours change at the prior base rate), `pay_rate` (base rate change on this week's
+hours), `ot_premium` (a third of OT pay), `started` / `stopped` (a site with hours in one week only), `vendor`.
+
+| Route | Response |
+|---|---|
+| `GET /leadership/week-change?account=&week=` | Account scope. `{account, complete, week, prior_week, current, prior, change, change_pct, effects, site_count, sites: [up to 25 largest, {company, job_number, site_name, role, segment, prior, current, change, hours_prior, hours_current, ot_hours_prior, ot_hours_current, employees_prior, employees_current, days_prior, days_current, basis_prior, basis_current, effects}], source_changes: {sites, change, transitions}, groups: [{group, change, hours}], recent: [{week, cost, labor, vendor, hours, ot_hours, ot_premium, sites_with_labor}], average_prior, vs_average_pct, prior_vs_average_pct, holidays: {current, prior}, summary}`. `summary`: `{status: off \| none \| pending \| ready \| failed, stale, model, generated_at, error, summary: {headline, drivers: [{title, detail, tone: increase \| decrease \| data, sites}], check_next, served_by}}`: Claude's reading of the facts, cached in `ops.week_change_summary` under a digest of them and rebuilt only when they change; `off` without `ANTHROPIC_API_KEY`, `none` for a week in progress. The nightly run warms the latest complete week of each featured account. |
+
 ## Navigation, added 2026-10-02
 
 Company · Accounts · Portfolio · Admin. `#/` opens Company (the landing page); a user limited to some

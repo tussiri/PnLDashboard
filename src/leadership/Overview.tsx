@@ -9,6 +9,7 @@ import { accountSummary, invoiceParts, statusOf, type AccountNote, type AccountS
 import { addDays, monthLabel, monthShort, TREND_WEEKS_DEFAULT, TREND_WEEKS_MAX, TREND_WEEKS_MIN, weekEndOf, weekTick } from './routes'
 import { projectRecentWeeks, PROJECTION_BASE_WEEKS } from './projection'
 import { QaCards } from './Qa'
+import { WeekChangeCard } from './WeekChange'
 import { useLeadership } from './state'
 import { billingSources, invoiceLabel, weekChange, wordsFor } from './vocab'
 
@@ -262,6 +263,7 @@ export function Overview({ account, rows, summary, options, flags, headline = tr
     </div>}
     <Notes summary={summary} account={account} flags={flags} options={options} revenueMonth={revenueMonth}
       extra={selectedProjected && !flags.weekInProgress ? [{ tone: 'warn', key: 'proj', label: 'Labor not in yet', body: `Trend projected from the ${PROJECTION_BASE_WEEKS} weeks before${hasBudget ? ', scaled by weekly budget' : schoolWeeks?.length ? ', scaled by school days' : ''}` }] : []} />
+    {headline && !monthMode && weekStart && <WeekChangeCard account={account} weekStart={weekStart} />}
     {school && trendChart}
     <div className="seg-grid">
       {groups.map((g) => {

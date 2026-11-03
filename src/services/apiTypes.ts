@@ -1666,6 +1666,26 @@ export interface FeedbackOverview {
 export interface QaSite { site_code: string; site_name: string | null; company: string | null; job_number: string | null; scores: Record<string, number> }
 export interface LeadershipQaResponse { account: string; weeks: string[]; sites: QaSite[] }
 
+export interface WeekChangeEffects { hours: number; pay_rate: number; ot_premium: number; started: number; stopped: number; vendor: number }
+export interface WeekChangeTotals { cost: number; labor: number; vendor: number; hours: number; ot_hours: number; ot_premium: number; sites_with_labor: number }
+export interface WeekChangeSite {
+  company: string | null; job_number: string; site_name: string | null; role: string | null; segment: string | null
+  prior: number; current: number; change: number; hours_prior: number; hours_current: number; ot_hours_prior: number; ot_hours_current: number
+  employees_prior: number; employees_current: number; days_prior: number; days_current: number
+  basis_prior: string | null; basis_current: string | null; effects: WeekChangeEffects
+}
+/** GET /leadership/week-change: why labor moved from the prior week. Effects add up to `change`, computed in code; `summary` is Claude's reading of those facts. */
+export interface WeekChangeResponse {
+  account: string; complete: boolean; week: string; prior_week: string; current: WeekChangeTotals; prior: WeekChangeTotals
+  change: number; change_pct: number | null; effects: WeekChangeEffects; site_count: number; sites: WeekChangeSite[]
+  source_changes: { sites: number; change: number; transitions: Record<string, number> }
+  groups: { group: string; change: number; hours: number }[]
+  recent: (WeekChangeTotals & { week: string })[]; average_prior: number | null; vs_average_pct: number | null; prior_vs_average_pct: number | null
+  holidays: { current: string[]; prior: string[] }
+  summary: { status: 'off' | 'none' | 'pending' | 'ready' | 'failed'; stale?: boolean; model?: string | null; generated_at?: string | null; error?: string | null
+    summary?: { headline: string; drivers: { title: string; detail: string; tone: 'increase' | 'decrease' | 'data'; sites: string[] }[]; check_next: string[]; served_by?: string } | null }
+}
+
 /** GET /leadership/budget: the account's monthly labor plan against actuals (migration 046). */
 export interface BudgetMonth {
   month: string; in_progress: boolean; details: Partial<Record<'school_days' | 'staff_days' | 'closure_days' | 'summer_days' | 'stat_holidays', number>>; supplies: number | null
