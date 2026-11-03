@@ -9,6 +9,7 @@ export type Permission =
   | 'view.company' | 'view.company-story' | 'view.analytics' | 'view.reporting'
   | 'tab.sites' | 'tab.pallet' | 'tab.over-target' | 'tab.overtime' | 'tab.income-statement' | 'tab.subcontracted' | 'tab.map' | 'tab.vendors' | 'tab.feedback' | 'tab.budget'
   | 'data.allocations' | 'data.month' | 'data.staffing' | 'data.invoices' | 'data.photos' | 'data.export' | 'data.qa'
+  | 'report.labor-hours'
 
 export interface PermissionInfo { key: Permission; group: string; label: string }
 
@@ -34,10 +35,11 @@ export const PERMISSIONS: readonly PermissionInfo[] = [
   { key: 'data.photos', group: 'Data', label: 'Photos' },
   { key: 'data.export', group: 'Data', label: 'CSV export' },
   { key: 'data.qa', group: 'Data', label: 'QA scores' },
+  { key: 'report.labor-hours', group: 'Reports', label: 'Labor hours' },
 ]
 export const PERMISSION_KEYS: readonly Permission[] = PERMISSIONS.map((p) => p.key)
 
-const OFF: Record<Role, readonly Permission[]> = { executive: ['view.company-story', 'view.analytics', 'view.reporting', 'data.staffing'], analyst: ['view.company-story', 'view.analytics'], admin: [] }
+const OFF: Record<Role, readonly Permission[]> = { executive: ['view.company-story', 'view.analytics', 'view.reporting', 'data.staffing', 'report.labor-hours'], analyst: ['view.company-story', 'view.analytics', 'report.labor-hours'], admin: [] }
 export const ROLE_DEFAULTS: Record<Role, Record<Permission, boolean>> = {
   executive: Object.fromEntries(PERMISSION_KEYS.map((k) => [k, !OFF.executive.includes(k)])) as Record<Permission, boolean>,
   analyst: Object.fromEntries(PERMISSION_KEYS.map((k) => [k, !OFF.analyst.includes(k)])) as Record<Permission, boolean>,

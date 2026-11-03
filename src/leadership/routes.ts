@@ -8,6 +8,7 @@
  *   #/analytics?week=2026-09-20&account=other&status=over&q=elementary
  *   #/account/plano-isd?period=month&month=2026-09&compare=2026-06   (September against June)
  *   #/admin/imports
+ *   #/labor?from=2026-10-26&to=2026-11-01&show=punches&job=Crane%20West~500&q=smith
  *
  * `week` is the week-ending Sunday the views display (the API maps any date to its Monday week);
  * `target` is a percentage (64.5) and overrides the account target while present.
@@ -15,7 +16,7 @@
 
 /** company: the landing page. analytics: the Portfolio pages (#/portfolio; #/analytics still opens them). */
 import type { InvoiceBasis } from '../services/apiTypes'
-export type View = 'company' | 'account' | 'analytics' | 'admin'
+export type View = 'company' | 'account' | 'analytics' | 'admin' | 'labor'
 export const ACCOUNT_TABS = ['overview', 'bu', 'compare', 'sites', 'pallet', 'over-target', 'overtime', 'over-budget', 'income-statement', 'subcontracted', 'map', 'vendors', 'feedback', 'budget'] as const
 export type AccountTab = (typeof ACCOUNT_TABS)[number]
 export const ADMIN_TABS = ['accounts', 'jobs', 'regions', 'budgets', 'calendars', 'allocations', 'overhead', 'adjustments', 'contracts', 'imports', 'mailbox', 'data', 'users'] as const
@@ -53,6 +54,11 @@ export interface Route {
   month?: string
   /** The month the rollup is compared against (YYYY-MM); the month before `month` when absent. */
   compare?: string
+  /** Labor hours: the period (the last complete week when absent), the table shown and the site filter (company~job). */
+  from?: string
+  to?: string
+  show?: 'punches' | 'sites'
+  job?: string
   /** Account overview: weeks in the trend (TREND_WEEKS_DEFAULT when absent). */
   trendWeeks?: number
 }
@@ -78,6 +84,14 @@ export function parseRoute(hash: string): Route {
     route.view = 'analytics'
     if (second === 'units') route.analyticsTab = 'units'
   } else if (first === 'company') route.view = 'company'
+  else if (first === 'labor') {
+    route.view = 'labor'
+    const from = params.get('from'), to = params.get('to'), show = params.get('show'), job = params.get('job')
+    if (from && ISO.test(from)) route.from = from
+    if (to && ISO.test(to)) route.to = to
+    if (show === 'punches' || show === 'sites') route.show = show
+    if (job) route.job = job
+  }
   else if (first === 'admin') {
     route.view = 'admin'
     route.adminTab = (ADMIN_TABS as readonly string[]).includes(second ?? '') ? (second as AdminTab) : 'accounts'
@@ -127,6 +141,13 @@ export function formatRoute(route: Route): string {
   if (route.site && route.view !== 'admin') params.set('site', `${route.site.company}${SITE_SEP}${route.site.job}`)
   if (route.view === 'analytics') for (const key of ['q', 'status', 'segment'] as const) if (route[key]) params.set(key, route[key]!)
   if (route.view === 'account' && route.tab === 'bu' && route.segment) params.set('segment', route.segment)
+  if (route.view === 'labor') {
+    if (route.from) params.set('from', route.from)
+    if (route.to) params.set('to', route.to)
+    if (route.show) params.set('show', route.show)
+    if (route.job) params.set('job', route.job)
+    if (route.q) params.set('q', route.q)
+  }
   if ((route.view === 'analytics' || route.view === 'account') && route.region) {
     params.set('region', route.region)
     if (route.subregion) params.set('subregion', route.subregion)

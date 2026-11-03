@@ -40,6 +40,7 @@ export function createDemoApi(options: DemoApiOptions = {}): DashboardApi {
     leadershipBudget: (account, signal) => settle(() => ({ account, months: [], weeks: [] }), signal),
     saveBudget: () => notAvailable('Budget'),
     deleteBudget: () => notAvailable('Budget'),
+    laborHours: (query, signal) => settle(() => ({ date_from: query.date_from ?? '', date_to: query.date_to ?? '', states: [], through: null, totals: { employees: 0, sites: 0, punches: 0, hours: 0 }, sites: [], employees: [] }), signal),
     leadershipQa: (account, _week, signal) => settle(() => ({ account, weeks: [], sites: [] }), signal),
     leadershipWeekChange: (account, week, signal) => settle(() => {
       const zero = { cost: 0, labor: 0, vendor: 0, hours: 0, ot_hours: 0, ot_premium: 0, sites_with_labor: 0 }

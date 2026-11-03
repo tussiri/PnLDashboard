@@ -1,5 +1,5 @@
 import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Download } from 'lucide-react'
-import { createContext, useContext, useMemo, useState, type ReactNode } from 'react'
+import { createContext, Fragment, useContext, useMemo, useState, type ReactNode } from 'react'
 import { downloadCsv, toCsv } from '../services/csv'
 import type { LaborStatus } from './metrics'
 
@@ -77,7 +77,7 @@ interface SortState { key: string; dir: 1 | -1 }
 /** Whether CSV downloads are offered (the data.export permission); the leadership provider sets it. */
 export const CanExport = createContext(true)
 
-export function SortTable<T>({ rows, columns, defaultSort, total, rowClass, onRowClick, rowLabel, csvName: csvWanted, caption, tools, pageSize }: {
+export function SortTable<T>({ rows, columns, defaultSort, total, rowClass, onRowClick, rowLabel, csvName: csvWanted, caption, tools, pageSize, detail }: {
   rows: T[]
   columns: Column<T>[]
   defaultSort: SortState
@@ -89,6 +89,8 @@ export function SortTable<T>({ rows, columns, defaultSort, total, rowClass, onRo
   caption: string
   tools?: ReactNode
   pageSize?: number
+  /** A full-width row under a row (its expanded state), or null while collapsed. */
+  detail?: (row: T) => ReactNode
 }) {
   const [sort, setSort] = useState<SortState>(defaultSort)
   const [page, setPage] = useState(0)
@@ -124,13 +126,13 @@ export function SortTable<T>({ rows, columns, defaultSort, total, rowClass, onRo
           </th>
         })}</tr></thead>
         <tbody>
-          {shown.map((row, i) => <tr key={i} className={`${rowClass?.(row) ?? ''}${onRowClick ? ' click' : ''}`} onClick={onRowClick ? () => onRowClick(row) : undefined}>
+          {shown.map((row, i) => { const open = detail?.(row); return <Fragment key={i}><tr className={`${rowClass?.(row) ?? ''}${onRowClick ? ' click' : ''}`} onClick={onRowClick ? () => onRowClick(row) : undefined}>
             {columns.map((c, j) => <td key={c.key} className={`${c.left ? 'l ' : ''}${c.className ?? ''}`}>
               {j === 1 && onRowClick
-                ? <button type="button" className="rowbtn" onClick={(e) => { e.stopPropagation(); onRowClick(row) }} aria-label={rowLabel?.(row)}>{c.render ? c.render(row) : c.value(row)}</button>
+                ? <button type="button" className="rowbtn" onClick={(e) => { e.stopPropagation(); onRowClick(row) }} aria-label={rowLabel?.(row)} aria-expanded={detail ? open != null : undefined}>{c.render ? c.render(row) : c.value(row)}</button>
                 : c.render ? c.render(row) : c.value(row)}
             </td>)}
-          </tr>)}
+          </tr>{open != null && <tr className="row-detail"><td colSpan={columns.length}>{open}</td></tr>}</Fragment> })}
           {total}
         </tbody>
       </table>

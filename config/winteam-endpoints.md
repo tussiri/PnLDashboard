@@ -40,7 +40,7 @@ succeeds) so edited punches are recaptured. Dates are sent as RFC3339 UTC:
 |---|---|---|---|---|
 | `jobs` | `GET /jobs/v2/api/jobs` | none (`locationId` optional via `WINTEAM_LOCATION_IDS`) | paged list; one listing per configured location | `jobId` (GUID), else `jobNumber` |
 | `vendors` | `GET /vendors/v1/api/vendors/` | none | paged list | `vendorNumber` |
-| `timekeeping` | `GET /timekeeping/v2/api/timekeeping` | `dateFrom`, `dateTo` | date windows, paged | `timekeepingId` |
+| `timekeeping` | `GET /timekeeping/v2/api/timekeeping` | `dateFrom`, `dateTo` | date windows, paged. The documentation shows `inTime`/`outTime` as date-times; the live tenant sends a time of day (`07:29:00`), and the connector reads both. | `timekeepingId` |
 | `job_schedules` | `GET /jobs/v2/api/jobs/{jobKey}/schedules` | `jobKey`, `dateFrom`, `dateTo` | for each active job in `core.dim_job` (limit `WINTEAM_SCHEDULE_JOBS_LIMIT`, 0 = all) x each date window, paged. This is jobs x windows calls; progress is logged every 25 jobs. | `id` |
 | `gl_budgets` | `GET /jobs/v2/api/jobs/{jobKey}/gl-budgets` | `jobKey` (`fiscalYear` optional) | for each active job (limit `WINTEAM_GL_JOBS_LIMIT`, 0 = all) x `WINTEAM_GL_FISCAL_YEARS` calendar years (current and previous). Not paged: `{"data":[{jobNumber,fiscalYear,glBudgetId,glBudgetDetails:[...]}]}`; every `glBudgetDetails` element becomes one raw record carrying the header fields. 404, and the live tenant's 400 `JobKey: Invalid Job Number and Fiscal Year combination.`, both mean "no budget for that job/year" (not a failure). | `jobNumber:fiscalYear:id` |
 | `ap_invoices` | `GET /accounts/v1/api/payables/invoices` | `dateFrom`, `dateTo` | date windows, paged | `companyNumber:vendorNumber:invoiceNumber` |

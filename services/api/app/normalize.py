@@ -59,8 +59,10 @@ Parsing rules
 -------------
 * Numbers may arrive as JSON numbers or strings; values that do not look numeric become NULL.
 * Dates are taken from the first ten characters of the payload string ("2022-10-01T12:00:00Z"
-  -> 2022-10-01) so a UTC noon timestamp never shifts a work date. Timestamps (inTime/outTime)
-  are parsed as timestamptz. Unparseable values become NULL rather than failing the load.
+  -> 2022-10-01) so a UTC noon timestamp never shifts a work date. Timestamps are parsed as
+  timestamptz. A punch's inTime/outTime is the documented date-time or, as the live API sends it, a
+  time of day on the work date (wall clock, stored as UTC). Unparseable values become NULL rather
+  than failing the load.
 * Identifiers such as jobNumber, employeeNumber and customerNumber are stored as text because the
   documentation shows them as both numbers and strings.
 
@@ -131,6 +133,7 @@ API_PREFIX = "api:"
 NUMBER_RE = r"^\s*-?\d+(\.\d+)?([eE][+-]?\d+)?\s*$"
 DATE_RE = r"^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])"
 TIMESTAMP_RE = r"^\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?)?\s*(Z|[+-]\d{2}:?\d{2})?$"
+CLOCK_RE = r"^([01]?\d|2[0-3]):[0-5]\d(:[0-5]\d(\.\d+)?)?$"
 GL_CLASSES = ("revenue", "direct_labor", "subcontract", "supplies")
 
 
@@ -153,6 +156,15 @@ def day(field: str, src: str = "p") -> str:
 
 def stamp(field: str, src: str = "p") -> str:
     return f"(CASE WHEN {src}->>'{field}' ~ '{TIMESTAMP_RE}' THEN ({src}->>'{field}')::timestamptz END)"
+
+
+def punch_time(field: str, after: str | None = None, src: str = "p") -> str:
+    """A punch's clock time: a date-time, or a time of day on workDate; past `after`'s time of day when it reads earlier (a shift over midnight)."""
+    clock = f"({src}->>'{field}')::time"
+    rollover = (f" + CASE WHEN {src}->>'{after}' ~ '{CLOCK_RE}' AND {clock} < ({src}->>'{after}')::time THEN interval '1 day' ELSE interval '0' END"
+                if after else "")
+    return (f"(CASE WHEN {src}->>'{field}' ~ '{CLOCK_RE}' THEN ({day('workDate', src)} + {clock}{rollover})::timestamptz "
+            f"ELSE {stamp(field, src)} END)")
 
 
 def boolean(field: str, src: str = "p") -> str:
@@ -682,8 +694,8 @@ def normalize_timekeeping(conn: Any, seen_ids: Collection[str] | None = None, te
                 {num('hours')} AS hours,
                 {integer('categoryDetailId')} AS category_detail_id,
                 {num('rate')} AS rate,
-                {stamp('inTime')} AS in_time,
-                {stamp('outTime')} AS out_time,
+                {punch_time('inTime')} AS in_time,
+                {punch_time('outTime', after='inTime')} AS out_time,
                 {num('lunch')} AS lunch,
                 {txt('workTicketNumber')} AS work_ticket_number
               FROM src

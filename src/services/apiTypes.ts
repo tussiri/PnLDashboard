@@ -1876,3 +1876,29 @@ export interface PhotoValidationSyncResult {
   job_week_rows_changed?: number
   error?: string
 }
+
+/** One punch in the labor hours report. Times are wall clock HH:MM; an out time before the in time ran past midnight. */
+export interface LaborHoursPunch {
+  work_date: string
+  company: string | null
+  job_number: string
+  site_name: string | null
+  hours_type: string | null
+  in_time: string | null
+  out_time: string | null
+  lunch_hours: number
+  hours: number
+}
+
+/** GET /labor-hours (permission report.labor-hours). Hours only: no pay rates or labor dollars. */
+export interface LaborHoursResponse {
+  date_from: string
+  date_to: string
+  states: string[]
+  /** The latest work date with a punch in the period. */
+  through: string | null
+  totals: { employees: number; sites: number; punches: number; hours: number }
+  sites: { company: string | null; job_number: string; site_name: string | null; city: string | null; state: string | null; employees: number; punches: number; hours: number }[]
+  /** employee_name is null when no export has named the employee (the timekeeping API carries no names). */
+  employees: { company: string | null; employee_number: string; employee_name: string | null; sites: number; days: number; hours: number; lunch_hours: number; punches: LaborHoursPunch[] }[]
+}

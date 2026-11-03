@@ -42,8 +42,8 @@ Responses: `401` when no valid session exists, `403` when the role is not allowe
 
 Roles are presets. Each user also carries a permission matrix (Admin > Users > Permissions by user):
 Company and Portfolio views, reporting and forecasts, each account tab, and data such as allocations and margin, the month
-rollup, staffing requests, vendor invoices, photos and CSV export. Defaults come from the role
-(executives lack Portfolio and staffing requests; analysts lack Portfolio; the key is still `view.analytics`); an administrator's
+rollup, staffing requests, vendor invoices, photos, CSV export and the labor hours report. Defaults come from the role
+(executives lack Portfolio and staffing requests; analysts lack Portfolio; the key is still `view.analytics`; neither holds the labor hours report, which an administrator grants by role or user); an administrator's
 ticks that differ are stored as overrides in `ops.app_user.permissions` (migration 042) and Reset
 returns the role's defaults. Administrators hold everything. `APP_USERS_JSON` entries may carry a
 `"permissions": {"<key>": true|false}` object. The keys and what enforces each are listed in
