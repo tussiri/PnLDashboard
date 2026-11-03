@@ -13,6 +13,10 @@ past weeks keep what HR said while they were current. Runs are recorded in ops.i
 
 Guard: an answer with no rows changes nothing; HR answering with no sites at all is far likelier to
 be an HR problem than every site vanishing, so the run is recorded as failed.
+
+Employee names (`GET /api/service/v1/pnl/employee-names`, migration 064) are a separate pull with their
+own token, HR_NAMES_TOKEN: employee number and name, replacing core.hr_employee_name whole, under the same
+guard. Names go to the labor hours report only and are never logged or put in a run's error message.
 """
 from __future__ import annotations
 
@@ -32,6 +36,8 @@ logger = logging.getLogger(__name__)
 INTEGRATION = "hrdashboard"
 RESOURCE = "site_staffing"
 PATH = "/api/service/v1/pnl/site-staffing"
+NAMES_RESOURCE = "employee_names"
+NAMES_PATH = "/api/service/v1/pnl/employee-names"
 LOOKBACK_WEEKS = 8
 
 
@@ -41,6 +47,10 @@ class HrDashboardError(RuntimeError):
 
 def configured() -> bool:
     return bool(settings.hr_base_url and settings.hr_export_token)
+
+
+def names_configured() -> bool:
+    return bool(settings.hr_base_url and settings.hr_names_token)
 
 
 def tenant_companies(raw: str) -> dict[str, str]:
@@ -169,7 +179,7 @@ def load(body: dict[str, Any], companies: dict[str, str]) -> dict[str, int]:
     return {"loaded": len(tuples), "skipped": len(body["data"]) - len(tuples)}
 
 
-def _record(run_id: str, status: str, started: datetime, fetched: int, loaded: int, error: str | None) -> None:
+def _record(run_id: str, status: str, started: datetime, fetched: int, loaded: int, error: str | None, resource: str = RESOURCE) -> None:
     with connection() as conn, conn.cursor() as cursor:
         cursor.execute(
             """
@@ -177,7 +187,7 @@ def _record(run_id: str, status: str, started: datetime, fetched: int, loaded: i
                                                   records_fetched, records_inserted, error_message)
             VALUES (%s, %s, %s, %s, %s, now(), %s, %s, %s)
             """,
-            (run_id, INTEGRATION, RESOURCE, status, started, fetched, loaded, error),
+            (run_id, INTEGRATION, resource, status, started, fetched, loaded, error),
         )
         conn.commit()
 
@@ -204,15 +214,76 @@ def sync() -> dict[str, Any]:
     return {"status": "succeeded", "fetched": fetched, **counts}
 
 
+def name_row(r: dict[str, Any], companies: dict[str, str]) -> tuple[str, str, str, str] | None:
+    """One name tuple, or None for a row whose tenant has no company mapping or which has no number or name."""
+    company = companies.get(str(r.get("tenant") or ""))
+    number = str(r.get("employeeNumber") or "").strip()
+    first, last = str(r.get("firstName") or "").strip(), str(r.get("lastName") or "").strip()
+    if not company or not number or not (first or last):
+        return None
+    return (company, number, first, last)
+
+
+def fetch_names(client: httpx.Client) -> dict[str, Any]:
+    """HR's employee numbers and names. Error messages carry the status only, never the body."""
+    response = client.get(NAMES_PATH)
+    if response.status_code == 401:
+        raise HrDashboardError("HrDashboard refused the names token (HTTP 401)")
+    if response.status_code == 503:
+        raise HrDashboardError("HrDashboard's names route is not configured (SERVICE_API_NAMES_TOKEN_HASHES unset)")
+    if response.status_code >= 400:
+        raise HrDashboardError(f"HrDashboard answered HTTP {response.status_code} on {NAMES_PATH}")
+    body = response.json()
+    if not isinstance(body.get("data"), list):
+        raise HrDashboardError(f"Unexpected HrDashboard response on {NAMES_PATH}: no data list")
+    return body
+
+
+def load_names(body: dict[str, Any], companies: dict[str, str]) -> dict[str, int]:
+    """Replace the held names in one transaction; an answer with none changes nothing."""
+    tuples = {(t[0], t[1]): t for t in (name_row(r, companies) for r in body["data"]) if t is not None}
+    if not tuples:
+        raise HrDashboardError("HrDashboard returned no employee names with a mapped tenant; nothing was changed")
+    with connection() as conn, conn.cursor() as cursor:
+        cursor.execute("DELETE FROM core.hr_employee_name")
+        cursor.executemany("INSERT INTO core.hr_employee_name (winteam_company, employee_number, first_name, last_name) VALUES (%s, %s, %s, %s)",
+                           list(tuples.values()))
+        conn.commit()
+    return {"loaded": len(tuples), "skipped": len(body["data"]) - len(tuples)}
+
+
+def sync_names() -> dict[str, Any]:
+    """Pull and replace the employee names. GET only against HrDashboard. Raises on failure after recording it."""
+    if not names_configured():
+        raise HrDashboardError("HrDashboard names are not configured (HR_BASE_URL and HR_NAMES_TOKEN)")
+    started = datetime.now(timezone.utc)
+    run_id = str(uuid.uuid4())
+    fetched = 0
+    try:
+        with httpx.Client(base_url=settings.hr_base_url, timeout=settings.hr_timeout_seconds,
+                          headers={"Authorization": f"Bearer {settings.hr_names_token}", "Accept": "application/json"},
+                          follow_redirects=False) as client:
+            body = fetch_names(client)
+        fetched = len(body["data"])
+        counts = load_names(body, tenant_companies(settings.hr_tenant_companies))
+    except (HrDashboardError, httpx.HTTPError, ValueError) as exc:
+        message = str(exc)[:500] or exc.__class__.__name__
+        logger.warning("HrDashboard names sync failed: %s", message)
+        _record(run_id, "failed", started, fetched, 0, message, NAMES_RESOURCE)
+        raise HrDashboardError(message) from exc
+    _record(run_id, "succeeded", started, fetched, counts["loaded"], None, NAMES_RESOURCE)
+    return {"status": "succeeded", "fetched": fetched, **counts}
+
+
 def status() -> dict[str, Any]:
     """Whether HrDashboard is wired, the last run, and how much is held. Never returns the token."""
     with connection() as conn, conn.cursor() as cursor:
         cursor.execute(
             """
             SELECT status, completed_at, records_inserted, error_message FROM ops.integration_sync_run
-            WHERE integration_name = %s ORDER BY started_at DESC LIMIT 1
+            WHERE integration_name = %s AND resource_name = %s ORDER BY started_at DESC LIMIT 1
             """,
-            (INTEGRATION,),
+            (INTEGRATION, RESOURCE),
         )
         last = cursor.fetchone()
         cursor.execute(
@@ -224,8 +295,12 @@ def status() -> dict[str, Any]:
             """
         )
         held = cursor.fetchone()
+        cursor.execute("SELECT count(*) AS employee_names FROM core.hr_employee_name")
+        names = cursor.fetchone()
     return {
         "configured": configured(),
+        "names_configured": names_configured(),
+        **dict(names),
         "base_url_host": urlparse(settings.hr_base_url).hostname if settings.hr_base_url else None,
         "last_run": dict(last) if last else None,
         **dict(held),
