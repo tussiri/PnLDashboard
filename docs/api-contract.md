@@ -679,6 +679,7 @@ separate and unchanged.
 | `data.photos` | – | `photos: null` on `/leadership/sites/…` |
 | `data.export` | – | the CSV buttons |
 | `data.qa` | – | `403` on `GET /leadership/qa`; the QA charts on the account Overview |
+| `report.labor-hours` | executive, analyst | `403` on `GET /labor-hours`; the Labor hours page and link |
 
 ## Customer feedback and star ratings, added 2026-10-02
 
@@ -729,6 +730,17 @@ hours), `ot_premium` (a third of OT pay), `started` / `stopped` (a site with hou
 | Route | Response |
 |---|---|
 | `GET /leadership/week-change?account=&week=` | Account scope. `{account, complete, week, prior_week, current, prior, change, change_pct, effects, site_count, sites: [up to 25 largest, {company, job_number, site_name, role, segment, prior, current, change, hours_prior, hours_current, ot_hours_prior, ot_hours_current, employees_prior, employees_current, days_prior, days_current, basis_prior, basis_current, effects}], source_changes: {sites, change, transitions}, groups: [{group, change, hours}], recent: [{week, cost, labor, vendor, hours, ot_hours, ot_premium, sites_with_labor}], average_prior, vs_average_pct, prior_vs_average_pct, holidays: {current, prior}, summary}`. `summary`: `{status: off \| none \| pending \| ready \| failed, stale, model, generated_at, error, summary: {headline, drivers: [{title, detail, tone: increase \| decrease \| data, sites}], check_next, served_by}}`: Claude's reading of the facts, cached in `ops.week_change_summary` under a digest of them and rebuilt only when they change; `off` without `ANTHROPIC_API_KEY`, `none` for a week in progress. The nightly run warms the latest complete week of each featured account. |
+
+## Labor hours report, added 2026-11-03
+
+Migration 063. Every punch at the sites of the states in `ops.app_setting.labor_report_states` (`["CA"]`:
+`dim_job.state_province`, California; `country_code` `CA` is Canada), from the synced timekeeping, not a
+live WinTeam call. Hours only: no pay rates, labor dollars or overtime figures. Hours are WinTeam's as
+punched, zero and negative adjustments included.
+
+| Route | Rule |
+|---|---|
+| `GET /labor-hours?date_from=YYYY-MM-DD&date_to=YYYY-MM-DD` | Permission `report.labor-hours`. A user limited to accounts sees those accounts' sites. Default period: the last complete Monday-Sunday week; at most 92 days, else `422`. `{date_from, date_to, states, through, totals: {employees, sites, punches, hours}, sites: [{company, job_number, site_name, city, state, employees, punches, hours}], employees: [{company, employee_number, employee_name, sites, days, hours, lunch_hours, punches: [{work_date, company, job_number, site_name, hours_type, in_time, out_time, lunch_hours, hours}]}]}`. `in_time` and `out_time` are wall clock `HH:MM`, null when WinTeam has none. `employee_name` is null when no export named the employee. `hours_type` comes from the export, else `timekeeping_category_labels`, else `Type <id>`. |
 
 ## Navigation, added 2026-10-02
 

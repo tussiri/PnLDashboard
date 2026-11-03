@@ -12,6 +12,7 @@ const NAV: { view: View; label: string; admin?: boolean; every?: boolean; permis
   { view: 'company', label: 'Company', every: true, permission: 'view.company' },
   { view: 'account', label: 'Accounts' },
   { view: 'analytics', label: 'Portfolio', every: true, permission: 'view.analytics' },
+  { view: 'labor', label: 'Labor hours', permission: 'report.labor-hours' },
   { view: 'admin', label: 'Admin', admin: true },
 ]
 const THEMES: { theme: Theme; label: string; icon: ReactNode }[] = [
@@ -49,7 +50,7 @@ export function Shell({ children }: { children: ReactNode }) {
   const next = THEMES[(THEMES.findIndex((t) => t.theme === theme) + 1) % THEMES.length]
   const current = THEMES.find((t) => t.theme === theme)!
   const carry = { account: selectedAccount?.slug, week: weekStart ? weekEndOf(weekStart) : undefined, target: targetOverride != null ? targetOverride * 100 : undefined }
-  const hrefFor = (view: View) => formatRoute(view === 'account' ? { view, account: selectedAccount?.slug, week: carry.week, target: carry.target } : view === 'admin' ? { view } : { view, ...carry })
+  const hrefFor = (view: View) => formatRoute(view === 'account' ? { view, account: selectedAccount?.slug, week: carry.week, target: carry.target } : view === 'admin' || view === 'labor' ? { view } : { view, ...carry })
   return <>
     <a className="skip-link" href="#main">Skip to content</a>
     <div className="topbar">

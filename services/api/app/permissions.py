@@ -22,6 +22,7 @@ Keys
     data.photos         CompanyCam photos on the site drawer
     data.export         CSV downloads
     data.qa             QA audit scores on the account Overview
+    report.labor-hours  the labor hours report (employee punches); off for every role but admin
 """
 from __future__ import annotations
 
@@ -55,11 +56,12 @@ CATALOG: tuple[tuple[str, str, str], ...] = (
     ("data.photos", "Data", "Photos"),
     ("data.export", "Data", "CSV export"),
     ("data.qa", "Data", "QA scores"),
+    ("report.labor-hours", "Reports", "Labor hours"),
 )
 KEYS: tuple[str, ...] = tuple(k for k, _, _ in CATALOG)
 
-_EXECUTIVE_OFF = frozenset({"view.company-story", "view.analytics", "view.reporting", "data.staffing"})
-_ANALYST_OFF = frozenset({"view.company-story", "view.analytics"})
+_EXECUTIVE_OFF = frozenset({"view.company-story", "view.analytics", "view.reporting", "data.staffing", "report.labor-hours"})
+_ANALYST_OFF = frozenset({"view.company-story", "view.analytics", "report.labor-hours"})
 ROLE_DEFAULTS: dict[str, dict[str, bool]] = {
     "executive": {k: k not in _EXECUTIVE_OFF for k in KEYS},
     "analyst": {k: k not in _ANALYST_OFF for k in KEYS},

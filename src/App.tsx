@@ -3,6 +3,7 @@ import { NO_ACCESS, type AuthUser } from './auth/roles'
 import { AuthProvider, useAuth } from './auth/useAuth'
 import { Account } from './leadership/pages/Account'
 import { Admin } from './leadership/pages/Admin'
+import { LaborHours } from './leadership/pages/LaborHours'
 import { Analytics } from './leadership/pages/Analytics'
 import { Company } from './leadership/pages/Company'
 import { Shell } from './leadership/Shell'
@@ -17,6 +18,7 @@ function Page() {
   if (route.view === 'company' && unlimited && can('view.company')) return <Company />
   if (route.view === 'analytics' && unlimited && can('view.analytics')) return <Analytics />
   if (route.view === 'admin') return <Admin />
+  if (route.view === 'labor' && can('report.labor-hours')) return <LaborHours />
   return <Account />
 }
 
