@@ -296,6 +296,7 @@ August and September week). It is now a projection from the site's recent closed
 ```
 weekly_rate = avg over the job's job-cost months m among the last 3 closed months before the slice's month
               of  subcontract_cost(m) / days_in_month(m) x 7
+weekly_rate = min(weekly_rate, AP on the job this month and last / days so far x 7)   (cap_weekly_sub: invoices stopped, nothing projected)
 slice sub   = weekly_rate x slice_days / 7                      (sub_basis 'trailing_3mo_projection', sub_estimated = true)
 projected month (month_shares[month].sub_month) = weekly_rate x days_in_month / 7
 ```

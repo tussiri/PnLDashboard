@@ -738,6 +738,8 @@ def normalize_timekeeping(conn: Any, seen_ids: Collection[str] | None = None, te
 # ── pricing of API punches ─────────────────────────────────────────────────
 TRAILING_RATE_MONTHS = rules.TRAILING_RATE_MONTHS
 TRAILING_JOB_RATE_BASIS = "trailing_job_rate"
+JOB_API_RATE_DAYS = 90
+JOB_API_RATE_MIN_HOURS = 40  # below this a job's rated punches are too few to stand for its crew
 
 # Prices every API punch (see price_punches); its trailing branch is the SQL form of sources/rules.trailing_rate.
 PRICE_PUNCHES_SQL = """
@@ -781,16 +783,24 @@ employee_rate AS MATERIALIZED (
   FROM punches WHERE api_rate > 0 AND employee_source_id IS NOT NULL
   ORDER BY employee_source_id, company, work_date DESC
 ),
+job_api_rate AS MATERIALIZED (
+  -- What the job's rated punches actually paid lately: a punch with no rate of its own or its employee's takes it.
+  SELECT p.company, coalesce(dj.job_number, p.job_number) AS job_number, sum(p.api_rate * p.hours) / sum(p.hours) AS rate
+  FROM punches p LEFT JOIN core.dim_job dj ON dj.job_key = p.job_key
+  WHERE p.api_rate > 0 AND p.hours > 0 AND p.work_date >= current_date - %(job_api_days)s::int
+  GROUP BY 1, 2 HAVING sum(p.hours) >= %(job_api_min_hours)s
+),
 priced AS (
   -- A job rate above max_ratio x its company's rate is labor dollars with almost no hours, not a wage
   -- (rules.MAX_JOB_RATE_RATIO): such a job takes the company rate.
   SELECT p.timekeeping_key, p.api_rate, p.hours, p.ot, p.dt,
          CASE WHEN p.api_rate > 0 THEN p.api_rate
               WHEN er.rate > 0 THEN er.rate
+              WHEN ja.rate > 0 THEN ja.rate
               WHEN jr.rate IS NOT NULL AND (cr.rate IS NULL OR jr.rate <= %(max_ratio)s * cr.rate) THEN jr.rate
               ELSE coalesce(cr.rate, pr.rate, jr.rate) END AS rate,
-         CASE WHEN p.api_rate > 0 THEN 'hours_x_rate' WHEN er.rate > 0 THEN 'employee_rate' ELSE %(basis)s END AS basis,
-         CASE WHEN p.api_rate > 0 THEN 'api' WHEN er.rate > 0 THEN 'employee'
+         CASE WHEN p.api_rate > 0 THEN 'hours_x_rate' WHEN er.rate > 0 THEN 'employee_rate' WHEN ja.rate > 0 THEN 'job_api_rate' ELSE %(basis)s END AS basis,
+         CASE WHEN p.api_rate > 0 THEN 'api' WHEN er.rate > 0 THEN 'employee' WHEN ja.rate > 0 THEN 'job_api'
               WHEN jr.rate IS NOT NULL AND (cr.rate IS NULL OR jr.rate <= %(max_ratio)s * cr.rate) THEN 'job'
               WHEN cr.rate IS NOT NULL THEN 'company' WHEN pr.rate IS NOT NULL THEN 'portfolio' END AS how
   FROM punches p
@@ -799,6 +809,7 @@ priced AS (
   -- databases (401, 6325, 99999) is a different job in each, keyed 'Crane:<n>' on one side.
   LEFT JOIN core.dim_job dj ON dj.job_key = p.job_key
   LEFT JOIN job_rate jr ON jr.job_number = coalesce(dj.job_number, p.job_number)
+  LEFT JOIN job_api_rate ja ON ja.job_number = coalesce(dj.job_number, p.job_number) AND ja.company IS NOT DISTINCT FROM p.company
   LEFT JOIN company_rate cr ON cr.company = p.company
   CROSS JOIN portfolio_rate pr
 ),
@@ -851,7 +862,8 @@ def _close_lag_days(conn: Any) -> int:
 def price_punches(conn: Any, source: str = SOURCE) -> dict[str, int]:
     """Price every API punch at full pay: its own WinTeam pay rate x (hours + 0.5 OT + DT), as the Pay Report's
     TotalLaborDollars (basis hours_x_rate); a punch payroll has not rated yet takes the employee's latest API rate
-    (basis employee_rate); with neither, the job's trailing payroll rate (job-cost labor / hours over the last closed
+    (basis employee_rate); with neither, what the job's rated punches paid over the last JOB_API_RATE_DAYS days (basis
+    job_api_rate; the job-cost rate runs 5-50% above it); with none of those, the job's trailing payroll rate (job-cost labor / hours over the last closed
     months, guarded by rules.MAX_JOB_RATE_RATIO; company, then portfolio fallback; basis trailing_job_rate), which
     already carries the premium. The API's own rate is kept in `source_rate`.
 
@@ -860,7 +872,7 @@ def price_punches(conn: Any, source: str = SOURCE) -> dict[str, int]:
     within about 1% a week and the trailing rate 5-6% off; closed months still read job cost (all-in).
     Idempotent: only punches whose cost changes are written. Returns counts by how each was priced."""
     params = {"source": source, "lag_days": _close_lag_days(conn), "months": TRAILING_RATE_MONTHS, "basis": TRAILING_JOB_RATE_BASIS,
-              "max_ratio": rules.MAX_JOB_RATE_RATIO}
+              "max_ratio": rules.MAX_JOB_RATE_RATIO, "job_api_days": JOB_API_RATE_DAYS, "job_api_min_hours": JOB_API_RATE_MIN_HOURS}
     with conn.cursor() as cursor:
         cursor.execute(PRICE_PUNCHES_SQL, params)
         rows = cursor.fetchall() or []
@@ -908,10 +920,11 @@ def trailing_rates(job_cost_rows: list[Mapping[str, Any]], lag_days: int, today:
 
 
 def price_punch(punch: Mapping[str, Any], rates: Mapping[str, Any],
-                employee_rates: Mapping[tuple[Any, Any], float] | None = None) -> tuple[float | None, float | None, str]:
+                employee_rates: Mapping[tuple[Any, Any], float] | None = None,
+                job_api_rates: Mapping[tuple[Any, Any], float] | None = None) -> tuple[float | None, float | None, str]:
     """(labor_cost, rate, labor_cost_basis) for one API punch under the same rule as PRICE_PUNCHES_SQL: its own rate at
-    full pay (hours + 0.5 OT + DT), else the employee's latest rate (keyed (employee_source_id, company)), else the
-    job's trailing rate on hours only."""
+    full pay (hours + 0.5 OT + DT), else the employee's latest rate (keyed (employee_source_id, company)), else what the
+    job's rated punches paid (keyed (company, job_number)), else the job's trailing rate on hours only."""
     hours = float(punch.get("hours") or 0)
     full = hours + 0.5 * float(punch.get("overtime_hours") or 0) + float(punch.get("double_time_hours") or 0)
     rate = punch.get("rate")
@@ -920,6 +933,9 @@ def price_punch(punch: Mapping[str, Any], rates: Mapping[str, Any],
     employee = (employee_rates or {}).get((punch.get("employee_source_id"), punch.get("company")))
     if employee:
         return round(full * employee, 2), round(employee, 4), "employee_rate"
+    paid = (job_api_rates or {}).get((punch.get("company"), punch.get("job_number")))
+    if paid:
+        return round(full * paid, 2), round(paid, 4), "job_api_rate"
     job, company = rates["job"].get(punch.get("job_number")), rates["company"].get(punch.get("company"))
     if job and company and job > rules.MAX_JOB_RATE_RATIO * company:
         job = None  # labor dollars with almost no hours, not a wage

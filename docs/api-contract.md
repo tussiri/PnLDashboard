@@ -246,7 +246,7 @@ unit, labor % of invoicing vs BU target) for every account. Weeks are Monday-bas
               "carry_forward_source": null,                   // "job_cost" | "ar_invoice" when carried forward, else null (migration 010)
               "hours": 0, "ot_hours": 0, "dt_hours": 0, "budget_hours": 0, "budget_dollars": 0, "budget_basis": "daily_budget" | "hbc" | "none",
               "direct_dollars": 0, "ot_dollars": 0, "sub_dollars": 0, "sub_estimated": false, "total_dollars": 0,
-              "labor_cost_basis": "hours_x_rate" | "employee_rate" | "trailing_job_rate" | "job_cost" , "days_with_labor": 7,  // hours_x_rate / employee_rate added 2026-10-06
+              "labor_cost_basis": "hours_x_rate" | "employee_rate" | "job_api_rate" | "trailing_job_rate" | "job_cost" , "days_with_labor": 7,  // hours_x_rate / employee_rate added 2026-10-06
               "requested_headcount": 2, "pending_requested_headcount": 1 } ],  // added 2026-09-29, null before the PhotoValidation feed loads
   "qa": null,                                          // QA scores are not in the warehouse; always null for now
   "notes": ["Invoicing = closed-month job-cost revenue apportioned to weeks by calendar days ...", ...] }
