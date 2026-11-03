@@ -263,7 +263,6 @@ export function Overview({ account, rows, summary, options, flags, headline = tr
     </div>}
     <Notes summary={summary} account={account} flags={flags} options={options} revenueMonth={revenueMonth}
       extra={selectedProjected && !flags.weekInProgress ? [{ tone: 'warn', key: 'proj', label: 'Labor not in yet', body: `Trend projected from the ${PROJECTION_BASE_WEEKS} weeks before${hasBudget ? ', scaled by weekly budget' : schoolWeeks?.length ? ', scaled by school days' : ''}` }] : []} />
-    {headline && !monthMode && weekStart && <WeekChangeCard account={account} weekStart={weekStart} />}
     {school && trendChart}
     <div className="seg-grid">
       {groups.map((g) => {
@@ -281,6 +280,7 @@ export function Overview({ account, rows, summary, options, flags, headline = tr
       {nonBilled.length > 0 && <GroupCard name="Non-billed" sub={nonBilled.map((r) => `Job ${r.job_number} ${r.site_name}`).join(', ')} badge={null} invoice={0} labor={summary.nonBilled.cost}
         lp={null} lpTone="" otCost={summary.nonBilled.otDollars} otPrior={prevSummary?.nonBilled.otDollars ?? null} otHours={summary.nonBilled.otHours} changeWord={changeWord} w={w} />}
     </div>
+    {headline && !monthMode && weekStart && <WeekChangeCard account={account} weekStart={weekStart} />}
     {afterGroups}
     {!school && trendChart}
     {groups.length > 1 && <ChartCard title={`Labor % by ${segmentLabel(account).toLowerCase()}, ${monthMode ? 'by month' : `last ${trendWeeks} weeks`}`} height={280}
