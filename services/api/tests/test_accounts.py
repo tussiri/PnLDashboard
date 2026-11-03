@@ -53,12 +53,12 @@ def test_resolve_segment_falls_back_to_the_account_fallback(source, company, sub
 
 
 def test_amazon_seed_matches_the_weekly_report():
-    """The Amazon P&L report (v6_56) carries 14 Crane sites, plus UIL2 (757); project, management and closed jobs are held out."""
+    """The Amazon P&L report (v6_79): 7 Crane West, 7 Crane IFS, 2 Sarus sites; USD1, project, management and closed jobs are held out."""
     amazon = next(a for a in load_seed_file()["accounts"] if a["slug"] == "amazon")
     sites = {(j["company"], j["job_number"]) for j in amazon["jobs"]}
-    assert len(sites) == 15 and ("Crane West", "500") in sites and ("Crane IFS", "757") in sites and ("Sarus", "300") in sites
+    assert len(sites) == 16 and ("Crane West", "500") in sites and ("Crane IFS", "757") in sites and ("Crane IFS", "520") in sites and ("Crane West", "540") in sites and ("Sarus", "300") in sites
     excluded = {(j["company"], j["job_number"]) for j in amazon["exclude_jobs"]}
-    assert ("Crane IFS", "506") in excluded and ("Crane West", "502") in excluded and not sites & excluded
+    assert ("Crane IFS", "506") in excluded and ("Crane West", "502") in excluded and ("Crane West", "509") in excluded and not sites & excluded
     bad = copy.deepcopy(load_seed_file())
     bad["accounts"][0]["exclude_jobs"].append({"company": "Crane West", "job_number": "500"})
     with pytest.raises(ValueError, match="500 .*excluded"):

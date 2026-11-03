@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from datetime import date
 
+import pytest
+
 from fastapi import HTTPException
 
 from app.routers.executive import (DEFAULT_SUBCONTRACTOR_VENDOR_TYPES, DELIVERY_SELF, DELIVERY_SQL, DELIVERY_SUB, bu_key,
@@ -39,6 +41,7 @@ from app.weekly import (
     month_overlap_days,
     month_shares,
     ot_dollars,
+    cap_weekly_sub,
     project_weekly_sub,
     prorate_month,
     select_budget,
@@ -483,3 +486,9 @@ def test_build_vendor_block_shape_and_sums() -> None:
     none = build_vendor_block(JUN, "closed", date(2026, 9, 3), closed, jul_rows, ap, history_job_cost, terms)
     assert none["ap_live"] == {"invoiced_to_date": 0.0, "invoices": 0, "vendors": 0, "through": None, "all_invoiced": 450.0, "by_vendor_type": []}
     assert "no matching invoice dated in the month yet ($450 AP invoiced in total)" in "\n".join(none["notes"])
+
+
+def test_the_sub_projection_is_held_to_recent_ap() -> None:
+    assert cap_weekly_sub(34727.0, 38887.0, 61) == pytest.approx(38887.0 / 61 * 7)  # IAG1: AP runs far below the job-cost month
+    assert cap_weekly_sub(1000.0, 90000.0, 61) == 1000.0                            # never raised above the projection
+    assert cap_weekly_sub(2526.0, 0.0, 61) == 0.0 and cap_weekly_sub(2526.0, -500.0, 61) == 0.0  # invoices stopped, or only credits

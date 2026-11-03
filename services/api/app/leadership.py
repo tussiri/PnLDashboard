@@ -211,7 +211,7 @@ SELECT
   CASE WHEN a.covered THEN a.pr_labor ELSE coalesce(a.jw_labor, 0) END,
   -- labor_basis: payroll_rate when the punches are priced at their WinTeam pay rates (normalize.price_punches)
   -- and trailing_rate_estimate at the job's job-cost rate (reference-export weeks or punches with no rate known)
-  CASE WHEN a.covered THEN 'pay_report' WHEN a.jw_cost_basis IN ('hours_x_rate', 'employee_rate') THEN 'payroll_rate' ELSE 'trailing_rate_estimate' END,
+  CASE WHEN a.covered THEN 'pay_report' WHEN a.jw_cost_basis IN ('hours_x_rate', 'employee_rate', 'job_api_rate') THEN 'payroll_rate' ELSE 'trailing_rate_estimate' END,
   CASE WHEN a.covered THEN a.pr_ot_dollars
        WHEN coalesce(a.jw_hours, 0) > 0
          THEN round(a.jw_ot * 1.5 * coalesce(a.jw_labor, 0) / (a.jw_hours + 0.5 * a.jw_ot), 2)

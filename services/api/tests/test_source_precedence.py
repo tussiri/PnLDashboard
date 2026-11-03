@@ -256,11 +256,11 @@ def test_timekeeping_normalization_prices_api_rows_at_their_rate_then_employee_t
     pricing = [(flat(sql), params) for sql, params in conn.statements if is_pricing(sql)]
     assert len(pricing) == 2  # price every API punch, then re-price implausible trailing rates (any source)
     text, params = pricing[0]
-    assert params == {"source": "winteam_api", "lag_days": 5, "months": 3, "basis": "trailing_job_rate", "max_ratio": 3.0}
+    assert params == {"source": "winteam_api", "lag_days": 5, "months": 3, "basis": "trailing_job_rate", "max_ratio": 3.0, "job_api_days": 90, "job_api_min_hours": 40}
     assert "t.rate > %(max_ratio)s * cr.rate" in pricing[1][1] or "t.rate > %(max_ratio)s * cr.rate" in pricing[1][0]
     assert "FROM mart.v_job_cost_month_effective" in text and "recency <= %(months)s" in text
-    # own rate, then the employee's latest, then the guarded trailing rate
-    assert "CASE WHEN p.api_rate > 0 THEN p.api_rate WHEN er.rate > 0 THEN er.rate WHEN jr.rate IS NOT NULL AND (cr.rate IS NULL OR jr.rate <= %(max_ratio)s * cr.rate) THEN jr.rate" in text
+    # own rate, then the employee's latest, then what the job's rated punches paid, then the guarded trailing rate
+    assert "CASE WHEN p.api_rate > 0 THEN p.api_rate WHEN er.rate > 0 THEN er.rate WHEN ja.rate > 0 THEN ja.rate WHEN jr.rate IS NOT NULL AND (cr.rate IS NULL OR jr.rate <= %(max_ratio)s * cr.rate) THEN jr.rate" in text
     assert "SELECT DISTINCT ON (employee_source_id, company) employee_source_id, company, api_rate AS rate" in text
     # full pay at a pay rate; the trailing payroll rate prices hours only
     assert "CASE WHEN basis = %(basis)s THEN hours * rate ELSE (hours + 0.5 * ot + dt) * rate END" in text
@@ -498,3 +498,12 @@ def test_the_overtime_split_counts_earlier_hours_of_the_pay_week_from_another_so
     sql = flat(next(s for s, _ in conn.statements if "weekly_threshold" in s))
     assert "o.source <> %(source)s AND o.work_date >= f.pay_week AND o.work_date < f.first_day" in sql
     assert "coalesce(c.h, 0) + sum(a.h) OVER" in sql
+
+
+def test_a_punch_with_no_rate_takes_what_its_job_paid_at_full_pay_before_the_job_cost_rate() -> None:
+    rates = {"job": {"520": 29.50}, "company": {"Crane IFS": 18.0}, "portfolio": 18.0}
+    punch = {"company": "Crane IFS", "job_number": "520", "employee_source_id": "e1", "hours": 44, "overtime_hours": 4, "rate": None}
+    paid = {("Crane IFS", "520"): 19.48}
+    assert normalize.price_punch(punch, rates, {}, paid) == (round(46 * 19.48, 2), 19.48, "job_api_rate")
+    assert normalize.price_punch(punch, rates, {("e1", "Crane IFS"): 20.0}, paid)[2] == "employee_rate"
+    assert normalize.price_punch({**punch, "company": "Crane West"}, rates, {}, paid)[2] == "trailing_job_rate"  # a job number can repeat across databases

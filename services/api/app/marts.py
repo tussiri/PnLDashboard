@@ -566,7 +566,7 @@ def rebuild_tables() -> tuple[int, int, int]:
                 cursor.execute("DELETE FROM mart.portfolio_month")
                 cursor.execute(PORTFOLIO_MONTH_SQL)
                 portfolio_rows = cursor.rowcount
-                job_week_rows = weekly.rebuild(cursor)
+                job_week_rows = weekly.rebuild(cursor, (sub_low, sub_high))
                 staffing.refresh(cursor)
                 accounts.sync_accounts(cursor)
                 leadership.rebuild(cursor, (sub_low, sub_high))

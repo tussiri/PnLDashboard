@@ -233,6 +233,8 @@ def build_notes(selected_rows: list[dict[str, Any]], selected_week: date | None,
     labor_words = {
         "trailing_job_rate": "hours x the job's trailing closed-month rate (job-cost direct labor / actual hours)",
         "hours_x_rate": "hours x the timekeeping rate",
+        "employee_rate": "hours x the employee's latest timekeeping rate",
+        "job_api_rate": "hours x what the job's rated punches paid over the last 90 days",
     }
     notes = [
         "Invoicing = closed-month job-cost revenue apportioned to weeks by calendar days (job_cost_month_prorated); "

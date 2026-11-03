@@ -42,6 +42,9 @@ and for the router's notes):
       before the slice's month, sum(sub / days_in_month x 7) / months, x days / 7 (basis
       trailing_3mo_projection, sub_estimated = true; `project_weekly_sub`); a job with no job-cost
       month in that window projects 0 (basis none). A closed month without a booked cost is 0.
+      The projection never runs above what subcontract AP says now: that month's and the month
+      before's AP distributions on the job, per day so far x 7 (`cap_weekly_sub`), so a job whose
+      invoices stopped projects 0.
       month_shares records, per slice, the monthly figure the slice was apportioned from
       (`sub_month`: the job-cost line, the agency allocation, or the projected month = weekly x
       days_in_month / 7) so the router can sum a month's projected vendor cost over the sites.
@@ -216,6 +219,12 @@ def project_weekly_sub(closed_months: Sequence[tuple[date, float]], week_days_in
     if rate is None or days_in_month <= 0:
         return 0.0
     return rate * days_in_month / 7.0 * week_days_in_month / days_in_month
+
+
+def cap_weekly_sub(projected: float, recent_ap: float, days_covered: int) -> float:
+    """The projected weekly subcontract cost, held to the job's recent AP rate: `recent_ap` (the slice's month and the
+    month before) over the `days_covered` from the start of the earlier month to today or the slice month's end."""
+    return min(projected, max(recent_ap, 0.0) / max(days_covered, 1) * 7.0)
 
 
 def select_budget(daily_sum: float | None, daily_covers_slice: bool, monthly_budget: float | None,
@@ -419,6 +428,14 @@ ap_sub AS (
     AND lower(coalesce(i.vendor_name, '')) LIKE %(vendor_like)s
   GROUP BY 1, 2
 ),
+recent_sub_ap AS (
+  SELECT j.job_number, v.month, sum(v.amount) AS amount
+  FROM mart.v_ap_distribution_month v
+  JOIN core.dim_job j ON j.job_key = v.job_key AND j.valid_to IS NULL AND j.job_number IS NOT NULL
+  WHERE v.gl_account_number ~ '^[0-9]+$'
+    AND (v.gl_account_number)::bigint BETWEEN %(subcontract_gl_low)s AND %(subcontract_gl_high)s
+  GROUP BY 1, 2
+),
 sub_known AS (
   SELECT j.job_number, j.month, coalesce(j.subcontract_cost, 0) AS sub, 'job_cost' AS basis
   FROM jm j JOIN closed_months c ON c.month = j.month
@@ -548,10 +565,19 @@ slice_values AS (
   LEFT JOIN LATERAL (
     -- projection source: the job's job-cost months among the last N closed months before the slice's month;
     -- weekly = the average over those months of subcontractors / days_in_month x 7 (a booked 0 counts, a missing month does not)
-    SELECT count(j.job_number) AS months,
-           avg(coalesce(j.subcontract_cost, 0) / extract(day FROM (recent.month + interval '1 month' - interval '1 day')) * 7.0) AS weekly
-    FROM (SELECT cm.month FROM closed_months cm WHERE cm.month < s.month ORDER BY cm.month DESC LIMIT %(trailing_months)s) recent
-    JOIN jm j ON j.job_number = s.job_number AND j.month = recent.month AND j.revenue_basis = 'job_cost'
+    -- held to the job's recent AP rate (cap_weekly_sub): no invoices this month or last, nothing projected
+    SELECT p.months, least(p.weekly, greatest(coalesce(rap.amount, 0), 0)
+             / greatest(least(current_date, (s.month + interval '1 month' - interval '1 day')::date) - (s.month - interval '1 month')::date + 1, 1) * 7.0) AS weekly
+    FROM (
+      SELECT count(j.job_number) AS months,
+             avg(coalesce(j.subcontract_cost, 0) / extract(day FROM (recent.month + interval '1 month' - interval '1 day')) * 7.0) AS weekly
+      FROM (SELECT cm.month FROM closed_months cm WHERE cm.month < s.month ORDER BY cm.month DESC LIMIT %(trailing_months)s) recent
+      JOIN jm j ON j.job_number = s.job_number AND j.month = recent.month AND j.revenue_basis = 'job_cost'
+    ) p
+    LEFT JOIN LATERAL (
+      SELECT sum(a.amount) AS amount FROM recent_sub_ap a
+      WHERE a.job_number = s.job_number AND a.month >= s.month - interval '1 month' AND a.month <= s.month
+    ) rap ON true
   ) trail ON true
   LEFT JOIN db_cov cov ON cov.job_number = s.job_number AND cov.month = s.month
   LEFT JOIN LATERAL (
@@ -617,7 +643,7 @@ def _setting(cursor: Any, key: str, default: Any) -> Any:
     return default if value is None else value
 
 
-def rebuild(cursor: Any) -> int:
+def rebuild(cursor: Any, subcontract_gl: tuple[int, int]) -> int:
     """Empty (DELETE, so readers are not blocked; see marts.rebuild_tables) and rebuild mart.job_week on the caller's cursor/transaction; returns the row count.
 
     Reads ops.app_setting.agency_sub for the agency labor rule and sub_account_rules for the
@@ -638,6 +664,8 @@ def rebuild(cursor: Any) -> int:
             "vendor_like": f"%{agency['vendor_match']}%",
             "carry_months": CARRY_FORWARD_CLOSED_MONTHS,
             "trailing_months": TRAILING_SUB_MONTHS,
+            "subcontract_gl_low": subcontract_gl[0],
+            "subcontract_gl_high": subcontract_gl[1],
         },
     )
     rows = cursor.rowcount
