@@ -1,7 +1,7 @@
 import { useMemo, type ReactNode } from 'react'
 import type { BudgetMonth, BudgetWeek, LeadershipAccount, LeadershipMonthlyJob, LeadershipRow, SchoolWeek } from '../services/apiTypes'
 import { Badge, ChartCard, Kpi, Skeleton, Swatch, toneOf, useVocab } from './ui'
-import { GroupTrendGrid } from './AmazonCharts'
+import { AmazonHeadline, GroupTrendGrid } from './AmazonCharts'
 import { LaborMixChart, MonthWeekTrendChart, SegmentTrendChart, SiteLpChart, useTokens, WeekBarsChart } from './charts'
 import { closedMonths, includesVendor, inSentence, isSubcontracted, monthLaborPct, monthRevenue, priorMonth, rowsOfWeek, schoolWeekNote, segmentLabel, segmentOrder, siteMonths, useMonthly, useMonthRows, useRows, vendorLabel, weekBudgetOf, type DataFlags, type WeekBudget } from './data'
 import { hours, hours1, money, moneyK, pct } from './format'
@@ -10,7 +10,7 @@ import { addDays, monthLabel, monthShort, TREND_WEEKS_DEFAULT, TREND_WEEKS_MAX, 
 import { projectRecentWeeks, PROJECTION_BASE_WEEKS } from './projection'
 import { QaCards } from './Qa'
 import { useLeadership } from './state'
-import { billingSources, invoiceLabel, weekChange, wordsFor } from './vocab'
+import { billingSources, invoiceLabel, isBuReport, weekChange, wordsFor } from './vocab'
 
 const shortDay = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })
 const siteWord = (n: number) => `${n} site${n === 1 ? '' : 's'}`
@@ -240,8 +240,10 @@ export function Overview({ account, rows, summary, options, flags, headline = tr
       table={<table><thead><tr><th className="nosort l">{monthMode ? 'Month' : 'Week ending'}</th><th className="nosort">{w.invoiceCol}</th><th className="nosort">{w.laborCol}</th><th className="nosort">Labor %</th>{sitesLp && <th className="nosort">Sites only</th>}{weekTargets && <th className="nosort">Budget target</th>}</tr></thead>
         <tbody>{trend.map((x, i) => <tr key={x.label}><td className="l">{x.label}{projectedFlags?.[i] ? ' (projected)' : ''}</td><td>{money(x.invoice)}</td><td>{money(x.labor)}</td><td>{pct(x.lp)}</td>{sitesLp && <td>{pct(sitesLp[i])}</td>}{weekTargets && <td>{pct(weekTargets[i])}</td>}</tr>)}</tbody></table>} />
 
+  const amazonWeek = isBuReport(account) && !monthMode && Boolean(weekStart)
   return <>
-    {headline && <div className="kpi-lg">
+    {headline && amazonWeek && <AmazonHeadline account={account} summary={summary} options={options} weekStart={weekStart!} />}
+    {headline && !amazonWeek && <div className="kpi-lg">
       <Kpi label={invoiceLabel(w, vocab, period)} value={money(summary.all.invoice)} sub={basis || undefined} />
       <Kpi label={w.labor} value={money(a.cost)} sub={join(laborParts, change(a.cost, prev?.cost, money)) || undefined} />
       <Kpi label={w.accountLaborPct} value={pct(a.measurePct)} tone={toneOf(accountStatus)}
@@ -269,14 +271,15 @@ export function Overview({ account, rows, summary, options, flags, headline = tr
         const status = statusOf(s.measurePct, g.target, options.watchBand)
         const palG = sum(g.list, palletOf)
         const varG = g.list.some((r) => variableWk(r, options) != null) ? sum(g.list, (r) => variableWk(r, options) ?? 0) : null
-        return <GroupCard key={g.name} name={g.name} sub={`${g.list.length} sites, ${s.over} over target`} badge={<Badge status={status} />}
+        return <GroupCard key={g.name} name={g.name} sub={`${g.list.length} sites, ${s.over} over target`} badge={<Badge status={status} />} vocab={vocab}
+          sites={isBuReport(account) ? g.list : undefined} onOpen={amazonWeek ? () => navigate({ tab: 'bu', segment: g.name }) : undefined}
           invoice={s.invoice} invoiceSub={varG != null ? `${moneyK(varG)} variable` : undefined} labor={s.cost} laborSub={palG ? `${moneyK(palG)} pallet` : undefined}
           lp={s.measurePct} lpTone={toneOf(status)} lpSub={lastClosed ? `${monthShort(lastClosed)} ${pct(groupLp(g.list))}` : undefined}
           otCost={sum(g.list, (r) => r.ot_dollars)} otPrior={prevGroupOt(g.name)} otHours={sum(g.list, (r) => r.ot_hours)} changeWord={changeWord} w={w} />
       })}
-      {catchJobs.length > 0 && <GroupCard name="Catch-all" sub={catchJobs.map((r) => `Job ${r.job_number}`).join(', ')} badge={null} invoice={0} labor={summary.catchAll.cost}
+      {catchJobs.length > 0 && <GroupCard vocab={vocab} name={school ? 'District catch-all' : 'Catch-all'} sub={catchJobs.map((r) => `Job ${r.job_number}`).join(', ')} badge={null} invoice={0} labor={summary.catchAll.cost}
         lp={null} lpTone="" otCost={summary.catchAll.otDollars} otPrior={prevSummary?.catchAll.otDollars ?? null} otHours={summary.catchAll.otHours} changeWord={changeWord} w={w} />}
-      {nonBilled.length > 0 && <GroupCard name="Non-billed" sub={nonBilled.map((r) => `Job ${r.job_number} ${r.site_name}`).join(', ')} badge={null} invoice={0} labor={summary.nonBilled.cost}
+      {nonBilled.length > 0 && <GroupCard vocab={vocab} name={school ? 'Special Events' : 'Non-billed'} sub={nonBilled.map((r) => `Job ${r.job_number} ${r.site_name}`).join(', ')} badge={null} invoice={0} labor={summary.nonBilled.cost}
         lp={null} lpTone="" otCost={summary.nonBilled.otDollars} otPrior={prevSummary?.nonBilled.otDollars ?? null} otHours={summary.nonBilled.otHours} changeWord={changeWord} w={w} />}
     </div>
     {afterGroups}
@@ -324,18 +327,21 @@ function otChange(cost: number, prior: number | null, word: string): ReactNode {
   return <span className={change > 0.005 ? 'bad' : change < -0.005 ? 'ok' : ''}>{`${change >= 0 ? '+' : '−'}${(Math.abs(change) * 100).toFixed(1)}% ${word}`}</span>
 }
 
-function GroupCard({ name, sub, badge, invoice, invoiceSub, labor, laborSub, lp, lpTone, lpSub, otCost, otPrior, otHours, changeWord, w }: {
-  name: string; sub: string; badge: ReactNode; invoice: number; invoiceSub?: string; labor: number; laborSub?: string; lp: number | null; lpTone: string; lpSub?: string
+function GroupCard({ vocab, sites, onOpen, name, sub, badge, invoice, invoiceSub, labor, laborSub, lp, lpTone, lpSub, otCost, otPrior, otHours, changeWord, w }: {
+  vocab: string; sites?: Row[]; onOpen?: () => void; name: string; sub: string; badge: ReactNode; invoice: number; invoiceSub?: string; labor: number; laborSub?: string; lp: number | null; lpTone: string; lpSub?: string
   otCost: number; otPrior: number | null; otHours: number; changeWord: string; w: ReturnType<typeof wordsFor>
 }) {
   const change = otChange(otCost, otPrior, changeWord)
   return <div className="card">
-    <div className="seg-hdr"><div><div className="seg-name">{name}</div><div className="seg-sub">{sub}</div></div>{badge}</div>
+    <div className="seg-hdr"><div><div className="seg-name">{onOpen ? <button type="button" className="linkbtn" onClick={onOpen}>{name}</button> : name}</div><div className="seg-sub">{sub}</div></div>{badge}</div>
     <div className="kpi4">
-      <Kpi small label={w.invoiceCol} value={moneyK(invoice)} sub={invoiceSub} />
+      {/* The school report leads with the invoice, the others with labor. */}
+      {vocab === 'school' && <Kpi small label={w.invoiceCol} value={moneyK(invoice)} sub={invoiceSub} />}
       <Kpi small label={w.labor} value={moneyK(labor)} sub={laborSub} />
+      {vocab !== 'school' && <Kpi small label={w.invoiceCol} value={moneyK(invoice)} sub={invoiceSub} />}
       <Kpi small label="Labor %" value={pct(lp)} tone={lpTone} sub={lpSub} />
       <Kpi small label="OT cost" value={moneyK(otCost)} sub={<>{hours(otHours)} hrs{change && <>; {change}</>}</>} />
     </div>
+    {sites && <div className="chips">{sites.map((r) => <span key={r.job_number} className={`chip ${toneOf(r.status)}`} title={r.site_name}>{short(r.site_name)}</span>)}</div>}
   </div>
 }

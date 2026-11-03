@@ -15,11 +15,12 @@ import { ACCOUNT_TABS, monthLabel, weekEndOf, weekLabel, weekTick, type AccountT
 import { PageHeader, updatedLine } from '../Shell'
 import { useLeadership } from '../state'
 import { Empty, Kpi, LoadError, Skeleton, SortTable, toneOf, VocabContext, type Column } from '../ui'
+import { BusinessUnit, SitesOverBudget } from './BusinessUnit'
 import { HoursToCut } from './HoursToCut'
 import { OverTarget } from './OverTarget'
 import { IncomeStatementTab, PalletTab, SubcontractedTab } from './ReportViews'
 import { Sites } from './Sites'
-import { tabLabel, tabsFor, vocabOf } from '../vocab'
+import { isBuReport, tabLabel, tabsFor, vocabOf } from '../vocab'
 import { FiscalHero } from '../FiscalHero'
 import { MonthCompare } from '../MonthCompare'
 import { SiteDrawer } from './SiteDrawer'
@@ -133,7 +134,12 @@ export function Account() {
     subcontracted: Boolean(account?.split_subcontracted) || subcontracted > 0,
     incomeStatement: Object.keys(monthly.data?.income_statement ?? {}).length > 0,
     month: monthMode,
-  }).filter((t) => (!monthMode || t !== 'over-target') && (t === 'overview' || t === 'compare' || can(`tab.${t}`)))
+  }).filter((t) => (!monthMode || t !== 'over-target') && (t === 'overview' || t === 'compare' || can(t === 'over-budget' || t === 'bu' ? 'tab.over-target' : `tab.${t}`)))
+  // The Amazon report's order: the overview, a tab per business unit, OT analysis and sites over budget, then the rest.
+  const amazonWeek = isBuReport(account) && !monthMode
+  const buTabs = amazonWeek && summary && can('tab.sites') ? summary.segments.map((g) => g.segment) : []
+  const lead: AccountTab[] = amazonWeek ? ['overview', 'overtime', 'over-budget'] : []
+  const navTabs = amazonWeek ? [...lead.filter((t) => tabs.includes(t)), ...tabs.filter((t) => !lead.includes(t))] : tabs
   const vocab = vocabOf(account)
   let body
   if (rowsQuery.error) body = <LoadError error={rowsQuery.error} onRetry={rowsQuery.refetch} />
@@ -147,6 +153,8 @@ export function Account() {
   else if (tab === 'compare' && tabs.includes(tab) && month) body = <MonthCompare account={account} month={month} summary={summary} options={options} />
   else if (tab === 'pallet' && tabs.includes(tab)) body = <PalletTab account={account} summary={summary} options={options}
     subcontracted={(monthMode ? rows : rowsOfWeek(fullWeek.data?.rows, weekStart)).filter((r) => isSubcontracted(r, account))} />
+  else if (tab === 'bu' && route.segment && buTabs.includes(route.segment)) body = <BusinessUnit account={account} summary={summary} options={options} segment={route.segment} />
+  else if (tab === 'over-budget' && tabs.includes(tab)) body = <SitesOverBudget account={account} summary={summary} options={options} />
   else if (tab === 'overview' || !tabs.includes(tab)) body = <Overview account={account} rows={rows} summary={summary} options={options} flags={flags}
     budgetWeeks={budgetWeeks} budgetMonths={budgetMonths} schoolWeeks={school.data?.weeks} payHolidays={payHolidays}
     afterGroups={can('tab.feedback') && <FeedbackTile account={account} month={monthMode ? month : weekStart ? weekEndOf(weekStart).slice(0, 7) : undefined} />}
@@ -163,7 +171,9 @@ export function Account() {
       <option value="run_rate_3m">3-month run rate</option><option value="latest_fixed_avg_variable">Latest fixed + avg variable</option>
       <option value="contract">Contract</option><option value="last_month">{monthLabel(rows.find((r) => r.revenue_month)?.revenue_month ?? null)} actual</option>
     </select></>
-  const current = tabs.includes(tab) ? tab : 'overview'
+  const openBu = tab === 'bu' && route.segment && buTabs.includes(route.segment) ? route.segment : null
+  const current = openBu ? 'bu' : tabs.includes(tab) ? tab : 'overview'
+  const tabButton = (t: AccountTab) => <button key={t} type="button" role="tab" className="tab" aria-selected={current === t} onClick={() => setTab(t)}>{tabLabel(t, account, vendorLabel(account))}</button>
   return <VocabContext.Provider value={vocab}>
     <PageHeader title={account ? `${account.name} Labor P&L` : 'Account'} subtitle={subtitle} period
       defaultTarget={weekBudget && route.target == null && options.target !== optionsFor(account).target ? options.target : undefined}
@@ -171,12 +181,14 @@ export function Account() {
         onChange={(e) => navigate({ selfOnly: e.target.checked || undefined }, { replace: true })} />Hide {subcontracted} subcontracted</label>}
         {!monthMode && (budgetWeeks?.some((x) => x.holiday > 0) ?? false) && <label className="check"><input type="checkbox" checked={payHolidays}
           onChange={(e) => navigate({ payHolidays: e.target.checked || undefined }, { replace: true })} />Pay stat holidays</label>}</>} />
-    {account && !monthMode && weekStart && <FiscalHero account={account} options={options} weekStart={weekStart} startMonth={school.data?.weeks.length ? 7 : 1}
+    {account && !amazonWeek && !monthMode && weekStart && <FiscalHero account={account} options={options} weekStart={weekStart} startMonth={school.data?.weeks.length ? 7 : 1}
       budgetWeeks={budgetWeeks} budgetMonths={budgetMonths} payHolidays={payHolidays} />}
     <nav className="tabs" role="tablist" aria-label="Account views">
-      {tabs.map((t) => <button key={t} type="button" role="tab" className="tab" aria-selected={current === t} onClick={() => setTab(t)}>{tabLabel(t, account, vendorLabel(account))}</button>)}
+      {navTabs.slice(0, 1).map(tabButton)}
+      {buTabs.map((g) => <button key={g} type="button" role="tab" className="tab" aria-selected={openBu === g} onClick={() => navigate({ view: 'account', account: account?.slug, tab: 'bu', segment: g })}>{g}</button>)}
+      {navTabs.slice(1).map(tabButton)}
     </nav>
-    <section role="tabpanel" aria-label={tabLabel(current, account, vendorLabel(account))}>{body}</section>
+    <section role="tabpanel" aria-label={openBu ?? tabLabel(current, account, vendorLabel(account))}>{body}</section>
     {route.site && <SiteDrawer company={route.site.company} job={route.site.job} />}
   </VocabContext.Provider>
 }

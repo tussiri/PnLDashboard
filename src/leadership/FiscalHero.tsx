@@ -41,9 +41,9 @@ export function fiscalTotals(rows: LeadershipRow[], weeks: string[], through: st
   return { ...fy, weeks: n, revenue, labor, plan: planned ? plan : null }
 }
 
-/** The CDO dashboards' headline: fiscal year to date revenue less labor, with revenue, labor and plan labor. */
-export function FiscalHero({ account, options, weekStart, startMonth, budgetWeeks, budgetMonths, payHolidays }: { account: LeadershipAccount; options: MetricOptions; weekStart: string; startMonth: number
-  budgetWeeks?: BudgetWeek[]; budgetMonths?: BudgetMonth[]; payHolidays: boolean }) {
+/** Fiscal year to date through the selected week; null until the rows load. */
+export function useFiscalTotals(account: LeadershipAccount, options: MetricOptions, weekStart: string, startMonth: number,
+  budgetWeeks?: BudgetWeek[], budgetMonths?: BudgetMonth[], payHolidays = false): FiscalTotals | null {
   const fy = fiscalYearOf(weekEndOf(weekStart), startMonth)
   const recent = useRows(account.slug, LOAD)
   const olderStart = addDays(weekStart, -LOAD * 7)
@@ -54,7 +54,14 @@ export function FiscalHero({ account, options, weekStart, startMonth, budgetWeek
     return fiscalTotals(rows, weeks, weekStart, startMonth, options, segmentOrder(account),
       (wk) => weekBudgetOf(wk, budgetWeeks, budgetMonths, payHolidays)?.labor ?? null)
   }, [older.data, recent.data, weekStart, startMonth, options, account, budgetWeeks, budgetMonths, payHolidays])
-  if (!recent.data || !t.weeks) return null
+  return recent.data ? t : null
+}
+
+/** The CDO dashboards' headline: fiscal year to date revenue less labor, with revenue, labor and plan labor. */
+export function FiscalHero({ account, options, weekStart, startMonth, budgetWeeks, budgetMonths, payHolidays }: { account: LeadershipAccount; options: MetricOptions; weekStart: string; startMonth: number
+  budgetWeeks?: BudgetWeek[]; budgetMonths?: BudgetMonth[]; payHolidays: boolean }) {
+  const t = useFiscalTotals(account, options, weekStart, startMonth, budgetWeeks, budgetMonths, payHolidays)
+  if (!t || !t.weeks) return null
   const net = t.revenue - t.labor
   const span = `${monthShort(t.start)} 1 to ${monthShort(weekEndOf(weekStart))} ${Number(weekEndOf(weekStart).slice(8, 10))}`
   const vsPlan = t.plan != null ? t.labor - t.plan : null

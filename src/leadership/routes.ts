@@ -16,7 +16,7 @@
 /** company: the landing page. analytics: the Portfolio pages (#/portfolio; #/analytics still opens them). */
 import type { InvoiceBasis } from '../services/apiTypes'
 export type View = 'company' | 'account' | 'analytics' | 'admin'
-export const ACCOUNT_TABS = ['overview', 'compare', 'sites', 'pallet', 'over-target', 'overtime', 'income-statement', 'subcontracted', 'map', 'vendors', 'feedback', 'budget'] as const
+export const ACCOUNT_TABS = ['overview', 'bu', 'compare', 'sites', 'pallet', 'over-target', 'overtime', 'over-budget', 'income-statement', 'subcontracted', 'map', 'vendors', 'feedback', 'budget'] as const
 export type AccountTab = (typeof ACCOUNT_TABS)[number]
 export const ADMIN_TABS = ['accounts', 'jobs', 'regions', 'budgets', 'calendars', 'allocations', 'overhead', 'adjustments', 'contracts', 'imports', 'mailbox', 'data', 'users'] as const
 export const ANALYTICS_TABS = ['accounts', 'units'] as const
@@ -126,6 +126,7 @@ export function formatRoute(route: Route): string {
   if (route.target != null && route.view !== 'admin') params.set('target', String(route.target))
   if (route.site && route.view !== 'admin') params.set('site', `${route.site.company}${SITE_SEP}${route.site.job}`)
   if (route.view === 'analytics') for (const key of ['q', 'status', 'segment'] as const) if (route[key]) params.set(key, route[key]!)
+  if (route.view === 'account' && route.tab === 'bu' && route.segment) params.set('segment', route.segment)
   if ((route.view === 'analytics' || route.view === 'account') && route.region) {
     params.set('region', route.region)
     if (route.subregion) params.set('subregion', route.subregion)
