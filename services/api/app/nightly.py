@@ -82,7 +82,7 @@ def _start(run_id: str, started: datetime) -> None:
 
 def run_nightly(schedule: dict[str, Any] | None = None) -> dict[str, Any]:
     """Run every enabled step once; returns a summary. Never raises."""
-    from . import imports, mail_inbox, marts, relay, school_calendar
+    from . import imports, mail_inbox, marts, relay, school_calendar, week_changes
     from .sources import hrdashboard
     from .winteam import sarus_ingestion, winteam
 
@@ -141,6 +141,7 @@ def run_nightly(schedule: dict[str, Any] | None = None) -> dict[str, Any]:
             return {}
         step("school_calendar", read_calendars)
     step("marts", lambda: marts.rebuild_all(initiated_by="nightly"))
+    step("week_change", lambda: {"explained": week_changes.warm()})
 
     # ops.integration_sync_run allows running | succeeded | failed: any failed step marks the run
     # failed, and error_message names the steps, so the views flag the data as possibly incomplete.

@@ -446,3 +446,15 @@ rect.on{opacity:.8}
 .notes-box>summary .neutral{font-weight:400}
 .notes-box>summary.warn{color:var(--warn)}.notes-box>summary.bad{color:var(--bad)}
 .notes-box[open]>summary{margin-bottom:6px}
+
+/* Why labor changed: effects, facts, the AI reading and the sites. */
+.wkchg .wkchg__fx{margin-bottom:10px}
+.wkchg__facts{display:grid;gap:3px;font-size:12px;margin:0 0 10px}
+.wkchg__facts>div{display:grid;grid-template-columns:150px 1fr;gap:10px}
+.wkchg__facts dt{color:var(--text3)}.wkchg__facts dt.warn{color:var(--warn)}
+.wkchg__facts dd{margin:0;color:var(--text2);min-width:0}
+.wkchg__ai{background:var(--bg2);border-radius:var(--r);padding:10px 12px;margin-bottom:12px}
+.wkchg__drivers,.wkchg__next ul{margin:6px 0 0;padding-left:16px;font-size:12.5px;line-height:1.45;color:var(--text2)}
+.wkchg__drivers b{font-weight:600}
+.wkchg__next{margin-top:8px}
+@media(max-width:520px){.wkchg__facts>div{grid-template-columns:1fr;gap:0}}

@@ -41,6 +41,11 @@ export function createDemoApi(options: DemoApiOptions = {}): DashboardApi {
     saveBudget: () => notAvailable('Budget'),
     deleteBudget: () => notAvailable('Budget'),
     leadershipQa: (account, _week, signal) => settle(() => ({ account, weeks: [], sites: [] }), signal),
+    leadershipWeekChange: (account, week, signal) => settle(() => {
+      const zero = { cost: 0, labor: 0, vendor: 0, hours: 0, ot_hours: 0, ot_premium: 0, sites_with_labor: 0 }
+      return { account, complete: true, week: week ?? '', prior_week: '', current: zero, prior: zero, change: 0, change_pct: null, effects: { hours: 0, pay_rate: 0, ot_premium: 0, started: 0, stopped: 0, vendor: 0 }, site_count: 0, sites: [],
+        source_changes: { sites: 0, change: 0, transitions: {} }, groups: [], recent: [], average_prior: null, vs_average_pct: null, prior_vs_average_pct: null, holidays: { current: [], prior: [] }, summary: { status: 'off' as const } }
+    }, signal),
     leadershipFeedbackOverview: (account, month, signal) => settle(() => ({ account, month: `${month ?? ''}-01`, current: null, prior: null, months: [], year: { ratings: 0, average: null, since: '' }, low_sites: [], summary: { status: 'off' as const } }), signal),
     leadershipFeedback: (account, _months, signal) => settle(() => ({ account, since: '', lines: [], ratings: 0, average: null, low: 0, sites: 0, unmatched: 0, by_site: [] }), signal),
     leadershipMonthly: (account, _months, signal) => settle(() => demoLeadershipMonthly(account), signal),

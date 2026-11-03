@@ -9,6 +9,7 @@ import { accountSummary, invoiceParts, statusOf, type AccountNote, type AccountS
 import { addDays, monthLabel, monthShort, TREND_WEEKS_DEFAULT, TREND_WEEKS_MAX, TREND_WEEKS_MIN, weekEndOf, weekTick } from './routes'
 import { projectRecentWeeks, PROJECTION_BASE_WEEKS } from './projection'
 import { QaCards } from './Qa'
+import { WeekChangeCard } from './WeekChange'
 import { useLeadership } from './state'
 import { billingSources, invoiceLabel, weekChange, wordsFor } from './vocab'
 
@@ -279,6 +280,7 @@ export function Overview({ account, rows, summary, options, flags, headline = tr
       {nonBilled.length > 0 && <GroupCard name="Non-billed" sub={nonBilled.map((r) => `Job ${r.job_number} ${r.site_name}`).join(', ')} badge={null} invoice={0} labor={summary.nonBilled.cost}
         lp={null} lpTone="" otCost={summary.nonBilled.otDollars} otPrior={prevSummary?.nonBilled.otDollars ?? null} otHours={summary.nonBilled.otHours} changeWord={changeWord} w={w} />}
     </div>
+    {headline && !monthMode && weekStart && <WeekChangeCard account={account} weekStart={weekStart} />}
     {afterGroups}
     {!school && trendChart}
     {groups.length > 1 && <ChartCard title={`Labor % by ${segmentLabel(account).toLowerCase()}, ${monthMode ? 'by month' : `last ${trendWeeks} weeks`}`} height={280}

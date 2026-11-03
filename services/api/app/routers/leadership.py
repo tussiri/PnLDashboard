@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field
 from .. import allocations, accounts, company_pl, companycam, imports, marts
 from .. import month as month_module
 from .. import budget as budget_module
-from .. import budget_file, feedback_ai, mail_inbox, permissions
+from .. import budget_file, feedback_ai, mail_inbox, permissions, week_changes
 from .. import school_calendar
 from ..common import allowed_accounts, current_user, jsonable, refresh_gate, require_account, require_admin, source_block
 from ..db import connection
@@ -1190,6 +1190,29 @@ def leadership_qa(account: str = Query(..., description="An account slug"), week
                                               "job_number": r["job_number"], "scores": {}})
         s["scores"][r["week_start"].isoformat()] = float(r["score"])
     return {"account": account, "weeks": week_list, "sites": sorted(sites.values(), key=lambda s: s["site_code"])}
+
+
+@router.get("/week-change")
+def leadership_week_change(account: str = Query(..., description="An account slug"), week: str | None = Query(None, description="Any date in the week; default the latest complete week"),
+                           request: Request = None) -> dict[str, Any]:  # type: ignore[assignment]
+    """Why the account's labor changed from the prior week: effects that add up to the change, the sites behind it, and
+    Claude's reading of those facts (app/week_changes.py). The numbers are computed here, never by the model."""
+    if request is not None:
+        require_account(request, account)
+    with connection() as conn, conn.cursor() as cursor:
+        cursor.execute("SELECT slug, name, vendor_factor, cost_basis, split_subcontracted FROM ops.account WHERE slug = %s", (account,))
+        row = cursor.fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail=f"Unknown account {account!r}")
+        weeks = week_rows(cursor)
+        latest = default_week(weeks)
+        anchor = parse_week(week) or (date.fromisoformat(latest) if latest else None)
+        if anchor is None:
+            raise HTTPException(status_code=404, detail="No weeks loaded")
+        complete = any(w["week_start"] == anchor.isoformat() and not w["in_progress"] for w in weeks)
+        facts = week_changes.facts_for(cursor, ROW_SQL, dict(row), anchor)
+        summary = week_changes.state(cursor, row["slug"], row["name"], facts, complete)
+    return {"account": account, "complete": complete, **jsonable(facts), "summary": jsonable(summary)}
 
 
 class BudgetIn(BaseModel):
