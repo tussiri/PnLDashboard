@@ -66,3 +66,12 @@ describe('navigation', () => {
     expect(formatRoute({ view: 'admin', adminTab: 'jobs', region: 'Southeast' })).toBe('#/admin/jobs')
   })
 })
+
+describe('a business unit tab', () => {
+  it('keeps its unit in the address', () => {
+    const hash = formatRoute({ view: 'account', account: 'amazon', tab: 'bu', segment: 'Crane West' })
+    expect(hash).toBe('#/account/amazon/bu?segment=Crane+West')
+    expect(parseRoute(hash)).toMatchObject({ view: 'account', account: 'amazon', tab: 'bu', segment: 'Crane West' })
+    expect(formatRoute({ view: 'account', account: 'amazon', tab: 'sites', segment: 'Crane West' })).toBe('#/account/amazon/sites')
+  })
+})

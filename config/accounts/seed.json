@@ -963,6 +963,7 @@
    "revenue_allocation": "budget_hours",
    "cost_basis": "labor",
    "slug": "crowley-isd",
+   "vocabulary": "school",
    "name": "Crowley ISD",
    "sort": 6,
    "invoice_basis": "contract",

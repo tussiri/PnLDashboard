@@ -10,19 +10,25 @@ import type { Vocabulary } from './ui'
 export const vocabOf = (account: LeadershipAccount | undefined): Vocabulary => account?.vocabulary ?? 'amazon'
 
 const TABS: Record<Vocabulary, Record<AccountTab, string>> = {
-  amazon: { overview: 'Overview', compare: 'Compare months', sites: 'Sites', pallet: 'Pallet', 'over-target': 'Hours to cut', overtime: 'Overtime', 'income-statement': 'Income Statement', subcontracted: 'Subcontracted Sites', map: 'Map', vendors: 'Vendors', feedback: 'Feedback', budget: 'Budget' },
-  school: { overview: 'District Overview', compare: 'Compare months', sites: 'Campuses', pallet: 'Pallet', 'over-target': 'Over Target', overtime: 'Overtime', 'income-statement': 'Income Statement', subcontracted: 'Subcontracted Sites', map: 'Map', vendors: 'Vendors', feedback: 'Feedback', budget: 'Budget' },
-  fedex: { overview: 'Account Overview', compare: 'Compare months', sites: 'Sites', pallet: 'Pallet', 'over-target': 'Over Target', overtime: 'Overtime', 'income-statement': 'Income Statement', subcontracted: 'Subcontracted Sites', map: 'Map', vendors: 'Sub invoices', feedback: 'Feedback', budget: 'Budget' },
+  amazon: { overview: 'Overview', bu: 'BU', 'over-budget': 'Sites Over Budget', compare: 'Compare months', sites: 'Sites', pallet: 'Pallet', 'over-target': 'Hours to cut', overtime: 'Overtime', 'income-statement': 'Income Statement', subcontracted: 'Subcontracted Sites', map: 'Map', vendors: 'Vendors', feedback: 'Feedback', budget: 'Budget' },
+  school: { overview: 'District Overview', bu: 'Group', 'over-budget': 'Over Budget', compare: 'Compare months', sites: 'Campuses', pallet: 'Pallet', 'over-target': 'Over Target', overtime: 'Overtime', 'income-statement': 'Income Statement', subcontracted: 'Subcontracted Sites', map: 'Map', vendors: 'Vendors', feedback: 'Feedback', budget: 'Budget' },
+  fedex: { overview: 'Account Overview', bu: 'Group', 'over-budget': 'Over Budget', compare: 'Compare months', sites: 'Sites', pallet: 'Pallet', 'over-target': 'Over Target', overtime: 'Overtime', 'income-statement': 'Income Statement', subcontracted: 'Subcontracted Sites', map: 'Map', vendors: 'Sub invoices', feedback: 'Feedback', budget: 'Budget' },
 }
 
-export const tabLabel = (tab: AccountTab, account: LeadershipAccount | undefined, vendorLabel: string) =>
-  tab === 'vendors' && vocabOf(account) === 'amazon' ? vendorLabel : TABS[vocabOf(account)][tab]
+/** The CDO's Amazon report: business units with their own tabs and the combined and year to date headline. */
+export const isBuReport = (account: LeadershipAccount | undefined) => vocabOf(account) === 'amazon' && account?.segment_label === 'BU'
+
+export const tabLabel = (tab: AccountTab, account: LeadershipAccount | undefined, vendorLabel: string) => {
+  if (isBuReport(account) && tab === 'overview') return 'BU Overview'
+  if (isBuReport(account) && tab === 'overtime') return 'OT Analysis'
+  return tab === 'vendors' && vocabOf(account) === 'amazon' ? vendorLabel : TABS[vocabOf(account)][tab]
+}
 
 /** Tabs an account shows, the same rule for every account: Pallet where it has pallet jobs, Subcontracted
  * Sites where it has subcontracted sites, Income Statement where one is loaded (or subcontracted sites
  * are split out, so the import has a home), Compare months in the month rollup. */
-export function tabsFor(_account: LeadershipAccount | undefined, all: readonly AccountTab[], has: { pallet: boolean; subcontracted: boolean; incomeStatement: boolean; feedback?: boolean; budget?: boolean; month?: boolean }): AccountTab[] {
-  return all.filter((t) => (t !== 'compare' || Boolean(has.month)) && (t !== 'pallet' || has.pallet) && (t !== 'subcontracted' || has.subcontracted) && (t !== 'income-statement' || has.incomeStatement) && (t !== 'feedback' || Boolean(has.feedback)) && (t !== 'budget' || Boolean(has.budget)))
+export function tabsFor(account: LeadershipAccount | undefined, all: readonly AccountTab[], has: { pallet: boolean; subcontracted: boolean; incomeStatement: boolean; feedback?: boolean; budget?: boolean; month?: boolean }): AccountTab[] {
+  return all.filter((t) => t !== 'bu' && (t !== 'over-budget' || (isBuReport(account) && !has.month)) && (t !== 'compare' || Boolean(has.month)) && (t !== 'pallet' || has.pallet) && (t !== 'subcontracted' || has.subcontracted) && (t !== 'income-statement' || has.incomeStatement) && (t !== 'feedback' || Boolean(has.feedback)) && (t !== 'budget' || Boolean(has.budget)))
 }
 
 /** Signed percentage points in the account's wording: "+0.7pp WoW" or "+0.7 pts vs prior wk" (MoM /

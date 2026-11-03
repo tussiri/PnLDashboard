@@ -1,9 +1,10 @@
-import { useMemo } from 'react'
+import { useMemo, type ReactNode } from 'react'
 import type { LeadershipAccount, LeadershipRow } from '../services/apiTypes'
 import { OtHoursChart, Sparkline, TrendChart, WeekBarsChart, useTokens } from './charts'
 import { rowsOfWeek, useRows } from './data'
-import { hours1, money, moneyK, pct } from './format'
-import { accountSummary, type MetricOptions, type SiteMetrics } from './metrics'
+import { hours, hours1, money, moneyK, pct } from './format'
+import { accountSummary, type AccountSummary, type MetricOptions, type SiteMetrics } from './metrics'
+import { useFiscalTotals } from './FiscalHero'
 import { weekTick } from './routes'
 import { ChartCard, Swatch, toneOf } from './ui'
 
@@ -11,6 +12,39 @@ type Row = SiteMetrics<LeadershipRow>
 /** Weeks in the trends (the CDO's Amazon report shows about a quarter). */
 const WEEKS = 13
 const keyOf = (r: { company?: string | null; job_number: string }) => `${r.company ?? ''}~${r.job_number}`
+
+/** Labor % on a 0 to 100 bar, the target marked. */
+function TargetBar({ value, target, label }: { value: number | null; target: number; label: string }) {
+  const tone = value == null ? '' : value > target ? 'bad' : 'ok'
+  return <div className={`tbar ${tone}`} role="img" aria-label={`${label}: ${pct(value)} against a target of ${pct(target)}`}>
+    <i style={{ width: `${Math.min(100, Math.max(0, (value ?? 0) * 100))}%` }} /><b style={{ left: `${Math.min(100, target * 100)}%` }} />
+  </div>
+}
+
+function Headline({ title, sub, lp, target, tiles }: { title: string; sub: string; lp: number | null; target: number; tiles: ReactNode }) {
+  return <div className="card ahead">
+    <div className="ahead__top"><div><div className="seg-name">{title}</div><div className="seg-sub">{sub}</div></div>
+      <div className={`ahead__lp ${lp == null ? '' : lp > target ? 'bad' : 'ok'}`}>{pct(lp)}</div></div>
+    <TargetBar value={lp} target={target} label={title} />
+    <div className="ahead__tgt"><span>0%</span><span>Target {pct(target)}</span><span>100%</span></div>
+    <div className="ahead__tiles">{tiles}</div>
+  </div>
+}
+
+/** The Amazon report's top row: all business units this week and the year to date, each against the blended target. */
+export function AmazonHeadline({ account, summary, options, weekStart }: { account: LeadershipAccount; summary: AccountSummary<LeadershipRow>; options: MetricOptions; weekStart: string }) {
+  const a = summary.account
+  const billed = summary.segments.reduce((x, g) => x + g.rollup.invoice, 0)
+  const blended = billed > 0 ? summary.segments.reduce((x, g) => x + g.rollup.invoice * g.target, 0) / billed : options.target
+  const ytd = useFiscalTotals(account, options, weekStart, 1)
+  const tile = (label: string, value: string, sub?: string) => <div className="kpi"><div className="kl">{label}</div><div className="kv">{value}</div>{sub && <div className="ks">{sub}</div>}</div>
+  return <div className="charts2">
+    <Headline title="Combined" sub={`${summary.segments.length} BUs, ${summary.sites.filter((r) => r.role === 'site').length} sites`} lp={a.measurePct} target={blended}
+      tiles={<>{tile('Labor cost', money(a.cost))}{tile('Invoicing', money(summary.all.invoice))}{tile('OT cost', money(a.otDollars), `${hours(a.otHours)} hrs`)}</>} />
+    {ytd && ytd.weeks > 0 && <Headline title={`${ytd.label} year to date`} sub={`${ytd.weeks} weeks`} lp={ytd.revenue > 0 ? ytd.labor / ytd.revenue : null} target={blended}
+      tiles={<>{tile('Labor cost', money(ytd.labor))}{tile('Invoicing', money(ytd.revenue))}{tile('Revenue less labor', money(ytd.revenue - ytd.labor))}</>} />}
+  </div>
+}
 
 /** One small labor % chart per group (the CDO's "Crane West: Labor %" row). */
 export function GroupTrendGrid({ labels, series, current }: { labels: string[]; series: { name: string; target: number; values: (number | null)[] }[]; current: number }) {
