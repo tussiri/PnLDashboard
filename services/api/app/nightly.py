@@ -8,7 +8,8 @@ Steps, each isolated so one failure does not stop the others:
      skipped) without its own mart rebuild
   3. Sarus, when WINTEAM_SARUS_ENABLED
   4. Relay's FedEx feeds, when RELAY_BASE_URL and RELAY_EXPORT_TOKEN are set (app/relay.py)
-  5. HrDashboard site staffing, when HR_BASE_URL and HR_EXPORT_TOKEN are set (app/sources/hrdashboard.py)
+  5. HrDashboard site staffing, when HR_BASE_URL and HR_EXPORT_TOKEN are set, and employee names, when
+     HR_BASE_URL and HR_NAMES_TOKEN are (app/sources/hrdashboard.py)
   6. school district calendars (app/school_calendar.py): each district's published calendar, re-parsed
      only when the file changed; a district that fails is recorded on Admin > School calendars and does
      not fail the run
@@ -134,6 +135,8 @@ def run_nightly(schedule: dict[str, Any] | None = None) -> dict[str, Any]:
         step("relay", pull_relay)
     if schedule.get("hr") and hrdashboard.configured():
         step("hr", hrdashboard.sync)
+    if schedule.get("hr") and hrdashboard.names_configured():
+        step("hr_names", hrdashboard.sync_names)
     if schedule.get("school_calendar"):
         def read_calendars() -> dict[str, Any]:
             result = school_calendar.sync()

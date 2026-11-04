@@ -596,8 +596,8 @@ the site stood when HR last answered during that week, and a pull never replaces
 | Route | Response |
 |---|---|
 | `GET /staffing/jobs/{company}/{job_number}?week=` | adds `hr: HrSiteStaffingWeek`; `{configured}` alone when HR holds nothing for the site and week. |
-| `GET /integrations/hr` | `{configured, base_url_host, last_run: {status, completed_at, records_inserted, error_message} \| null, rows, sites, unmapped_sites, latest_week}`. Never returns the token. |
-| `POST /integrations/hr/sync` (admin) | `{status: 'succeeded', fetched, loaded, skipped}`; 409 when not configured, 502 when HR refuses or answers with no mapped rows. |
+| `GET /integrations/hr` | `{configured, names_configured, employee_names, base_url_host, last_run: {status, completed_at, records_inserted, error_message} \| null, rows, sites, unmapped_sites, latest_week}`. Never returns the token. |
+| `POST /integrations/hr/sync` (admin) | `{status: 'succeeded', fetched, loaded, skipped, names?: {status, fetched, loaded, skipped}}`, `names` when `HR_NAMES_TOKEN` is set; 409 when not configured, 502 when HR refuses or answers with no mapped rows. |
 
 ```
 HrSiteStaffingWeek = { configured, week_start, hires, separations, budgeted_positions,
@@ -738,9 +738,14 @@ Migration 063. Every punch at the sites of the states in `ops.app_setting.labor_
 live WinTeam call. Hours only: no pay rates, labor dollars or overtime figures. Hours are WinTeam's as
 punched, zero and negative adjustments included.
 
+The timekeeping API has no names. Migration 064 holds HrDashboard's in `core.hr_employee_name`: the nightly
+sync and `POST /integrations/hr/sync` pull `GET /api/service/v1/pnl/employee-names` with `HR_BASE_URL` and
+its own `HR_NAMES_TOKEN`, number and name only, replacing the table whole unless the answer has no rows. The
+report alone reads it; a name comes from HR, else the exports.
+
 | Route | Rule |
 |---|---|
-| `GET /labor-hours?date_from=YYYY-MM-DD&date_to=YYYY-MM-DD` | Permission `report.labor-hours`. A user limited to accounts sees those accounts' sites. Default period: the last complete Monday-Sunday week; at most 92 days, else `422`. `{date_from, date_to, states, through, totals: {employees, sites, punches, hours}, sites: [{company, job_number, site_name, city, state, employees, punches, hours}], employees: [{company, employee_number, employee_name, sites, days, hours, lunch_hours, punches: [{work_date, company, job_number, site_name, hours_type, in_time, out_time, lunch_hours, hours}]}]}`. `in_time` and `out_time` are wall clock `HH:MM`, null when WinTeam has none. `employee_name` is null when no export named the employee. `hours_type` comes from the export, else `timekeeping_category_labels`, else `Type <id>`. |
+| `GET /labor-hours?date_from=YYYY-MM-DD&date_to=YYYY-MM-DD` | Permission `report.labor-hours`. A user limited to accounts sees those accounts' sites. Default period: the last complete Monday-Sunday week; at most 92 days, else `422`. `{date_from, date_to, states, through, totals: {employees, sites, punches, hours}, sites: [{company, job_number, site_name, city, state, employees, punches, hours}], employees: [{company, employee_number, employee_name, sites, days, hours, lunch_hours, punches: [{work_date, company, job_number, site_name, hours_type, in_time, out_time, lunch_hours, hours}]}]}`. `in_time` and `out_time` are wall clock `HH:MM`, null when WinTeam has none. `employee_name` is `Last, First`, null when neither HrDashboard nor an export names the employee. `hours_type` comes from the export, else `timekeeping_category_labels`, else `Type <id>`. |
 
 ## Navigation, added 2026-10-02
 

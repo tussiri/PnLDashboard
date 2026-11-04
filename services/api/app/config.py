@@ -217,6 +217,7 @@ class Settings:
     # HrDashboard site-staffing service API (app/sources/hrdashboard.py). Server-side only.
     hr_base_url: str
     hr_export_token: str
+    hr_names_token: str
     hr_timeout_seconds: int
     hr_tenant_companies: str
     # Worker intervals in minutes (0 = off): the light WinTeam timekeeping sync and the PhotoValidation pull.
@@ -316,6 +317,7 @@ class Settings:
             relay_timeout_seconds=_integer(env, "RELAY_TIMEOUT_SECONDS", 60, maximum=600),
             hr_base_url=_text(env, "HR_BASE_URL").rstrip("/"),
             hr_export_token=_text(env, "HR_EXPORT_TOKEN"),
+            hr_names_token=_text(env, "HR_NAMES_TOKEN"),
             hr_timeout_seconds=_integer(env, "HR_TIMEOUT_SECONDS", 60, maximum=600),
             # HrDashboard's WinTeam tenant -> this warehouse's WinTeam database.
             hr_tenant_companies=_text(env, "HR_TENANT_COMPANIES", "primary:Crane,SAR:Sarus"),

@@ -113,3 +113,16 @@ def test_punch_times_accept_a_time_of_day():
     in_sql, out_sql = normalize.punch_time("inTime"), normalize.punch_time("outTime", after="inTime")
     assert normalize.CLOCK_RE in in_sql and "interval '1 day'" not in in_sql
     assert "interval '1 day'" in out_sql and normalize.TIMESTAMP_RE in out_sql
+
+
+def test_hr_names_win_and_the_export_fills_in():
+    rows = [punch("1", "64", D1, 8), punch("2", "64", D1, 8), punch("3", "64", D1, 8), punch("1", "9", D1, 8, company="Sarus")]
+    hr = {("Crane", "1"): "Person, Hr", ("Sarus", "1"): "Person, Sarus"}
+    export = {("Crane West", "1"): "Old, Name", ("Crane West", "2"): "Export, Only"}
+    assert lh.names_for(rows, hr, export) == {
+        ("Crane West", "1"): "Person, Hr", ("Crane West", "2"): "Export, Only", ("Sarus", "1"): "Person, Sarus"}
+
+
+def test_full_name():
+    assert lh.full_name("Test", "Person") == "Person, Test"
+    assert lh.full_name("", "Person") == "Person"
