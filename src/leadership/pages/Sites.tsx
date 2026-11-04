@@ -1,5 +1,7 @@
 import { useMemo, useState } from 'react'
-import type { LeadershipAccount, LeadershipFeedbackResponse, LeadershipRow } from '../../services/apiTypes'
+import type { LeadershipAccount, LeadershipFeedbackResponse, LeadershipRow, StaffingSitesResponse } from '../../services/apiTypes'
+import { useApiQuery } from '../../hooks/useApiQuery'
+import { queryKey } from '../../services/queryClient'
 import { SiteCharts } from '../AmazonCharts'
 import { scoreTone, stars } from './Feedback'
 import { closedMonths, includesVendor, inRegion, monthLaborPct, regionOf, siteMonths, subregionOf, useMonthly, vendorLabel } from '../data'
@@ -13,6 +15,27 @@ import { wordsFor } from '../vocab'
 
 type Row = SiteMetrics<LeadershipRow>
 
+type HrSite = StaffingSitesResponse['sites'][number]
+interface Staffed { positions: number | null; filled: number | null; open: number | null; headcount: number | null; hires: number; separations: number; source: string | null; asOf: string | null }
+
+const POSITIONS_SOURCE: Record<string, string> = { tracker: 'staffing tracker', budget: 'estimated from budget', observed: 'estimated from roster' }
+const shortDate = (iso: string) => new Date(`${iso}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+
+/** Self-performed on the mart's rule (common.delivery_sql): no delivery model and hours counts as self-performed. */
+export const selfPerformed = (r: LeadershipRow) => r.delivery_model === 'self_perform' || (r.delivery_model == null && r.hours > 0)
+
+/** HR figures for a site row, summed over its rolled-in jobs; null when HR has none for any of them. */
+export function staffedOf(r: Row, hr: Map<string, HrSite>): Staffed | null {
+  const found = (r.kids?.length ? r.kids : [r.job_number]).map((j) => hr.get(`${r.company}|${j}`)).filter((x): x is HrSite => x != null && (x.week_start != null || x.state_week != null))
+  if (!found.length) return null
+  const add = (f: (x: HrSite) => number | null | undefined) => (found.some((x) => f(x) != null) ? found.reduce((a, x) => a + (f(x) ?? 0), 0) : null)
+  const states = found.map((x) => x.state_week).filter((w): w is string => !!w).sort()
+  return { positions: add((x) => x.budgeted_positions), filled: add((x) => x.filled_positions), open: add((x) => x.open_positions), headcount: add((x) => x.active_headcount),
+    hires: add((x) => x.hires) ?? 0, separations: add((x) => x.separations) ?? 0, source: found.map((x) => x.positions_source).find(Boolean) ?? null, asOf: states[0] ?? null }
+}
+
+const fillOf = (s: Staffed | null) => (s?.filled != null && s.positions ? s.filled / s.positions : null)
+
 export const roleBadge = (r: Row) => (r.role === 'catch_all' ? <Badge status="none" label="Catch-all" /> : r.role === 'non_billed' ? <Badge status="none" label="Non-billed" /> : <Badge status={r.status} />)
 
 /**
@@ -24,7 +47,9 @@ export const roleBadge = (r: Row) => (r.role === 'catch_all' ? <Badge status="no
 export function Sites({ account, summary, options, selfOnly, ratings }: { account: LeadershipAccount; summary: AccountSummary<LeadershipRow>; options: MetricOptions; selfOnly: boolean
   /** Customer feedback by site over 12 months (Feedback tab data), when the account has any. */
   ratings?: LeadershipFeedbackResponse['by_site'] }) {
-  const { navigate, can, route, weekStart, monthMode } = useLeadership()
+  const { navigate, can, route, weekStart, monthMode, api, keyPrefix, decision } = useLeadership()
+  const staffing = useApiQuery<StaffingSitesResponse>(decision && can('tab.sites') ? queryKey(`${keyPrefix}/staffing/sites`, { account: account.slug, week: weekStart }) : null,
+    (signal) => api.staffingSites(account.slug, { week: weekStart }, signal), [api, account.slug, weekStart])
   const charts = account.vocabulary === 'amazon' && !monthMode
   const w = wordsFor(useVocab())
   const [filter, setFilter] = useState('All')
@@ -57,6 +82,18 @@ export function Sites({ account, summary, options, selfOnly, ratings }: { accoun
     for (const s of ratings ?? []) if (s.company && s.job_number) m.set(`${s.company}|${s.job_number}`, s)
     return (r: Row) => m.get(`${r.company}|${r.job_number}`)
   }, [ratings])
+  const hrSites = useMemo(() => new Map((staffing.data?.sites ?? []).map((x) => [`${x.company}|${x.job_number}`, x])), [staffing.data])
+  const hrShown = Boolean(staffing.data?.configured) && summary.sites.some((r) => r.role === 'site' && selfPerformed(r))
+  const staffedRow = (r: Row) => (r.role === 'site' && selfPerformed(r) ? staffedOf(r, hrSites) : null)
+  const staffedTip = (s: Staffed) => [s.headcount != null && `Headcount ${s.headcount}`, `Hires ${s.hires}`, `Separations ${s.separations}`,
+    s.source && `Positions: ${POSITIONS_SOURCE[s.source] ?? s.source}`, s.asOf && `As of ${shortDate(s.asOf)}`].filter(Boolean).join(' · ')
+  const staffedCell = (r: Row) => {
+    if (r.role !== 'site' || !selfPerformed(r)) return ''
+    const s = staffedRow(r)
+    if (!s) return <span className="warn" title="No HR staffing for this job">–</span>
+    const fill = fillOf(s)
+    return <span className={fill == null ? '' : fill < 0.9 ? 'warn' : ''} title={staffedTip(s)}>{s.filled ?? '–'} / {s.positions ?? '–'}</span>
+  }
   const cols: Column<Row>[] = [
     { key: 'job', header: 'Job', left: true, value: (r) => Number(r.job_number) || r.job_number, render: (r) => <>{r.job_number}{(r.kids?.length ?? 1) > 1 && <span className="neutral"> +{r.kids!.slice(1).join(',')}</span>}</> },
     { key: 'name', header: 'Site', left: true, value: (r) => r.site_name, className: 'nm', render: (r) => <>{r.site_name}{r.labor > 0 && r.labor_basis === 'trailing_rate_estimate' && <span className="warn"> ~</span>}</> },
@@ -80,6 +117,11 @@ export function Sites({ account, summary, options, selfOnly, ratings }: { accoun
       { key: 'alloc', header: 'Alloc $', value: (r: Row) => r.allocation, render: (r: Row) => <span className="neutral">{money(r.allocation)}</span> },
       { key: 'mgn', header: 'Margin', value: (r: Row) => r.margin, render: (r: Row) => <span className={r.margin < 0 ? 'bad' : ''}>{money(r.margin)}</span> },
     ] : []),
+    ...(hrShown ? [
+      { key: 'staff', header: 'Staffed', value: (r: Row) => fillOf(staffedRow(r)), render: staffedCell,
+        csv: (r: Row) => { const x = staffedRow(r); return x ? `${x.filled ?? ''}/${x.positions ?? ''}` : '' } },
+      { key: 'open', header: 'Open', value: (r: Row) => staffedRow(r)?.open ?? null, render: (r: Row) => staffedRow(r)?.open ?? '' },
+    ] : []),
     { key: 'hrs', header: 'Hours', value: (r) => r.hours, render: (r) => hours1(r.hours) },
     { key: 'oth', header: 'OT hrs', value: (r) => r.ot_hours, render: (r) => hours1(r.ot_hours) },
     { key: 'otp', header: 'OT %', value: (r) => r.otPct, render: (r) => <span className={r.otPct > 0.25 ? 'bad' : r.otPct > 0.15 ? 'warn' : ''}>{pct(r.otPct)}</span> },
@@ -92,12 +134,18 @@ export function Sites({ account, summary, options, selfOnly, ratings }: { accoun
   const sum = (f: (r: Row) => number | null) => rows.reduce((a, r) => a + (f(r) ?? 0), 0)
   const totalVar = sum(variance)
   const priorCols = closed.length || 1
+  const selfRows = rows.filter((r) => r.role === 'site' && selfPerformed(r))
+  const staffedRows = selfRows.map(staffedRow).filter((x): x is Staffed => x != null)
+  const selfCount = selfRows.length
+  const staffedCount = staffedRows.length
+  const hrTotal = (list: Staffed[], f: (x: Staffed) => number | null) => (list.some((x) => f(x) != null) ? list.reduce((a, x) => a + (f(x) ?? 0), 0) : '–')
   const tot = <tr className="tot"><td></td><td className="l">Total ({rows.length})</td>{hasRegions && <td></td>}
     {hasVariable && <><td>{money(sum(fixed))}</td><td>{money(sum((r) => variableWk(r, options)))}</td></>}
     <td>{money(s.invoice)}</td><td>{money(sum(directOf))}</td>{hasPallet && <td>{money(sum(palletOf))}</td>}{vendor && <td>{money(s.vendor)}</td>}<td>{money(s.cost)}</td>
     <td className={toneOf(statusOf(s.measurePct, options.target, options.watchBand))}>{pct(s.measurePct)}</td>{Array.from({ length: priorCols }, (_, i) => <td key={i} />)}
     <td className="neutral">{money(sum(budget))}</td><td className={totalVar > 0 ? 'bad' : 'ok'}>{money(totalVar)}</td>
     {allocated && <><td className="neutral">{money(s.allocation)}</td><td className={s.margin < 0 ? 'bad' : ''}>{money(s.margin)}</td></>}
+    {hrShown && <><td title={`${staffedCount} of ${selfCount} self-performed sites in HR`}>{hrTotal(staffedRows, (x) => x.filled)} / {hrTotal(staffedRows, (x) => x.positions)}</td><td>{hrTotal(staffedRows, (x) => x.open)}</td></>}
     <td>{hours1(s.hours)}</td><td>{hours1(s.otHours)}</td><td>{pct(s.otPct)}</td><td>{hours1(sum((r) => r.overHours))}</td>{ratings?.length ? <td></td> : null}<td></td></tr>
   return <>
     <div className="ctrl" style={{ marginBottom: 12 }}>
