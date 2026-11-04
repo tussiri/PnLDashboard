@@ -436,15 +436,20 @@ rect.on{opacity:.8}
 .hero>.kpi{flex:1 1 140px;display:flex;flex-direction:column;justify-content:center}
 /* The Amazon report's headline cards: labor % against the blended target. */
 .ahead__top{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:8px}
-.ahead__lp{font-size:28px;font-weight:600;font-variant-numeric:tabular-nums;line-height:1.1}
 .tbar{position:relative;height:8px;border-radius:4px;background:var(--bg2)}
 .tbar i{position:absolute;inset:0 auto 0 0;border-radius:4px;background:var(--text3)}
 .tbar.ok i{background:var(--ok)}.tbar.bad i{background:var(--bad)}
 .tbar b{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--text);transform:translateX(-1px)}
-.ahead__tgt{display:flex;justify-content:space-between;font-size:11px;color:var(--text3);margin:4px 0 10px}
-.ahead__tiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.ahead--ytd{border-style:dashed}
+.ahead__span{margin-left:8px;font-size:11px;font-weight:400;color:var(--text3)}
+.ahead__tiles{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px;margin-bottom:12px}
 .ahead__tiles>*{min-width:0}
-@media(max-width:520px){.ahead__tiles{grid-template-columns:1fr}}
+.ahead__tiles .kpi{border:none;padding:0;background:none}
+@media(max-width:760px){.ahead__tiles{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.card.bu{border-left:3px solid}
+.bu__n{font-size:11px;font-weight:600;white-space:nowrap}
+.amz-trends{grid-template-columns:1.6fr 1fr}
+@media(max-width:900px){.amz-trends{grid-template-columns:1fr}}
 /* Small-multiple trend grids (the CDO Amazon report's site trends) */
 .spark-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:12px}
 .spark-grid.groups{grid-template-columns:repeat(auto-fit,minmax(220px,1fr));margin-bottom:12px}
@@ -470,3 +475,4 @@ rect.on{opacity:.8}
 .wkchg__drivers b{font-weight:600}
 .wkchg__next{margin-top:8px}
 @media(max-width:520px){.wkchg__facts>div{grid-template-columns:1fr;gap:0}}
+.wow{display:inline-flex;align-items:center;gap:2px}.wow svg{flex:none}

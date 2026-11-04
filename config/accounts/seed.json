@@ -19,19 +19,19 @@
    "fallback_segment": "Crane IFS",
    "segments": [
     {
-     "name": "Crane IFS",
-     "target_labor_pct": null
-    },
-    {
      "name": "Crane West",
      "target_labor_pct": 0.595
     },
     {
-     "name": "Crane Southwest",
+     "name": "Crane IFS",
      "target_labor_pct": null
     },
     {
      "name": "Sarus",
+     "target_labor_pct": null
+    },
+    {
+     "name": "Crane Southwest",
      "target_labor_pct": null
     }
    ],

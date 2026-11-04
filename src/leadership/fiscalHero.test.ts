@@ -24,4 +24,17 @@ describe('fiscal year to date', () => {
     expect(t.labor).toBeCloseTo(700 * (5 / 7 + 1), 6)
     expect(t.plan).toBeCloseTo(600, 6)
   })
+  it('carries OT, the first week and the invoicing-weighted target for the Amazon year to date', () => {
+    const weeks = ['2026-01-05', '2026-01-12']
+    const rows = weeks.flatMap((w) => [
+      { ...row(w, 700), ot_hours: 2, ot_dollars: 50 },
+      { ...row(w, 300), job_number: '2', segment: 'B', revenue_month_amount: 8660 },
+    ] as LeadershipRow[])
+    const t = fiscalTotals(rows, weeks, '2026-01-12', 1, { target: 0.6, segmentTargets: { A: 0.5 } }, ['A', 'B'], () => null)
+    expect(t.first).toBe('2026-01-05')
+    expect(t.otDollars).toBeCloseTo(100, 6)
+    expect(t.otHours).toBeCloseTo(4, 6)
+    // A bills 1,000 a week at 50%, B 2,000 at 60%: (500 + 1,200) / 3,000.
+    expect(t.targetInvoice / t.groupInvoice).toBeCloseTo(1700 / 3000, 6)
+  })
 })

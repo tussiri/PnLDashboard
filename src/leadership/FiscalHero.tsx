@@ -9,7 +9,13 @@ import { Kpi } from './ui'
 /** Weeks per rows request (the API's maximum). */
 const LOAD = 26
 
-export interface FiscalTotals { start: string; label: string; weeks: number; revenue: number; labor: number; plan: number | null }
+export interface FiscalTotals { start: string; label: string; weeks: number; revenue: number; labor: number; plan: number | null
+  /** The first week counted (its start), null when none. */
+  first: string | null
+  /** Vendor (Amazon: agency) cost inside `labor`, OT cost and OT hours. */
+  vendor: number; otDollars: number; otHours: number
+  /** Group invoicing at each group's target, summed, and the group invoicing it was taken on: their ratio is the invoicing-weighted target. */
+  targetInvoice: number; groupInvoice: number }
 
 /** The fiscal year holding a week: July to June for school districts (FY27 = Jul 2026 to Jun 2027), else the calendar year. */
 export function fiscalYearOf(weekEnd: string, startMonth: number): { start: string; label: string } {
@@ -26,19 +32,24 @@ export function fiscalYearOf(weekEnd: string, startMonth: number): { start: stri
 export function fiscalTotals(rows: LeadershipRow[], weeks: string[], through: string, startMonth: number, options: MetricOptions, order: string[],
   budget: (weekStart: string) => number | null): FiscalTotals {
   const fy = fiscalYearOf(weekEndOf(through), startMonth)
-  let revenue = 0, labor = 0, plan = 0, planned = false, n = 0
+  let revenue = 0, labor = 0, plan = 0, planned = false, n = 0, vendor = 0, otDollars = 0, otHours = 0, targetInvoice = 0, groupInvoice = 0
+  let first: string | null = null
   for (const wk of weeks) {
     if (wk > through || weekEndOf(wk) < fy.start) continue
     const days = wk >= fy.start ? 7 : Math.round((Date.parse(`${weekEndOf(wk)}T00:00:00Z`) - Date.parse(`${fy.start}T00:00:00Z`)) / 86_400_000) + 1
     const share = days / 7
     const wr = rowsOfWeek(rows, wk)
     if (!wr.length) continue
-    const s = accountSummary(wr, options, order).account
+    const summary = accountSummary(wr, options, order)
+    const s = summary.account
     revenue += s.invoice * share; labor += s.cost * share; n += 1
+    vendor += s.vendor * share; otDollars += s.otDollars * share; otHours += s.otHours * share
+    for (const g of summary.segments) { targetInvoice += g.rollup.invoice * g.target * share; groupInvoice += g.rollup.invoice * share }
+    if (first == null || wk < first) first = wk
     const b = budget(wk)
     if (b != null) { plan += b * share; planned = true }
   }
-  return { ...fy, weeks: n, revenue, labor, plan: planned ? plan : null }
+  return { ...fy, weeks: n, revenue, labor, plan: planned ? plan : null, first, vendor, otDollars, otHours, targetInvoice, groupInvoice }
 }
 
 /** Fiscal year to date through the selected week; null until the rows load. */

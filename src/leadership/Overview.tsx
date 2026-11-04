@@ -1,8 +1,8 @@
 import { useMemo, type ReactNode } from 'react'
 import type { BudgetMonth, BudgetWeek, LeadershipAccount, LeadershipMonthlyJob, LeadershipRow, SchoolWeek } from '../services/apiTypes'
 import { Badge, ChartCard, Kpi, Skeleton, Swatch, toneOf, useVocab } from './ui'
-import { AmazonHeadline, GroupTrendGrid } from './AmazonCharts'
-import { LaborMixChart, MonthWeekTrendChart, SegmentTrendChart, SiteLpChart, useTokens, WeekBarsChart } from './charts'
+import { AmazonHeadline, blendedTarget, BuCard, GroupTrendGrid } from './AmazonCharts'
+import { LaborMixChart, MoneyLinesChart, MonthWeekTrendChart, SegmentTrendChart, SiteLpChart, useTokens, WeekBarsChart } from './charts'
 import { closedMonths, includesVendor, inSentence, isSubcontracted, monthLaborPct, monthRevenue, priorMonth, rowsOfWeek, schoolWeekNote, segmentLabel, segmentOrder, siteMonths, useMonthly, useMonthRows, useRows, vendorLabel, weekBudgetOf, type DataFlags, type WeekBudget } from './data'
 import { hours, hours1, money, moneyK, pct } from './format'
 import { accountSummary, invoiceParts, statusOf, type AccountNote, type AccountSummary, type MetricOptions, type SiteMetrics } from './metrics'
@@ -134,7 +134,8 @@ export function Overview({ account, rows, summary, options, flags, headline = tr
     const wr = rowsOfWeek(loadedRows, wk)
     const sum = wr.length ? accountSummary(wr, weekOptions, segmentOrder(account)) : null
     return { week: wk, rows: wr, s: sum?.account ?? null, sitesLp: sum?.billed.measurePct ?? null,
-      segs: Object.fromEntries((sum?.segments ?? []).map((g) => [g.segment, g.rollup.measurePct])) as Record<string, number | null> }
+      segs: Object.fromEntries((sum?.segments ?? []).map((g) => [g.segment, g.rollup.measurePct])) as Record<string, number | null>,
+      segOt: Object.fromEntries((sum?.segments ?? []).map((g) => [g.segment, g.rollup.otDollars])) as Record<string, number> }
   }), [older.data, history.data, loadedRows, weekOptions, account])
   const prevMonthRows = priorMonthQuery.data?.rows
   const prevWeek = weeks.find((x) => weekStart && x.week === addDays(weekStart, -7))
@@ -242,9 +243,45 @@ export function Overview({ account, rows, summary, options, flags, headline = tr
         <tbody>{trend.map((x, i) => <tr key={x.label}><td className="l">{x.label}{projectedFlags?.[i] ? ' (projected)' : ''}</td><td>{money(x.invoice)}</td><td>{money(x.labor)}</td><td>{pct(x.lp)}</td>{sitesLp && <td>{pct(sitesLp[i])}</td>}{weekTargets && <td>{pct(weekTargets[i])}</td>}</tr>)}</tbody></table>} />
 
   const amazonWeek = isBuReport(account) && !monthMode && Boolean(weekStart)
+  if (amazonWeek) {
+    // The CDO's Amazon report: combined and year to date cards, a card per business unit, then the labor % and OT cost trends.
+    const blended = blendedTarget(summary, target)
+    const buColor = (i: number) => t.series[i % t.series.length]
+    const lpSeries = [...segSeries.map((s, i) => ({ ...s, color: buColor(i) })), { name: 'Combined', target: blended, color: t.text, width: 3, values: trend.map((x) => x.lp ?? null) }]
+    const otSeries = groups.map((g, i) => ({ name: g.name, color: buColor(i), values: shownWeeks.map((x) => weeks.find((w) => w.week === x.week)?.segOt[g.name] ?? null) }))
+    return <>
+      {headline && <AmazonHeadline account={account} summary={summary} prior={prevSummary} options={options} weekStart={weekStart!} />}
+      <Notes summary={summary} account={account} flags={flags} options={options} revenueMonth={revenueMonth}
+        extra={selectedProjected && !flags.weekInProgress ? [{ tone: 'warn', key: 'proj', label: 'Labor not in yet', body: `Trend projected from the ${PROJECTION_BASE_WEEKS} weeks before` }] : []} />
+      <div className="seg-grid">
+        {groups.map((g, i) => {
+          const seg = summary.segments.find((x) => x.segment === g.name)
+          return seg && <BuCard key={g.name} account={account} name={g.name} color={buColor(i)} sites={g.list} rollup={seg.rollup} target={seg.target} status={seg.status}
+            otPrior={prevGroupOt(g.name)} onOpen={() => navigate({ tab: 'bu', segment: g.name })} />
+        })}
+      </div>
+      {shownWeeks.length > 1 && <div className="charts2 amz-trends">
+        <ChartCard title="Total labor % of invoicing" height={260} action={weeksSlider}
+          legend={<>{lpSeries.map((s) => <Swatch key={s.name} color={s.color} label={s.name} />)}<Swatch line color={t.text2} label={`Blended target ${pct(blended)}`} />
+            {anyProjected && <Swatch line color={t.text3} label="Projected" />}</>}
+          chart={<SegmentTrendChart labels={trend.map((x) => x.label)} series={lpSeries} current={trendCurrent} onPick={pickPoint} projected={projectedFlags}
+            targetLine={{ label: 'Blended target', value: blended }} />}
+          table={<div className="tw"><table><thead><tr><th className="nosort l">Week ending</th>{lpSeries.map((s) => <th key={s.name} className="nosort">{s.name}</th>)}</tr></thead>
+            <tbody>{trend.map((x, i) => <tr key={x.key}><td className="l">{x.label}{projectedFlags?.[i] ? ' (projected)' : ''}</td>{lpSeries.map((s) => <td key={s.name}>{pct(s.values[i])}</td>)}</tr>)}</tbody></table></div>} />
+        <ChartCard title="OT cost" height={260}
+          legend={<>{otSeries.map((s) => <Swatch key={s.name} color={s.color} label={s.name} />)}</>}
+          chart={<MoneyLinesChart labels={trend.map((x) => x.label)} series={otSeries} current={trendCurrent} onPick={pickPoint} />}
+          table={<div className="tw"><table><thead><tr><th className="nosort l">Week ending</th>{otSeries.map((s) => <th key={s.name} className="nosort">{s.name}</th>)}<th className="nosort">Total</th></tr></thead>
+            <tbody>{trend.map((x, i) => <tr key={x.key}><td className="l">{x.label}</td>{otSeries.map((s) => <td key={s.name}>{money(s.values[i])}</td>)}<td>{money(otByWeek[i])}</td></tr>)}</tbody></table></div>} />
+      </div>}
+      {headline && <WeekChangeCard account={account} weekStart={weekStart!} />}
+      {afterGroups}
+      {can('data.qa') && <QaCards account={account} sites={sites} weekStart={weekStart ?? null} />}
+      {footer}
+    </>
+  }
   return <>
-    {headline && amazonWeek && <AmazonHeadline account={account} summary={summary} options={options} weekStart={weekStart!} />}
-    {headline && !amazonWeek && <div className="kpi-lg">
+    {headline && <div className="kpi-lg">
       <Kpi label={invoiceLabel(w, vocab, period)} value={money(summary.all.invoice)} sub={basis || undefined} />
       <Kpi label={w.labor} value={money(a.cost)} sub={join(laborParts, change(a.cost, prev?.cost, money)) || undefined} />
       <Kpi label={w.accountLaborPct} value={pct(a.measurePct)} tone={toneOf(accountStatus)}
