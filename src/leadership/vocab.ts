@@ -10,9 +10,9 @@ import type { Vocabulary } from './ui'
 export const vocabOf = (account: LeadershipAccount | undefined): Vocabulary => account?.vocabulary ?? 'amazon'
 
 const TABS: Record<Vocabulary, Record<AccountTab, string>> = {
-  amazon: { overview: 'Overview', bu: 'BU', 'over-budget': 'Sites Over Budget', compare: 'Compare months', sites: 'Sites', pallet: 'Pallet', 'over-target': 'Hours to cut', overtime: 'Overtime', 'income-statement': 'Income Statement', subcontracted: 'Subcontracted Sites', map: 'Map', vendors: 'Vendors', feedback: 'Feedback', budget: 'Budget' },
-  school: { overview: 'District Overview', bu: 'Group', 'over-budget': 'Over Budget', compare: 'Compare months', sites: 'Campuses', pallet: 'Pallet', 'over-target': 'Over Target', overtime: 'Overtime', 'income-statement': 'Income Statement', subcontracted: 'Subcontracted Sites', map: 'Map', vendors: 'Vendors', feedback: 'Feedback', budget: 'Budget' },
-  fedex: { overview: 'Account Overview', bu: 'Group', 'over-budget': 'Over Budget', compare: 'Compare months', sites: 'Sites', pallet: 'Pallet', 'over-target': 'Over Target', overtime: 'Overtime', 'income-statement': 'Income Statement', subcontracted: 'Subcontracted Sites', map: 'Map', vendors: 'Sub invoices', feedback: 'Feedback', budget: 'Budget' },
+  amazon: { overview: 'Overview', bu: 'BU', 'over-budget': 'Sites Over Budget', compare: 'Compare months', sites: 'Sites', pallet: 'Pallet', 'over-target': 'Hours to cut', overtime: 'Overtime', 'income-statement': 'Income Statement', subcontracted: 'Subcontracted Sites', map: 'Map', vendors: 'Vendors', invoices: 'Invoices', feedback: 'Feedback', budget: 'Budget' },
+  school: { overview: 'District Overview', bu: 'Group', 'over-budget': 'Over Budget', compare: 'Compare months', sites: 'Campuses', pallet: 'Pallet', 'over-target': 'Over Target', overtime: 'Overtime', 'income-statement': 'Income Statement', subcontracted: 'Subcontracted Sites', map: 'Map', vendors: 'Vendors', invoices: 'Invoices', feedback: 'Feedback', budget: 'Budget' },
+  fedex: { overview: 'Account Overview', bu: 'Group', 'over-budget': 'Over Budget', compare: 'Compare months', sites: 'Sites', pallet: 'Pallet', 'over-target': 'Over Target', overtime: 'Overtime', 'income-statement': 'Income Statement', subcontracted: 'Subcontracted Sites', map: 'Map', vendors: 'Sub invoices', invoices: 'FedEx invoices', feedback: 'Feedback', budget: 'Budget' },
 }
 
 /** The CDO's Amazon report: business units with their own tabs and the combined and year to date headline. */
@@ -28,7 +28,7 @@ export const tabLabel = (tab: AccountTab, account: LeadershipAccount | undefined
  * Sites where it has subcontracted sites, Income Statement where one is loaded (or subcontracted sites
  * are split out, so the import has a home), Compare months in the month rollup. */
 export function tabsFor(account: LeadershipAccount | undefined, all: readonly AccountTab[], has: { pallet: boolean; subcontracted: boolean; incomeStatement: boolean; feedback?: boolean; budget?: boolean; month?: boolean }): AccountTab[] {
-  return all.filter((t) => t !== 'bu' && (t !== 'over-budget' || (isBuReport(account) && !has.month)) && (t !== 'compare' || Boolean(has.month)) && (t !== 'pallet' || has.pallet) && (t !== 'subcontracted' || has.subcontracted) && (t !== 'income-statement' || has.incomeStatement) && (t !== 'feedback' || Boolean(has.feedback)) && (t !== 'budget' || Boolean(has.budget)))
+  return all.filter((t) => t !== 'bu' && (t !== 'over-budget' || (isBuReport(account) && !has.month)) && (t !== 'compare' || Boolean(has.month)) && (t !== 'invoices' || vocabOf(account) === 'fedex') && (t !== 'pallet' || has.pallet) && (t !== 'subcontracted' || has.subcontracted) && (t !== 'income-statement' || has.incomeStatement) && (t !== 'feedback' || Boolean(has.feedback)) && (t !== 'budget' || Boolean(has.budget)))
 }
 
 /** Signed percentage points in the account's wording: "+0.7pp WoW" or "+0.7 pts vs prior wk" (MoM /

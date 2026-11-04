@@ -75,3 +75,12 @@ describe('a business unit tab', () => {
     expect(formatRoute({ view: 'account', account: 'amazon', tab: 'sites', segment: 'Crane West' })).toBe('#/account/amazon/sites')
   })
 })
+
+describe('FedEx invoices route', () => {
+  it('keeps the range and the date basis on the invoices tab only', () => {
+    const hash = formatRoute({ view: 'account', account: 'fedex', tab: 'invoices', from: '2026-10-01', to: '2026-10-31', invoiceBy: 'service' })
+    expect(hash).toBe('#/account/fedex/invoices?from=2026-10-01&to=2026-10-31&by=service')
+    expect(parseRoute(hash)).toMatchObject({ view: 'account', account: 'fedex', tab: 'invoices', from: '2026-10-01', to: '2026-10-31', invoiceBy: 'service' })
+    expect(parseRoute('#/account/fedex/sites?from=2026-10-01').from).toBeUndefined()
+  })
+})

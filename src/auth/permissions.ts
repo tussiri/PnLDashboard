@@ -7,7 +7,7 @@ import { NO_ACCESS, type AuthUser, type Role } from './roles'
  */
 export type Permission =
   | 'view.company' | 'view.company-story' | 'view.analytics' | 'view.reporting'
-  | 'tab.sites' | 'tab.pallet' | 'tab.over-target' | 'tab.overtime' | 'tab.income-statement' | 'tab.subcontracted' | 'tab.map' | 'tab.vendors' | 'tab.feedback' | 'tab.budget'
+  | 'tab.sites' | 'tab.pallet' | 'tab.over-target' | 'tab.overtime' | 'tab.income-statement' | 'tab.subcontracted' | 'tab.map' | 'tab.vendors' | 'tab.invoices' | 'tab.feedback' | 'tab.budget'
   | 'data.allocations' | 'data.month' | 'data.staffing' | 'data.invoices' | 'data.photos' | 'data.export' | 'data.qa'
   | 'report.labor-hours'
 
@@ -26,6 +26,7 @@ export const PERMISSIONS: readonly PermissionInfo[] = [
   { key: 'tab.subcontracted', group: 'Account tabs', label: 'Subcontracted' },
   { key: 'tab.map', group: 'Account tabs', label: 'Map' },
   { key: 'tab.vendors', group: 'Account tabs', label: 'Vendors' },
+  { key: 'tab.invoices', group: 'Account tabs', label: 'FedEx invoices' },
   { key: 'tab.feedback', group: 'Account tabs', label: 'Feedback' },
   { key: 'tab.budget', group: 'Account tabs', label: 'Budget' },
   { key: 'data.allocations', group: 'Data', label: 'Allocations and margin' },

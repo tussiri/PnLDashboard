@@ -1722,6 +1722,54 @@ export interface LeadershipVendorsResponse {
   lines: (LeadershipInvoiceLine & { company: string; job_number: string; site_name: string })[]
 }
 
+/** One FedEx invoice from Relay with the vendor payables linked to it (GET /leadership/fedex-invoices). */
+export interface FedexInvoiceRow {
+  invoice_number: string
+  invoice_date: string | null
+  service_month: string | null
+  billing_period_from: string | null
+  billing_period_to: string | null
+  customer_number: string | null
+  company: string | null
+  job_number: string | null
+  site_name: string | null
+  stations: string | null
+  delivery: 'Self-perform' | 'Subcontracted' | null
+  revenue: number
+  tax: number | null
+  invoice_total: number | null
+  portal_state: string | null
+  remitted: number | null
+  paid_date: string | null
+  vendors: string | null
+  vendor_numbers: string | null
+  vendor_invoices: string | null
+  work_orders: string | null
+  payables: number
+  /** Payables that are Crane's own work (self-perform, or Martin Building Solutions): not a cost. */
+  crane_payables: number
+  vendor_cost: number | null
+  margin: number | null
+  margin_pct: number | null
+  vendor_payment: string | null
+  vendor_paid: number | null
+  vendor_paid_date: string | null
+  check_numbers: string | null
+  not_in_winteam: number
+}
+export type FedexInvoiceBasis = 'invoice' | 'service'
+export interface FedexInvoicesResponse {
+  account: string
+  date_from: string
+  date_to: string
+  basis: FedexInvoiceBasis
+  /** The last Relay sync the rows come from. */
+  as_of: string | null
+  rows: FedexInvoiceRow[]
+  totals: { invoices: number; revenue: number; invoice_total: number; vendor_cost: number; margin: number | null; margin_pct: number | null
+    vendors: number; sites: number; without_payable: number; crane_payables: number }
+}
+
 export type LeadershipImportKind = 'pay_report' | 'job_cost' | 'income_statement' | 'job_income_statement' | 'contract' | 'service_feedback' | 'qa_score'
 /** A row of the import log: the upload kinds, and 'budget' for a labor budget mailed to the reports mailbox. */
 export type LeadershipImportLogKind = LeadershipImportKind | 'budget'
