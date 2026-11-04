@@ -3,6 +3,7 @@ and error mapping."""
 from __future__ import annotations
 
 from datetime import date
+from types import SimpleNamespace
 
 import httpx
 import pytest
@@ -69,3 +70,38 @@ def test_maps_hr_errors(status, match):
 def test_rejects_a_response_without_data():
     with pytest.raises(hrdashboard.HrDashboardError, match="no data list"):
         hrdashboard.fetch(client({"asOf": "2026-10-09"}), date(2026, 10, 9))
+
+
+def test_a_name_row_keeps_the_number_and_name_only():
+    row = hrdashboard.name_row({"tenant": "primary", "employeeNumber": 51024, "firstName": " Test ", "lastName": "Person", "workEmail": "x"}, COMPANIES)
+    assert row == ("Crane", "51024", "Test", "Person")
+
+
+def test_skips_names_it_cannot_key():
+    good = {"tenant": "SAR", "employeeNumber": "7", "firstName": "A", "lastName": "B"}
+    assert hrdashboard.name_row(good, COMPANIES) == ("Sarus", "7", "A", "B")
+    assert hrdashboard.name_row({**good, "tenant": "XYZ"}, COMPANIES) is None
+    assert hrdashboard.name_row({**good, "employeeNumber": " "}, COMPANIES) is None
+    assert hrdashboard.name_row({**good, "firstName": "", "lastName": None}, COMPANIES) is None
+
+
+def test_an_answer_with_no_names_changes_nothing(monkeypatch):
+    def no_connection():
+        raise AssertionError("must not reach the database")
+    monkeypatch.setattr(hrdashboard, "connection", no_connection)
+    with pytest.raises(hrdashboard.HrDashboardError):
+        hrdashboard.load_names({"data": [{"tenant": "XYZ", "employeeNumber": "1", "firstName": "A", "lastName": "B"}]}, COMPANIES)
+
+
+@pytest.mark.parametrize(("status", "words"), [(401, "names token"), (503, "SERVICE_API_NAMES_TOKEN_HASHES"), (500, "HTTP 500")])
+def test_names_errors_never_quote_the_body(status, words):
+    with pytest.raises(hrdashboard.HrDashboardError) as err:
+        hrdashboard.fetch_names(client({"data": [{"firstName": "Secret"}], "error": "Secret"}, status))
+    assert words in str(err.value) and "Secret" not in str(err.value)
+
+
+def test_names_need_their_own_token(monkeypatch):
+    monkeypatch.setattr(hrdashboard, "settings", SimpleNamespace(hr_base_url="http://hr.test", hr_export_token="site", hr_names_token=""))
+    assert hrdashboard.configured() and not hrdashboard.names_configured()
+    monkeypatch.setattr(hrdashboard, "settings", SimpleNamespace(hr_base_url="http://hr.test", hr_export_token="", hr_names_token="names"))
+    assert hrdashboard.names_configured() and not hrdashboard.configured()

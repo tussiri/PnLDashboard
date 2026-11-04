@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field
 from .. import allocations, accounts, company_pl, companycam, imports, marts
 from .. import month as month_module
 from .. import budget as budget_module
-from .. import budget_file, feedback_ai, mail_inbox, permissions, week_changes
+from .. import budget_file, fedex_invoices, feedback_ai, mail_inbox, permissions, week_changes
 from .. import school_calendar
 from ..common import allowed_accounts, current_user, jsonable, refresh_gate, require_account, require_admin, source_block
 from ..db import connection
@@ -1423,6 +1423,32 @@ async def upload_school_calendar(slug: str, request: Request, file: UploadFile =
         return school_calendar.load(slug, content, force=True, actor=_actor(request))
     except school_calendar.CalendarError as exc:
         raise _calendar_error(exc) from exc
+
+
+@router.get("/fedex-invoices", dependencies=[Depends(permissions.require_permission("tab.invoices"))])
+def leadership_fedex_invoices(account: str = Query(..., description="An account slug (its report vocabulary must be FedEx)"),
+                              date_from: date = Query(..., description="First day of the range"),
+                              date_to: date = Query(..., description="Last day of the range"),
+                              basis: str = Query("invoice", description="'invoice': by invoice date; 'service': by service month"),
+                              request: Request = None) -> dict[str, Any]:  # type: ignore[assignment]
+    """FedEx invoices from Relay in a date range, one row per invoice with the vendor payables linked to it
+    (app/fedex_invoices.py)."""
+    if request is not None:
+        require_account(request, account)
+    if basis not in fedex_invoices.BASES:
+        raise HTTPException(status_code=422, detail=f"basis must be one of {', '.join(fedex_invoices.BASES)}")
+    try:
+        fedex_invoices.validate_range(date_from, date_to)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    with connection() as conn, conn.cursor() as cursor:
+        cursor.execute("SELECT vocabulary FROM ops.account WHERE slug = %s", (account,))
+        row = cursor.fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail=f"Unknown account {account!r}")
+        if row["vocabulary"] != "fedex":
+            raise HTTPException(status_code=404, detail="Relay invoices exist only for FedEx")
+        return jsonable({"account": account, **fedex_invoices.report(cursor, date_from, date_to, basis)})
 
 
 @router.get("/vendors", dependencies=[Depends(permissions.require_permission("tab.vendors"))])

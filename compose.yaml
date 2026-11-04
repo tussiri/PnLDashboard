@@ -48,6 +48,7 @@ x-api-environment: &api-environment
   RELAY_TIMEOUT_SECONDS: ${RELAY_TIMEOUT_SECONDS:-60}
   HR_BASE_URL: ${HR_BASE_URL:-}
   HR_EXPORT_TOKEN: ${HR_EXPORT_TOKEN:-}
+  HR_NAMES_TOKEN: ${HR_NAMES_TOKEN:-}
   HR_TIMEOUT_SECONDS: ${HR_TIMEOUT_SECONDS:-60}
   HR_TENANT_COMPANIES: ${HR_TENANT_COMPANIES:-primary:Crane,SAR:Sarus}
   # Worker intervals in minutes (0 = off): light WinTeam timekeeping sync, PhotoValidation pull.

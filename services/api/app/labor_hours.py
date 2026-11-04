@@ -15,6 +15,8 @@ from collections.abc import Iterable, Mapping
 from datetime import date, timedelta
 from typing import Any
 
+from .sources.rules import namespace_for
+
 MAX_DAYS = 92
 
 SQL = """
@@ -33,13 +35,35 @@ WHERE upper(j.state_province) = ANY(%(states)s)
 ORDER BY t.company, t.employee_source_id, t.work_date, t.in_time NULLS LAST, t.timekeeping_key
 """
 
-# The API carries no names; the export's punches do. An employee who never appeared in one has none.
-NAMES_SQL = """
+# The API carries no names. HrDashboard's are current; the export's punches fill in the rest, and an
+# employee in neither has none.
+HR_NAMES_SQL = """
+SELECT winteam_company, employee_number, last_name, first_name
+FROM core.hr_employee_name
+WHERE employee_number = ANY(%(employees)s)
+"""
+
+EXPORT_NAMES_SQL = """
 SELECT DISTINCT ON (company, employee_source_id) company, employee_source_id, employee_name
 FROM core.fact_timekeeping
 WHERE employee_name IS NOT NULL AND employee_source_id = ANY(%(employees)s)
 ORDER BY company, employee_source_id, work_date DESC
 """
+
+
+def full_name(first: str, last: str) -> str:
+    """As the export writes them: 'Last, First'."""
+    return ", ".join(part for part in (last, first) if part)
+
+
+def names_for(rows: Iterable[Mapping[str, Any]], hr: Mapping[tuple[str, str], str], export: Mapping[tuple[str | None, str], str]) -> dict[tuple[str | None, str], str]:
+    """Each punch employee's name, HrDashboard's first. HR keys by WinTeam database, the punches by company within it."""
+    out: dict[tuple[str | None, str], str] = {}
+    for who in {(r["company"], r["employee_source_id"]) for r in rows}:
+        name = hr.get((namespace_for(who[0]), who[1])) or export.get(who)
+        if name:
+            out[who] = name
+    return out
 
 
 def default_range(today: date) -> tuple[date, date]:
@@ -119,6 +143,9 @@ def report(cursor: Any, date_from: date, date_to: date, accounts: frozenset[str]
     labels = settings.get("timekeeping_category_labels") or {}
     cursor.execute(SQL, {"states": states, "date_from": date_from, "date_to": date_to, "accounts": sorted(accounts) if accounts is not None else None})
     rows = cursor.fetchall()
-    cursor.execute(NAMES_SQL, {"employees": sorted({r["employee_source_id"] for r in rows})})
-    names = {(r["company"], r["employee_source_id"]): r["employee_name"] for r in cursor.fetchall()}
-    return build(rows, names, labels, date_from, date_to, states)
+    employees = sorted({r["employee_source_id"] for r in rows})
+    cursor.execute(HR_NAMES_SQL, {"employees": employees})
+    hr = {(r["winteam_company"], r["employee_number"]): full_name(r["first_name"], r["last_name"]) for r in cursor.fetchall()}
+    cursor.execute(EXPORT_NAMES_SQL, {"employees": employees})
+    export = {(r["company"], r["employee_source_id"]): r["employee_name"] for r in cursor.fetchall()}
+    return build(rows, names_for(rows, hr, export), labels, date_from, date_to, states)

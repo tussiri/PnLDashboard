@@ -38,6 +38,8 @@ export function createDemoApi(options: DemoApiOptions = {}): DashboardApi {
     staffingJob: (company, jobNumber, query, signal) => settle(() => demoStaffingJob(company, jobNumber, query), signal),
     staffingSites: (account, query, signal) => settle(() => demoStaffingSites(account, query), signal),
     leadershipVendors: (account, _months, signal) => settle(() => demoLeadershipVendors(account), signal),
+    fedexInvoices: (query, signal) => settle(() => ({ ...query, as_of: null, rows: [],
+      totals: { invoices: 0, revenue: 0, invoice_total: 0, vendor_cost: 0, margin: null, margin_pct: null, vendors: 0, sites: 0, without_payable: 0, crane_payables: 0 } }), signal),
     leadershipBudget: (account, signal) => settle(() => ({ account, months: [], weeks: [] }), signal),
     saveBudget: () => notAvailable('Budget'),
     deleteBudget: () => notAvailable('Budget'),

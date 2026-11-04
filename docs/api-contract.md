@@ -378,6 +378,7 @@ are Monday-based; the views label them by the week-ending Sunday. Any date in a 
 | `GET /leadership/rows?week=&weeks=1&account=featured` | `{source, week, weeks: [ISO], account, rows: [LeadershipRow]}` for `weeks` (1–26) weeks ending at `week`. `account` = a slug, `featured`, `other` (unmapped or non-featured) or `all`. 404 for an unknown slug. |
 | `GET /leadership/sites/{company}/{job_number}?weeks=13&week=` | `{source, site: {company, job_number, site_name, address_line_1, city, state_province, postal_code, latitude, longitude, parent_job_number, delivery_model, parent_account, account_slug, segment, role, companycam_project_id}, weeks: [LeadershipRow], invoices: {since, vendor_type_ids, total, lines: [{invoice_number, invoice_date, gl_account_number, amount, vendor_number, vendor_name, vendor_type_id}]}, photos: {configured, project_id, items: [{id, captured_at, thumbnail, web, creator_name}] \| null, error}}`. Invoices are AP GL distribution lines coded to the job from subcontractor vendors (setting `subcontractor_vendor_type_ids`, default `[6]`) over the last 6 months. Photos are fetched server-side from CompanyCam when a token and the job's `companycam_project_id` exist. 404 for an unknown job. |
 | `GET /leadership/vendors?account=&months=6` | `{account, since, vendor_type_ids, total, by_vendor: [{vendor_number, vendor_name, amount, invoices}], by_site: [{company, job_number, site_name, amount, invoices}], by_month: [{month, amount, invoices}], lines: [invoice line + {company, job_number, site_name}]}`: subcontractor AP distribution lines coded to the account's sites since the first of the month `months - 1` back. 404 for an unknown slug. |
+| `GET /leadership/fedex-invoices?account=&date_from=&date_to=&basis=invoice` | `{account, date_from, date_to, basis, as_of, rows: [{invoice_number, invoice_date, service_month, billing_period_from/to, customer_number, company, job_number, site_name, stations, delivery, revenue, tax, invoice_total, portal_state, remitted, paid_date, vendors, vendor_numbers, vendor_invoices, work_orders, payables, crane_payables, vendor_cost, margin, margin_pct, vendor_payment, vendor_paid, vendor_paid_date, check_numbers, not_in_winteam}], totals}`: FedEx (AR) invoices from the Relay snapshot whose invoice date (`basis=service`: service month) falls in the range, one row per invoice with its linked vendor payables (`app/fedex_invoices.py`). Self-perform and Martin Building Solutions payables are flagged (`crane_payables`) and kept out of vendor cost. 422 for a range over 731 days or an unknown basis; 404 for an account whose vocabulary is not `fedex`. |
 | `PUT /leadership/accounts/{slug}` (admin) body: any of `name, featured, sort, target_labor_pct, watch_band, revenue_method, revenue_divisor, budget_reliability_ratio, source_parent_accounts, segment_source, fallback_segment` | the updated `LeadershipAccount` |
 | `PUT /leadership/accounts/{slug}/segments` (admin) body `[{name, target_labor_pct}]` | the account plus `jobs_moved_to_fallback`; the fallback segment must stay in the list |
 | `GET /leadership/account-jobs?account=&needs_review=&unmapped=` (admin) | `{jobs: [{company, job_number, account_slug, segment, role, companycam_project_id, assigned_by, needs_review, job_name, parent_account, is_active}]}`; `unmapped=true` lists current jobs in Other |
@@ -597,8 +598,8 @@ the site stood when HR last answered during that week, and a pull never replaces
 |---|---|
 | `GET /staffing/jobs/{company}/{job_number}?week=` | adds `hr: HrSiteStaffingWeek`; `{configured}` alone when HR holds nothing for the site and week. |
 | `GET /staffing/sites?account=&week=` (tab.sites, account in scope) | `{account, week, configured, sites: [{company, job_number} + HrSiteStaffingWeek fields]}`: one entry per job of the account, nulls where HR has nothing. Positions, filled, open and headcount come from the nearest week HR reported them, up to 8 weeks away, even when HR sent nothing for the week itself. Added 2026-11-04 for the Sites table's Staffed and Open columns; no people and no pay, so it is not behind data.staffing. 404 for an unknown slug. |
-| `GET /integrations/hr` | `{configured, base_url_host, last_run: {status, completed_at, records_inserted, error_message} \| null, rows, sites, unmapped_sites, latest_week}`. Never returns the token. |
-| `POST /integrations/hr/sync` (admin) | `{status: 'succeeded', fetched, loaded, skipped}`; 409 when not configured, 502 when HR refuses or answers with no mapped rows. |
+| `GET /integrations/hr` | `{configured, names_configured, employee_names, base_url_host, last_run: {status, completed_at, records_inserted, error_message} \| null, rows, sites, unmapped_sites, latest_week}`. Never returns the token. |
+| `POST /integrations/hr/sync` (admin) | `{status: 'succeeded', fetched, loaded, skipped, names?: {status, fetched, loaded, skipped}}`, `names` when `HR_NAMES_TOKEN` is set; 409 when not configured, 502 when HR refuses or answers with no mapped rows. |
 
 ```
 HrSiteStaffingWeek = { configured, week_start, hires, separations, budgeted_positions,
@@ -673,6 +674,7 @@ separate and unchanged.
 | `view.reporting` | executive | `403` on the reporting, labor, forecast and staffing routes and platform GET routes other than `/system/status` and `/dimensions` |
 | `tab.sites`, `tab.pallet`, `tab.over-target`, `tab.overtime`, `tab.income-statement`, `tab.subcontracted`, `tab.map` | – | the account tab |
 | `tab.vendors` | – | `403` on `GET /leadership/vendors`; the Vendors tab |
+| `tab.invoices` | – | `403` on `GET /leadership/fedex-invoices`; the FedEx invoices tab |
 | `data.allocations` | – | `alloc_management`, `alloc_burden`, `alloc_overhead` are dropped from the rows of `/leadership/rows`, `/leadership/month` and `/leadership/sites/…`; margin is hidden |
 | `data.month` | – | `403` on `GET /leadership/month`; the Week / Month switch |
 | `data.staffing` | executive | `403` on `GET /staffing/jobs/…`; the staffing card |
@@ -739,9 +741,14 @@ Migration 063. Every punch at the sites of the states in `ops.app_setting.labor_
 live WinTeam call. Hours only: no pay rates, labor dollars or overtime figures. Hours are WinTeam's as
 punched, zero and negative adjustments included.
 
+The timekeeping API has no names. Migration 064 holds HrDashboard's in `core.hr_employee_name`: the nightly
+sync and `POST /integrations/hr/sync` pull `GET /api/service/v1/pnl/employee-names` with `HR_BASE_URL` and
+its own `HR_NAMES_TOKEN`, number and name only, replacing the table whole unless the answer has no rows. The
+report alone reads it; a name comes from HR, else the exports.
+
 | Route | Rule |
 |---|---|
-| `GET /labor-hours?date_from=YYYY-MM-DD&date_to=YYYY-MM-DD` | Permission `report.labor-hours`. A user limited to accounts sees those accounts' sites. Default period: the last complete Monday-Sunday week; at most 92 days, else `422`. `{date_from, date_to, states, through, totals: {employees, sites, punches, hours}, sites: [{company, job_number, site_name, city, state, employees, punches, hours}], employees: [{company, employee_number, employee_name, sites, days, hours, lunch_hours, punches: [{work_date, company, job_number, site_name, hours_type, in_time, out_time, lunch_hours, hours}]}]}`. `in_time` and `out_time` are wall clock `HH:MM`, null when WinTeam has none. `employee_name` is null when no export named the employee. `hours_type` comes from the export, else `timekeeping_category_labels`, else `Type <id>`. |
+| `GET /labor-hours?date_from=YYYY-MM-DD&date_to=YYYY-MM-DD` | Permission `report.labor-hours`. A user limited to accounts sees those accounts' sites. Default period: the last complete Monday-Sunday week; at most 92 days, else `422`. `{date_from, date_to, states, through, totals: {employees, sites, punches, hours}, sites: [{company, job_number, site_name, city, state, employees, punches, hours}], employees: [{company, employee_number, employee_name, sites, days, hours, lunch_hours, punches: [{work_date, company, job_number, site_name, hours_type, in_time, out_time, lunch_hours, hours}]}]}`. `in_time` and `out_time` are wall clock `HH:MM`, null when WinTeam has none. `employee_name` is `Last, First`, null when neither HrDashboard nor an export names the employee. `hours_type` comes from the export, else `timekeeping_category_labels`, else `Type <id>`. |
 
 ## Navigation, added 2026-10-02
 

@@ -73,6 +73,10 @@ def run() -> None:
             cursor.execute(
                 sql.SQL("GRANT SELECT ON ALL TABLES IN SCHEMA core, mart TO {}").format(sql.Identifier(analytics_role))
             )
+            # Employee names are for the labor hours report only, behind its permission.
+            cursor.execute(
+                sql.SQL("REVOKE ALL ON core.hr_employee_name FROM {}").format(sql.Identifier(analytics_role))
+            )
             cursor.execute(
                 sql.SQL("ALTER DEFAULT PRIVILEGES IN SCHEMA core GRANT SELECT ON TABLES TO {}").format(
                     sql.Identifier(analytics_role)
