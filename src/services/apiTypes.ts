@@ -1881,6 +1881,14 @@ export interface StaffingJobResponse {
  * HrDashboard site staffing for one week. Hires and separations happened in the week; the rest is how
  * the site stood when HR last answered during that week, null before the first pull that week.
  */
+/** GET /staffing/sites: the week's HrDashboard figures for each job of an account (nulls where HR has none). */
+export interface StaffingSitesResponse {
+  account: string
+  week: string
+  configured: boolean
+  sites: (Omit<HrSiteStaffingWeek, 'configured' | 'week_start'> & { company: string; job_number: string; week_start: string | null })[]
+}
+
 export interface HrSiteStaffingWeek {
   /** HR_BASE_URL and HR_EXPORT_TOKEN are set. */
   configured: boolean

@@ -4,7 +4,7 @@
  * labeled demo. Actions that would change data are not available in demo mode.
  */
 import { ApiError, type LiveApi } from './api'
-import { demoLeadershipConfig, demoLeadershipMonthly, demoLeadershipRows, demoLeadershipSite, demoLeadershipVendors, demoStaffingJob } from './demoLeadership'
+import { demoLeadershipConfig, demoLeadershipMonthly, demoLeadershipRows, demoLeadershipSite, demoLeadershipVendors, demoStaffingJob, demoStaffingSites } from './demoLeadership'
 
 export type DashboardApi = LiveApi
 
@@ -36,6 +36,7 @@ export function createDemoApi(options: DemoApiOptions = {}): DashboardApi {
     leadershipRows: (query, signal) => settle(() => demoLeadershipRows(query), signal),
     leadershipSite: (company, jobNumber, query, signal) => settle(() => demoLeadershipSite(company, jobNumber, query), signal),
     staffingJob: (company, jobNumber, query, signal) => settle(() => demoStaffingJob(company, jobNumber, query), signal),
+    staffingSites: (account, query, signal) => settle(() => demoStaffingSites(account, query), signal),
     leadershipVendors: (account, _months, signal) => settle(() => demoLeadershipVendors(account), signal),
     fedexInvoices: (query, signal) => settle(() => ({ ...query, as_of: null, rows: [],
       totals: { invoices: 0, revenue: 0, invoice_total: 0, vendor_cost: 0, margin: null, margin_pct: null, vendors: 0, sites: 0, without_payable: 0, crane_payables: 0 } }), signal),

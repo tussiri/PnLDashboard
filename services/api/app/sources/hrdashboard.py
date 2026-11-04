@@ -307,6 +307,43 @@ def status() -> dict[str, Any]:
     }
 
 
+# One row per job of an account for one week, on job_week's rule below, except that the positions,
+# filled, open and headcount show even in a week HR sent nothing for, from a week up to eight away. A job is matched to HR by its
+# job key, else by WinTeam database and job number (an HR row whose key did not resolve still shows).
+ACCOUNT_SITES_SQL = """
+WITH jobs AS (
+  SELECT aj.company, aj.job_number,
+         (SELECT w.job_key FROM mart.leadership_week w WHERE w.company = aj.company AND w.job_number = aj.job_number
+          ORDER BY w.week_start DESC LIMIT 1) AS job_key
+  FROM ops.account_job aj
+  WHERE aj.account_slug = %(account)s
+),
+hr AS (
+  SELECT j.company, j.job_number, x.*
+  FROM jobs j
+  JOIN core.hr_site_staffing_week x
+    ON x.job_key = j.job_key OR (x.winteam_company = j.company AND x.winteam_job_number = j.job_number)
+)
+SELECT j.company, j.job_number, w.week_start, w.hires, w.separations, s.budgeted_positions, s.positions_source,
+       s.filled_positions, s.open_positions, s.active_headcount, s.headcount_source,
+       coalesce(s.hr_as_of, w.hr_as_of) AS hr_as_of, s.week_start AS state_week
+FROM jobs j
+LEFT JOIN hr w ON w.company = j.company AND w.job_number = j.job_number AND w.week_start = %(week)s
+LEFT JOIN LATERAL (
+    SELECT x.week_start, x.budgeted_positions, x.positions_source, x.filled_positions, x.open_positions,
+           x.active_headcount, x.headcount_source, x.hr_as_of
+    FROM hr x
+    WHERE x.company = j.company AND x.job_number = j.job_number
+      AND (x.budgeted_positions IS NOT NULL OR x.filled_positions IS NOT NULL
+           OR x.open_positions IS NOT NULL OR x.active_headcount IS NOT NULL)
+      AND abs(x.week_start - %(week)s::date) <= 56
+    ORDER BY x.week_start > %(week)s, abs(x.week_start - %(week)s::date)
+    LIMIT 1
+) s ON true
+ORDER BY j.company, j.job_number
+"""
+
+
 def job_week(cursor: Any, job_key: int, week_start: date) -> dict[str, Any] | None:
     """The held row for one site and week, as the staffing route serves it; None when HR has none.
 

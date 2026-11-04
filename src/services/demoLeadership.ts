@@ -7,7 +7,7 @@
 import fixture from '../leadership/fixtures/plano-we-2026-09-20.json'
 import type {
   LeadershipAccount, LeadershipRole, LeadershipConfig, LeadershipRow, LeadershipRowsQuery, LeadershipRowsResponse, LeadershipSiteResponse, LeadershipVendorsResponse, LeadershipWeek, SourceBlock, LeadershipMonthlyResponse,
-  StaffingJobResponse, StaffingRequestLine,
+  StaffingJobResponse, StaffingRequestLine, StaffingSitesResponse,
 } from './apiTypes'
 
 export const DEMO_LEADERSHIP_WEEK = '2026-09-14'
@@ -167,6 +167,18 @@ export function demoStaffingJob(company: string, jobNumber: string, query: { wee
   const hr = { configured: true, week_start: week, hires: Math.round(2 * k), separations: Math.round(k), budgeted_positions: positions, positions_source: 'tracker' as const,
     filled_positions: positions - 1, open_positions: 1, active_headcount: positions - 1, headcount_source: 'employee_master' as const, hr_as_of: week, state_week: week }
   return { source, configured: true, as_of: '2026-09-21T06:00:00Z', week, requested_headcount: sum('posted'), pending_requested_headcount: sum('submitted'), lines, hr }
+}
+
+/** Demo HR staffing for an account's sites: the drawer's demo figures for each site of the demo week. */
+export function demoStaffingSites(account: string, query: { week?: string } = {}): StaffingSitesResponse {
+  const week = query.week ? mondayOf(query.week) : DEMO_LEADERSHIP_WEEK
+  const jobs = new Map<string, { company: string; job_number: string }>()
+  for (const r of demoLeadershipRows({ account }).rows) if (r.company) jobs.set(`${r.company}|${r.job_number}`, { company: r.company, job_number: r.job_number })
+  const sites = [...jobs.values()].map(({ company, job_number }) => {
+    const { configured: _, ...hr } = demoStaffingJob(company, job_number, { week }).hr!
+    return { company, job_number, ...hr, week_start: hr.week_start ?? null }
+  })
+  return { account, week, configured: true, sites }
 }
 
 /** Demo months: none. The monthly views show their empty state on demo data. */

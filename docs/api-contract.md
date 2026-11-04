@@ -597,6 +597,7 @@ the site stood when HR last answered during that week, and a pull never replaces
 | Route | Response |
 |---|---|
 | `GET /staffing/jobs/{company}/{job_number}?week=` | adds `hr: HrSiteStaffingWeek`; `{configured}` alone when HR holds nothing for the site and week. |
+| `GET /staffing/sites?account=&week=` (tab.sites, account in scope) | `{account, week, configured, sites: [{company, job_number} + HrSiteStaffingWeek fields]}`: one entry per job of the account, nulls where HR has nothing. Positions, filled, open and headcount come from the nearest week HR reported them, up to 8 weeks away, even when HR sent nothing for the week itself. Added 2026-11-04 for the Sites table's Staffed and Open columns; no people and no pay, so it is not behind data.staffing. 404 for an unknown slug. |
 | `GET /integrations/hr` | `{configured, names_configured, employee_names, base_url_host, last_run: {status, completed_at, records_inserted, error_message} \| null, rows, sites, unmapped_sites, latest_week}`. Never returns the token. |
 | `POST /integrations/hr/sync` (admin) | `{status: 'succeeded', fetched, loaded, skipped, names?: {status, fetched, loaded, skipped}}`, `names` when `HR_NAMES_TOKEN` is set; 409 when not configured, 502 when HR refuses or answers with no mapped rows. |
 
