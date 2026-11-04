@@ -19,6 +19,7 @@ import { BusinessUnit, SitesOverBudget } from './BusinessUnit'
 import { HoursToCut } from './HoursToCut'
 import { OverTarget } from './OverTarget'
 import { IncomeStatementTab, PalletTab, SubcontractedTab } from './ReportViews'
+import { FedexInvoices } from './FedexInvoices'
 import { Sites } from './Sites'
 import { isBuReport, tabLabel, tabsFor, vocabOf } from '../vocab'
 import { FiscalHero } from '../FiscalHero'
@@ -142,7 +143,9 @@ export function Account() {
   const navTabs = amazonWeek ? [...lead.filter((t) => tabs.includes(t)), ...tabs.filter((t) => !lead.includes(t))] : tabs
   const vocab = vocabOf(account)
   let body
-  if (rowsQuery.error) body = <LoadError error={rowsQuery.error} onRetry={rowsQuery.refetch} />
+  // The FedEx invoices are Relay's, by date range: they need neither the week's rows nor a built week.
+  if (tab === 'invoices' && account && tabs.includes(tab)) body = <FedexInvoices account={account} />
+  else if (rowsQuery.error) body = <LoadError error={rowsQuery.error} onRetry={rowsQuery.refetch} />
   else if (!rowsQuery.data || !account) body = <Skeleton height={360} />
   else if (tab === 'vendors') body = <Vendors account={account} />
   else if (tab === 'feedback' && tabs.includes(tab)) body = <Feedback account={account} />
@@ -165,7 +168,7 @@ export function Account() {
   else if (tab === 'overtime') body = <OvertimeTab account={account} summary={summary} />
   else body = <Suspense fallback={<Skeleton height={520} />}><SiteMap account={account} summary={summary} /></Suspense>
   const basis = options.invoiceBasis ?? 'last_month'
-  const basisControl = !monthMode && account?.revenue_method !== 'weekly_billing' && tab !== 'vendors' && tab !== 'feedback' && tab !== 'budget' && tab !== 'subcontracted' && tab !== 'income-statement' && <>
+  const basisControl = !monthMode && account?.revenue_method !== 'weekly_billing' && tab !== 'vendors' && tab !== 'invoices' && tab !== 'feedback' && tab !== 'budget' && tab !== 'subcontracted' && tab !== 'income-statement' && <>
     <label htmlFor="basis">Invoice basis</label>
     <select id="basis" value={basis} onChange={(e) => navigate({ basis: e.target.value === account?.invoice_basis ? undefined : e.target.value as InvoiceBasis }, { replace: true })}>
       <option value="run_rate_3m">3-month run rate</option><option value="latest_fixed_avg_variable">Latest fixed + avg variable</option>
@@ -177,7 +180,7 @@ export function Account() {
   return <VocabContext.Provider value={vocab}>
     <PageHeader title={account ? `${account.name} Labor P&L` : 'Account'} subtitle={subtitle} period
       defaultTarget={weekBudget && route.target == null && options.target !== optionsFor(account).target ? options.target : undefined}
-      extra={<>{basisControl}{subcontracted > 0 && tab !== 'vendors' && tab !== 'feedback' && tab !== 'budget' && <label className="check"><input type="checkbox" checked={selfOnly}
+      extra={<>{basisControl}{subcontracted > 0 && tab !== 'vendors' && tab !== 'invoices' && tab !== 'feedback' && tab !== 'budget' && <label className="check"><input type="checkbox" checked={selfOnly}
         onChange={(e) => navigate({ selfOnly: e.target.checked || undefined }, { replace: true })} />Hide {subcontracted} subcontracted</label>}
         {!monthMode && (budgetWeeks?.some((x) => x.holiday > 0) ?? false) && <label className="check"><input type="checkbox" checked={payHolidays}
           onChange={(e) => navigate({ payHolidays: e.target.checked || undefined }, { replace: true })} />Pay stat holidays</label>}</>} />

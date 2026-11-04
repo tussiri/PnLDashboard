@@ -14,7 +14,7 @@ Keys
     view.analytics      the Portfolio pages (route #/portfolio; the key keeps its first name)
     view.reporting      the reporting, labor and forecast routes and the platform reads (sync runs, sources)
     tab.<account tab>   an account tab (sites, pallet, over-target, overtime, income-statement,
-                        subcontracted, map, vendors, feedback, budget); Overview is always open
+                        subcontracted, map, vendors, invoices, feedback, budget); Overview is always open
     data.allocations    corporate allocations and margin after allocations
     data.month          the month-end rollup (the Week / Month switch)
     data.staffing       staffing requests on the site drawer
@@ -47,6 +47,7 @@ CATALOG: tuple[tuple[str, str, str], ...] = (
     ("tab.subcontracted", "Account tabs", "Subcontracted"),
     ("tab.map", "Account tabs", "Map"),
     ("tab.vendors", "Account tabs", "Vendors"),
+    ("tab.invoices", "Account tabs", "FedEx invoices"),
     ("tab.feedback", "Account tabs", "Feedback"),
     ("tab.budget", "Account tabs", "Budget"),
     ("data.allocations", "Data", "Allocations and margin"),

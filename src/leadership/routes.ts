@@ -9,6 +9,7 @@
  *   #/account/plano-isd?period=month&month=2026-09&compare=2026-06   (September against June)
  *   #/admin/imports
  *   #/labor?from=2026-10-26&to=2026-11-01&show=punches&job=Crane%20West~500&q=smith
+ *   #/account/fedex/invoices?from=2026-10-01&to=2026-10-31&by=service   (FedEx invoices from Relay)
  *
  * `week` is the week-ending Sunday the views display (the API maps any date to its Monday week);
  * `target` is a percentage (64.5) and overrides the account target while present.
@@ -17,7 +18,7 @@
 /** company: the landing page. analytics: the Portfolio pages (#/portfolio; #/analytics still opens them). */
 import type { InvoiceBasis } from '../services/apiTypes'
 export type View = 'company' | 'account' | 'analytics' | 'admin' | 'labor'
-export const ACCOUNT_TABS = ['overview', 'bu', 'compare', 'sites', 'pallet', 'over-target', 'overtime', 'over-budget', 'income-statement', 'subcontracted', 'map', 'vendors', 'feedback', 'budget'] as const
+export const ACCOUNT_TABS = ['overview', 'bu', 'compare', 'sites', 'pallet', 'over-target', 'overtime', 'over-budget', 'income-statement', 'subcontracted', 'map', 'vendors', 'invoices', 'feedback', 'budget'] as const
 export type AccountTab = (typeof ACCOUNT_TABS)[number]
 export const ADMIN_TABS = ['accounts', 'jobs', 'regions', 'budgets', 'calendars', 'allocations', 'overhead', 'adjustments', 'contracts', 'imports', 'mailbox', 'data', 'users'] as const
 export const ANALYTICS_TABS = ['accounts', 'units'] as const
@@ -59,6 +60,8 @@ export interface Route {
   to?: string
   show?: 'punches' | 'sites'
   job?: string
+  /** FedEx invoices: the range is of service months, not invoice dates. */
+  invoiceBy?: 'service'
   /** Account overview: weeks in the trend (TREND_WEEKS_DEFAULT when absent). */
   trendWeeks?: number
 }
@@ -114,6 +117,12 @@ export function parseRoute(hash: string): Route {
     if (value) route[key] = value
   }
   if (route.region && params.get('subregion')) route.subregion = params.get('subregion')!
+  if (route.view === 'account' && route.tab === 'invoices') {
+    const from = params.get('from'), to = params.get('to')
+    if (from && ISO.test(from)) route.from = from
+    if (to && ISO.test(to)) route.to = to
+    if (params.get('by') === 'service') route.invoiceBy = 'service'
+  }
   if (route.view === 'account' && params.get('delivery') === 'self') route.selfOnly = true
   if (route.view === 'account' && params.get('hol') === 'paid') route.payHolidays = true
   const tw = Number(params.get('tw'))
@@ -151,6 +160,11 @@ export function formatRoute(route: Route): string {
   if ((route.view === 'analytics' || route.view === 'account') && route.region) {
     params.set('region', route.region)
     if (route.subregion) params.set('subregion', route.subregion)
+  }
+  if (route.view === 'account' && route.tab === 'invoices') {
+    if (route.from) params.set('from', route.from)
+    if (route.to) params.set('to', route.to)
+    if (route.invoiceBy) params.set('by', route.invoiceBy)
   }
   if (route.view === 'account' && route.selfOnly) params.set('delivery', 'self')
   if (route.view === 'account' && route.payHolidays) params.set('hol', 'paid')
