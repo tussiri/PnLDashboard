@@ -98,6 +98,11 @@ export function Sites({ account, summary, options, selfOnly, ratings }: { accoun
     { key: 'job', header: 'Job', left: true, value: (r) => Number(r.job_number) || r.job_number, render: (r) => <>{r.job_number}{(r.kids?.length ?? 1) > 1 && <span className="neutral"> +{r.kids!.slice(1).join(',')}</span>}</> },
     { key: 'name', header: 'Site', left: true, value: (r) => r.site_name, className: 'nm', render: (r) => <>{r.site_name}{r.labor > 0 && r.labor_basis === 'trailing_rate_estimate' && <span className="warn"> ~</span>}</> },
     ...(hasRegions ? [{ key: 'reg', header: 'Region', left: true, value: (r: Row) => `${regionOf(r)} ${subregionOf(r)}`, render: (r: Row) => <>{regionOf(r)} <span className="neutral">{subregionOf(r)}</span></>, csv: (r: Row) => `${regionOf(r)} / ${subregionOf(r)}` }] : []),
+    ...(hrShown ? [
+      { key: 'staff', header: 'Staffed', value: (r: Row) => fillOf(staffedRow(r)), render: staffedCell,
+        csv: (r: Row) => { const x = staffedRow(r); return x ? `${x.filled ?? ''}/${x.positions ?? ''}` : '' } },
+      { key: 'open', header: 'Open', value: (r: Row) => staffedRow(r)?.open ?? null, render: (r: Row) => staffedRow(r)?.open ?? '' },
+    ] : []),
     ...(hasVariable ? [
       { key: 'fix', header: 'Fixed inv', value: fixed, render: (r: Row) => money(fixed(r)) },
       { key: 'var', header: 'Var inv', value: (r: Row) => variableWk(r, options), render: (r: Row) => (variableWk(r, options) ? money(variableWk(r, options)) : '–') },
@@ -117,11 +122,6 @@ export function Sites({ account, summary, options, selfOnly, ratings }: { accoun
       { key: 'alloc', header: 'Alloc $', value: (r: Row) => r.allocation, render: (r: Row) => <span className="neutral">{money(r.allocation)}</span> },
       { key: 'mgn', header: 'Margin', value: (r: Row) => r.margin, render: (r: Row) => <span className={r.margin < 0 ? 'bad' : ''}>{money(r.margin)}</span> },
     ] : []),
-    ...(hrShown ? [
-      { key: 'staff', header: 'Staffed', value: (r: Row) => fillOf(staffedRow(r)), render: staffedCell,
-        csv: (r: Row) => { const x = staffedRow(r); return x ? `${x.filled ?? ''}/${x.positions ?? ''}` : '' } },
-      { key: 'open', header: 'Open', value: (r: Row) => staffedRow(r)?.open ?? null, render: (r: Row) => staffedRow(r)?.open ?? '' },
-    ] : []),
     { key: 'hrs', header: 'Hours', value: (r) => r.hours, render: (r) => hours1(r.hours) },
     { key: 'oth', header: 'OT hrs', value: (r) => r.ot_hours, render: (r) => hours1(r.ot_hours) },
     { key: 'otp', header: 'OT %', value: (r) => r.otPct, render: (r) => <span className={r.otPct > 0.25 ? 'bad' : r.otPct > 0.15 ? 'warn' : ''}>{pct(r.otPct)}</span> },
@@ -140,12 +140,12 @@ export function Sites({ account, summary, options, selfOnly, ratings }: { accoun
   const staffedCount = staffedRows.length
   const hrTotal = (list: Staffed[], f: (x: Staffed) => number | null) => (list.some((x) => f(x) != null) ? list.reduce((a, x) => a + (f(x) ?? 0), 0) : '–')
   const tot = <tr className="tot"><td></td><td className="l">Total ({rows.length})</td>{hasRegions && <td></td>}
+    {hrShown && <><td title={`${staffedCount} of ${selfCount} self-performed sites in HR`}>{hrTotal(staffedRows, (x) => x.filled)} / {hrTotal(staffedRows, (x) => x.positions)}</td><td>{hrTotal(staffedRows, (x) => x.open)}</td></>}
     {hasVariable && <><td>{money(sum(fixed))}</td><td>{money(sum((r) => variableWk(r, options)))}</td></>}
     <td>{money(s.invoice)}</td><td>{money(sum(directOf))}</td>{hasPallet && <td>{money(sum(palletOf))}</td>}{vendor && <td>{money(s.vendor)}</td>}<td>{money(s.cost)}</td>
     <td className={toneOf(statusOf(s.measurePct, options.target, options.watchBand))}>{pct(s.measurePct)}</td>{Array.from({ length: priorCols }, (_, i) => <td key={i} />)}
     <td className="neutral">{money(sum(budget))}</td><td className={totalVar > 0 ? 'bad' : 'ok'}>{money(totalVar)}</td>
     {allocated && <><td className="neutral">{money(s.allocation)}</td><td className={s.margin < 0 ? 'bad' : ''}>{money(s.margin)}</td></>}
-    {hrShown && <><td title={`${staffedCount} of ${selfCount} self-performed sites in HR`}>{hrTotal(staffedRows, (x) => x.filled)} / {hrTotal(staffedRows, (x) => x.positions)}</td><td>{hrTotal(staffedRows, (x) => x.open)}</td></>}
     <td>{hours1(s.hours)}</td><td>{hours1(s.otHours)}</td><td>{pct(s.otPct)}</td><td>{hours1(sum((r) => r.overHours))}</td>{ratings?.length ? <td></td> : null}<td></td></tr>
   return <>
     <div className="ctrl" style={{ marginBottom: 12 }}>
