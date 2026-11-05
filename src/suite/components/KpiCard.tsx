@@ -24,15 +24,15 @@ export function KpiCard({ label, value, delta = null, deltaUnit = 'pct', deltaLa
   const hasDelta = delta !== null && delta !== undefined && !Number.isNaN(delta)
   const good = !hasDelta || delta === 0 || favorable === 'none' ? null : favorable === 'up' ? delta > 0 : delta < 0
   const Icon = !hasDelta || delta === 0 ? Minus : delta > 0 ? ArrowUpRight : ArrowDownRight
-  const deltaText = hasDelta ? `${Math.abs(delta).toFixed(1)}${deltaUnit === 'pts' ? ' pts' : '%'}` : 'n/a'
+  const deltaText = hasDelta ? `${Math.abs(delta).toFixed(1)}${deltaUnit === 'pts' ? ' pts' : '%'}` : ''
   const Tag = onClick ? 'button' : 'article'
   return (
     <Tag className={`kpi-card ${onClick ? 'kpi-card--clickable' : ''}`} onClick={onClick} type={onClick ? 'button' : undefined}>
       <div className="kpi-card__top">
         <span>{label}</span>
-        <span className={`delta ${good === null ? '' : good ? 'delta--good' : 'delta--bad'}`} title={hasDelta ? `${deltaLabel}` : 'No prior-range comparison available'}>
+        {hasDelta && <span className={`delta ${good === null ? '' : good ? 'delta--good' : 'delta--bad'}`} title={deltaLabel}>
           <Icon size={13} aria-hidden="true" /> {deltaText}
-        </span>
+        </span>}
       </div>
       <strong className="num">{value}</strong>
       <div className="kpi-card__bottom">

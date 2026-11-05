@@ -369,7 +369,7 @@ export function RevenueMarginChart({ labels, revenue, marginPct, closed }: { lab
     { type: 'line' as const, label: 'Gross margin %', data: marginPct.map((v) => (v == null ? null : v * 100)), borderColor: t.ok, backgroundColor: t.ok, borderWidth: 2, pointRadius: 3, yAxisID: 'y1', order: 1, spanGaps: false },
   ] } as unknown as ChartData<'bar'>
   const options = { ...o, interaction: { mode: 'index', intersect: false },
-    scales: { x: { ...o.scales!.x, grid: { display: false } }, y: { ...o.scales!.y, beginAtZero: true, ticks: { color: t.text2, callback: (v: number | string) => `$${(Number(v) / 1e6).toFixed(1)}M` } },
+    scales: { x: { ...o.scales!.x, grid: { display: false } }, y: { ...o.scales!.y, beginAtZero: true, ticks: { color: t.text2, callback: (v: number | string) => { const n = Math.abs(Number(v)); return n >= 1e6 ? `$${(Number(v) / 1e6).toFixed(1)}M` : `$${Math.round(Number(v) / 1e3)}K` } } },
       y1: { position: 'right', grid: { display: false }, ticks: { color: t.text2, callback: (v: number | string) => `${v}%` } } },
     plugins: { ...o.plugins, tooltip: { ...o.plugins!.tooltip, callbacks: { label: (c: { dataset: { label?: string; yAxisID?: string }; parsed: { y: number | null } }) =>
       c.dataset.yAxisID === 'y1' ? `${c.dataset.label}: ${c.parsed.y == null ? '–' : `${c.parsed.y.toFixed(1)}%`}` : `${c.dataset.label}: ${money(c.parsed.y)}` } } } } as unknown as ChartOptions<'bar'>
@@ -382,7 +382,7 @@ export function StackedMoneyChart({ labels, series }: { labels: string[]; series
   const o = base(t)
   const data = { labels, datasets: series.map((s) => ({ label: s.label, data: s.data, backgroundColor: s.color, stack: 'a', ...bar, borderRadius: 0 })) }
   const options: ChartOptions<'bar'> = { ...o, interaction: { mode: 'index', intersect: false },
-    scales: { x: { ...o.scales!.x, stacked: true, grid: { display: false } }, y: { ...o.scales!.y, stacked: true, ticks: { color: t.text2, callback: (v) => `$${(Number(v) / 1e6).toFixed(1)}M` } } },
+    scales: { x: { ...o.scales!.x, stacked: true, grid: { display: false } }, y: { ...o.scales!.y, stacked: true, ticks: { color: t.text2, callback: (v: number | string) => { const n = Math.abs(Number(v)); return n >= 1e6 ? `$${(Number(v) / 1e6).toFixed(1)}M` : `$${Math.round(Number(v) / 1e3)}K` } } } },
     plugins: { ...o.plugins, tooltip: { ...o.plugins!.tooltip, callbacks: { label: (c) => `${c.dataset.label}: ${money(c.parsed.y)}` } } } }
   return <Bar data={data} options={options} aria-label={`${series.map((s) => s.label).join(', ')} by month`} role="img" />
 }
