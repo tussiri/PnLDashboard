@@ -19,7 +19,7 @@
 /** company: the landing page. analytics: the Portfolio pages (#/portfolio; #/analytics still opens them). */
 import type { InvoiceBasis } from '../services/apiTypes'
 export type View = 'company' | 'account' | 'analytics' | 'admin' | 'labor'
-export const ACCOUNT_TABS = ['overview', 'bu', 'compare', 'sites', 'pallet', 'over-target', 'overtime', 'over-budget', 'income-statement', 'subcontracted', 'map', 'vendors', 'invoices', 'feedback', 'budget'] as const
+export const ACCOUNT_TABS = ['overview', 'bu', 'compare', 'sites', 'pallet', 'over-target', 'overtime', 'over-budget', 'income-statement', 'subcontracted', 'map', 'directory', 'vendors', 'invoices', 'feedback', 'budget'] as const
 export type AccountTab = (typeof ACCOUNT_TABS)[number]
 export const ADMIN_TABS = ['accounts', 'jobs', 'regions', 'budgets', 'calendars', 'allocations', 'overhead', 'adjustments', 'contracts', 'imports', 'mailbox', 'data', 'users'] as const
 export const ANALYTICS_TABS = ['accounts', 'units'] as const

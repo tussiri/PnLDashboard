@@ -683,6 +683,7 @@ separate and unchanged.
 | `tab.sites`, `tab.pallet`, `tab.over-target`, `tab.overtime`, `tab.income-statement`, `tab.subcontracted`, `tab.map` | – | the account tab |
 | `tab.vendors` | – | `403` on `GET /leadership/vendors`; the Vendors tab |
 | `tab.invoices` | – | `403` on `GET /leadership/fedex-invoices`; the FedEx invoices tab |
+| `tab.directory` | – | `403` on `GET /leadership/directory`; the Directory tab |
 | `data.allocations` | – | `alloc_management`, `alloc_burden`, `alloc_overhead` are dropped from the rows of `/leadership/rows`, `/leadership/month` and `/leadership/sites/…`; margin is hidden |
 | `data.month` | – | `403` on `GET /leadership/month`; the Week / Month switch |
 | `data.staffing` | executive | `403` on `GET /staffing/jobs/…`; the staffing card |
@@ -741,6 +742,16 @@ hours), `ot_premium` (a third of OT pay), `started` / `stopped` (a site with hou
 | Route | Response |
 |---|---|
 | `GET /leadership/week-change?account=&week=` | Account scope. `{account, complete, week, prior_week, current, prior, change, change_pct, effects, site_count, sites: [up to 25 largest, {company, job_number, site_name, role, segment, prior, current, change, hours_prior, hours_current, ot_hours_prior, ot_hours_current, employees_prior, employees_current, days_prior, days_current, basis_prior, basis_current, effects}], source_changes: {sites, change, transitions}, groups: [{group, change, hours}], recent: [{week, cost, labor, vendor, hours, ot_hours, ot_premium, sites_with_labor}], average_prior, vs_average_pct, prior_vs_average_pct, holidays: {current, prior}, summary}`. `summary`: `{status: off \| none \| pending \| ready \| failed, stale, model, generated_at, error, summary: {headline, drivers: [{title, detail, tone: increase \| decrease \| data, sites}], check_next, served_by}}`: Claude's reading of the facts, cached in `ops.week_change_summary` under a digest of them and rebuilt only when they change; `off` without `ANTHROPIC_API_KEY`, `none` for a week in progress. The nightly run warms the latest complete week of each featured account. |
+
+## Account directory, added 2026-11-05
+
+Every site mapped to an account as WinTeam's job list has it, including sites with no labor yet, which the
+week's rows leave out. Hours only, from the synced timekeeping; no pay. Migration 065 maps the Apple stores into
+`apple-retail` by job name and sets their delivery model from the WinTeam service tier.
+
+| Route | Rule |
+|---|---|
+| `GET /leadership/directory?account=` | Permission `tab.directory`; `403` for an account the user may not see, `404` for an unknown one. `{account, as_of, totals: {sites, active, self_perform, subcontracted, unassigned, working, hours_28d, employees_28d}, sites: [{company, job_number, code, name, address_line_1, address_line_2, city, state, postal_code, latitude, longitude, region, market, manager, service_tier, delivery, start_date, active, hours_28d, employees_28d, last_punch}]}`. `code` and `name` come from the job name: `Apple - R550 - Valley Plaza` is `R550` and `Valley Plaza`. `delivery` is `self_perform`, `subcontracted` or null. The 28 days end today. `working` counts sites with hours in them; `employees_28d` in totals counts each employee once. |
 
 ## Labor hours report, added 2026-11-03
 

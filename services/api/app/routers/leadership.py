@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field
 from .. import allocations, accounts, company_pl, companycam, imports, marts
 from .. import month as month_module
 from .. import budget as budget_module
-from .. import budget_file, fedex_invoices, feedback_ai, mail_inbox, permissions, week_changes
+from .. import budget_file, directory, fedex_invoices, feedback_ai, mail_inbox, permissions, week_changes
 from .. import school_calendar
 from ..common import allowed_accounts, current_user, jsonable, refresh_gate, require_account, require_admin, source_block
 from ..db import connection
@@ -1449,6 +1449,18 @@ def leadership_fedex_invoices(account: str = Query(..., description="An account 
         if row["vocabulary"] != "fedex":
             raise HTTPException(status_code=404, detail="Relay invoices exist only for FedEx")
         return jsonable({"account": account, **fedex_invoices.report(cursor, date_from, date_to, basis)})
+
+
+@router.get("/directory", dependencies=[Depends(permissions.require_permission("tab.directory"))])
+def leadership_directory(account: str = Query(..., description="An account slug"), request: Request = None) -> dict[str, Any]:  # type: ignore[assignment]
+    """Every site mapped to an account as WinTeam lists it, worked or not (app/directory.py)."""
+    if request is not None:
+        require_account(request, account)
+    with connection() as conn, conn.cursor() as cursor:
+        cursor.execute("SELECT 1 FROM ops.account WHERE slug = %s", (account,))
+        if cursor.fetchone() is None:
+            raise HTTPException(status_code=404, detail=f"Unknown account {account!r}")
+        return jsonable({"account": account, **directory.report(cursor, account)})
 
 
 @router.get("/vendors", dependencies=[Depends(permissions.require_permission("tab.vendors"))])
