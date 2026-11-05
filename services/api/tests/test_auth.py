@@ -167,7 +167,7 @@ def login(client: TestClient, role: str) -> None:
     client.cookies.clear()
     response = client.post("/api/v1/auth/login", json={"username": role, "password": f"dev-{role}"})
     assert response.status_code == 200, response.text
-    assert response.json()["user"] == {"username": role, "role": role, "role_name": roles.name(role), "accounts": None, "permissions": permissions.ROLE_DEFAULTS[role]}
+    assert response.json()["user"] == {"username": role, "role": role, "role_name": roles.name(role), "accounts": None, "permissions": permissions.ROLE_DEFAULTS[role], "super_admin": False}
     assert COOKIE_NAME in response.cookies
 
 
@@ -182,7 +182,7 @@ def test_login_logout_me_and_cookie_flags() -> None:
     login(client, "analyst")
     set_cookie = client.post("/api/v1/auth/login", json={"username": "analyst", "password": "dev-analyst"}).headers["set-cookie"].lower()
     assert "httponly" in set_cookie and "samesite=lax" in set_cookie and "secure" not in set_cookie and f"max-age={SESSION_TTL_SECONDS}" in set_cookie
-    assert client.get("/api/v1/auth/me").json()["user"] == {"username": "analyst", "role": "analyst", "role_name": "Analyst", "accounts": None, "permissions": permissions.ROLE_DEFAULTS["analyst"]}
+    assert client.get("/api/v1/auth/me").json()["user"] == {"username": "analyst", "role": "analyst", "role_name": "Analyst", "accounts": None, "permissions": permissions.ROLE_DEFAULTS["analyst"], "super_admin": False}
     assert client.post("/api/v1/auth/logout").json() == {"ok": True}
     client.cookies.clear()
     assert client.get("/api/v1/auth/me").status_code == 401

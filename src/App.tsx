@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react'
 import { LoginPage } from './auth/LoginPage'
 import { NO_ACCESS, type AuthUser } from './auth/roles'
 import { AuthProvider, useAuth } from './auth/useAuth'
@@ -10,12 +11,16 @@ import { Shell } from './leadership/Shell'
 import { LeadershipProvider, useLeadership } from './leadership/state'
 import { Skeleton } from './leadership/ui'
 
+/** The analytics suite is its own chunk: only a super administrator's browser ever requests it. */
+const Suite = lazy(() => import('./suite/Suite'))
+
 function Page() {
-  const { route, config, decision, user, can, unlimited } = useLeadership()
+  const { route, config, decision, user, can, unlimited, superAdmin } = useLeadership()
   if (!decision || (!config.data && !config.error)) return <Skeleton height={420} />
   // Company (the landing page) and Portfolio cover every account: a user limited to some accounts, or without
   // the permission, lands on their account instead.
   if (route.view === 'company' && unlimited && can('view.company')) return <Company />
+  if (route.view === 'analytics' && route.suite && superAdmin) return <Suspense fallback={<Skeleton height={420} />}><Suite /></Suspense>
   if (route.view === 'analytics' && unlimited && can('view.analytics')) return <Analytics />
   if (route.view === 'admin') return <Admin />
   if (route.view === 'labor' && can('report.labor-hours')) return <LaborHours />

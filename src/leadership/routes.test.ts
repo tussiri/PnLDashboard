@@ -18,6 +18,9 @@ describe('leadership routes', () => {
       { view: 'account', account: 'fedex', tab: 'sites', period: 'month', month: '2026-08' },
       { view: 'account', account: 'plano-isd', tab: 'overview', period: 'month', month: '2026-09', compare: '2026-06' },
       { view: 'analytics', analyticsTab: 'units', week: '2026-09-20' },
+      { view: 'analytics', suite: { group: 'finance' } },
+      { view: 'analytics', suite: { group: 'finance', page: 'revenue' }, week: '2026-09-20' },
+      { view: 'analytics', suite: { group: 'operations', page: 'jobs', job: '800' } },
     ]
     for (const route of routes) expect(parseRoute(formatRoute(route))).toEqual(route)
   })
@@ -26,6 +29,7 @@ describe('leadership routes', () => {
     expect(formatRoute({ view: 'company', account: 'plano-isd', week: '2026-09-20', target: 64.5 })).toBe('#/company?account=plano-isd&week=2026-09-20&target=64.5')
     expect(formatRoute({ view: 'account', account: 'plano-isd', tab: 'over-target' })).toBe('#/account/plano-isd/over-target')
     expect(formatRoute({ view: 'admin', adminTab: 'accounts', week: '2026-09-20' })).toBe('#/admin')
+    expect(formatRoute({ view: 'analytics', suite: { group: 'operations', page: 'jobs', job: '800' } })).toBe('#/portfolio/operations/jobs/800')
   })
 
   it('falls back safely on unknown or malformed input', () => {
@@ -33,6 +37,9 @@ describe('leadership routes', () => {
     expect(parseRoute('#/overview')).toEqual({ view: 'company' })
     expect(parseRoute('#/account/amazon/nonsense?week=Sept&target=abc')).toEqual({ view: 'account', account: 'amazon', tab: 'overview' })
     expect(parseRoute('#/admin/unknown')).toEqual({ view: 'admin', adminTab: 'accounts' })
+    expect(parseRoute('#/portfolio/unknown/revenue')).toEqual({ view: 'analytics' })
+    expect(parseRoute('#/portfolio/finance?q=x&status=over').suite).toEqual({ group: 'finance' })
+    expect(parseRoute('#/analytics/operations/jobs/800').suite).toEqual({ group: 'operations', page: 'jobs', job: '800' })
     expect(parseRoute('#/company?site=noseparator').site).toBeUndefined()
     expect(parseRoute('#/account/amazon?compare=2026-06').compare).toBeUndefined()
     expect(parseRoute('#/account/amazon?period=month&compare=June').compare).toBeUndefined()
