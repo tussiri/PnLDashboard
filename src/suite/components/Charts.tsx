@@ -47,17 +47,17 @@ export function MarginScatter({ jobs, onSelect, target = 25, highlight, onHover 
   const ys = data.map((d) => d.y)
   const lo = Math.max(MIN_Y, Math.floor(Math.min(target ?? 25, ...ys) / 5) * 5 - 5), hi = Math.min(MAX_Y, Math.ceil(Math.max(target ?? 25, ...ys) / 5) * 5 + 5)
   const color = (job: JobRow) => (job.status === 'Critical' ? series.bad : job.status === 'Watch' ? series.warn : series.primary)
-  return <ResponsiveContainer width="100%" height="100%"><ScatterChart margin={{ top: 10, right: 16, bottom: 4, left: 0 }}>
+  return <div className="chart-captioned">{clipped > 0 && <small>{clipped} site{clipped === 1 ? '' : 's'} beyond ±100% pinned to edge</small>}<div><ResponsiveContainer width="100%" height="100%"><ScatterChart margin={{ top: 10, right: 16, bottom: 4, left: 0 }}>
     <CartesianGrid stroke="var(--grid)" />
     <XAxis type="number" dataKey="x" name="Revenue" tickFormatter={moneyTick} {...xAxisProps} />
-    <YAxis type="number" dataKey="y" name="Gross margin" unit="%" domain={[lo, hi]} {...yAxisProps} width={44} label={clipped ? { value: `${clipped} site${clipped === 1 ? '' : 's'} beyond ±100% pinned to edge`, position: 'insideBottomLeft', fill: 'var(--muted)', fontSize: 10 } : undefined} />
+    <YAxis type="number" dataKey="y" name="Gross margin" unit="%" domain={[lo, hi]} {...yAxisProps} width={44} />
     <ZAxis type="number" dataKey="z" range={[40, 220]} name="Hours" />
     {target !== null && <ReferenceLine y={target} stroke="var(--amber)" strokeDasharray="4 4" label={{ value: `${target}% target`, position: 'insideTopRight', fill: 'var(--muted)', fontSize: 10 }} />}
     <Tooltip cursor={{ strokeDasharray: '4 4' }} content={<ChartTooltip labelFormatter={(_, payload) => (payload?.[0]?.payload as { job?: JobRow })?.job?.job_name ?? ''} formatter={(v, n) => [n === 'Revenue' ? money(Number(v)) : n === 'Hours' ? `${Math.round(Number(v)).toLocaleString()} h` : percent(Number(v)), n]} />} />
     <Scatter data={data} isAnimationActive={false} onClick={(point) => { const job = (point as { payload?: { job?: JobRow } }).payload?.job ?? (point as { job?: JobRow }).job; if (job && onSelect) onSelect(job) }} onMouseEnter={(point) => onHover?.((point as { payload?: { job?: JobRow } }).payload?.job ?? null)} onMouseLeave={() => onHover?.(null)} cursor={onSelect ? 'pointer' : undefined}>
       {data.map((d) => <Cell key={d.job.job_number} fill={color(d.job)} fillOpacity={highlight && highlight !== d.job.job_number ? 0.25 : 0.85} stroke={highlight === d.job.job_number ? 'var(--navy)' : 'none'} strokeWidth={2} />)}
     </Scatter>
-  </ScatterChart></ResponsiveContainer>
+  </ScatterChart></ResponsiveContainer></div></div>
 }
 
 export function AgingBars({ buckets, onSelect, active }: { buckets: AgingBucket[]; onSelect?: (bucket: AgingBucket['bucket'] | null) => void; active?: AgingBucket['bucket'] | null }) {

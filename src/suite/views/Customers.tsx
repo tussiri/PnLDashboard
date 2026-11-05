@@ -37,8 +37,8 @@ export function Customers() {
       <KpiCard label="Accounts at risk" loading={accounts.loading} value={number(atRisk)} delta={null} context={`${money(ar)} open receivables`} favorable="down" />
     </div>
     <div className="dashboard-grid">
-      <QueryCard title="Revenue by account" subtitle={`${rangeSubtitle(accounts.data?.range)} · click to focus`} className="span-5" query={accounts} isEmpty={() => !rows.length}>{() => <GroupBars data={rows.map((r) => ({ name: r.parent_account, revenue: r.revenue }))} onSelect={focus} max={12} />}</QueryCard>
-      <QueryCard title="Account health" subtitle={`${rangeSubtitle(accounts.data?.range)} · click a row to filter to the account`} className="span-7" query={accounts} skeleton="table" isEmpty={() => !rows.length}>{() => <DataGrid rows={rows} columns={columns} rowKey={(r) => r.parent_account} defaultSort={{ key: 'revenue', dir: 'desc' }} onRowClick={(r) => focus(r.parent_account)} csvName="accounts" dense />}</QueryCard>
+      <QueryCard title="Revenue by account" subtitle={`${rangeSubtitle(accounts.data?.range)}`} className="span-12" query={accounts} isEmpty={() => !rows.length}>{() => <GroupBars data={rows.map((r) => ({ name: r.parent_account, revenue: r.revenue }))} onSelect={focus} max={12} />}</QueryCard>
     </div>
+    <QueryCard title="Account health" subtitle={`${rangeSubtitle(accounts.data?.range)}`} query={accounts} skeleton="table" isEmpty={() => !rows.length}>{() => <DataGrid rows={rows} columns={columns} rowKey={(r) => r.parent_account} defaultSort={{ key: 'revenue', dir: 'desc' }} onRowClick={(r) => focus(r.parent_account)} csvName="accounts" dense />}</QueryCard>
   </>
 }

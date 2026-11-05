@@ -127,7 +127,7 @@ export function SortTable<T>({ rows, columns, defaultSort, total, rowClass, onRo
         })}</tr></thead>
         <tbody>
           {shown.map((row, i) => { const open = detail?.(row); return <Fragment key={i}><tr className={`${rowClass?.(row) ?? ''}${onRowClick ? ' click' : ''}`} onClick={onRowClick ? () => onRowClick(row) : undefined}>
-            {columns.map((c, j) => <td key={c.key} className={`${c.left ? 'l ' : ''}${c.className ?? ''}`}>
+            {columns.map((c, j) => <td key={c.key} className={`${c.left ? 'l ' : ''}${c.className ?? ''}`} title={c.className?.includes('nm') && typeof c.value(row) === 'string' ? String(c.value(row)) : undefined}>
               {j === 1 && onRowClick
                 ? <button type="button" className="rowbtn" onClick={(e) => { e.stopPropagation(); onRowClick(row) }} aria-label={rowLabel?.(row)} aria-expanded={detail ? open != null : undefined}>{c.render ? c.render(row) : c.value(row)}</button>
                 : c.render ? c.render(row) : c.value(row)}

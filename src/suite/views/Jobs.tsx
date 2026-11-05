@@ -28,7 +28,7 @@ export function Jobs() {
     { key: 'parent_account', header: 'Account' },
     ...(hasCompany ? [{ key: 'company', header: 'Company', value: (r: JobRow) => r.company ?? '', render: (r: JobRow) => r.company ?? <span className="muted">—</span> } as Column<JobRow>] : []),
     ...(hasDelivery ? [{ key: 'delivery_model', header: 'Delivery', value: (r: JobRow) => r.delivery_model ?? '', render: (r: JobRow) => deliveryLabel(r.delivery_model) } as Column<JobRow>] : []),
-    { key: 'branch', header: 'Branch', render: (r) => <>{r.branch}<span className="muted"> · {r.city}, {r.state_province}</span></> },
+    { key: 'branch', header: 'Branch', render: (r) => { const place = [r.city, r.state_province].filter(Boolean).join(', '); return <>{r.branch}{place && <span className="muted">{r.branch ? ' · ' : ''}{place}</span>}</> } },
     { key: 'revenue', header: 'Revenue', numeric: true, render: (r) => moneyFull(r.revenue) },
     { key: 'gross_margin_pct', header: 'Margin', numeric: true, className: (r) => (!isMeaningfulMargin(r.gross_margin_pct) ? 'text-muted' : (r.gross_margin_pct ?? 0) < 18 ? 'text-bad' : (r.gross_margin_pct ?? 0) < 25 ? 'text-warn' : 'text-good'), render: (r) => <MarginCell job={r} /> },
     { key: 'labor_variance', header: 'Labor var.', numeric: true, className: (r) => (r.labor_variance === null ? undefined : r.labor_variance > 0 ? 'text-bad' : 'text-good'), render: (r) => (r.labor_variance === null ? <span className="muted">no budget</span> : signed(r.labor_variance, (v) => money(v))) },

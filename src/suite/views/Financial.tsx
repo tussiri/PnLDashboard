@@ -57,7 +57,7 @@ export function Financial() {
     { key: 'labor_cost', header: 'Labor', numeric: true, render: (r) => moneyFull(r.labor_cost) },
     { key: 'gross_profit', header: 'Gross profit', numeric: true, render: (r) => moneyFull(r.gross_profit) },
     { key: 'margin', header: 'Margin', numeric: true, value: (r) => (r.revenue ? (r.gross_profit / r.revenue) * 100 : null), render: (r) => percent(r.revenue ? (r.gross_profit / r.revenue) * 100 : null) },
-    { key: 'hours', header: 'Hours', numeric: true, render: (r) => r.hours.toLocaleString() },
+    { key: 'hours', header: 'Hours', numeric: true, render: (r) => Math.round(r.hours).toLocaleString() },
     { key: 'jobs_reporting', header: 'Sites', numeric: true },
   ]
   const top = useMemo(() => [...(jobs.data?.jobs ?? [])].sort((a, b) => b.revenue - a.revenue).slice(0, 8), [jobs.data])
@@ -79,7 +79,7 @@ export function Financial() {
     </div>
     <div className="dashboard-grid">
       <QueryCard title="Financial performance trend" subtitle="Trailing 12 months ending the anchor month · USD" className="span-8" query={summary} isEmpty={(s) => !s.monthly.length}>{(s) => <PerformanceTrend data={s.monthly} />}</QueryCard>
-      <QueryCard title="Highest-revenue sites" subtitle={rangeSubtitle(jobs.data?.range)} className="span-4" query={jobs} isEmpty={() => !top.length}>{() => <div className="rank-list">{top.map((job, i) => <button key={job.job_number} onClick={() => openJob(job.job_number)}><span>{i + 1}</span><div><strong>{job.job_name}</strong><i style={{ width: `${(job.revenue / (top[0]?.revenue || 1)) * 100}%` }} /></div><b className="num">{money(job.revenue)}</b></button>)}</div>}</QueryCard>
+      <QueryCard title="Highest-revenue sites" subtitle={rangeSubtitle(jobs.data?.range)} className="span-4" query={jobs} isEmpty={() => !top.length}>{() => <div className="rank-list">{top.map((job, i) => <button key={job.job_number} onClick={() => openJob(job.job_number)}><span>{i + 1}</span><div><strong title={job.job_name}>{job.job_name}</strong><i style={{ width: `${(job.revenue / (top[0]?.revenue || 1)) * 100}%` }} /></div><b className="num">{money(job.revenue)}</b></button>)}</div>}</QueryCard>
     </div>
     <QueryCard title="Monthly detail" subtitle="Trailing 12 months · sortable" query={summary} skeleton="table" isEmpty={(s) => !s.monthly.length}>{(s) => <DataGrid rows={s.monthly} columns={monthColumns} rowKey={(r) => r.month} csvName="financial-monthly" dense />}</QueryCard>
   </>
