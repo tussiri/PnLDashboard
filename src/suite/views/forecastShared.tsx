@@ -58,5 +58,5 @@ export function AccuracyBadge({ accuracy }: { accuracy: ForecastAccuracy | null 
 }
 
 /** The engine's candidate methods (app/forecasting.py) as the table shows them. */
-const METHOD_LABEL: Record<string, string> = { naive: 'Last month', recent3: '3-month median', damped_trend: 'Damped trend', contract_flat: 'Contract flat', hours_driver: 'Hours x rate', sum_of_site_forecasts: 'Sum of sites' }
+const METHOD_LABEL: Record<string, string> = { naive: 'Last month', recent3: '3-month median', damped_trend: 'Damped trend', contract_flat: 'Contract flat', hours_driver: 'Hours x rate', contract_base: 'Contract + extras', sum_of_site_forecasts: 'Sum of sites' }
 export const methodLabel = (method: string) => METHOD_LABEL[method] ?? method.replace(/_/g, ' ')

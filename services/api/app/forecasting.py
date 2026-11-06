@@ -74,7 +74,7 @@ from .db import connection
 
 log = logging.getLogger(__name__)
 
-ENGINE_VERSION = "v2.1-crane"  # surfaced in the UI; "Northstar" is a retired placeholder name
+ENGINE_VERSION = "v2.2-crane"  # surfaced in the UI; "Northstar" is a retired placeholder name
 TARGET_NAME = "site_monthly"
 METRICS: tuple[str, ...] = ("revenue", "gross_profit", "labor_cost", "subcontract_cost")
 ACCOUNT_JOB = "__ACCOUNT__"
@@ -228,10 +228,83 @@ def _driver_hours(origin: int, target: int, driver: Driver) -> tuple[float, bool
     return driver.hours.get(seen, 0.0) * _days_in(target) / _days_in(seen), False
 
 
+# ── contract base (revenue only) ─────────────────────────────────────────────
+_CONTRACT_FLOOR = 0.98       # a month bills its contract when revenue >= 98% of the amount
+
+
+@dataclass
+class ContractSpec:
+    """Where a site's contracted monthly billing comes from, before it meets the revenue history.
+
+    ``effective`` is [(yyyymm, amount)] ascending: dated amounts (ops.job_contract, uploaded on the
+    Company P&L page, else core.contract_billing), each in force from its month until the next.
+    ``snapshot`` is the current Relay contract (mart.v_relay_job_contract.ar_monthly), which has no
+    dates, so it counts as in force only in months whose revenue reached it.
+    """
+    source: str
+    effective: list[tuple[int, float]] | None = None
+    snapshot: float | None = None
+
+
+@dataclass
+class Contract:
+    """Contract amount by month, for the months the contract was in force (and, for dated
+    contracts, the forecast months too). A month is in force only by what was known then."""
+    amounts: dict[int, float]
+    source: str
+
+
+def _contract_for(spec: ContractSpec, pts: list[tuple[int, float]], last_month: int) -> Contract | None:
+    if spec.effective:
+        amounts: dict[int, float] = {}
+        first = spec.effective[0][0]
+        p, i, current = first, 0, None
+        while p <= last_month:
+            while i < len(spec.effective) and spec.effective[i][0] <= p:
+                current = spec.effective[i][1]
+                i += 1
+            if current is not None:
+                amounts[p] = current
+            p = _add_months(p, 1)
+        return Contract(amounts, spec.source) if amounts else None
+    if spec.snapshot and spec.snapshot > 0:
+        # In force from the first month that billed it: a later month below it is a billing
+        # shortfall or timing (job cost posting the fixed fee and the variable in different
+        # months), not the end of the contract.
+        start = next((p for p, v in pts if v >= _CONTRACT_FLOOR * spec.snapshot), None)
+        if start is None:
+            return None
+        amounts = {p: spec.snapshot for p, _v in pts if p >= start}
+        return Contract(amounts, spec.source)
+    return None
+
+
+def _contract_extras(pts: list[tuple[int, float]], contract: Contract | None) -> float | None:
+    """Billing above the contract: the median over the last 3 fitted months in force, a month
+    below the contract counting as 0. None unless the contract is in force in the last fitted
+    month."""
+    if contract is None or not pts or pts[-1][0] not in contract.amounts:
+        return None
+    extras = [max(v - contract.amounts[p], 0.0) for p, v in pts[-3:] if p in contract.amounts]
+    return statistics.median(extras)
+
+
+def _contract_at(origin: int, target: int, contract: Contract) -> float:
+    """The amount for ``target`` as known at ``origin``: a dated amount, else the origin's."""
+    return contract.amounts.get(target, contract.amounts[origin])
+
+
 # ── candidate methods ────────────────────────────────────────────────────────
-def _predict(method: str, pts: list[tuple[int, float]], h: int, driver: Driver | None = None) -> float:
+def _predict(method: str, pts: list[tuple[int, float]], h: int, driver: Driver | None = None,
+             contract: Contract | None = None) -> float:
     """Forecast h calendar months after the last point, by candidate formula."""
     ys = [v for _, v in pts]
+    if method == "contract_base":
+        extras = _contract_extras(pts, contract)
+        if extras is None or contract is None:
+            return ys[-1]
+        origin = pts[-1][0]
+        return _contract_at(origin, _add_months(origin, h), contract) + extras
     if method == "hours_driver":
         rate = _driver_rate(pts, driver)
         if rate is None or driver is None:
@@ -270,12 +343,50 @@ def _one_step_maes(pts: list[tuple[int, float]], driver: Driver | None = None) -
     return {m: (statistics.fmean(e) if e else float("inf"), len(e)) for m, e in errs.items()}
 
 
-def _select_method(pts: list[tuple[int, float]], driver: Driver | None = None) -> tuple[str, dict]:
+def _contract_maes(pts: list[tuple[int, float]], contract: Contract) -> tuple[float, float, int]:
+    """(contract MAE, best other MAE, tests) over the one-step tests whose origin had the
+    contract in force: both sides scored on the same months."""
+    by_period = dict(pts)
+    mine: list[float] = []
+    others: dict[str, list[float]] = {"naive": [], "recent3": [], "damped_trend": []}
+    for o in range(_MIN_POINTS, len(pts)):
+        fit = pts[:o]
+        actual = by_period.get(_add_months(fit[-1][0], 1))
+        if actual is None or _contract_extras(fit, contract) is None:
+            continue
+        mine.append(abs(_predict("contract_base", fit, 1, contract=contract) - actual))
+        for m in others:
+            others[m].append(abs(_predict(m, fit, 1) - actual))
+    if not mine:
+        return float("inf"), float("inf"), 0
+    return statistics.fmean(mine), min(statistics.fmean(e) for e in others.values()), len(mine)
+
+
+def _select_method(pts: list[tuple[int, float]], driver: Driver | None = None,
+                   contract: Contract | None = None) -> tuple[str, dict]:
     """Pick the candidate for this fit set. Simpler wins unless clearly beaten (>10% MAE).
-    The hours driver (labor_cost) must beat the best of the others by the same margin."""
+    The hours driver (labor_cost) must beat the best of the others by the same margin, and so
+    must the contract base (revenue), scored on the months its contract was in force. A flat
+    site follows its contract when a dated amount changes inside the horizon."""
     ys = [v for _, v in pts]
+    usable = _contract_extras(pts, contract) is not None
     if _is_flat(ys):
+        if usable and contract is not None:
+            origin = pts[-1][0]
+            now = contract.amounts[origin]
+            if any(abs(_contract_at(origin, _add_months(origin, h), contract) - now) > _FLAT_TOL * max(now, 1)
+                   for h in range(1, HORIZON + 1)):
+                return "contract_base", {"rule": "flat_tail_contract_change", "candidates": {}}
         return "contract_flat", {"rule": "flat_tail", "candidates": {}}
+    if usable and contract is not None:
+        # The contract is known information, not a fitted pattern, so it is the default: it
+        # gives way only when the history methods beat it by the margin on the same months.
+        c_mae, o_mae, n = _contract_maes(pts, contract)
+        if not (n >= 2 and o_mae < (1 - _TREND_MARGIN) * c_mae):
+            return "contract_base", {"rule": "contract_default",
+                                     "candidates": ({"contract_base": round(c_mae, 2),
+                                                     "best_other": round(o_mae, 2)} if n else {}),
+                                     "n_one_step_tests": n}
     if len(pts) < _MIN_SELECT:
         return "recent3", {"rule": "too_short_to_validate_trend", "candidates": {}}
     maes = _one_step_maes(pts, driver)
@@ -307,6 +418,7 @@ class Series:
     quality: dict                     # {warning_months, total_months}
     identity: dict | None = None      # {break_period, prior_name} when split
     driver: Driver | None = None      # punched hours; labor_cost series only
+    contract: Contract | None = None  # contracted billing; revenue series only
 
 
 @dataclass
@@ -334,6 +446,7 @@ def compute_forecasts(
     latest_closed: int,
     metrics: Sequence[str] = METRICS,
     hours_through: int | None = None,
+    contracts: dict[str, ContractSpec] | None = None,
 ) -> dict:
     """Full v2 computation.
 
@@ -341,7 +454,8 @@ def compute_forecasts(
     revenue, gross_profit, labor_cost, subcontract_cost (optional), delivery_model,
     parent_account (optional), hours (optional) and data_quality_status. ``hours_through`` is
     the last month whose punches are complete; with it, labor_cost series may use the hours
-    driver. Returns the
+    driver. ``contracts`` (job_number -> ContractSpec) lets revenue series use the contract
+    base. Returns the
     engine-native rows (YYYYMM periods, ``point``/``lo``/``hi`` keys); ``shape_run``
     converts them to the database contract.
     """
@@ -408,6 +522,8 @@ def compute_forecasts(
                          if float(r.get("hours") or 0) > 0}
                 if hours:
                     s.driver = Driver(hours, driver_lag)
+            if metric == "revenue" and contracts and job in contracts:
+                s.contract = _contract_for(contracts[job], pts, _add_months(latest_closed, HORIZON))
             if len(pts) < _MIN_POINTS:
                 recent = bool(pts) and _month_offset(latest_closed, pts[-1][0]) <= _INACTIVE_AFTER
                 status_rows.append({
@@ -452,7 +568,7 @@ def compute_forecasts(
         by_period = dict(s.points)
         for o in range(_MIN_POINTS, len(s.points)):
             fit = s.points[:o]
-            method, _sel = _select_method(fit, s.driver)
+            method, _sel = _select_method(fit, s.driver, s.contract)
             scale = _scale_of([v for _, v in fit])
             cls = _vol_class([v for _, v in fit])
             for h in range(1, HORIZON + 1):
@@ -462,7 +578,7 @@ def compute_forecasts(
                     continue
                 calls.append(WalkForwardCall(
                     s.job_number, s.metric, fit[-1][0], target, h,
-                    method, _predict(method, fit, h, s.driver), actual, scale, cls,
+                    method, _predict(method, fit, h, s.driver, s.contract), actual, scale, cls,
                 ))
 
     # 3. pooled error distributions per (metric, class, horizon)
@@ -560,7 +676,7 @@ def compute_forecasts(
         calls_by_series.setdefault((c.job_number, c.metric), []).append(c)
 
     for s in series_list:
-        method, selection = _select_method(s.points, s.driver)
+        method, selection = _select_method(s.points, s.driver, s.contract)
         values = [v for _, v in s.points]
         cls = _vol_class(values)
         scale = _scale_of(values)
@@ -568,7 +684,7 @@ def compute_forecasts(
 
         run_w_lo = run_w_hi = 0.0  # dollar half-widths: never narrower at further h
         for h in range(1, HORIZON + 1):
-            point = _predict(method, s.points, h, s.driver)
+            point = _predict(method, s.points, h, s.driver, s.contract)
             lo_off, hi_off, band_meta = _band_offsets(s.metric, cls, h)
             lo = point + lo_off * scale
             hi = point + hi_off * scale
@@ -655,6 +771,8 @@ def compute_forecasts(
             "n_series_gated_out": len(status_rows),
             "hours_through": hours_through,
             "hours_driver_lag_months": driver_lag,
+            "contract_sites": {src: sum(1 for x in series_list if x.contract and x.contract.source == src)
+                               for src in sorted({x.contract.source for x in series_list if x.contract})},
         },
         "gates": {
             "closed_month": "month_end + close_lag_days (ops.app_setting) is before today "
@@ -678,6 +796,11 @@ def compute_forecasts(
             "by service month otherwise; labor cost is job-cost direct labor for closed "
             "months and timekeeping hours x the job's trailing rate in progress. Neither "
             "is the audited income statement.",
+            "Revenue may use the contract base: the site's contracted monthly amount plus the median "
+            "billed above it over the last 3 closed months. Dated contracts (uploaded on the Company "
+            "P&L page, else contract billing) apply from their effective month; the Relay contract has "
+            "no dates, so it counts only in months whose revenue reached 98% of it. It must beat the "
+            "other methods by 10% on the same backtest months.",
             "Labor cost may use the hours driver: punched hours x the site's labor dollars per "
             "hour (median of its last 3 closed months). Months after the latest close that are "
             "fully punched use their own hours; later months scale the latest full month by day "
@@ -757,12 +880,29 @@ def _explain(s: Series, method: str, selection: dict, point: float,
         return (f"{label}: {hours:,.0f} hours ({source}) at {rate:,.2f} per hour (median of the "
                 f"last 3 closed months) gives {point:,.0f}; hours beat naive/recent/trend in "
                 f"walk-forward MAE {selection.get('candidates', {})}. " + band_txt)
+    if method == "contract_base" and s.contract is not None:
+        origin = s.points[-1][0]
+        base = _contract_at(origin, _add_months(origin, h), s.contract)
+        extras = _contract_extras(s.points, s.contract) or 0.0
+        source = _CONTRACT_SOURCE_LABEL.get(s.contract.source, s.contract.source)
+        cands = selection.get("candidates", {})
+        why = ("a dated contract change falls inside the horizon"
+               if selection.get("rule") == "flat_tail_contract_change"
+               else f"no history method beat it by {int(_TREND_MARGIN * 100)}% in walk-forward MAE {cands}"
+               if cands else "the contract is the default where it applies")
+        above = (f"plus {extras:,.0f} billed above it (median of the last 3 closed months)" if extras
+                 else "nothing billed above it in the last 3 closed months")
+        return f"{label}: contract {base:,.0f} a month ({source}), {above}, gives {point:,.0f}; {why}. " + band_txt
     if method == "damped_trend":
         cands = selection.get("candidates", {})
         return (f"{label}: damped robust trend (Theil-Sen, damping {_PHI}) gives {point:,.0f} "
                 f"at month +{h}; trend beat naive/recent in walk-forward MAE "
                 f"{cands}. " + band_txt)
     return f"{label}: {point:,.0f}. " + band_txt
+
+
+_CONTRACT_SOURCE_LABEL = {"job_contract": "uploaded contract", "contract_billing": "contract billing",
+                          "relay": "Relay contract"}
 
 
 def _portfolio(series_list: list[Series], stale_series: list[Series],
@@ -1056,6 +1196,37 @@ def hours_through_period(cursor: _Cursor, today: date | None = None) -> int | No
     return period if last == _month_end(period) else _add_months(period, -1)
 
 
+def load_contracts(cursor: _Cursor) -> dict[str, ContractSpec]:
+    """job_number -> ContractSpec. Precedence: ops.job_contract (uploaded), core.contract_billing,
+    then the Relay contract. A job number carried by two companies in ops.job_contract is skipped:
+    the forecast keys sites by job number alone."""
+    specs: dict[str, ContractSpec] = {}
+    cursor.execute("""
+        SELECT job_number, min(company) AS company, count(DISTINCT company) AS companies,
+               array_agg(effective_from ORDER BY effective_from) AS months,
+               array_agg(monthly_amount ORDER BY effective_from) AS amounts
+        FROM ops.job_contract GROUP BY job_number
+    """)
+    for r in cursor.fetchall():
+        if int(r["companies"]) == 1:
+            specs[str(r["job_number"])] = ContractSpec("job_contract", effective=[
+                (date_to_period(m), float(a)) for m, a in zip(r["months"], r["amounts"])])
+    cursor.execute("""
+        SELECT job_number, array_agg(effective_month ORDER BY effective_month) AS months,
+               array_agg(amount ORDER BY effective_month) AS amounts
+        FROM (SELECT job_number, effective_month, sum(monthly_amount) AS amount
+              FROM core.contract_billing GROUP BY 1, 2) c
+        GROUP BY job_number
+    """)
+    for r in cursor.fetchall():
+        specs.setdefault(str(r["job_number"]), ContractSpec("contract_billing", effective=[
+            (date_to_period(m), float(a)) for m, a in zip(r["months"], r["amounts"])]))
+    cursor.execute("SELECT job_number, ar_monthly FROM mart.v_relay_job_contract WHERE ar_monthly > 0")
+    for r in cursor.fetchall():
+        specs.setdefault(str(r["job_number"]), ContractSpec("relay", snapshot=float(r["ar_monthly"])))
+    return specs
+
+
 def load_job_keys(cursor: _Cursor) -> dict[str, int]:
     cursor.execute("SELECT job_number, job_key FROM core.dim_job WHERE valid_to IS NULL AND job_number IS NOT NULL")
     return {str(r["job_number"]): int(r["job_key"]) for r in cursor.fetchall()}
@@ -1282,7 +1453,8 @@ def build_forecasts(initiated_by: str = "scheduled-rebuild",
         latest_closed = max(fittable)
 
         result = compute_forecasts(site_rows, closed, suspects, latest_closed, metrics,
-                                   hours_through=hours_through_period(cursor, today))
+                                   hours_through=hours_through_period(cursor, today),
+                                   contracts=load_contracts(cursor))
         shaped = shape_run(result, load_job_keys(cursor), initiated_by)
         write_run(cursor, shaped)
         pruned = prune_runs(cursor)

@@ -555,3 +555,86 @@ def test_hours_through_is_the_last_complete_month():
     assert hours_through_period(C(date(2026, 10, 31))) == 202610
     assert hours_through_period(C(date(2026, 11, 6))) == 202610
     assert hours_through_period(C(None)) is None
+
+
+# ── contract base (revenue) ──────────────────────────────────────────────────
+from app.forecasting import ContractSpec, _contract_extras, _contract_for, load_contracts  # noqa: E402
+
+
+def test_contract_base_rides_through_a_billing_shortfall():
+    # The site bills its 10,000 contract; one month posts short (timing), the next spikes. Last
+    # month and the 3-month median chase the noise; the contract does not.
+    values = [10000, 10000, 10400, 10000, 3000, 17000, 10000, 10200, 4000, 16500, 10000, 10300]
+    rows = _mk_rows("7", "Station 7", 202501, values)
+    closed = [_add_months(202501, i) for i in range(len(values))]
+    specs = {"7": ContractSpec("relay", snapshot=10000.0)}
+    result = compute_forecasts(rows, closed, {}, closed[-1], ("revenue",), contracts=specs)
+    step1 = next(r for r in result["forecast_rows"] if r["job_number"] == "7" and r["horizon_step"] == 1)
+    assert step1["method"] == "contract_base"
+    assert step1["point"] == round(10000 + 300, 2)            # median of max(v - 10,000, 0) over the last 3
+    assert "Relay contract" in step1["explanation"]
+    assert result["run_meta"]["dataset"]["contract_sites"] == {"relay": 1}
+    without = compute_forecasts(rows, closed, {}, closed[-1], ("revenue",))
+    assert all(r["method"] != "contract_base" for r in without["forecast_rows"])
+
+
+def test_relay_contract_is_in_force_only_from_the_first_month_that_billed_it():
+    pts = [(202501, 5000.0), (202502, 9900.0), (202503, 4000.0)]
+    c = _contract_for(ContractSpec("relay", snapshot=10000.0), pts, 202606)
+    assert sorted(c.amounts) == [202502, 202503]              # 98% floor reached in February
+    assert _contract_extras(pts[:1], c) is None               # not in force at a January origin
+    assert _contract_extras(pts, c) == 0.0                    # a shortfall counts as 0, not negative
+    assert _contract_for(ContractSpec("relay", snapshot=10000.0), pts[:1], 202606) is None
+
+
+def test_dated_contract_change_inside_the_horizon_is_followed():
+    values = [8000.0] * 10                                    # flat: would be contract_flat
+    rows = _mk_rows("9", "Site 9", 202501, values)
+    closed = [_add_months(202501, i) for i in range(10)]
+    latest = closed[-1]
+    specs = {"9": ContractSpec("job_contract", effective=[(202501, 8000.0), (_add_months(latest, 2), 9000.0)])}
+    result = compute_forecasts(rows, closed, {}, latest, ("revenue",), contracts=specs)
+    pts = {r["horizon_step"]: r for r in result["forecast_rows"] if r["job_number"] == "9"}
+    assert pts[1]["method"] == "contract_base" and pts[1]["point"] == 8000.0
+    assert pts[2]["point"] == 9000.0 and pts[3]["point"] == 9000.0
+    assert pts[1]["method_selection"]["rule"] == "flat_tail_contract_change"
+    unchanged = {"9": ContractSpec("job_contract", effective=[(202501, 8000.0)])}
+    flat = compute_forecasts(rows, closed, {}, latest, ("revenue",), contracts=unchanged)
+    assert {r["method"] for r in flat["forecast_rows"] if r["job_number"] == "9"} == {"contract_flat"}
+
+
+def test_history_beats_a_stale_contract_by_the_margin():
+    # Revenue grew well past a contract that was never updated: the history methods win.
+    values = [10000, 12000, 14000, 16000, 18000, 20000, 22000, 24000, 26000, 28000]
+    rows = _mk_rows("5", "Site 5", 202501, values)
+    closed = [_add_months(202501, i) for i in range(len(values))]
+    specs = {"5": ContractSpec("relay", snapshot=10000.0)}
+    result = compute_forecasts(rows, closed, {}, closed[-1], ("revenue",), contracts=specs)
+    step1 = next(r for r in result["forecast_rows"] if r["job_number"] == "5" and r["horizon_step"] == 1)
+    assert step1["method"] != "contract_base"
+
+
+def test_load_contracts_precedence_and_ambiguous_job_numbers():
+    class C:
+        def __init__(self):
+            self.n = 0
+            self.results = [
+                [{"job_number": "1", "companies": 1, "months": [date(2026, 1, 1)], "amounts": [100]},
+                 {"job_number": "2", "companies": 2, "months": [date(2026, 1, 1)], "amounts": [200]}],
+                [{"job_number": "1", "months": [date(2026, 1, 1)], "amounts": [111]},
+                 {"job_number": "3", "months": [date(2026, 2, 1)], "amounts": [300]}],
+                [{"job_number": "1", "ar_monthly": 1}, {"job_number": "2", "ar_monthly": 2},
+                 {"job_number": "4", "ar_monthly": 4}],
+            ]
+
+        def execute(self, *_):
+            pass
+
+        def fetchall(self):
+            self.n += 1
+            return self.results[self.n - 1]
+
+    specs = load_contracts(C())
+    assert specs["1"].source == "job_contract" and specs["1"].effective == [(202601, 100.0)]
+    assert specs["2"].source == "relay"                      # two companies share job 2 in the upload
+    assert specs["3"].source == "contract_billing" and specs["4"].snapshot == 4.0
