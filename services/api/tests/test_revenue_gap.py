@@ -44,3 +44,18 @@ def test_apply_sums_by_month_and_skips_when_off():
     assert c.calls[-1][1] == {"from": date(2026, 7, 1), "until": None}
     off = Cursor({"from": None}, rows)
     assert revenue_gap.apply(off) == {} and len(off.calls) == 1
+
+
+def test_reported_view_adds_the_gap_and_per_job_readers_use_it():
+    """mart.v_job_cost_month_reported (migration 069) adds mart.job_month.revenue_ar_gap to job cost revenue and
+    gross profit; the per-job readers of job cost revenue read it, not the export as loaded."""
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[3]
+    sql = (root / "database/migrations/069_job_cost_month_reported.sql").read_text()
+    assert "(e.revenue + coalesce(g.revenue_ar_gap, 0))" in sql and "(e.gross_profit + coalesce(g.revenue_ar_gap, 0))" in sql
+    app = root / "services/api/app"
+    for path in ("month.py", "budget.py"):
+        assert "mart.v_job_cost_month_reported" in (app / path).read_text()
+    from app.routers.leadership import ROW_SQL as WEEKLY_SQL
+    assert "LEFT JOIN mart.v_job_cost_month_reported jc ON jc.company = k.company" in WEEKLY_SQL

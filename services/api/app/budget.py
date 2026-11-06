@@ -193,7 +193,7 @@ def job_cost_actuals(cursor: Any, slug: str, months: list[date]) -> dict[date, d
     cursor.execute(
         """
         SELECT jc.month, aj.role, sum(jc.direct_labor) AS labor, sum(jc.revenue) AS revenue
-        FROM mart.v_job_cost_month_effective jc
+        FROM mart.v_job_cost_month_reported jc
         JOIN ops.account_job aj ON aj.company = jc.company AND aj.job_number = jc.job_number
         WHERE aj.account_slug = %s AND jc.month = ANY(%s)
         GROUP BY 1, 2

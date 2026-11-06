@@ -105,13 +105,26 @@ def test_company_takes_relay_ar_for_subcontracted_relay_sites_like_the_mart():
     rule = COMPANY_SQL[COMPANY_SQL.index("base AS ("):COMPANY_SQL.index("AS relay_revenue")]
     assert "IS DISTINCT FROM 'Sarus'" in rule
     assert "NOT coalesce(rc.self_perform, false)" in rule and "coalesce(rm.ar_revenue, 0) > 0" in rule
-    assert "coalesce(d.delivery_model, 'subcontracted') = 'subcontracted'" in rule
+    assert "coalesce(m.delivery_model, 'subcontracted') = 'subcontracted'" in rule
     assert "coalesce(a.delivery_model, 'subcontracted') = 'subcontracted'" in REBUILD_SQL
     jc = COMPANY_SQL[COMPANY_SQL.index("\njc AS ("):COMPANY_SQL.index("\ntk AS (")]
     assert "CASE WHEN relay_revenue THEN relay_ar ELSE revenue END AS revenue" in jc
     assert "coalesce(gross_profit, 0) + relay_ar - coalesce(revenue, 0)" in jc
     assert set(re.findall(r"%\((\w+)\)s", COMPANY_SQL)) == {"first", "last"}
     assert not re.search(r"%(?!\(\w+\)s)", COMPANY_SQL)
+
+
+def test_company_and_account_months_read_job_month():
+    """The company and account monthly views read mart.job_month, so a job the export skips (its own AR) and the
+    AR revenue the export omits (revenue_ar_gap) count there as on every other page. Management wages stay job cost."""
+    from app.routers.leadership import COMPANY_SQL, MONTHLY_SQL
+
+    base = COMPANY_SQL[COMPANY_SQL.index("base AS ("):COMPANY_SQL.index("\njc AS (")]
+    assert "FROM mart.job_month m" in base and "m.labor_cost AS direct_labor" in base
+    assert "coalesce(jc.management_wages, 0) AS management_wages" in base
+    assert "LEFT JOIN mart.job_month jm ON jm.company = jobs.company" in MONTHLY_SQL
+    assert "coalesce(jm.revenue, 0) AS revenue" in MONTHLY_SQL
+    assert "v_job_cost_month_effective jc" not in MONTHLY_SQL
 
 
 def test_company_leaves_non_billed_jobs_out_of_their_account():
