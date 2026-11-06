@@ -492,3 +492,66 @@ if __name__ == "__main__":
             fails += 1
             print(f"ERROR {name}: {type(e).__name__}: {e}")
     sys.exit(1 if fails else 0)
+
+
+# ── hours driver (labor_cost) ────────────────────────────────────────────────
+from app.forecasting import Driver, _driver_hours, hours_through_period  # noqa: E402
+
+
+def _labor_rows(job, start, hours, rate=25.0, closed_upto=None):
+    """Site months whose labor is hours x rate; months after `closed_upto` carry hours only."""
+    rows, p = [], start
+    for h in hours:
+        rows.append({"job_number": job, "period_id": p, "job_name": f"Site {job}", "revenue": 10000.0,
+                     "gross_profit": 3000.0, "labor_cost": h * rate, "hours": h, "subcontract_cost": 0.0,
+                     "delivery_model": None, "parent_account": None, "data_quality_status": "passed"})
+        p = _add_months(p, 1)
+    return rows
+
+
+def test_hours_driver_uses_a_punched_month_and_wins_when_hours_move():
+    # Hours swing month to month, so last month and the 3-month median miss; the punched hours do not.
+    hours = [800, 1200, 700, 1300, 650, 1250, 900, 1400, 600, 1100, 1350]
+    rows = _labor_rows("1", 202501, hours)
+    closed = [_add_months(202501, i) for i in range(10)]          # the 11th month is punched, not closed
+    latest = closed[-1]
+    result = compute_forecasts(rows, closed, {}, latest, ("labor_cost",), hours_through=_add_months(latest, 1))
+    step1 = next(r for r in result["forecast_rows"] if r["job_number"] == "1" and r["horizon_step"] == 1)
+    assert step1["method"] == "hours_driver"
+    assert step1["point"] == round(1350 * 25.0, 2)                # the punched month's own hours
+    assert "hours_driver" in step1["method_selection"]["candidates"]
+    assert result["run_meta"]["dataset"]["hours_driver_lag_months"] == 1
+
+
+def test_hours_driver_never_sees_later_hours():
+    d = Driver({202501: 100.0, 202502: 200.0, 202503: 999.0}, lag=1)
+    assert _driver_hours(202501, 202502, d) == (200.0, True)         # one month of punches past the origin
+    hours, observed = _driver_hours(202501, 202503, d)               # 202503 was not punched yet
+    assert not observed and hours == 200.0 * 31 / 28
+    assert _driver_hours(202501, 202502, Driver(d.hours, lag=0))[1] is False
+
+
+def test_hours_driver_is_labor_only_and_off_without_punch_data():
+    hours = [800, 1200, 700, 1300, 650, 1250, 900, 1400, 600, 1100]
+    rows = _labor_rows("1", 202501, hours)
+    closed = [_add_months(202501, i) for i in range(10)]
+    without = compute_forecasts(rows, closed, {}, closed[-1], ("labor_cost", "revenue"))
+    assert all(r["method"] != "hours_driver" for r in without["forecast_rows"])
+    with_hours = compute_forecasts(rows, closed, {}, closed[-1], ("labor_cost", "revenue"), hours_through=closed[-1])
+    assert all(r["method"] != "hours_driver" for r in with_hours["forecast_rows"] if r["metric"] == "revenue")
+
+
+def test_hours_through_is_the_last_complete_month():
+    class C:
+        def __init__(self, last):
+            self.last = last
+
+        def execute(self, *_):
+            pass
+
+        def fetchone(self):
+            return {"last": self.last}
+
+    assert hours_through_period(C(date(2026, 10, 31))) == 202610
+    assert hours_through_period(C(date(2026, 11, 6))) == 202610
+    assert hours_through_period(C(None)) is None

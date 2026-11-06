@@ -26,7 +26,7 @@ export const deliveryLabel = (model: DeliveryModel | null | undefined) => (model
 const volatilityTone = (value: string | null | undefined) => (!value ? 'none' : /low|stable/i.test(value) ? 'low' : /medium|moderate/i.test(value) ? 'medium' : /high|volatile/i.test(value) ? 'high' : 'none')
 
 export function VolatilityChip({ value }: { value: string | null | undefined }) {
-  return <span className={`vol-chip vol-chip--${volatilityTone(value)}`}>{value ?? '—'}</span>
+  return <span className={`vol-chip vol-chip--${volatilityTone(value)}`}>{value ? value.charAt(0).toUpperCase() + value.slice(1) : '—'}</span>
 }
 
 /**
@@ -56,3 +56,7 @@ export function AccuracyBadge({ accuracy }: { accuracy: ForecastAccuracy | null 
   const tone = ape === null ? 'none' : ape <= 5 ? 'good' : ape <= 10 ? 'ok' : 'weak'
   return <span className={`accuracy-badge accuracy-badge--${tone}`} title={`${accuracy.n_backtests} backtests · median APE ${percent(ape)} · MASE ${accuracy.mase ?? '—'} · coverage ${accuracy.coverage === null ? '—' : percent(accuracy.coverage * 100, 0)}`}>{ape === null ? 'n/a' : `±${percent(ape, 1)}`}<small>n={accuracy.n_backtests}</small></span>
 }
+
+/** The engine's candidate methods (app/forecasting.py) as the table shows them. */
+const METHOD_LABEL: Record<string, string> = { naive: 'Last month', recent3: '3-month median', damped_trend: 'Damped trend', contract_flat: 'Contract flat', hours_driver: 'Hours x rate', sum_of_site_forecasts: 'Sum of sites' }
+export const methodLabel = (method: string) => METHOD_LABEL[method] ?? method.replace(/_/g, ' ')

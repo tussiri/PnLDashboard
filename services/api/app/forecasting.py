@@ -74,7 +74,7 @@ from .db import connection
 
 log = logging.getLogger(__name__)
 
-ENGINE_VERSION = "v2.0-crane"  # surfaced in the UI; "Northstar" is a retired placeholder name
+ENGINE_VERSION = "v2.1-crane"  # surfaced in the UI; "Northstar" is a retired placeholder name
 TARGET_NAME = "site_monthly"
 METRICS: tuple[str, ...] = ("revenue", "gross_profit", "labor_cost", "subcontract_cost")
 ACCOUNT_JOB = "__ACCOUNT__"
@@ -193,10 +193,51 @@ def _name_similarity(a: str, b: str) -> float:
     return len(ta & tb) / len(ta | tb)
 
 
+# ── hours driver (labor_cost only) ───────────────────────────────────────────
+@dataclass
+class Driver:
+    """A site's punched hours, for the labor_cost hours-driver candidate.
+
+    ``hours`` holds every month with punches, closed or not: timekeeping arrives daily, so
+    the months after the latest close are already punched. ``lag`` is how many months of
+    complete punches exist after the latest closed month at run time; every backtest
+    assumes the same lag, so a call never sees hours that would not have existed then.
+    """
+    hours: dict[int, float]
+    lag: int
+
+
+def _days_in(yyyymm: int) -> int:
+    return _month_end(yyyymm).day
+
+
+def _driver_rate(pts: list[tuple[int, float]], driver: Driver | None) -> float | None:
+    """Labor dollars per punched hour: the median over the last 3 fitted months that have both."""
+    if driver is None:
+        return None
+    rates = [v / driver.hours[p] for p, v in pts[-3:] if v > 0 and driver.hours.get(p, 0) > 0]
+    return statistics.median(rates) if rates else None
+
+
+def _driver_hours(origin: int, target: int, driver: Driver) -> tuple[float, bool]:
+    """(hours, observed) for ``target`` as seen from ``origin``: the month's own punches when
+    it was complete by then, else the latest complete month's hours scaled by day count."""
+    seen = _add_months(origin, driver.lag)
+    if target <= seen:
+        return driver.hours.get(target, 0.0), True
+    return driver.hours.get(seen, 0.0) * _days_in(target) / _days_in(seen), False
+
+
 # ── candidate methods ────────────────────────────────────────────────────────
-def _predict(method: str, pts: list[tuple[int, float]], h: int) -> float:
+def _predict(method: str, pts: list[tuple[int, float]], h: int, driver: Driver | None = None) -> float:
     """Forecast h calendar months after the last point, by candidate formula."""
     ys = [v for _, v in pts]
+    if method == "hours_driver":
+        rate = _driver_rate(pts, driver)
+        if rate is None or driver is None:
+            return ys[-1]
+        hours, _observed = _driver_hours(pts[-1][0], _add_months(pts[-1][0], h), driver)
+        return rate * hours
     if method in ("naive", "contract_flat"):
         return ys[-1]
     if method == "recent3":
@@ -211,28 +252,33 @@ def _predict(method: str, pts: list[tuple[int, float]], h: int) -> float:
     raise ValueError(f"unknown method {method}")
 
 
-def _one_step_maes(pts: list[tuple[int, float]]) -> dict[str, tuple[float, int]]:
+def _one_step_maes(pts: list[tuple[int, float]], driver: Driver | None = None) -> dict[str, tuple[float, int]]:
     """One-step walk-forward MAE per candidate over this fit set."""
     by_period = dict(pts)
     errs: dict[str, list[float]] = {"naive": [], "recent3": [], "damped_trend": []}
+    if driver is not None:
+        errs["hours_driver"] = []
     for o in range(_MIN_POINTS, len(pts)):
         fit = pts[:o]
         actual = by_period.get(_add_months(fit[-1][0], 1))
         if actual is None:
             continue  # a gap month - not a one-step test
         for m in errs:
-            errs[m].append(abs(_predict(m, fit, 1) - actual))
+            if m == "hours_driver" and _driver_rate(fit, driver) is None:
+                continue
+            errs[m].append(abs(_predict(m, fit, 1, driver) - actual))
     return {m: (statistics.fmean(e) if e else float("inf"), len(e)) for m, e in errs.items()}
 
 
-def _select_method(pts: list[tuple[int, float]]) -> tuple[str, dict]:
-    """Pick the candidate for this fit set. Simpler wins unless clearly beaten (>10% MAE)."""
+def _select_method(pts: list[tuple[int, float]], driver: Driver | None = None) -> tuple[str, dict]:
+    """Pick the candidate for this fit set. Simpler wins unless clearly beaten (>10% MAE).
+    The hours driver (labor_cost) must beat the best of the others by the same margin."""
     ys = [v for _, v in pts]
     if _is_flat(ys):
         return "contract_flat", {"rule": "flat_tail", "candidates": {}}
     if len(pts) < _MIN_SELECT:
         return "recent3", {"rule": "too_short_to_validate_trend", "candidates": {}}
-    maes = _one_step_maes(pts)
+    maes = _one_step_maes(pts, driver)
     if maes["naive"][1] < 2:
         return "recent3", {"rule": "too_few_one_step_tests", "candidates": {}}
     scores = {m: round(v[0], 2) for m, v in maes.items()}
@@ -242,6 +288,10 @@ def _select_method(pts: list[tuple[int, float]]) -> tuple[str, dict]:
     simpler_best = min(maes["naive"][0], maes["recent3"][0])
     if maes["damped_trend"][0] < (1 - _TREND_MARGIN) * simpler_best:
         chosen = "damped_trend"
+    if "hours_driver" in maes and maes["hours_driver"][1] >= 2 and _driver_rate(pts, driver) is not None:
+        others_best = min(simpler_best, maes["damped_trend"][0])
+        if maes["hours_driver"][0] < (1 - _TREND_MARGIN) * others_best:
+            chosen = "hours_driver"
     return chosen, {"rule": f"walk_forward_mae_margin_{int(_TREND_MARGIN * 100)}pct",
                     "candidates": scores, "n_one_step_tests": maes["naive"][1]}
 
@@ -256,6 +306,7 @@ class Series:
     excluded: list[dict]              # [{period, reason}]
     quality: dict                     # {warning_months, total_months}
     identity: dict | None = None      # {break_period, prior_name} when split
+    driver: Driver | None = None      # punched hours; labor_cost series only
 
 
 @dataclass
@@ -282,18 +333,22 @@ def compute_forecasts(
     suspect_periods: dict[int, str],
     latest_closed: int,
     metrics: Sequence[str] = METRICS,
+    hours_through: int | None = None,
 ) -> dict:
     """Full v2 computation.
 
     ``site_rows`` are site-month dicts with job_number, period_id (YYYYMM), job_name,
     revenue, gross_profit, labor_cost, subcontract_cost (optional), delivery_model,
-    parent_account (optional) and data_quality_status. Returns the
+    parent_account (optional), hours (optional) and data_quality_status. ``hours_through`` is
+    the last month whose punches are complete; with it, labor_cost series may use the hours
+    driver. Returns the
     engine-native rows (YYYYMM periods, ``point``/``lo``/``hi`` keys); ``shape_run``
     converts them to the database contract.
     """
     metrics = tuple(metrics)
     run_id = str(uuid.uuid4())
     closed_set = set(closed_periods)
+    driver_lag = max(0, _month_offset(hours_through, latest_closed)) if hours_through else None
 
     by_job: dict[str, list[dict]] = {}
     for r in site_rows:
@@ -348,6 +403,11 @@ def compute_forecasts(
                 pts.append((p, float(r.get(metric) or 0)))
 
             s = Series(job, job_name, metric, pts, excluded, quality, identity)
+            if metric == "labor_cost" and driver_lag is not None:
+                hours = {int(r["period_id"]): float(r.get("hours") or 0) for r in rows
+                         if float(r.get("hours") or 0) > 0}
+                if hours:
+                    s.driver = Driver(hours, driver_lag)
             if len(pts) < _MIN_POINTS:
                 recent = bool(pts) and _month_offset(latest_closed, pts[-1][0]) <= _INACTIVE_AFTER
                 status_rows.append({
@@ -392,7 +452,7 @@ def compute_forecasts(
         by_period = dict(s.points)
         for o in range(_MIN_POINTS, len(s.points)):
             fit = s.points[:o]
-            method, _sel = _select_method(fit)
+            method, _sel = _select_method(fit, s.driver)
             scale = _scale_of([v for _, v in fit])
             cls = _vol_class([v for _, v in fit])
             for h in range(1, HORIZON + 1):
@@ -402,7 +462,7 @@ def compute_forecasts(
                     continue
                 calls.append(WalkForwardCall(
                     s.job_number, s.metric, fit[-1][0], target, h,
-                    method, _predict(method, fit, h), actual, scale, cls,
+                    method, _predict(method, fit, h, s.driver), actual, scale, cls,
                 ))
 
     # 3. pooled error distributions per (metric, class, horizon)
@@ -500,7 +560,7 @@ def compute_forecasts(
         calls_by_series.setdefault((c.job_number, c.metric), []).append(c)
 
     for s in series_list:
-        method, selection = _select_method(s.points)
+        method, selection = _select_method(s.points, s.driver)
         values = [v for _, v in s.points]
         cls = _vol_class(values)
         scale = _scale_of(values)
@@ -508,7 +568,7 @@ def compute_forecasts(
 
         run_w_lo = run_w_hi = 0.0  # dollar half-widths: never narrower at further h
         for h in range(1, HORIZON + 1):
-            point = _predict(method, s.points, h)
+            point = _predict(method, s.points, h, s.driver)
             lo_off, hi_off, band_meta = _band_offsets(s.metric, cls, h)
             lo = point + lo_off * scale
             hi = point + hi_off * scale
@@ -593,6 +653,8 @@ def compute_forecasts(
             "n_series_stale": len(stale_series),
             "n_series_short_contributing": len(short_series),
             "n_series_gated_out": len(status_rows),
+            "hours_through": hours_through,
+            "hours_driver_lag_months": driver_lag,
         },
         "gates": {
             "closed_month": "month_end + close_lag_days (ops.app_setting) is before today "
@@ -616,6 +678,10 @@ def compute_forecasts(
             "by service month otherwise; labor cost is job-cost direct labor for closed "
             "months and timekeeping hours x the job's trailing rate in progress. Neither "
             "is the audited income statement.",
+            "Labor cost may use the hours driver: punched hours x the site's labor dollars per "
+            "hour (median of its last 3 closed months). Months after the latest close that are "
+            "fully punched use their own hours; later months scale the latest full month by day "
+            "count. Backtests assume the same punch lag, so no call sees later hours.",
             "Months with zero revenue (or zero labor cost / zero subcontract cost, for the "
             "labor and subcontract metrics) are treated as data gaps, not real zeros.",
             "Subcontract cost by site comes from the job-cost P&L subcontractor line "
@@ -682,6 +748,15 @@ def _explain(s: Series, method: str, selection: dict, point: float,
                    if "too_short" in why or "too_few" in why
                    else "more stable than naive or trend in backtests")
         return f"{label}: median of the last 3 closed months ({point:,.0f}); {why_txt}. " + band_txt
+    if method == "hours_driver" and s.driver is not None:
+        rate = _driver_rate(s.points, s.driver) or 0.0
+        origin = s.points[-1][0]
+        hours, observed = _driver_hours(origin, _add_months(origin, h), s.driver)
+        source = ("punched hours for the month" if observed
+                  else f"{period_to_date(_add_months(origin, s.driver.lag)):%b %Y} punched hours scaled to the month's days")
+        return (f"{label}: {hours:,.0f} hours ({source}) at {rate:,.2f} per hour (median of the "
+                f"last 3 closed months) gives {point:,.0f}; hours beat naive/recent/trend in "
+                f"walk-forward MAE {selection.get('candidates', {})}. " + band_txt)
     if method == "damped_trend":
         cands = selection.get("candidates", {})
         return (f"{label}: damped robust trend (Theil-Sen, damping {_PHI}) gives {point:,.0f} "
@@ -968,6 +1043,19 @@ def load_site_rows(cursor: _Cursor) -> list[dict]:
     return rows
 
 
+def hours_through_period(cursor: _Cursor, today: date | None = None) -> int | None:
+    """The last month whose punches are complete: the month of the latest punch when that is
+    the month's last day, else the month before. None without timekeeping."""
+    cursor.execute("SELECT max(work_date) AS last FROM core.fact_timekeeping WHERE work_date <= %s",
+                   (today or date.today(),))
+    row = cursor.fetchone()
+    last = row["last"] if row else None
+    if last is None:
+        return None
+    period = date_to_period(last)
+    return period if last == _month_end(period) else _add_months(period, -1)
+
+
 def load_job_keys(cursor: _Cursor) -> dict[str, int]:
     cursor.execute("SELECT job_number, job_key FROM core.dim_job WHERE valid_to IS NULL AND job_number IS NOT NULL")
     return {str(r["job_number"]): int(r["job_key"]) for r in cursor.fetchall()}
@@ -1193,7 +1281,8 @@ def build_forecasts(initiated_by: str = "scheduled-rebuild",
             return _empty_result()
         latest_closed = max(fittable)
 
-        result = compute_forecasts(site_rows, closed, suspects, latest_closed, metrics)
+        result = compute_forecasts(site_rows, closed, suspects, latest_closed, metrics,
+                                   hours_through=hours_through_period(cursor, today))
         shaped = shape_run(result, load_job_keys(cursor), initiated_by)
         write_run(cursor, shaped)
         pruned = prune_runs(cursor)

@@ -12,7 +12,7 @@ import type { DeliveryModel, ForecastAccountSummary, ForecastHistoryResponse, Fo
 import { queryClient } from '../../services/queryClient'
 import { monthLabel } from '../services/period'
 import { fmtDateTime, money, number, percent, moneyTick } from '../utils'
-import { AccuracyBadge, VolatilityChip, coverageCaveat, coverageSummary, deliveryLabel, headlineRow, isAggregateRow, metricLabel } from './forecastShared'
+import { AccuracyBadge, VolatilityChip, coverageCaveat, coverageSummary, deliveryLabel, headlineRow, isAggregateRow, methodLabel, metricLabel } from './forecastShared'
 import { DemoNotice, Note, useReportQuery } from './shared'
 
 interface SiteForecastRow { job_number: string; job_name: string; parent_account: string | null; delivery_model: DeliveryModel | null; method: string; volatility: string | null; steps: ForecastRow[]; accuracy: ForecastRow['accuracy']; row: ForecastRow }
@@ -102,7 +102,7 @@ export function Forecast() {
     { key: 'job_name', header: 'Site', render: (r) => <><strong>{r.job_name}</strong>{!isAggregateRow(r.job_number) && <span className="muted"> {r.job_number}</span>}{r.delivery_model === 'subcontracted' && <span className="tag-chip tag-chip--sub">Subcontracted</span>}</> },
     ...(!account ? [{ key: 'parent_account', header: 'Account', value: (r: SiteForecastRow) => r.parent_account ?? '', render: (r: SiteForecastRow) => r.parent_account ?? <span className="muted">—</span> } as Column<SiteForecastRow>] : []),
     ...(hasDelivery ? [{ key: 'delivery_model', header: 'Delivery', value: (r: SiteForecastRow) => r.delivery_model ?? '', render: (r: SiteForecastRow) => <span className={`tag-chip ${r.delivery_model === 'subcontracted' ? 'tag-chip--sub' : ''}`}>{deliveryLabel(r.delivery_model)}</span> } as Column<SiteForecastRow>] : []),
-    { key: 'method', header: 'Method', render: (r) => <span className="method-chip">{r.method.replace(/_/g, ' ')}</span> },
+    { key: 'method', header: 'Method', render: (r) => <span className="method-chip">{methodLabel(r.method)}</span> },
     { key: 'volatility', header: 'Volatility', render: (r) => <VolatilityChip value={r.volatility} /> },
     ...horizons.map((h): Column<SiteForecastRow> => ({ key: `h${h}`, header: `+${h} (${horizonMonth(h) ? monthLabel(horizonMonth(h)!, 'tick') : ''})`, numeric: true, value: (r) => r.steps.find((s) => s.horizon_step === h)?.point ?? null, csv: (r) => { const s = r.steps.find((x) => x.horizon_step === h); return s ? `${s.point} (${s.lo}–${s.hi})` : '' }, render: (r) => { const s = r.steps.find((x) => x.horizon_step === h); return s ? <span className="point-cell"><b>{money(s.point)}</b><small>{money(s.lo)}–{money(s.hi)}</small></span> : '—' } })),
     { key: 'accuracy', header: 'Accuracy', value: (r) => (r.accuracy && r.accuracy.n_backtests >= 3 ? r.accuracy.median_ape : null), csv: (r) => (r.accuracy && r.accuracy.n_backtests >= 3 ? r.accuracy.median_ape : ''), render: (r) => <AccuracyBadge accuracy={r.accuracy} /> },
@@ -111,7 +111,7 @@ export function Forecast() {
     { key: 'origin_month', header: 'Origin', render: (r) => monthLabel(r.origin_month, 'tick'), csv: (r) => r.origin_month },
     { key: 'forecast_month', header: 'Forecast month', render: (r) => monthLabel(r.forecast_month, 'tick'), csv: (r) => r.forecast_month },
     { key: 'horizon', header: 'h', numeric: true },
-    { key: 'method', header: 'Method', render: (r) => r.method.replace(/_/g, ' ') },
+    { key: 'method', header: 'Method', render: (r) => methodLabel(r.method) },
     { key: 'point', header: 'Point', numeric: true, render: (r) => money(r.point) },
     { key: 'band', header: '80% band', numeric: true, sortable: false, render: (r) => (r.lo === null || r.hi === null ? <span className="muted" title="No band recorded for this row (portfolio sums carry point only)">—</span> : <span className="num">{money(r.lo)}–{money(r.hi)}</span>), csv: (r) => (r.lo === null || r.hi === null ? '' : `${r.lo}–${r.hi}`) },
     { key: 'actual', header: 'Actual', numeric: true, render: (r) => (r.actual === null ? <span className="muted">not yet closed</span> : money(r.actual)) },

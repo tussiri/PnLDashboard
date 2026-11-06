@@ -73,6 +73,13 @@ some labor is still self-performed. Bounds are clamped at zero like revenue and 
 - `naive` - last closed month; `recent3` - median of the last three; `damped_trend` -
   Theil-Sen robust slope with fixed damping 0.9; `contract_flat` - when the recent tail is
   the same figure every month (within 0.5%).
+- `hours_driver` (labor cost only, engine v2.1) - punched hours x the site's labor dollars per hour,
+  the median of its last three closed months. Timekeeping arrives daily, so months after the latest
+  close may already be fully punched; such a month uses its own hours, and later months scale the
+  latest complete month by day count. `hours_through` (the last month whose punches are complete)
+  and the resulting lag are in `run_meta.dataset`; every backtest assumes the same lag, so no call
+  sees hours that did not exist yet. It is chosen only when it beats the best other candidate by
+  more than 10% one-step MAE.
 - Selection is a one-step walk-forward backtest over the series' own history. The simpler
   candidate wins unless a more complex one beats it by more than 10% MAE. Fewer than six
   points, or fewer than two one-step tests, forces `recent3` (a trend cannot be validated).
