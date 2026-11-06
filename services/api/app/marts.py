@@ -70,7 +70,7 @@ from typing import Any
 
 import psycopg
 
-from . import accounts, delivery, leadership, staffing, weekly
+from . import accounts, delivery, leadership, revenue_gap, staffing, weekly
 from .config import settings
 from .db import connection
 
@@ -567,6 +567,9 @@ def rebuild_tables() -> tuple[int, int, int]:
                                                "other_direct_gl_low": oth_low,
                                                "other_direct_gl_high": oth_high})
                 job_rows = cursor.rowcount
+                gap = revenue_gap.apply(cursor)
+                if gap:
+                    logger.info("Job-cost revenue gap filled from AR: %s", gap)
                 cursor.execute("DELETE FROM mart.portfolio_month")
                 cursor.execute(PORTFOLIO_MONTH_SQL)
                 portfolio_rows = cursor.rowcount

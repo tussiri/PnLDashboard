@@ -326,6 +326,24 @@ so for such months the marts use timekeeping labor at the trailing job rate, rev
 greatest(AR invoices, partial job cost) labeled `job_cost_partial`, and gross profit is computed
 from those components. The default reporting anchor stays on the latest closed month.
 
+## Revenue GL accounts missing from the export (rule added 2026-11-06)
+
+From July 2026 Crane's Job Cost Analysis export (WinTeam report FormatID 3) omits revenue GL accounts 31808
+"JANITORIAL: Indstrl, Mnftng, Wrhs - Subcontracted" and 34001 "JANITORIAL: OS Project Revenue". A job with no
+job-cost revenue already takes its AR invoices; a job with some (the fixed fee on 31800) lost the rest. Each mart
+rebuild now adds the AR shortfall back (`app/revenue_gap.py`, migration 068, setting `job_cost_revenue_gap`
+`{"from": "2026-07-01", "until": null}`), into `mart.job_month.revenue` and `gross_profit`, recorded in
+`revenue_ar_gap`. It is reconciled per parent account: the account's AR minus its job-cost revenue, shared over
+its jobs whose AR exceeds their job-cost revenue, so AR billed to a parent job that job cost spreads over other
+jobs (Plano ISD 800, Crowley ISD 910) is not counted twice. `revenue_basis` stays `job_cost`.
+
+Local result: July 2026 +$516K (FedEx $320K, Amazon $193K), August +$902K (FedEx $724K, Amazon $158K, overhead
+$17K). Portfolio revenue July $10.36M, August $10.29M, in line with September $10.47M (AR) where it read $9.85M
+and $9.39M. Some of the added AR may be catch-up billing (Amazon USD1 August $67K against a usual $30K), which the
+export cannot distinguish. Reading `mart.v_job_cost_month_effective` directly (the account income statement,
+prior-month and month views, Company P&L) still shows the export's figure. When WinTeam adds the two accounts to
+FormatID 3, set `until` to the first complete month.
+
 ## Dump provenance caveat
 
 Two Finance_Dashboard dumps exist: `local_backup_20260824.dump` (contains the
