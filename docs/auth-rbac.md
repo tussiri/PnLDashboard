@@ -23,25 +23,54 @@ Executive and Analyst can be renamed, edited and reset to their defaults but not
 role can be renamed, edited, and deleted once nobody holds it. A user's own overrides (Permissions
 by user) still apply on top of their role, except for No access, which holds nothing whatever is ticked.
 
+A super administrator is an administrator who also sees the analytics suite (next section).
+
 Enforcement is attached to the `include_router` calls in `services/api/app/main.py`, so the router
 modules stay free of session logic:
 
 - `/health/*` and `/auth/*` are public.
 - `platform_access`: `/system/status` and `/dimensions` for any signed-in role (the shell needs them);
   other platform GET routes need the `view.reporting` permission.
-- `require_access("view.reporting")` on reporting, labor, forecast and staffing (request lines carry pay
-  rates); any role with access on executive. No access (and a role deleted under a live session) gets
-  `403` everywhere but `/auth/*`.
+- `require_super_admin` on reporting, labor and forecast: the analytics suite routes (next section).
+- Any role with access on staffing and executive. No access (and a role deleted under a live session)
+  gets `403` everywhere but `/auth/*`.
 - Mutating requests (POST/PUT/PATCH/DELETE) accept **either** a valid `X-Admin-Token` **or** an
   admin-role session. `require_admin` on the individual write routes applies the same rule, so
   scripted calls with only the token keep working and a signed-in administrator does not need one.
 
 Responses: `401` when no valid session exists, `403` when the role is not allowed.
 
+## Super administrators and the analytics suite
+
+`APP_SUPER_ADMINS` lists the usernames (commas or spaces, any case) of the super administrators.
+A listed user must also hold the `admin` role: the list never raises a role. Empty or unset means
+nobody, in every mode; the development `admin` user is a super administrator only when listed
+(`APP_SUPER_ADMINS=admin`). The variable is read at start-up, so restart the API after changing it.
+It is not editable in Admin > Users: an administrator cannot grant it to themselves.
+
+Super administrators see two more tabs under Portfolio, **Finance** and **Operations**: the
+portfolio views of the retired reporting app (`src/suite`, `docs/frontend.md`).
+
+| Group | Views |
+|---|---|
+| Finance | Financial summary, Revenue analysis, Cost analysis, Margin & profitability, Billing & receivables, Budget vs actual, Forecast |
+| Operations | Labor cost, Hours & timekeeping, Sites portfolio (with the site page), Account portfolio, Geographic operations |
+
+- `/auth/login`, `/auth/setup` and `/auth/me` carry `super_admin: true | false` on the user.
+- The reporting, labor and forecast routers (`/portfolio/summary`, `/jobs`, `/accounts`, `/ar/*`,
+  `/ap/summary`, `/budget/variance`, `/alerts`, `/labor/*`, `/timekeeping/summary`, `/forecasts*`)
+  answer reads only to a super administrator session: `401` without a session, `403` for anyone
+  else, administrators included. Their writes (`POST /forecasts/rebuild`) accept a valid
+  `X-Admin-Token` or a super administrator session.
+- The browser hides the tabs and never requests the suite's code for anyone else; a suite URL
+  (`#/portfolio/finance/revenue`) opened by another user shows the ordinary Portfolio page or their account.
+- With no API reachable, a development build (`pnpm dev`) treats the demo `admin` sign-in as a super
+  administrator so the suite can be explored on demo data; a production build does not.
+
 ## Permissions
 
 Roles are presets. Each user also carries a permission matrix (Admin > Users > Permissions by user):
-Company and Portfolio views, reporting and forecasts, each account tab, and data such as allocations and margin, the month
+Company and Portfolio views, sync runs and sources, each account tab, and data such as allocations and margin, the month
 rollup, staffing requests, vendor invoices, photos, CSV export and the labor hours report. Defaults come from the role
 (executives lack Portfolio and staffing requests; analysts lack Portfolio; the key is still `view.analytics`; neither holds the labor hours report, which an administrator grants by role or user); an administrator's
 ticks that differ are stored as overrides in `ops.app_user.permissions` (migration 042) and Reset
@@ -221,10 +250,11 @@ APP_AUTH_MODE=required
 APP_SESSION_SECRET=<openssl rand -hex 32>
 APP_SETUP_TOKEN=<openssl rand -hex 24>        # first administrator; unused once any user exists
 APP_USERS_JSON='[]'                            # optional environment users
+APP_SUPER_ADMINS=                              # administrators who also see the analytics suite
 ```
 
 Keep `APP_USERS_JSON` single-quoted in `.env`: the hashes contain `$`, which Compose would otherwise
-try to interpolate. `compose.yaml` passes all three variables to the `api`, `worker` and `migrate`
+try to interpolate. `compose.yaml` passes these variables to the `api`, `worker` and `migrate`
 services through `x-api-environment`; only the API reads them. Restart the API after changing users:
 `docker compose up -d api`.
 
@@ -232,6 +262,7 @@ services through `x-api-environment`; only the API reads them. Restart the API a
 
 `services/api/tests/test_auth.py` covers hashing and verification, malformed hashes, session
 signing/verification/expiry/tampering, dev-mode users, required-mode start-up refusals, cookie flags,
-the read matrix per role (401/403/200) and the write routes (token or admin session). Front end:
-`src/auth/roles.test.ts` (role to visible routes, demo sign-in) and `src/copy.test.ts` (no symbol
+the read matrix per role (401/403/200) and the write routes (token or admin session);
+`test_super_admin.py` covers `APP_SUPER_ADMINS` and the analytics suite routes. Front end:
+`src/auth/roles.test.ts` (role to visible routes, super administrators, demo sign-in) and `src/copy.test.ts` (no symbol
 glyphs or placeholder brand in UI source).

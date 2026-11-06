@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 from .. import entra, permissions, roles, users
 from ..auth import (COOKIE_NAME, SESSION_TTL_SECONDS, User, get_auth_settings, sign_session, sign_value, verify_password,
                     verify_value)
-from ..common import current_user
+from ..common import current_user, is_super_admin
 
 log = logging.getLogger(__name__)
 
@@ -140,10 +140,10 @@ def entra_callback(request: Request, code: str = "", state: str = "", error: str
 
 
 def user_payload(user: User) -> dict[str, Any]:
-    """The browser's view of a user: role, the accounts it may see (null = every account) and its
-    effective permissions (app/permissions.py)."""
+    """The browser's view of a user: role, the accounts it may see (null = every account), its
+    effective permissions (app/permissions.py) and whether it is a super administrator."""
     return {**user.as_dict(), "role_name": roles.name(user.role), "accounts": list(user.accounts) if user.accounts and user.role != "admin" else None,
-            "permissions": permissions.effective(user.role, user.permissions)}
+            "permissions": permissions.effective(user.role, user.permissions), "super_admin": is_super_admin(user)}
 
 
 def setup_needed() -> bool:

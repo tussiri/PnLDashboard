@@ -17,7 +17,7 @@ export const PERMISSIONS: readonly PermissionInfo[] = [
   { key: 'view.company', group: 'Views', label: 'Company' },
   { key: 'view.company-story', group: 'Views', label: 'Company at a glance' },
   { key: 'view.analytics', group: 'Views', label: 'Portfolio' },
-  { key: 'view.reporting', group: 'Views', label: 'Reporting and forecasts' },
+  { key: 'view.reporting', group: 'Views', label: 'Sync runs and sources' },
   { key: 'tab.sites', group: 'Account tabs', label: 'Sites' },
   { key: 'tab.pallet', group: 'Account tabs', label: 'Pallet' },
   { key: 'tab.over-target', group: 'Account tabs', label: 'Hours to cut' },

@@ -12,7 +12,7 @@ Keys
     view.company        the Company page (every account; also needs an unlimited account scope)
     view.company-story  the Company page's "At a glance" story, in testing (off for every role but admin)
     view.analytics      the Portfolio pages (route #/portfolio; the key keeps its first name)
-    view.reporting      the reporting, labor and forecast routes and the platform reads (sync runs, sources)
+    view.reporting      the platform reads (sync runs, sources); the reporting, labor and forecast routes are super administrators only
     tab.<account tab>   an account tab (sites, pallet, over-target, overtime, income-statement,
                         subcontracted, map, vendors, invoices, feedback, budget); Overview is always open
     data.allocations    corporate allocations and margin after allocations
@@ -38,7 +38,7 @@ CATALOG: tuple[tuple[str, str, str], ...] = (
     ("view.company", "Views", "Company"),
     ("view.company-story", "Views", "Company at a glance"),
     ("view.analytics", "Views", "Portfolio"),
-    ("view.reporting", "Views", "Reporting and forecasts"),
+    ("view.reporting", "Views", "Sync runs and sources"),
     ("tab.sites", "Account tabs", "Sites"),
     ("tab.pallet", "Account tabs", "Pallet"),
     ("tab.over-target", "Account tabs", "Hours to cut"),
