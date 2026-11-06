@@ -131,6 +131,15 @@ some labor is still self-performed. Bounds are clamped at zero like revenue and 
   comes from portfolio-level backtest errors (full observed range below 10 errors, quantiles
   from 10). A damped-trend challenger on the total is recorded in `run_meta.portfolio` for
   reconciliation; it is never published as the forecast.
+- **Superseded sites (engine v2.4).** A stale or short-history site is not carried when another
+  site of its parent account has a later valid month: the account billed on without it, so its
+  revenue moved or stopped. Plano ISD and Crowley ISD are the case: job cost spread the district
+  invoice over the child sites through August 2026, then the parent jobs (800, 910) billed it from
+  September, and carrying the children's August values counted $1.40M twice. The portfolio
+  backtest applies the same rule at each origin. Status reasons say "not carried";
+  `run_meta.dataset.n_series_superseded` counts them. Locally: November 2026 portfolio revenue
+  $11.83M to $10.33M; one-month portfolio backtest median error 10.8% to 5.9% (October 2026
+  $11.71M to $10.21M against $9.74M); two and three months flat.
 
 ### Coverage and track record
 
