@@ -80,6 +80,21 @@ some labor is still self-performed. Bounds are clamped at zero like revenue and 
   and the resulting lag are in `run_meta.dataset`; every backtest assumes the same lag, so no call
   sees hours that did not exist yet. It is chosen only when it beats the best other candidate by
   more than 10% one-step MAE.
+- `contract_base` (revenue only, engine v2.2) - the site's contracted monthly amount plus what it
+  bills above it: the median over the last three closed months of max(revenue - contract, 0), so a
+  month that posts short (job cost booking the fixed fee and the variable in different months)
+  counts as 0, not as a negative. Contracts come from `ops.job_contract` (uploaded on the Company
+  P&L page), else `core.contract_billing`, else the Relay contract
+  (`mart.v_relay_job_contract.ar_monthly`); a job number held by two companies in the upload is
+  skipped. Dated contracts apply from their effective month, and a dated change inside the horizon
+  is followed even by a flat site. The Relay contract has no dates, so it is in force from the
+  first closed month whose revenue reached 98% of it. The contract is known information rather
+  than a fitted pattern, so it is the default wherever it is in force; a history method replaces it
+  only when it beats the contract by more than 10% one-step MAE on the same backtest months.
+  `run_meta.dataset.contract_sites` counts the forecast sites with a contract, by source.
+  Measured on the local data (October 2026 close, 383 revenue sites, 336 with a Relay contract):
+  total one-month-ahead site revenue error $7.66M to $7.27M over the backtest history, three months
+  ahead $5.94M to $5.57M; Relay sites since July 17.6% to 15.0%; 80% range coverage unchanged at 84%.
 - Selection is a one-step walk-forward backtest over the series' own history. The simpler
   candidate wins unless a more complex one beats it by more than 10% MAE. Fewer than six
   points, or fewer than two one-step tests, forces `recent3` (a trend cannot be validated).
