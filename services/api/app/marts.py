@@ -70,7 +70,7 @@ from typing import Any
 
 import psycopg
 
-from . import accounts, leadership, staffing, weekly
+from . import accounts, delivery, leadership, staffing, weekly
 from .config import settings
 from .db import connection
 
@@ -556,6 +556,10 @@ def rebuild_tables() -> tuple[int, int, int]:
         try:
             with conn.cursor() as cursor:
                 cursor.execute("SELECT pg_advisory_xact_lock(%s)", (MART_REBUILD_LOCK,))
+                changed = delivery.apply(cursor)
+                if changed:
+                    logger.info("Delivery from hours: %s job(s) now self-performed: %s", len(changed),
+                                ", ".join(f"{r['company']} {r['job_number']}" for r in changed[:20]))
                 cursor.execute("DELETE FROM mart.job_month")
                 cursor.execute(JOB_MONTH_SQL, {"burden": rate,
                                                "subcontract_gl_low": sub_low,
