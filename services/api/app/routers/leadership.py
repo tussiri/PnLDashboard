@@ -69,7 +69,7 @@ rr AS (
   -- jit_above_cost, and compiling it took longer than running it.
   CROSS JOIN (VALUES (0), (1), (2)) AS b(back)
   CROSS JOIN LATERAL (SELECT (k.revenue_month - b.back * interval '1 month')::date AS m) g
-  LEFT JOIN mart.v_job_cost_month_effective jc ON jc.company = k.company AND jc.job_number = k.job_number AND jc.month = g.m
+  LEFT JOIN mart.v_job_cost_month_reported jc ON jc.company = k.company AND jc.job_number = k.job_number AND jc.month = g.m
   LEFT JOIN mart.v_relay_job_month r ON r.job_number = k.job_number AND r.month = g.m AND k.company IS DISTINCT FROM 'Sarus'
   LEFT JOIN core.fact_job_cost_month ex ON ex.source = 'export_import' AND ex.company = k.company AND ex.job_number = k.job_number
                                        AND ex.month = g.m
@@ -330,12 +330,14 @@ timekeeping AS (
   GROUP BY 1, 2, 3
 )
 SELECT jobs.company, jobs.job_number, jobs.job_name, jobs.role, jobs.parent_job_number, d.delivery_model, months.month,
-       coalesce(jc.revenue, 0) AS revenue, ex.revenue_variable, coalesce(jc.direct_labor, 0) AS direct_labor,
-       coalesce(jc.payroll_taxes_insurance, 0) AS payroll_taxes, coalesce(jc.subcontractors, 0) AS subcontractors,
+       coalesce(jm.revenue, 0) AS revenue, ex.revenue_variable, coalesce(jm.labor_cost, 0) AS direct_labor,
+       coalesce(jm.payroll_ti_cost, 0) AS payroll_taxes, coalesce(jm.subcontract_cost, 0) AS subcontractors,
        coalesce(r.ar_revenue, 0) AS relay_ar, coalesce(r.ap_amount, 0) AS relay_ap, coalesce(tk.labor, 0) AS timekeeping_labor
 FROM jobs CROSS JOIN months
 LEFT JOIN delivery d USING (company, job_number)
-LEFT JOIN mart.v_job_cost_month_effective jc ON jc.company = jobs.company AND jc.job_number = jobs.job_number AND jc.month = months.month
+-- mart.job_month, the monthly P&L every page reads: job cost (with the AR revenue the export omits) where the
+-- export has the job, else its own AR, timekeeping and AP.
+LEFT JOIN mart.job_month jm ON jm.company = jobs.company AND jm.job_number = jobs.job_number AND jm.month = months.month
 LEFT JOIN core.fact_job_cost_month ex ON ex.source = 'export_import' AND ex.company = jobs.company AND ex.job_number = jobs.job_number
                                      AND ex.month = months.month
 -- Relay (FedEx) is keyed by Crane's job numbers, which Sarus reuses: never Sarus.
@@ -367,7 +369,7 @@ def leadership_monthly(account: str = Query(..., description="An account slug"),
             cursor.execute(
                 """
                 SELECT greatest(
-                  (SELECT max(jc.month) FROM mart.v_job_cost_month_effective jc JOIN ops.account_job aj
+                  (SELECT max(jc.month) FROM mart.v_job_cost_month_reported jc JOIN ops.account_job aj
                      ON aj.company = jc.company AND aj.job_number = jc.job_number WHERE aj.account_slug = %(a)s AND jc.revenue > 0),
                   (SELECT max(r.month) FROM mart.v_relay_job_month r JOIN ops.account_job aj ON aj.job_number = r.job_number AND aj.company IS DISTINCT FROM 'Sarus'
                      WHERE aj.account_slug = %(a)s AND r.ar_revenue > 0)) AS last
@@ -396,37 +398,32 @@ def leadership_monthly(account: str = Query(..., description="An account slug"),
 
 COMPANY_SQL = """
 WITH months AS (SELECT g.m::date AS month FROM generate_series(%(first)s::date, %(last)s::date, interval '1 month') AS g(m)),
--- The delivery model of a job in a month: that of its last week in the month (the week holding its Thursday).
-delivery AS (
-  SELECT DISTINCT ON (company, job_number, month) company, job_number, month, delivery_model
-  FROM (SELECT company, job_number, date_trunc('month', week_start + 3)::date AS month, week_start, delivery_model
-        FROM mart.leadership_week
-        WHERE week_start + 3 BETWEEN %(first)s::date AND (%(last)s::date + interval '1 month - 1 day')) w
-  ORDER BY company, job_number, month, week_start DESC
-),
+-- Every job's month from mart.job_month, the one monthly P&L every page reads: job cost where the export has
+-- the job (with the AR revenue it omits, app/revenue_gap.py), else the job's own AR, timekeeping and AP. On a
+-- job-cost row its labor, payroll taxes, subcontract and gross profit equal the export's. Management wages are
+-- only in job cost.
 base AS (
-  SELECT jc.month, coalesce(j.company, jc.company) AS company, jc.job_number,
+  SELECT m.month, m.company, m.job_number,
          -- A non-billed job (Plano's 896, Special Events) is billed apart from the account, so it counts in
          -- the company but not in the account, as in the weekly account figures (metrics.ts accountRows).
          CASE WHEN a.featured AND aj.role IS DISTINCT FROM 'non_billed' THEN aj.account_slug ELSE 'other' END AS account,
-         jc.revenue, jc.direct_labor, coalesce(jc.management_wages, 0) AS management_wages, jc.subcontractors,
-         jc.payroll_taxes_insurance, jc.gross_profit,
+         m.revenue, m.labor_cost AS direct_labor, coalesce(jc.management_wages, 0) AS management_wages,
+         m.subcontract_cost AS subcontractors, m.payroll_ti_cost AS payroll_taxes_insurance, m.gross_profit,
          -- The leadership mart's rule (app/leadership.py, relay_revenue): a subcontracted Relay (FedEx) site
          -- takes Relay AR as its revenue for any month with some, since from July 2026 its contract revenue
          -- is booked to a GL line with no job and its job cost carries only the OS line. Never Sarus.
-         coalesce(j.company, jc.company) IS DISTINCT FROM 'Sarus'
+         m.company IS DISTINCT FROM 'Sarus'
            AND (rc.job_number IS NOT NULL OR coalesce(rm.ap_amount, 0) > 0)
            AND NOT coalesce(rc.self_perform, false) AND coalesce(rm.ar_revenue, 0) > 0
-           AND coalesce(d.delivery_model, 'subcontracted') = 'subcontracted' AS relay_revenue,
+           AND coalesce(m.delivery_model, 'subcontracted') = 'subcontracted' AS relay_revenue,
          rm.ar_revenue AS relay_ar
-  FROM mart.v_job_cost_month_effective jc
+  FROM mart.job_month m
   JOIN months USING (month)
-  LEFT JOIN core.dim_job j ON j.job_number = jc.job_number AND j.company = jc.company AND j.valid_to IS NULL
-  LEFT JOIN ops.account_job aj ON aj.company = coalesce(j.company, jc.company) AND aj.job_number = jc.job_number
+  LEFT JOIN mart.v_job_cost_month_effective jc ON jc.company = m.company AND jc.job_number = m.job_number AND jc.month = m.month
+  LEFT JOIN ops.account_job aj ON aj.company = m.company AND aj.job_number = m.job_number
   LEFT JOIN ops.account a ON a.slug = aj.account_slug
-  LEFT JOIN mart.v_relay_job_contract rc ON rc.job_number = jc.job_number
-  LEFT JOIN mart.v_relay_job_month rm ON rm.job_number = jc.job_number AND rm.month = jc.month
-  LEFT JOIN delivery d ON d.company = coalesce(j.company, jc.company) AND d.job_number = jc.job_number AND d.month = jc.month
+  LEFT JOIN mart.v_relay_job_contract rc ON rc.job_number = m.job_number
+  LEFT JOIN mart.v_relay_job_month rm ON rm.job_number = m.job_number AND rm.month = m.month
 ),
 jc AS (
   SELECT month, company, job_number, account,

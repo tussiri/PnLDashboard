@@ -61,7 +61,7 @@ m AS (
 ),
 jcm AS MATERIALIZED (
   SELECT job_number, month, revenue, subcontractors, management_wages, direct_labor
-  FROM mart.v_job_cost_month_effective WHERE month <= %(first)s::date
+  FROM mart.v_job_cost_month_reported WHERE month <= %(first)s::date
 ),
 last_jc AS (SELECT DISTINCT ON (job_number) job_number, revenue FROM jcm WHERE month < %(first)s::date AND revenue > 0 ORDER BY job_number, month DESC),
 rjm AS MATERIALIZED (SELECT * FROM mart.v_relay_job_month WHERE month <= %(first)s::date),

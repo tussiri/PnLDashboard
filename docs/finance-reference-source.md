@@ -340,8 +340,10 @@ jobs (Plano ISD 800, Crowley ISD 910) is not counted twice. `revenue_basis` stay
 Local result: July 2026 +$516K (FedEx $320K, Amazon $193K), August +$902K (FedEx $724K, Amazon $158K, overhead
 $17K). Portfolio revenue July $10.36M, August $10.29M, in line with September $10.47M (AR) where it read $9.85M
 and $9.39M. Some of the added AR may be catch-up billing (Amazon USD1 August $67K against a usual $30K), which the
-export cannot distinguish. Reading `mart.v_job_cost_month_effective` directly (the account income statement,
-prior-month and month views, Company P&L) still shows the export's figure. When WinTeam adds the two accounts to
+export cannot distinguish. `mart.v_job_cost_month_reported` (migration 069) is the export plus `revenue_ar_gap`;
+the month rollup, account budgets and weekly run rates read it. The account monthly view (prior-month columns,
+income statement) and the Company view read `mart.job_month` itself. The Cross Tab Company P&L, accrual
+suggestions and labor pricing keep the export as loaded (the GL as posted). When WinTeam adds the two accounts to
 FormatID 3, set `until` to the first complete month.
 
 ## Dump provenance caveat
