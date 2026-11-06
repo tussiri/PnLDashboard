@@ -626,16 +626,17 @@ def normalize_jobs(conn: Any, seen_ids: Collection[str] | None = None) -> int:
     return result
 
 def apply_delivery_models(conn: Any) -> int:
-    """Set delivery_model on current jobs with none, from setting delivery_model_by_vertical (migration 065):
-    {account group: {dim_job.vertical: delivery_model}}. A value already there, from the exports or by hand, stays."""
+    """Set delivery_declared on current jobs with none, from setting delivery_model_by_vertical (migration 065):
+    {account group: {dim_job.vertical: delivery_model}}. A value already there, from the exports, stays. The model
+    every page shows is resolved from this and the evidence by app/delivery.py (migration 067)."""
     updated = 0
     with conn.cursor() as cursor:
         for group, verticals in (_setting(conn, "delivery_model_by_vertical", {}) or {}).items():
             for vertical, model in (verticals or {}).items():
                 cursor.execute(
                     """
-                    UPDATE core.dim_job SET delivery_model = %(model)s, warehouse_updated_at = now()
-                    WHERE valid_to IS NULL AND delivery_model IS NULL AND account_group = %(group)s AND vertical = %(vertical)s
+                    UPDATE core.dim_job SET delivery_declared = %(model)s, warehouse_updated_at = now()
+                    WHERE valid_to IS NULL AND delivery_declared IS NULL AND account_group = %(group)s AND vertical = %(vertical)s
                     """,
                     {"model": model, "group": group, "vertical": vertical},
                 )

@@ -69,7 +69,7 @@ class FakeCursor:
         return False
 
     def execute(self, sql: str, params: dict) -> None:
-        assert "delivery_model IS NULL" in sql  # a value already there stays
+        assert "delivery_declared IS NULL" in sql  # a value already there stays
         self.calls.append(params)
 
 

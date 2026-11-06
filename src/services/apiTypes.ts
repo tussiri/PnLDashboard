@@ -1604,6 +1604,9 @@ export interface LeadershipPhoto {
   creator_name: string | null
 }
 
+/** The rule that decided a site's delivery model (docs/api-contract.md, app/delivery.py). */
+export type DeliveryBasis = 'override' | 'hours' | 'labor_over_subcontract' | 'subcontractor_ap' | 'relay' | 'job_cost' | 'declared' | 'fallback'
+
 export interface LeadershipSiteResponse {
   source?: SourceBlock
   site: {
@@ -1618,6 +1621,8 @@ export interface LeadershipSiteResponse {
     longitude: number | null
     parent_job_number: string | null
     delivery_model: string | null
+    /** Which rule decided delivery_model (app/delivery.py). */
+    delivery_basis?: DeliveryBasis | null
     parent_account: string | null
     account_slug: string | null
     segment: string | null

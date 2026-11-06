@@ -21,7 +21,8 @@ stored: routers/leadership.py joins ops.account_job at read time.
   dollars when the pay report covers every day of it, else the job-cost labor
   (mart.job_month.labor_cost); prior_sub = the greater of the job-cost subcontract line and the AP
   distributions in the subcontract GL range for the job and month (prior_sub_basis says which).
-* sub_week / sub_week_basis / delivery_model come from mart.job_week (vendor cost). A site with no
+* delivery_model is core.dim_job's, resolved by app/delivery.py, the one label every page shows.
+* sub_week / sub_week_basis come from mart.job_week (vendor cost). A site with no
   job_week row (billed, no timekeeping) takes the revenue month's subcontract cost apportioned by
   days (basis 'prior_month_prorated'). Accounts with cost_basis 'labor_plus_vendor' measure cost %
   with it; others show it beside labor.
@@ -38,7 +39,7 @@ stored: routers/leadership.py joins ops.account_job at read time.
   from Relay's AR (supersession applied) when the job-cost export does not cover the month, and
   always for a subcontracted Relay site with AR that month, whose contract revenue is booked to a GL
   line with no job from July 2026, so its job cost carries only the OS revenue line
-  (revenue_month_basis relay_ar); delivery_model falls back to Relay's self-perform flag.
+  (revenue_month_basis relay_ar).
 * invoice_week = mart.job_week.invoicing (billing apportioned to the week), used only by accounts
   whose revenue_method is weekly_billing.
 """
@@ -54,7 +55,7 @@ INSERT INTO mart.leadership_week (
   prior_revenue, prior_labor, prior_labor_basis, prior_sub, prior_sub_basis, delivery_model, sub_week, sub_week_basis,
   revenue_month_budget_hours, revenue_month_hours, rebuilt_at)
 WITH jobs AS (
-  SELECT j.job_key, j.job_number, j.job_name, j.company, j.parent_job_number, pa.account_name AS parent_account
+  SELECT j.job_key, j.job_number, j.job_name, j.company, j.parent_job_number, pa.account_name AS parent_account, j.delivery_model
   FROM core.dim_job j
   LEFT JOIN core.dim_parent_account pa ON pa.parent_account_key = j.parent_account_key
   WHERE j.valid_to IS NULL AND j.job_number IS NOT NULL
@@ -149,7 +150,7 @@ assembled AS (
          wm.revenue_month,
          rm.revenue AS rm_revenue, rm.revenue_basis AS rm_basis, rm.labor_cost AS rm_labor, rm.subcontract_cost AS rm_sub,
          mc.company IS NOT NULL AS month_covered, prm.labor AS prm_labor, aps.amount AS ap_sub,
-         jw.job_key IS NOT NULL AS has_jw, jw.delivery_model, coalesce(jw.sub_dollars, 0) AS sub_week, jw.sub_basis AS sub_week_basis,
+         jw.job_key IS NOT NULL AS has_jw, jb.delivery_model, coalesce(jw.sub_dollars, 0) AS sub_week, jw.sub_basis AS sub_week_basis,
          rm.budget_hours AS rm_budget_hours, rm.hours AS rm_hours,
          date_trunc('month', k.week_start + 3)::date AS week_month,
          rc.job_number IS NOT NULL OR coalesce(rw.ap_amount, 0) > 0 AS relay_covered,
@@ -227,7 +228,8 @@ SELECT
   greatest(coalesce(a.rm_sub, 0), coalesce(a.ap_sub, 0), coalesce(a.relay_rm_ap, 0)),
   CASE WHEN coalesce(a.relay_rm_ap, 0) > greatest(coalesce(a.rm_sub, 0), coalesce(a.ap_sub, 0)) THEN 'relay_ap'
        WHEN coalesce(a.ap_sub, 0) > coalesce(a.rm_sub, 0) THEN 'ap_distribution' WHEN a.rm_sub IS NOT NULL THEN 'job_cost' END,
-  coalesce(a.delivery_model, CASE WHEN a.relay_self_perform THEN 'self_perform' WHEN a.relay_covered THEN 'subcontracted' END),
+  -- core.dim_job.delivery_model as resolved by app/delivery.py for every page (migration 067)
+  a.delivery_model,
   CASE WHEN a.relay_monthly IS NOT NULL
          THEN round(a.relay_monthly * 7 / extract(day FROM (a.week_month + interval '1 month' - interval '1 day')), 2)
        WHEN a.has_jw THEN a.sub_week

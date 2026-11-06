@@ -2,7 +2,7 @@ import { groupVisits, scoreTone, stars, visitScores } from './Feedback'
 import { X } from 'lucide-react'
 import { useEffect, useMemo, useRef } from 'react'
 import { useApiQuery } from '../../hooks/useApiQuery'
-import type { HrSiteStaffingWeek, LeadershipBudgetResponse, LeadershipSiteResponse, StaffingJobResponse, StaffingRequestLine } from '../../services/apiTypes'
+import type { DeliveryBasis, HrSiteStaffingWeek, LeadershipBudgetResponse, LeadershipSiteResponse, StaffingJobResponse, StaffingRequestLine } from '../../services/apiTypes'
 import { queryKey } from '../../services/queryClient'
 import { TrendChart } from '../charts'
 import { includesVendor, rowsOfWeek, segmentOrder, useRows, vendorLabel, weekBudgetOf } from '../data'
@@ -12,6 +12,13 @@ import { monthLabel, weekLabel, weekTick } from '../routes'
 import { useLeadership } from '../state'
 import { Badge, ChartCard, Empty, Kpi, LoadError, Skeleton, Swatch, toneOf, VocabContext } from '../ui'
 import { vocabOf } from '../vocab'
+
+/** What decided a site's delivery model (app/delivery.py). */
+const DELIVERY_BASIS: Record<DeliveryBasis, string> = {
+  override: 'set by hand', hours: 'own punches', labor_over_subcontract: 'own labor exceeds subcontractor cost',
+  subcontractor_ap: 'subcontractor invoices', relay: 'Relay', job_cost: 'job-cost subcontractor cost',
+  declared: 'finance export', fallback: 'no recent activity',
+}
 import { useTokens } from '../charts'
 
 const cap = (s: string | null) => (s ? s.charAt(0).toUpperCase() + s.slice(1).replace(/_/g, ' ') : '–')
@@ -169,7 +176,7 @@ export function SiteDrawer({ company, job }: { company: string; job: string }) {
           <dl className="dl">
             <dt>Address</dt><dd>{[site.address_line_1, site.city, site.state_province, site.postal_code].filter(Boolean).join(', ') || '–'}</dd>
             <dt>Parent job</dt><dd>{site.parent_job_number ?? '–'}</dd>
-            <dt>Delivery</dt><dd>{site.delivery_model === 'subcontracted' ? 'Subcontracted' : site.delivery_model === 'self_perform' ? 'Self-performed' : '–'}</dd>
+            <dt>Delivery</dt><dd>{site.delivery_model === 'subcontracted' ? 'Subcontracted' : site.delivery_model === 'self_perform' ? 'Self-performed' : '–'}{site.delivery_basis && DELIVERY_BASIS[site.delivery_basis] ? <span className="muted"> ({DELIVERY_BASIS[site.delivery_basis]})</span> : null}</dd>
             <dt>Hours, 13 weeks</dt><dd>{hours(weeks.reduce((a, r) => a + r.hours, 0))}</dd>
           </dl></div>}
       </>}

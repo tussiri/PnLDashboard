@@ -124,7 +124,7 @@ export function demoLeadershipSite(company: string, jobNumber: string, query: { 
     source,
     site: {
       company, job_number: jobNumber, site_name: last?.site_name ?? jobNumber, address_line_1: null, city: last?.city ?? null, state_province: last?.state_province ?? null,
-      postal_code: null, latitude: last?.latitude ?? null, longitude: last?.longitude ?? null, parent_job_number: null, delivery_model: 'self_perform',
+      postal_code: null, latitude: last?.latitude ?? null, longitude: last?.longitude ?? null, parent_job_number: null, delivery_model: 'self_perform', delivery_basis: 'hours',
       parent_account: last?.parent_account ?? null, account_slug: last?.account_slug ?? null, segment: last?.segment ?? null, role: last?.role ?? 'site', companycam_project_id: null,
     },
     weeks,
