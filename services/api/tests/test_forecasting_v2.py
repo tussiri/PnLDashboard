@@ -525,10 +525,10 @@ def test_hours_driver_uses_a_punched_month_and_wins_when_hours_move():
 
 def test_hours_driver_never_sees_later_hours():
     d = Driver({202501: 100.0, 202502: 200.0, 202503: 999.0}, lag=1)
-    assert _driver_hours(202501, 202502, d) == (200.0, True)         # one month of punches past the origin
-    hours, observed = _driver_hours(202501, 202503, d)               # 202503 was not punched yet
-    assert not observed and hours == 200.0 * 31 / 28
-    assert _driver_hours(202501, 202502, Driver(d.hours, lag=0))[1] is False
+    assert _driver_hours(202501, 202502, d) == (200.0, "punched")    # one month of punches past the origin
+    hours, basis = _driver_hours(202501, 202503, d)                  # 202503 was not punched yet
+    assert basis == "scaled" and hours == 200.0 * 31 / 28
+    assert _driver_hours(202501, 202502, Driver(d.hours, lag=0))[1] == "scaled"
 
 
 def test_hours_driver_is_labor_only_and_off_without_punch_data():
@@ -638,3 +638,64 @@ def test_load_contracts_precedence_and_ambiguous_job_numbers():
     assert specs["1"].source == "job_contract" and specs["1"].effective == [(202601, 100.0)]
     assert specs["2"].source == "relay"                      # two companies share job 2 in the upload
     assert specs["3"].source == "contract_billing" and specs["4"].snapshot == 4.0
+
+
+
+# ── current-month nowcast (hours driver) ─────────────────────────────────────
+from app.forecasting import _days_in, _remaining_hours, _weekday_rate, load_hours_to_day  # noqa: E402
+
+
+def test_nowcast_is_hours_to_date_plus_the_rest_at_last_months_weekday_rates():
+    # October 2026 (starts on a Thursday): 10 hours every weekday, none at weekends -> 22 weekdays.
+    d = Driver({202610: 220.0}, lag=0, to_day={202611: 50.0}, day=5,
+               by_weekday={202610: [40.0, 40.0, 40.0, 50.0, 50.0, 0.0, 0.0]})
+    rate = _weekday_rate(202610, d)
+    assert rate[:5] == [10.0] * 5 and rate[5:] == [0.0, 0.0]
+    # November 2026 days 6..30: 17 weekdays left.
+    assert _remaining_hours(202611, 5, rate) == 170.0
+    assert _driver_hours(202610, 202611, d) == (220.0, "to_date")
+    hours, basis = _driver_hours(202610, 202612, d)                  # later months scale the nowcast
+    assert basis == "scaled_to_date" and hours == 220.0 * 31 / 30
+    assert _driver_hours(202610, 202611, Driver({202610: 220.0}, lag=0))[1] == "scaled"
+
+
+def test_nowcast_backtests_rebuild_the_partial_view_of_past_months():
+    # Hours step to a new level every few months; the first half of a month already shows the step.
+    hours = [1000, 1010, 1500, 1490, 1500, 800, 810, 800, 1200, 1210, 1600, 1590]
+    rows = _labor_rows("1", 202501, hours)
+    closed = [_add_months(202501, i) for i in range(len(hours))]
+    to_day = {m: rows[i]["hours"] * 15 / _days_in(m) for i, m in enumerate(closed)}
+    weekday = {m: [rows[i]["hours"] / 7] * 7 for i, m in enumerate(closed)}
+    result = compute_forecasts(rows, closed, {}, closed[-1], ("labor_cost",), hours_through=closed[-2],
+                               hours_to_day=(15, {"1": to_day}, {"1": weekday}))
+    without = compute_forecasts(rows, closed, {}, closed[-1], ("labor_cost",), hours_through=closed[-2])
+
+    def err(r):
+        calls = [c for c in r["track_rows"] if c["job_number"] == "1" and c["horizon_step"] == 1]
+        return sum(abs(c["actual"] - c["point"]) for c in calls)
+
+    assert err(result) < err(without)
+    assert any(c["method"] == "hours_driver" for c in result["track_rows"] if c["job_number"] == "1")
+    assert result["run_meta"]["dataset"]["hours_to_day"] == 15
+
+
+def test_load_hours_to_day_uses_the_latest_complete_day():
+    class C:
+        def __init__(self, last):
+            self.last, self.q = last, 0
+
+        def execute(self, *_):
+            self.q += 1
+
+        def fetchone(self):
+            return {"last": self.last}
+
+        def fetchall(self):
+            if self.q == 2:
+                return [{"job_number": "1", "month": date(2026, 11, 1), "hours": 12.5}]
+            return [{"job_number": "1", "month": date(2026, 10, 1), "dow": 1, "hours": 8.0}]
+
+    day, to_day, weekday = load_hours_to_day(C(date(2026, 11, 5)), 202610, date(2026, 11, 6))
+    assert day == 5 and to_day == {"1": {202611: 12.5}} and weekday["1"][202610][0] == 8.0
+    assert load_hours_to_day(C(date(2026, 10, 31)), 202610, date(2026, 11, 1)) is None
+    assert load_hours_to_day(C(date(2026, 11, 5)), None) is None
