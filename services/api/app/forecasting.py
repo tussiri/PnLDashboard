@@ -74,7 +74,7 @@ from .db import connection
 
 log = logging.getLogger(__name__)
 
-ENGINE_VERSION = "v2.3-crane"  # surfaced in the UI; "Northstar" is a retired placeholder name
+ENGINE_VERSION = "v2.4-crane"  # surfaced in the UI; "Northstar" is a retired placeholder name
 TARGET_NAME = "site_monthly"
 METRICS: tuple[str, ...] = ("revenue", "gross_profit", "labor_cost", "subcontract_cost")
 ACCOUNT_JOB = "__ACCOUNT__"
@@ -599,6 +599,24 @@ def compute_forecasts(
                 continue
             series_list.append(s)
 
+    # 1b. a stale or short site is carried at its last value only while its parent account has
+    #     no later closed month on another site: when the account billed on, the site's revenue
+    #     moved (Plano ISD and Crowley ISD bill on the parent job once job cost stops spreading
+    #     it over the child sites) or it stopped, and carrying it counts it twice.
+    account_periods = _account_periods(series_list + stale_series + short_series)
+    superseded: list[Series] = []
+    for group in (stale_series, short_series):
+        for s in list(group):
+            if _superseded(s, latest_closed, account_periods):
+                group.remove(s)
+                superseded.append(s)
+    if superseded:
+        moved = {(s.job_number, s.metric) for s in superseded}
+        for row in status_rows:
+            if (row["job_number"], row["metric"]) in moved:
+                row["reason"] = (row["reason"].split("; contributes")[0].split(". Contributes")[0]
+                                 + "; its account billed later on other sites, so it is not carried")
+
     # 2. walk-forward pass - every historical call the engine would have made.
     #    Stale series participate so their history informs the error pools.
     calls: list[WalkForwardCall] = []
@@ -787,7 +805,8 @@ def compute_forecasts(
 
     # 6. portfolio = sum of site forecasts + stale/short sites' last values
     portfolio = _portfolio(series_list, stale_series, short_series, calls,
-                           forecast_rows, run_id, latest_closed, metrics)
+                           forecast_rows, run_id, latest_closed, metrics,
+                           superseded, account_periods)
     forecast_rows.extend(portfolio["forecast_rows"])
     accuracy_rows.extend(portfolio["accuracy_rows"])
     track_rows = [_track_row(c, run_id) for c in calls] + portfolio["track_rows"]
@@ -806,6 +825,7 @@ def compute_forecasts(
             "n_series_forecast": len(series_list),
             "n_series_stale": len(stale_series),
             "n_series_short_contributing": len(short_series),
+            "n_series_superseded": len(superseded),
             "n_series_gated_out": len(status_rows),
             "hours_through": hours_through,
             "hours_driver_lag_months": driver_lag,
@@ -956,14 +976,45 @@ _CONTRACT_SOURCE_LABEL = {"job_contract": "uploaded contract", "contract_billing
                           "relay": "Relay contract"}
 
 
+def _account_of(s: Series) -> str | None:
+    return (s.quality or {}).get("parent_account") or None
+
+
+def _account_periods(series: list[Series]) -> dict[tuple[str, str], list[tuple[int, str]]]:
+    """(metric, parent account) -> every (period, job) with a valid point, sorted."""
+    out: dict[tuple[str, str], list[tuple[int, str]]] = {}
+    for s in series:
+        account = _account_of(s)
+        if account:
+            out.setdefault((s.metric, account), []).extend((p, s.job_number) for p, _ in s.points)
+    for v in out.values():
+        v.sort()
+    return out
+
+
+def _superseded(s: Series, origin: int, account_periods: dict[tuple[str, str], list[tuple[int, str]]]) -> bool:
+    """Whether another site of the series' parent account has a valid point after the series'
+    last one, up to origin: the account billed on without it."""
+    account = _account_of(s)
+    last = max((p for p, _ in s.points if p <= origin), default=None)
+    if not account or last is None:
+        return False
+    return any(last < p <= origin and job != s.job_number
+               for p, job in account_periods.get((s.metric, account), ()))
+
+
 def _portfolio(series_list: list[Series], stale_series: list[Series],
                short_series: list[Series],
                calls: list[WalkForwardCall], site_forecast_rows: list[dict],
-               run_id: str, latest_closed: int, metrics: Sequence[str]) -> dict:
+               run_id: str, latest_closed: int, metrics: Sequence[str],
+               superseded: list[Series] | None = None,
+               account_periods: dict[tuple[str, str], list[tuple[int, str]]] | None = None) -> dict:
     """Portfolio = sum of site forecasts (+ stale and short-history sites' last
-    values), backtested the same way: at each origin, sum the calls the engine
-    would have made and compare with the actual total."""
-    all_series = series_list + stale_series + short_series
+    values, unless their account billed on without them), backtested the same way:
+    at each origin, sum the calls the engine would have made and compare with the
+    actual total."""
+    account_periods = account_periods or {}
+    all_series = series_list + stale_series + short_series + (superseded or [])
     totals: dict[tuple[str, int], float] = {}
     for s in all_series:
         for p, v in s.points:
@@ -980,6 +1031,8 @@ def _portfolio(series_list: list[Series], stale_series: list[Series],
             return None
         if _month_offset(origin, pts[-1][0]) > _INACTIVE_AFTER:
             return None  # would have been 'inactive' at that origin
+        if _superseded(s, origin, account_periods):
+            return None  # its account billed on without it by that origin
         return pts[-1][1]
 
     port_calls: list[dict] = []

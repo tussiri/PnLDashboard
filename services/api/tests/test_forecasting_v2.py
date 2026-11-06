@@ -227,6 +227,37 @@ def test_end_to_end_statuses_and_identity():
     assert abs(port[1]["point"] - (site_sum + 6_000.0 + 4_000.0)) < 1.0
 
 
+def test_a_site_whose_account_billed_on_without_it_is_not_carried():
+    """Plano ISD: job cost spread the district invoice over child sites through August, then the
+    parent job billed it from September. The children's August values are not carried into the
+    portfolio on top of the parent, in the forecast or in the backtest. A short site of an account
+    with nothing later (data lag) is still carried."""
+    rows = []
+    for c in range(3):  # child sites, job cost through 202608
+        rows += _mk_rows(f"C{c}", f"Child {c}", 202601, [1_000.0] * 8, parent_account="District")
+    rows += _mk_rows("PARENT", "District", 202609, [3_000.0] * 2, parent_account="District")
+    rows += _mk_rows("LAG", "Lag Site", 202601, [500.0] * 9, parent_account="Solo")
+    for j in range(20):
+        rows += _mk_rows(f"P{j}", f"Pad {j}", 202507, [3_000.0 + 50 * ((i + j) % 4) for i in range(16)])
+    closed = CLOSED + [202607, 202608, 202609, 202610]
+    out = compute_forecasts(rows, closed, {}, 202610, ("revenue",))
+
+    reasons = {r["job_number"]: r["reason"] for r in out["status_rows"]}
+    assert all("not carried" in reasons[f"C{c}"] for c in range(3))
+    assert "contributes" in reasons["PARENT"] and "not carried" not in reasons["PARENT"]
+    assert "Contributes" in reasons["LAG"]
+    assert out["run_meta"]["dataset"]["n_series_superseded"] == 3
+
+    port = {r["horizon_step"]: r for r in out["forecast_rows"] if r["job_number"] == PORTFOLIO_JOB}
+    site_sum = sum(r["point"] for r in out["forecast_rows"]
+                   if r["job_number"] != PORTFOLIO_JOB and r["horizon_step"] == 1)
+    assert abs(port[1]["point"] - (site_sum + 3_000.0 + 500.0)) < 1.0
+    # the 202610 backtest (origin 202609) no longer adds the children to the parent
+    track = [t for t in out["track_rows"] if t["job_number"] == PORTFOLIO_JOB
+             and t["origin_period_id"] == 202609 and t["horizon_step"] == 1]
+    assert track and abs(track[0]["point"] - track[0]["actual"]) < 600.0
+
+
 def test_end_to_end_track_record_and_coverage_exist():
     rows = []
     for j in range(15):
