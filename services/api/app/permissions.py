@@ -48,6 +48,7 @@ CATALOG: tuple[tuple[str, str, str], ...] = (
     ("tab.map", "Account tabs", "Map"),
     ("tab.vendors", "Account tabs", "Vendors"),
     ("tab.invoices", "Account tabs", "FedEx invoices"),
+    ("tab.directory", "Account tabs", "Directory"),
     ("tab.feedback", "Account tabs", "Feedback"),
     ("tab.budget", "Account tabs", "Budget"),
     ("data.allocations", "Data", "Allocations and margin"),

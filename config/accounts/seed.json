@@ -1289,7 +1289,9 @@
    "revenue_divisor": 4.33,
    "watch_band": 0.1,
    "budget_reliability_ratio": 0.8,
-   "source_parent_accounts": [],
+   "source_parent_accounts": [
+    "Apple"
+   ],
    "segment_source": "fallback",
    "fallback_segment": "Stores",
    "segments": [
@@ -1300,7 +1302,8 @@
    ],
    "jobs": [],
    "revenue_allocation": "none",
-   "cost_basis": "labor"
+   "cost_basis": "labor_plus_vendor",
+   "vendor_label": "Subcontractor"
   }
  ]
 }

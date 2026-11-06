@@ -1757,6 +1757,37 @@ export interface FedexInvoiceRow {
   check_numbers: string | null
   not_in_winteam: number
 }
+export interface DirectorySite {
+  company: string
+  job_number: string
+  code: string | null
+  name: string | null
+  address_line_1: string | null
+  address_line_2: string | null
+  city: string | null
+  state: string | null
+  postal_code: string | null
+  latitude: number | null
+  longitude: number | null
+  region: string | null
+  market: string | null
+  manager: string | null
+  service_tier: string | null
+  delivery: 'self_perform' | 'subcontracted' | null
+  start_date: string | null
+  active: boolean
+  hours_28d: number
+  employees_28d: number
+  last_punch: string | null
+}
+export interface LeadershipDirectoryResponse {
+  account: string
+  /** The last time WinTeam listed any of these sites. */
+  as_of: string | null
+  totals: { sites: number; active: number; self_perform: number; subcontracted: number; unassigned: number; working: number; hours_28d: number; employees_28d: number }
+  sites: DirectorySite[]
+}
+
 export type FedexInvoiceBasis = 'invoice' | 'service'
 export interface FedexInvoicesResponse {
   account: string

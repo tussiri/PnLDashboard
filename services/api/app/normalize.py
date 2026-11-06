@@ -620,9 +620,28 @@ def normalize_jobs(conn: Any, seen_ids: Collection[str] | None = None) -> int:
     try:
         with conn.transaction():
             apply_account_groups(conn)
+            apply_delivery_models(conn)
     except Exception:  # noqa: BLE001 - grouping must never fail a sync
         logger.exception("Account grouping failed after jobs normalization")
     return result
+
+def apply_delivery_models(conn: Any) -> int:
+    """Set delivery_model on current jobs with none, from setting delivery_model_by_vertical (migration 065):
+    {account group: {dim_job.vertical: delivery_model}}. A value already there, from the exports or by hand, stays."""
+    updated = 0
+    with conn.cursor() as cursor:
+        for group, verticals in (_setting(conn, "delivery_model_by_vertical", {}) or {}).items():
+            for vertical, model in (verticals or {}).items():
+                cursor.execute(
+                    """
+                    UPDATE core.dim_job SET delivery_model = %(model)s, warehouse_updated_at = now()
+                    WHERE valid_to IS NULL AND delivery_model IS NULL AND account_group = %(group)s AND vertical = %(vertical)s
+                    """,
+                    {"model": model, "group": group, "vertical": vertical},
+                )
+                updated += int(cursor.rowcount or 0)
+    return updated
+
 
 # ── vendors ──────────────────────────────────────────────────────────────────
 def normalize_vendors(conn: Any, seen_ids: Collection[str] | None = None, tenant: Tenant = PRIMARY) -> int:
