@@ -325,7 +325,7 @@ def test_loader_dimension_inserts_tolerate_api_owned_rows() -> None:
     assert "CASE WHEN core.dim_job.geo_precision = 'exact' THEN core.dim_job.latitude" in job_insert
     assert "source = " not in flat(job_insert).split("DO UPDATE SET", 1)[1]
     # reference-only attributes are always refreshed from the export
-    for column in ("delivery_model", "account_group", "customer_number", "customer_name", "date_discontinued"):
+    for column in ("delivery_declared", "account_group", "customer_number", "customer_name", "date_discontinued"):
         assert f"{column} = excluded.{column}" in job_insert, column
     vendor_insert = source[source.index("INSERT INTO core.dim_vendor (winteam_id, vendor_number, vendor_name, active, source)"):]
     vendor_insert = vendor_insert[: vendor_insert.index("params,")]

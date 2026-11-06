@@ -558,8 +558,8 @@ def rebuild_tables() -> tuple[int, int, int]:
                 cursor.execute("SELECT pg_advisory_xact_lock(%s)", (MART_REBUILD_LOCK,))
                 changed = delivery.apply(cursor)
                 if changed:
-                    logger.info("Delivery from hours: %s job(s) now self-performed: %s", len(changed),
-                                ", ".join(f"{r['company']} {r['job_number']}" for r in changed[:20]))
+                    logger.info("Delivery model: %s job(s) changed: %s", len(changed),
+                                ", ".join(f"{r['company']} {r['job_number']} {r['to']} ({r['basis']})" for r in changed[:20]))
                 cursor.execute("DELETE FROM mart.job_month")
                 cursor.execute(JOB_MONTH_SQL, {"burden": rate,
                                                "subcontract_gl_low": sub_low,

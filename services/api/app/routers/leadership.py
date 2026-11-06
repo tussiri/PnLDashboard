@@ -18,7 +18,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from pydantic import BaseModel, Field
 
-from .. import allocations, accounts, company_pl, companycam, imports, marts
+from .. import allocations, accounts, company_pl, companycam, delivery, imports, marts
 from .. import month as month_module
 from .. import budget as budget_module
 from .. import budget_file, directory, fedex_invoices, feedback_ai, mail_inbox, permissions, week_changes
@@ -898,7 +898,7 @@ def leadership_site(company: str, job_number: str, weeks: int = Query(13, ge=1, 
         cursor.execute(
             """
             SELECT j.job_key, j.company, j.job_number, j.job_name AS site_name, j.address_line_1, j.city, j.state_province,
-                   j.postal_code, j.latitude, j.longitude, j.parent_job_number, j.delivery_model, pa.account_name AS parent_account,
+                   j.postal_code, j.latitude, j.longitude, j.parent_job_number, j.delivery_model, j.delivery_basis, pa.account_name AS parent_account,
                    aj.account_slug, aj.segment, coalesce(aj.role, 'site') AS role, aj.companycam_project_id
             FROM core.dim_job j
             LEFT JOIN core.dim_parent_account pa ON pa.parent_account_key = j.parent_account_key
@@ -946,11 +946,7 @@ def leadership_site(company: str, job_number: str, weeks: int = Query(13, ge=1, 
             "feedback": feedback}
 
 
-def subcontractor_type_ids(cursor: Any) -> list[str]:
-    """Vendor type ids that count as subcontractors (setting subcontractor_vendor_type_ids, default [6])."""
-    cursor.execute("SELECT value FROM ops.app_setting WHERE key = 'subcontractor_vendor_type_ids'")
-    row = cursor.fetchone()
-    return [str(v) for v in (row["value"] if row and isinstance(row["value"], list) else [6])]
+subcontractor_type_ids = delivery.subcontractor_type_ids
 
 
 def months_back(months: int) -> date:

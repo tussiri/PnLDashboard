@@ -739,7 +739,7 @@ def build_jobs(conn: Any, config: dict[str, Any], aliases: dict[str, str], job_m
               winteam_id, identity_version, parent_account_key, job_number, job_name, status, service_type, branch_name, region_name,
               manager_name, vertical, address_line_1, address_line_2, city, state_province, postal_code, country_code, latitude, longitude,
               company_number, parent_job_number, type_id, supervisor_id, date_to_start, tiers, custom_fields, is_active, last_seen_at,
-              source, company, company_name_raw, delivery_model, account_group, customer_number, customer_name, geo_precision, date_discontinued
+              source, company, company_name_raw, delivery_declared, account_group, customer_number, customer_name, geo_precision, date_discontinued
             ) VALUES (
               %(winteam_id)s, 1, (SELECT parent_account_key FROM core.dim_parent_account WHERE winteam_id = %(account_id)s),
               %(job_number)s, %(job_name)s, %(status)s, %(service_type)s, %(branch_name)s, %(region_name)s, %(manager_name)s, %(vertical)s,
@@ -776,7 +776,7 @@ def build_jobs(conn: Any, config: dict[str, Any], aliases: dict[str, str], job_m
               custom_fields = CASE WHEN jsonb_array_length(core.dim_job.custom_fields) > 0 THEN core.dim_job.custom_fields ELSE excluded.custom_fields END,
               company = coalesce(core.dim_job.company, excluded.company),
               company_name_raw = excluded.company_name_raw,
-              delivery_model = excluded.delivery_model,
+              delivery_declared = excluded.delivery_declared,
               account_group = excluded.account_group,
               customer_number = excluded.customer_number,
               customer_name = excluded.customer_name,

@@ -282,6 +282,26 @@ apportioned by days. `total_dollars = direct + sub` (direct is all-in payroll pr
   `margin = invoicing − total_dollars` is computed client-side. Vendor identity is not job-linked in WinTeam
   except the configured agency rule, so vendor cost is a per-site amount, not a per-vendor breakdown.
 
+## Delivery model: one source for every page (added 2026-11-06)
+
+- `core.dim_job.delivery_model` is the only delivery label. Every view reads it, through `mart.job_week`,
+  `mart.job_month`, `mart.leadership_week`, the directory, the site drawer and the forecast. It is written only by
+  `app/delivery.py` at the start of each mart rebuild (migration 067), for every current job, and is never empty;
+  `core.dim_job.delivery_basis` names the rule that decided it. First match wins:
+  1. `override`: `ops.job_delivery_override` (company, job_number, delivery_model, note).
+  2. `hours`: at least `min_hours` (40) punched in the last `weeks` (8) weeks.
+  3. Subcontractor paid for the site in the last `subcontract_days` (92) days: AP GL distributions from
+     subcontractor vendor types (`subcontractor_ap`), Relay payables or a Relay station naming a subcontractor with
+     a monthly AP (`relay`), job-cost subcontractor cost (`job_cost`). A site whose own labor dollars over the same
+     days exceed the subcontractor dollars stays self-performed (`labor_over_subcontract`).
+  4. `relay`: Relay marks the station self-performed.
+  5. `declared`: `core.dim_job.delivery_declared`, the finance export's `is_self_perform` (or its override) or the
+     `delivery_model_by_vertical` setting. These sources no longer write `delivery_model`.
+  6. `fallback`: self-performed if the job ever had punches, else subcontracted.
+- Settings: `delivery_from_hours` = `{"weeks", "min_hours", "subcontract_days"}`; `subcontractor_vendor_type_ids`.
+- The empty-label fallbacks in the readers (`common.delivery_sql`, the executive view's hours rule, the leadership
+  view's Relay flags) no longer change anything, because the label is never empty.
+
 ## Vendor cost: projection and live AP look (added 2026-09-04)
 
 - `mart.job_week.sub_dollars` for weeks in a NOT-closed month is now a **projection**: the site's average weekly
@@ -376,7 +396,7 @@ are Monday-based; the views label them by the week-ending Sunday. Any date in a 
 |---|---|
 | `GET /leadership/config` | `{source, accounts: [LeadershipAccount], weeks: [{week_start, week_end, days_with_labor, pay_report_share, revenue_month, in_progress}], default_week, status: {rebuilt_at, leadership_rebuilt_at, syncs: [{integration_name, status, completed_at, started_at}], imports: {pay_report?, job_cost?: {file_name, period_from, period_to, rows_loaded, loaded_at}}, pay_report_through: [{company, through}]}}`. `default_week` = the latest complete week. A week is `in_progress` until its Sunday is past both today and the last rebuild (changed 2026-10-09: a week that ended after the data was last built is not complete). A `syncs` entry is `failed` when the latest run of any of that integration's resources failed, except a resource the tenant is not entitled to (HTTP 403, error `not_entitled`). |
 | `GET /leadership/rows?week=&weeks=1&account=featured` | `{source, week, weeks: [ISO], account, rows: [LeadershipRow]}` for `weeks` (1–26) weeks ending at `week`. `account` = a slug, `featured`, `other` (unmapped or non-featured) or `all`. 404 for an unknown slug. |
-| `GET /leadership/sites/{company}/{job_number}?weeks=13&week=` | `{source, site: {company, job_number, site_name, address_line_1, city, state_province, postal_code, latitude, longitude, parent_job_number, delivery_model, parent_account, account_slug, segment, role, companycam_project_id}, weeks: [LeadershipRow], invoices: {since, vendor_type_ids, total, lines: [{invoice_number, invoice_date, gl_account_number, amount, vendor_number, vendor_name, vendor_type_id}]}, photos: {configured, project_id, items: [{id, captured_at, thumbnail, web, creator_name}] \| null, error}}`. Invoices are AP GL distribution lines coded to the job from subcontractor vendors (setting `subcontractor_vendor_type_ids`, default `[6]`) over the last 6 months. Photos are fetched server-side from CompanyCam when a token and the job's `companycam_project_id` exist. 404 for an unknown job. |
+| `GET /leadership/sites/{company}/{job_number}?weeks=13&week=` | `{source, site: {company, job_number, site_name, address_line_1, city, state_province, postal_code, latitude, longitude, parent_job_number, delivery_model, delivery_basis, parent_account, account_slug, segment, role, companycam_project_id}, weeks: [LeadershipRow], invoices: {since, vendor_type_ids, total, lines: [{invoice_number, invoice_date, gl_account_number, amount, vendor_number, vendor_name, vendor_type_id}]}, photos: {configured, project_id, items: [{id, captured_at, thumbnail, web, creator_name}] \| null, error}}`. Invoices are AP GL distribution lines coded to the job from subcontractor vendors (setting `subcontractor_vendor_type_ids`, default `[6]`) over the last 6 months. Photos are fetched server-side from CompanyCam when a token and the job's `companycam_project_id` exist. `delivery_basis` is the rule that decided `delivery_model` (see Delivery model): `override`, `hours`, `labor_over_subcontract`, `subcontractor_ap`, `relay`, `job_cost`, `declared`, `fallback`. 404 for an unknown job. |
 | `GET /leadership/vendors?account=&months=6` | `{account, since, vendor_type_ids, total, by_vendor: [{vendor_number, vendor_name, amount, invoices}], by_site: [{company, job_number, site_name, amount, invoices}], by_month: [{month, amount, invoices}], lines: [invoice line + {company, job_number, site_name}]}`: subcontractor AP distribution lines coded to the account's sites since the first of the month `months - 1` back. 404 for an unknown slug. |
 | `GET /leadership/fedex-invoices?account=&date_from=&date_to=&basis=invoice` | `{account, date_from, date_to, basis, as_of, rows: [{invoice_number, invoice_date, service_month, billing_period_from/to, customer_number, company, job_number, site_name, stations, delivery, revenue, tax, invoice_total, portal_state, remitted, paid_date, vendors, vendor_numbers, vendor_invoices, work_orders, payables, crane_payables, vendor_cost, margin, margin_pct, vendor_payment, vendor_paid, vendor_paid_date, check_numbers, not_in_winteam}], totals}`: FedEx (AR) invoices from the Relay snapshot whose invoice date (`basis=service`: service month) falls in the range, one row per invoice with its linked vendor payables (`app/fedex_invoices.py`). Self-perform and Martin Building Solutions payables are flagged (`crane_payables`) and kept out of vendor cost. 422 for a range over 731 days or an unknown basis; 404 for an account whose vocabulary is not `fedex`. |
 | `PUT /leadership/accounts/{slug}` (admin) body: any of `name, featured, sort, target_labor_pct, watch_band, revenue_method, revenue_divisor, budget_reliability_ratio, source_parent_accounts, segment_source, fallback_segment` | the updated `LeadershipAccount` |
