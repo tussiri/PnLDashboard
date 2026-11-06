@@ -470,8 +470,7 @@ Sign-in itself (`/auth/login`, `/auth/logout`, `/auth/me`, `/auth/mode`) is desc
 
 `role` on users, `/auth/me` and `/auth/login` is any role's slug (Admin > Users > Roles), with `role_name`
 its display name; `none` (No access) is what a first Microsoft sign-in gets. The permission key
-`view.reporting` (Reporting and forecasts) gates the reporting, labor, forecast, staffing and
-platform GET routes that used to need the analyst or admin role.
+`view.reporting` gates the platform GET routes that used to need the analyst or admin role.
 
 `GET /auth/entra/start` and `GET /auth/callback/entra` are browser navigations, not API calls: Microsoft
 sign-in (docs/auth-rbac.md). The callback answers `303` to `/` with a session cookie, or to
@@ -482,8 +481,17 @@ but an administrator.
 `401` without a session, `403` for a wrong current password, `409` for an APP_USERS_JSON user, `422` for a
 new password under 10 characters. It refuses every session issued before it and sets a fresh cookie on this one.
 
-`/auth/login`, `/auth/setup` and `/auth/me` answer `{user: {username, role, accounts, permissions}}`
-where `permissions` are the user's effective values (see the permissions section below).
+`/auth/login`, `/auth/setup` and `/auth/me` answer `{user: {username, role, accounts, permissions, super_admin}}`
+where `permissions` are the user's effective values (see the permissions section below) and
+`super_admin` is true for an administrator listed in `APP_SUPER_ADMINS` (added 2026-09-30).
+
+## Analytics suite access, added 2026-09-30
+
+The reporting, labor and forecast routes (the "Reporting", labor and forecast sections of this
+contract) are read by the analytics suite only (`src/suite`, Portfolio > Finance and Operations).
+Their shapes are unchanged. Reads answer to a super administrator session: `401` without a session,
+`403` otherwise. `POST /forecasts/rebuild` accepts a valid `X-Admin-Token` or a super administrator
+session. `docs/auth-rbac.md` (Super administrators and the analytics suite).
 
 ## Report parity: FedEx and Amazon weekly reports, added 2026-09-29
 

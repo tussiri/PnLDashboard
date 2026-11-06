@@ -246,6 +246,11 @@ def session_claims(token: str | None, secret: str, now: float | None = None) -> 
 
 
 # ── settings ─────────────────────────────────────────────────────────────────
+def parse_super_admins(raw: str | None) -> frozenset[str]:
+    """APP_SUPER_ADMINS: usernames separated by commas or whitespace, compared without case."""
+    return frozenset(name.lower() for name in (raw or "").replace(",", " ").split())
+
+
 @dataclass(frozen=True)
 class AuthSettings:
     mode: str
@@ -256,6 +261,8 @@ class AuthSettings:
     entra: EntraConfig | None = None
     #: Who may sign in with a password: "all" or "admins".
     password_login: str = "all"
+    #: Lower-cased usernames of the super administrators (APP_SUPER_ADMINS). Empty = nobody.
+    super_admins: frozenset[str] = frozenset()
 
     @property
     def dev_mode(self) -> bool:
@@ -268,6 +275,7 @@ class AuthSettings:
         secret = (env.get("APP_SESSION_SECRET") or "").strip()
         users_raw = (env.get("APP_USERS_JSON") or "").strip()
         setup_token = (env.get("APP_SETUP_TOKEN") or "").strip()
+        super_admins = parse_super_admins(env.get("APP_SUPER_ADMINS"))
         if setup_token and len(setup_token) < MIN_SETUP_TOKEN_LENGTH:
             raise ConfigurationError(f"APP_SETUP_TOKEN must be at least {MIN_SETUP_TOKEN_LENGTH} characters")
         if not mode:
@@ -290,7 +298,12 @@ class AuthSettings:
             raise ConfigurationError(f"AUTH_PASSWORD_LOGIN must be one of {', '.join(PASSWORD_LOGIN)}, got {password_login!r}")
         if password_login == "admins" and entra is None:
             raise ConfigurationError("AUTH_PASSWORD_LOGIN=admins needs Microsoft sign-in (the ENTRA_* variables); nobody else could sign in")
-        return cls(mode=mode, session_secret=secret, users=users, setup_token=setup_token, entra=entra, password_login=password_login)
+        return cls(mode=mode, session_secret=secret, users=users, setup_token=setup_token, entra=entra, password_login=password_login, super_admins=super_admins)
+
+    def is_super_admin(self, user: User | None) -> bool:
+        """A signed-in administrator listed in APP_SUPER_ADMINS. The list never raises a role: a
+        listed executive or analyst is not a super administrator."""
+        return user is not None and user.role == "admin" and user.username.lower() in self.super_admins
 
     def authenticate(self, username: str, password: str) -> User | None:
         """User for valid credentials, else None. Unknown users still pay for one hash check."""

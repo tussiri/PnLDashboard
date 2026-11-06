@@ -170,6 +170,25 @@ def refresh_gate(override_pause: bool = Query(False, description="true = run eve
         raise HTTPException(status_code=423, detail=str(exc)) from exc
 
 
+def is_super_admin(user: User | None) -> bool:
+    """An administrator listed in APP_SUPER_ADMINS (docs/auth-rbac.md)."""
+    return get_auth_settings().is_super_admin(user)
+
+
+def require_super_admin(request: Request, x_admin_token: str | None = Header(default=None)) -> User | None:
+    """Router-level dependency of the analytics suite (the reporting, labor and forecast routers):
+    reads require a super administrator session; mutating requests accept a valid X-Admin-Token or a
+    super administrator session, so scripted admin calls keep working without a browser session."""
+    if request.method in MUTATING_METHODS and admin_token_valid(x_admin_token):
+        return None
+    user = current_user(request)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Sign in required")
+    if not is_super_admin(user):
+        raise HTTPException(status_code=403, detail="This view requires super administrator access")
+    return user
+
+
 def account_scope(user: User | None) -> frozenset[str] | None:
     """The accounts a user may see; None = every account (administrators, unlimited users, the admin token)."""
     if user is None or user.role == "admin" or not user.accounts:

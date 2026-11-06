@@ -7,6 +7,7 @@
  *   #/account/fedex/sites?delivery=self      (subcontracted sites hidden)
  *   #/analytics?week=2026-09-20&account=other&status=over&q=elementary
  *   #/account/plano-isd?period=month&month=2026-09&compare=2026-06   (September against June)
+ *   #/portfolio/operations/jobs/800          (analytics suite, super administrators; src/suite)
  *   #/admin/imports
  *   #/labor?from=2026-10-26&to=2026-11-01&show=punches&job=Crane%20West~500&q=smith
  *   #/account/fedex/invoices?from=2026-10-01&to=2026-10-31&by=service   (FedEx invoices from Relay)
@@ -23,6 +24,9 @@ export type AccountTab = (typeof ACCOUNT_TABS)[number]
 export const ADMIN_TABS = ['accounts', 'jobs', 'regions', 'budgets', 'calendars', 'allocations', 'overhead', 'adjustments', 'contracts', 'imports', 'mailbox', 'data', 'users'] as const
 export const ANALYTICS_TABS = ['accounts', 'units'] as const
 export type AnalyticsTab = (typeof ANALYTICS_TABS)[number]
+/** Analytics suite groups (super administrators only). The pages of each group live in src/suite/pages.tsx. */
+export const SUITE_GROUPS = ['finance', 'operations'] as const
+export type SuiteGroup = (typeof SUITE_GROUPS)[number]
 export type AdminTab = (typeof ADMIN_TABS)[number]
 
 export interface Route {
@@ -32,6 +36,8 @@ export interface Route {
   adminTab?: AdminTab
   /** Analytics: the drill-down (accounts) or the business units overview (units). */
   analyticsTab?: AnalyticsTab
+  /** Analytics suite: the group, its page (the group's first page when absent) and an open site (job number). */
+  suite?: { group: SuiteGroup; page?: string; job?: string }
   week?: string
   target?: number
   /** Site drawer: company and job number. */
@@ -78,7 +84,7 @@ export function parseRoute(hash: string): Route {
   const parts = path.split('/').filter(Boolean).map(decodeURIComponent)
   const params = new URLSearchParams(query)
   const route: Route = { view: 'company' }
-  const [first, second, third] = parts
+  const [first, second, third, fourth] = parts
   if (first === 'account') {
     route.view = 'account'
     if (second) route.account = second
@@ -86,6 +92,11 @@ export function parseRoute(hash: string): Route {
   } else if (first === 'analytics' || first === 'portfolio') {
     route.view = 'analytics'
     if (second === 'units') route.analyticsTab = 'units'
+    else if ((SUITE_GROUPS as readonly string[]).includes(second ?? '')) {
+      route.suite = { group: second as SuiteGroup }
+      if (third) route.suite.page = third
+      if (third && fourth) route.suite.job = fourth
+    }
   } else if (first === 'company') route.view = 'company'
   else if (first === 'labor') {
     route.view = 'labor'
@@ -142,13 +153,14 @@ export function formatRoute(route: Route): string {
     ? `account/${encodeURIComponent(route.account ?? '')}${route.tab && route.tab !== 'overview' ? `/${route.tab}` : ''}`
     : route.view === 'admin'
       ? `admin${route.adminTab && route.adminTab !== 'accounts' ? `/${route.adminTab}` : ''}`
-      : route.view === 'analytics' ? (route.analyticsTab === 'units' ? 'portfolio/units' : 'portfolio') : route.view
+      : route.view === 'analytics' && route.suite ? ['portfolio', route.suite.group, ...(route.suite.page ? [route.suite.page, ...(route.suite.job ? [route.suite.job] : [])] : [])].map(encodeURIComponent).join('/')
+        : route.view === 'analytics' ? (route.analyticsTab === 'units' ? 'portfolio/units' : 'portfolio') : route.view
   const params = new URLSearchParams()
   if (route.account && route.view !== 'account' && route.view !== 'admin') params.set('account', route.account)
   if (route.week && route.view !== 'admin') params.set('week', route.week)
   if (route.target != null && route.view !== 'admin') params.set('target', String(route.target))
   if (route.site && route.view !== 'admin') params.set('site', `${route.site.company}${SITE_SEP}${route.site.job}`)
-  if (route.view === 'analytics') for (const key of ['q', 'status', 'segment'] as const) if (route[key]) params.set(key, route[key]!)
+  if (route.view === 'analytics' && !route.suite) for (const key of ['q', 'status', 'segment'] as const) if (route[key]) params.set(key, route[key]!)
   if (route.view === 'account' && route.tab === 'bu' && route.segment) params.set('segment', route.segment)
   if (route.view === 'labor') {
     if (route.from) params.set('from', route.from)

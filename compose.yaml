@@ -85,6 +85,8 @@ x-api-environment: &api-environment
   ENTRA_CLIENT_SECRET: ${ENTRA_CLIENT_SECRET:-}
   ENTRA_REDIRECT_URI: ${ENTRA_REDIRECT_URI:-}
   AUTH_PASSWORD_LOGIN: ${AUTH_PASSWORD_LOGIN:-all}
+  # Administrators who also see the analytics suite (Portfolio > Finance, Operations). Empty = nobody.
+  APP_SUPER_ADMINS: ${APP_SUPER_ADMINS:-}
   LOG_LEVEL: ${LOG_LEVEL:-INFO}
 
 services:
