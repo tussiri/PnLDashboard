@@ -88,25 +88,29 @@ const LOG_PCT_TICKS = [5, 10, 25, 50, 100, 200, 500, 1000, 2000, 5000, 10000]
  * target dashed in its color (one line when all share it), or the account's budget target as the green stepped line.
  * The axis is logarithmic, so a spike (a summer week at several hundred percent) stays on the chart without flattening
  * the ordinary weeks. */
-export function SegmentTrendChart({ labels, series, current, budgetTargets, onPick, projected }: {
-  labels: string[]; series: { name: string; values: (number | null)[]; target: number }[]; current: number
+export function SegmentTrendChart({ labels, series, current, budgetTargets, onPick, projected, targetLine }: {
+  labels: string[]; series: { name: string; values: (number | null)[]; target: number; color?: string; width?: number }[]; current: number
   budgetTargets?: (number | null)[]; onPick?: (index: number) => void
   /** Points that are projections: hollow, with a dashed line into them. */
   projected?: boolean[]
+  /** One dashed target line in place of the groups' own targets (the Amazon report's blended target). */
+  targetLine?: { label: string; value: number }
 }) {
   const t = useTokens()
   const o = base(t) as unknown as ChartOptions<'line'>
-  const color = (i: number) => t.series[i % t.series.length]
+  const color = (i: number) => series[i]?.color ?? t.series[i % t.series.length]
   const sharedTarget = series.every((s) => s.target === series[0]?.target)
   const point = labels.map((_, j) => (j === current ? 5 : 2.5))
   // The axis fits the groups' lines and targets; a summer budget target far above them runs off the top.
-  const all = [...series.flatMap((s) => s.values), ...series.map((s) => s.target)].filter((v): v is number => v != null && v > 0).map((v) => v * 100)
+  const all = [...series.flatMap((s) => s.values), ...series.map((s) => s.target), ...(targetLine ? [targetLine.value] : [])].filter((v): v is number => v != null && v > 0).map((v) => v * 100)
   const yMin = all.length ? Math.max(5, [...LOG_PCT_TICKS].reverse().find((v) => v <= Math.min(...all) * 0.9) ?? 5) : 10
   const yMax = all.length ? (LOG_PCT_TICKS.find((v) => v >= Math.max(...all) * 1.1) ?? Math.max(...all) * 1.2) : 200
   const data = { labels, datasets: [
     ...series.map((s, i) => ({ label: s.name, data: s.values.map((v) => (v == null ? null : v * 100)), borderColor: color(i), backgroundColor: color(i),
-      borderWidth: 2, pointRadius: point, pointHoverRadius: 6, pointBorderColor: t.bg, pointBorderWidth: 1.5, tension: 0, spanGaps: true, ...projectedLine(projected, color(i), t.bg) })),
-    ...(budgetTargets
+      borderWidth: s.width ?? 2, pointRadius: point, pointHoverRadius: 6, pointBorderColor: t.bg, pointBorderWidth: 1.5, tension: 0, spanGaps: true, ...projectedLine(projected, color(i), t.bg) })),
+    ...(targetLine
+      ? [{ label: targetLine.label, data: labels.map(() => targetLine.value * 100), borderColor: t.text2, borderDash: [5, 4], borderWidth: 1.5, pointRadius: 0, pointHitRadius: 0 }]
+      : budgetTargets
       ? [{ label: 'Budget target', data: budgetTargets.map((v) => (v == null ? null : v * 100)), borderColor: t.tgt, backgroundColor: t.tgt, borderWidth: 3,
         stepped: 'middle' as const, pointRadius: 0, pointHitRadius: 0 }]
       : sharedTarget
@@ -121,6 +125,22 @@ export function SegmentTrendChart({ labels, series, current, budgetTargets, onPi
         afterBuildTicks: (axis: { ticks: { value: number }[]; min: number; max: number }) => { axis.ticks = LOG_PCT_TICKS.filter((v) => v >= axis.min && v <= axis.max).map((value) => ({ value })) } } },
     plugins: { ...o.plugins, tooltip: { ...o.plugins!.tooltip, callbacks: { label: (c: { dataset: { label?: string }; parsed: { y: number | null }; dataIndex: number }) => `${c.dataset.label}: ${c.parsed.y == null ? 'no billing' : `${c.parsed.y.toFixed(1)}%`}${/target/i.test(c.dataset.label ?? '') ? '' : projectedSuffix(projected, c.dataIndex)}` } } } }
   return <Line data={data} options={options as unknown as ChartOptions<'line'>} aria-label={`Labor % by group: ${series.map((s) => s.name).join(', ')}`} role="img" />
+}
+
+/** Dollars by week, one line per group (the Amazon report's OT cost trend); the selected week enlarged. */
+export function MoneyLinesChart({ labels, series, current, onPick }: { labels: string[]; series: { name: string; color: string; values: (number | null)[] }[]; current: number
+  onPick?: (index: number) => void }) {
+  const t = useTokens()
+  const o = base(t) as unknown as ChartOptions<'line'>
+  const point = labels.map((_, j) => (j === current ? 5 : 2))
+  const data = { labels, datasets: series.map((s) => ({ label: s.name, data: s.values, borderColor: s.color, backgroundColor: s.color, borderWidth: 2,
+    pointRadius: point, pointHoverRadius: 5, pointBorderColor: t.bg, pointBorderWidth: 1.5, tension: 0, spanGaps: true })) }
+  const options = { ...o, interaction: { mode: 'index', intersect: false },
+    onClick: (_e: unknown, els: { index: number }[]) => { if (onPick && els.length) onPick(els[0].index) },
+    onHover: (e: { native?: { target?: EventTarget | null } }, els: unknown[]) => { const el = e.native?.target as HTMLElement | null; if (el && onPick) el.style.cursor = els.length ? 'pointer' : 'default' },
+    scales: { x: { ...o.scales!.x, grid: { display: false } }, y: { ...o.scales!.y, beginAtZero: true, ticks: { color: t.text2, callback: (v: string | number) => `$${Math.round(Number(v) / 1000)}K` } } },
+    plugins: { ...o.plugins, tooltip: { ...o.plugins!.tooltip, callbacks: { label: (c: { dataset: { label?: string }; parsed: { y: number | null } }) => `${c.dataset.label}: ${money(c.parsed.y)}` } } } }
+  return <Line data={data} options={options as unknown as ChartOptions<'line'>} aria-label={`By week: ${series.map((s) => s.name).join(', ')}`} role="img" />
 }
 
 /** Horizontal paired bars: weekly invoice against cost (labor, plus vendor under cost %). */
