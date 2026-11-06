@@ -74,7 +74,7 @@ from .db import connection
 
 log = logging.getLogger(__name__)
 
-ENGINE_VERSION = "v2.2-crane"  # surfaced in the UI; "Northstar" is a retired placeholder name
+ENGINE_VERSION = "v2.3-crane"  # surfaced in the UI; "Northstar" is a retired placeholder name
 TARGET_NAME = "site_monthly"
 METRICS: tuple[str, ...] = ("revenue", "gross_profit", "labor_cost", "subcontract_cost")
 ACCOUNT_JOB = "__ACCOUNT__"
@@ -205,6 +205,12 @@ class Driver:
     """
     hours: dict[int, float]
     lag: int
+    # The month after the last complete one, punched through day ``day`` (nowcast): hours in
+    # days 1..day of every month, so the same partial view can be rebuilt for past months, and
+    # each complete month's hours by weekday (Monday first), for the days still to come.
+    to_day: dict[int, float] | None = None
+    day: int = 0
+    by_weekday: dict[int, list[float]] | None = None
 
 
 def _days_in(yyyymm: int) -> int:
@@ -219,13 +225,41 @@ def _driver_rate(pts: list[tuple[int, float]], driver: Driver | None) -> float |
     return statistics.median(rates) if rates else None
 
 
-def _driver_hours(origin: int, target: int, driver: Driver) -> tuple[float, bool]:
-    """(hours, observed) for ``target`` as seen from ``origin``: the month's own punches when
-    it was complete by then, else the latest complete month's hours scaled by day count."""
+def _weekday_rate(month: int, driver: Driver) -> list[float] | None:
+    """Average hours per day for each weekday (Monday first) in a complete month."""
+    totals = (driver.by_weekday or {}).get(month)
+    if not totals or sum(totals) <= 0:
+        return None
+    first, n = period_to_date(month), _days_in(month)
+    counts = [0] * 7
+    for d in range(n):
+        counts[(first.weekday() + d) % 7] += 1
+    return [t / c if c else 0.0 for t, c in zip(totals, counts)]
+
+
+def _remaining_hours(target: int, day: int, rate: list[float]) -> float:
+    """Expected hours in days day+1..end of ``target`` at the given weekday rates."""
+    first = period_to_date(target)
+    return sum(rate[(first.weekday() + d) % 7] for d in range(day, _days_in(target)))
+
+
+def _driver_hours(origin: int, target: int, driver: Driver) -> tuple[float, str]:
+    """(hours, basis) for ``target`` as seen from ``origin``. basis 'punched': the month was
+    complete by then; 'to_date': the month after the last complete one, its punches through
+    ``driver.day`` plus the rest of the month at the latest complete month's hours per weekday
+    (a site that stopped punching gets only the weekday rate for the days left); 'scaled':
+    the latest complete month's hours scaled by day count."""
     seen = _add_months(origin, driver.lag)
     if target <= seen:
-        return driver.hours.get(target, 0.0), True
-    return driver.hours.get(seen, 0.0) * _days_in(target) / _days_in(seen), False
+        return driver.hours.get(target, 0.0), "punched"
+    nxt = _add_months(seen, 1)
+    rate = _weekday_rate(seen, driver) if driver.to_day and driver.day > 0 else None
+    if rate is not None:
+        now = driver.to_day.get(nxt, 0.0) + _remaining_hours(nxt, driver.day, rate)
+        if target == nxt:
+            return now, "to_date"
+        return now * _days_in(target) / _days_in(nxt), "scaled_to_date"
+    return driver.hours.get(seen, 0.0) * _days_in(target) / _days_in(seen), "scaled"
 
 
 # ── contract base (revenue only) ─────────────────────────────────────────────
@@ -309,7 +343,7 @@ def _predict(method: str, pts: list[tuple[int, float]], h: int, driver: Driver |
         rate = _driver_rate(pts, driver)
         if rate is None or driver is None:
             return ys[-1]
-        hours, _observed = _driver_hours(pts[-1][0], _add_months(pts[-1][0], h), driver)
+        hours, _basis = _driver_hours(pts[-1][0], _add_months(pts[-1][0], h), driver)
         return rate * hours
     if method in ("naive", "contract_flat"):
         return ys[-1]
@@ -447,6 +481,7 @@ def compute_forecasts(
     metrics: Sequence[str] = METRICS,
     hours_through: int | None = None,
     contracts: dict[str, ContractSpec] | None = None,
+    hours_to_day: tuple[int, dict[str, dict[int, float]], dict[str, dict[int, list[float]]]] | None = None,
 ) -> dict:
     """Full v2 computation.
 
@@ -455,7 +490,9 @@ def compute_forecasts(
     parent_account (optional), hours (optional) and data_quality_status. ``hours_through`` is
     the last month whose punches are complete; with it, labor_cost series may use the hours
     driver. ``contracts`` (job_number -> ContractSpec) lets revenue series use the contract
-    base. Returns the
+    base. ``hours_to_day`` = (day, job_number -> {month: hours punched in days 1..day},
+    job_number -> {month: hours by weekday}) lets the hours driver nowcast the month after
+    ``hours_through`` from its punches to date. Returns the
     engine-native rows (YYYYMM periods, ``point``/``lo``/``hi`` keys); ``shape_run``
     converts them to the database contract.
     """
@@ -521,7 +558,8 @@ def compute_forecasts(
                 hours = {int(r["period_id"]): float(r.get("hours") or 0) for r in rows
                          if float(r.get("hours") or 0) > 0}
                 if hours:
-                    s.driver = Driver(hours, driver_lag)
+                    day, to_day, weekday = hours_to_day if hours_to_day else (0, {}, {})
+                    s.driver = Driver(hours, driver_lag, to_day.get(job) or {}, day, weekday.get(job))
             if metric == "revenue" and contracts and job in contracts:
                 s.contract = _contract_for(contracts[job], pts, _add_months(latest_closed, HORIZON))
             if len(pts) < _MIN_POINTS:
@@ -771,6 +809,7 @@ def compute_forecasts(
             "n_series_gated_out": len(status_rows),
             "hours_through": hours_through,
             "hours_driver_lag_months": driver_lag,
+            "hours_to_day": hours_to_day[0] if hours_to_day else None,
             "contract_sites": {src: sum(1 for x in series_list if x.contract and x.contract.source == src)
                                for src in sorted({x.contract.source for x in series_list if x.contract})},
         },
@@ -804,7 +843,10 @@ def compute_forecasts(
             "Labor cost may use the hours driver: punched hours x the site's labor dollars per "
             "hour (median of its last 3 closed months). Months after the latest close that are "
             "fully punched use their own hours; later months scale the latest full month by day "
-            "count. Backtests assume the same punch lag, so no call sees later hours.",
+            "count. Backtests assume the same punch lag, so no call sees later hours. The month "
+            "after the last complete one is nowcast: its hours through the latest complete day plus "
+            "the rest of the month at the last complete month's hours per weekday; backtests rebuild "
+            "the same partial view for every past month.",
             "Months with zero revenue (or zero labor cost / zero subcontract cost, for the "
             "labor and subcontract metrics) are treated as data gaps, not real zeros.",
             "Subcontract cost by site comes from the job-cost P&L subcontractor line "
@@ -874,9 +916,18 @@ def _explain(s: Series, method: str, selection: dict, point: float,
     if method == "hours_driver" and s.driver is not None:
         rate = _driver_rate(s.points, s.driver) or 0.0
         origin = s.points[-1][0]
-        hours, observed = _driver_hours(origin, _add_months(origin, h), s.driver)
-        source = ("punched hours for the month" if observed
-                  else f"{period_to_date(_add_months(origin, s.driver.lag)):%b %Y} punched hours scaled to the month's days")
+        target = _add_months(origin, h)
+        hours, basis = _driver_hours(origin, target, s.driver)
+        seen = _add_months(origin, s.driver.lag)
+        source = {
+            "punched": "punched hours for the month",
+            "to_date": (f"{(s.driver.to_day or {}).get(target, 0):,.0f} hours punched through "
+                        f"{period_to_date(target):%b} {s.driver.day} plus the rest of the month at "
+                        f"{period_to_date(seen):%b}'s hours per weekday"),
+            "scaled": f"{period_to_date(seen):%b %Y} punched hours scaled to the month's days",
+            "scaled_to_date": (f"{period_to_date(_add_months(seen, 1)):%b %Y} nowcast hours scaled to "
+                               f"the month's days"),
+        }[basis]
         return (f"{label}: {hours:,.0f} hours ({source}) at {rate:,.2f} per hour (median of the "
                 f"last 3 closed months) gives {point:,.0f}; hours beat naive/recent/trend in "
                 f"walk-forward MAE {selection.get('candidates', {})}. " + band_txt)
@@ -1196,6 +1247,48 @@ def hours_through_period(cursor: _Cursor, today: date | None = None) -> int | No
     return period if last == _month_end(period) else _add_months(period, -1)
 
 
+def load_hours_to_day(cursor: _Cursor, hours_through: int | None, today: date | None = None
+                      ) -> tuple[int, dict[str, dict[int, float]], dict[str, dict[int, list[float]]]] | None:
+    """(day, job_number -> {month: hours in days 1..day}, job_number -> {month: hours by weekday,
+    Monday first}) for the nowcast. ``day`` is the latest
+    complete day (yesterday, or the last punch if earlier) of the month after ``hours_through``;
+    None when that month has no complete day yet."""
+    if hours_through is None:
+        return None
+    month_start = period_to_date(_add_months(hours_through, 1)).replace(day=1)
+    cursor.execute("SELECT max(work_date) AS last FROM core.fact_timekeeping WHERE work_date < %s",
+                   (today or date.today(),))
+    row = cursor.fetchone()
+    last = row["last"] if row else None
+    if last is None or last < month_start:
+        return None
+    day = last.day if last.month == month_start.month and last.year == month_start.year else 0
+    if day <= 0:
+        return None
+    cursor.execute("""
+        SELECT j.job_number, date_trunc('month', t.work_date)::date AS month, sum(t.hours) AS hours
+        FROM mart.v_timekeeping_effective t JOIN core.dim_job j ON j.job_key = t.job_key
+        WHERE extract(day FROM t.work_date) <= %s AND t.work_date <= %s
+        GROUP BY 1, 2
+    """, (day, last))
+    out: dict[str, dict[int, float]] = {}
+    for r in cursor.fetchall():
+        if float(r["hours"] or 0) > 0:
+            out.setdefault(str(r["job_number"]), {})[date_to_period(r["month"])] = float(r["hours"])
+    cursor.execute("""
+        SELECT j.job_number, date_trunc('month', t.work_date)::date AS month,
+               extract(isodow FROM t.work_date)::int AS dow, sum(t.hours) AS hours
+        FROM mart.v_timekeeping_effective t JOIN core.dim_job j ON j.job_key = t.job_key
+        WHERE t.work_date < %s
+        GROUP BY 1, 2, 3
+    """, (month_start,))
+    weekday: dict[str, dict[int, list[float]]] = {}
+    for r in cursor.fetchall():
+        month = weekday.setdefault(str(r["job_number"]), {}).setdefault(date_to_period(r["month"]), [0.0] * 7)
+        month[int(r["dow"]) - 1] += float(r["hours"] or 0)
+    return day, out, weekday
+
+
 def load_contracts(cursor: _Cursor) -> dict[str, ContractSpec]:
     """job_number -> ContractSpec. Precedence: ops.job_contract (uploaded), core.contract_billing,
     then the Relay contract. A job number carried by two companies in ops.job_contract is skipped:
@@ -1452,9 +1545,11 @@ def build_forecasts(initiated_by: str = "scheduled-rebuild",
             return _empty_result()
         latest_closed = max(fittable)
 
+        through = hours_through_period(cursor, today)
         result = compute_forecasts(site_rows, closed, suspects, latest_closed, metrics,
-                                   hours_through=hours_through_period(cursor, today),
-                                   contracts=load_contracts(cursor))
+                                   hours_through=through,
+                                   contracts=load_contracts(cursor),
+                                   hours_to_day=load_hours_to_day(cursor, through, today))
         shaped = shape_run(result, load_job_keys(cursor), initiated_by)
         write_run(cursor, shaped)
         pruned = prune_runs(cursor)

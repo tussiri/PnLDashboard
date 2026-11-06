@@ -80,6 +80,22 @@ some labor is still self-performed. Bounds are clamped at zero like revenue and 
   and the resulting lag are in `run_meta.dataset`; every backtest assumes the same lag, so no call
   sees hours that did not exist yet. It is chosen only when it beats the best other candidate by
   more than 10% one-step MAE.
+  **Current-month nowcast (engine v2.3).** The month after the last complete one is usually the
+  month in progress. Its hours are the punches through the latest complete day (yesterday, from
+  `mart.v_timekeeping_effective`) plus the rest of the month at the last complete month's average
+  hours for each weekday; months after it scale that figure by day count. Backtests rebuild the
+  same partial view (days 1..day) for every past month, so the method is selected on how it would
+  have done at the same point of each month; punches entered or corrected after their day make
+  that view slightly better than it was in real time. `run_meta.dataset.hours_to_day` is the day
+  used. A first version that divided the hours to date by the share a month usually has by that
+  day did worse (it ignored which weekdays the first days fell on) and was dropped. AR invoices
+  were checked as a revenue nowcast and rejected: invoices are dated the 1st of the service month
+  but most reach WinTeam after the month ends (October 2026: $6.5M of $9.1M first seen on
+  November 5), so nothing early in a month says what it will bill.
+  Measured on the local data on November 6 2026 (day 5, October close): labor cost site error one
+  month ahead $3.60M to $3.46M, median 11.1% to 10.5%; two months ahead $3.58M to $3.50M; three
+  months ahead flat ($3.45M to $3.46M); 80% coverage 80%; the hours method is chosen at 49 sites
+  instead of 15. The gain grows as the month fills.
 - `contract_base` (revenue only, engine v2.2) - the site's contracted monthly amount plus what it
   bills above it: the median over the last three closed months of max(revenue - contract, 0), so a
   month that posts short (job cost booking the fixed fee and the variable in different months)
