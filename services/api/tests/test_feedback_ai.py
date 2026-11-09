@@ -25,17 +25,23 @@ class FakeClient:
         return SimpleNamespace(stop_reason=self.stop, content=[text], model=kw["model"])
 
 
-LINES = [{"feedback_date": date(2026, 8, 3), "location_number": "NRBA", "trade": "JANITORIAL DOCK", "score": 1.0, "comment": "not  cleaning\nfully"},
-         {"feedback_date": date(2026, 8, 3), "location_number": "NRBA", "trade": "JANITORIAL OFFICE", "score": 2.0, "comment": "Not cleaning fully"},
-         {"feedback_date": date(2026, 7, 2), "location_number": "0331", "trade": None, "score": None, "comment": "Pallets set on the dock for days untouched."}]
+LINES = [{"feedback_date": date(2026, 8, 3), "location_number": "NRBA", "site_name": "FedEx - North Raleigh, NC", "trade": "JANITORIAL DOCK", "score": 1.0, "comment": "not  cleaning\nfully"},
+         {"feedback_date": date(2026, 8, 3), "location_number": "NRBA", "site_name": "FedEx - North Raleigh, NC", "trade": "JANITORIAL OFFICE", "score": 2.0, "comment": "Not cleaning fully"},
+         {"feedback_date": date(2026, 7, 2), "location_number": "0331", "site_name": None, "trade": None, "score": None, "comment": "Pallets set on the dock for days untouched."}]
+
+
+def test_the_prompt_is_about_sites_of_one_customer():
+    """FedEx is one customer rating many stations: the summary compares sites and never speaks of customers."""
+    assert "single customer" in feedback_ai.SYSTEM and "names the sites" in feedback_ai.SYSTEM
+    assert "Never write 'customers'" in feedback_ai.SYSTEM
 
 
 def test_input_is_one_line_per_visit_comment_and_the_digest_tracks_it():
     """The same comment on a visit's dock and office work orders is one line with both scores."""
     text = feedback_ai._input(LINES)
-    assert text.splitlines() == ["date | location | trade scores | comment",
-                                 "2026-08-03 | NRBA | Dock 1, Office 2 | not cleaning fully",
-                                 "2026-07-02 | 0331 | - - | Pallets set on the dock for days untouched."]
+    assert text.splitlines() == ["date | location | site | trade scores | comment",
+                                 "2026-08-03 | NRBA | North Raleigh, NC | Dock 1, Office 2 | not cleaning fully",
+                                 "2026-07-02 | 0331 | - | - - | Pallets set on the dock for days untouched."]
     assert feedback_ai.digest(text, "m") == feedback_ai.digest(text, "m") != feedback_ai.digest(text + "x", "m")
     assert feedback_ai.digest(text, "m") != feedback_ai.digest(text, "other-model")
 

@@ -21,7 +21,9 @@ const transition = (name: string) => name.split(' to ').map((b) => BASIS_LABEL[b
 const TONE_CLASS = { increase: 'bad', decrease: 'ok', data: 'warn' } as const
 
 /** Why the account's labor moved from the prior week: effects that add up to the change, the AI reading of them, and the sites behind it. */
-export function WeekChangeCard({ account, weekStart }: { account: LeadershipAccount; weekStart: string }) {
+export function WeekChangeCard({ account, weekStart, compact = false }: { account: LeadershipAccount; weekStart: string
+  /** Effects only, the facts, AI reading and sites folded under them (the FedEx overview). */
+  compact?: boolean }) {
   const { api, keyPrefix, decision, navigate } = useLeadership()
   const words = wordsFor(useVocab())
   const q = useApiQuery<WeekChangeResponse>(decision ? queryKey(`${keyPrefix}/leadership/week-change`, { account: account.slug, week: weekStart }) : null,
@@ -48,11 +50,7 @@ export function WeekChangeCard({ account, weekStart }: { account: LeadershipAcco
     { key: 'dot', header: 'OT hrs chg', value: (r) => r.ot_hours_current - r.ot_hours_prior, render: (r) => signedHours(r.ot_hours_current - r.ot_hours_prior) },
     { key: 'emp', header: 'Staff', value: (r) => r.employees_current, render: (r) => `${r.employees_prior} to ${r.employees_current}` },
   ]
-  return <div className="card wkchg">
-    <div className="ct"><span>{words.labor} change, {weekRange(d.week)} vs {weekRange(d.prior_week)}</span>
-      <span className={costTone(d.change)}>{signedMoney(d.change)} ({signedPct(d.change_pct)})</span></div>
-    {!d.complete && <p className="ks warn">Week in progress: part of this week against all of the last</p>}
-    <div className="kpi-lg wkchg__fx">{effects.map((k) => <Kpi small key={k} label={EFFECT_LABEL[k]} value={signedMoney(d.effects[k])} tone={costTone(d.effects[k])} sub={EFFECT_SUB[k]} />)}</div>
+  const detail = <>
     <dl className="wkchg__facts">
       <div><dt>Prior weeks</dt><dd>{d.average_prior != null ? <>{BASE_LABEL(d.recent.length)} average {money(d.average_prior)}; this week {signedPct(d.vs_average_pct)}, prior week {signedPct(d.prior_vs_average_pct)}</> : '–'}</dd></div>
       <div><dt>Hours</dt><dd>{hours(d.prior.hours)} to {hours(d.current.hours)}; OT {hours(d.prior.ot_hours)} to {hours(d.current.ot_hours)}</dd></div>
@@ -68,6 +66,14 @@ export function WeekChangeCard({ account, weekStart }: { account: LeadershipAcco
     {!s && d.summary.status === 'pending' && <div className="fbt__sent"><span className="kl">AI summary updating</span></div>}
     {d.sites.length > 0 && <SortTable caption={`Largest site changes, ${d.sites.length} of ${d.site_count}`} rows={d.sites} columns={cols} defaultSort={{ key: 'chg', dir: -1 }} pageSize={8}
       onRowClick={(r) => r.company && navigate({ site: { company: r.company, job: r.job_number } })} rowLabel={(r) => `Open ${r.site_name ?? r.job_number}`} csvName={`${account.slug}-week-change`} />}
+  </>
+  return <div className="card wkchg">
+    <div className="ct"><span>{words.labor} change, {weekRange(d.week)} vs {weekRange(d.prior_week)}</span>
+      <span className={costTone(d.change)}>{signedMoney(d.change)} ({signedPct(d.change_pct)})</span></div>
+    {!d.complete && <p className="ks warn">Week in progress: part of this week against all of the last</p>}
+    <div className="kpi-lg wkchg__fx">{effects.map((k) => <Kpi small key={k} label={EFFECT_LABEL[k]} value={signedMoney(d.effects[k])} tone={costTone(d.effects[k])}
+      sub={compact ? undefined : EFFECT_SUB[k]} tip={compact ? EFFECT_SUB[k] : undefined} />)}</div>
+    {compact ? <details className="wkchg__more"><summary>Sites and detail</summary>{detail}</details> : detail}
   </div>
 }
 

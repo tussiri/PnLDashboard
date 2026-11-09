@@ -81,9 +81,14 @@ export const laborJobs = (account: LeadershipAccount, jobs: LeadershipMonthlyJob
   jobs.filter((j) => j.role !== 'non_billed' && !(account.split_subcontracted && j.delivery_model === 'subcontracted'))
 
 /** Every account's overview: headline figures, notes, one card per group, the trend, labor % by site and where the labor dollars went. */
-export function Overview({ account, rows, summary, options, flags, headline = true, afterGroups, budgetWeeks, budgetMonths, schoolWeeks, payHolidays = false, footer }: { account: LeadershipAccount; rows: LeadershipRow[]; summary: AccountSummary<LeadershipRow>; options: MetricOptions; flags: DataFlags; headline?: boolean
+export function Overview({ account, rows, summary, options, flags, headline = true, afterGroups, lead, focused = false, budgetWeeks, budgetMonths, schoolWeeks, payHolidays = false, footer }: { account: LeadershipAccount; rows: LeadershipRow[]; summary: AccountSummary<LeadershipRow>; options: MetricOptions; flags: DataFlags; headline?: boolean
   /** Rendered after the group cards (the account page puts customer feedback here). */
   afterGroups?: ReactNode
+  /** Rendered straight after the headline figures (the FedEx page puts site feedback here). */
+  lead?: ReactNode
+  /** The lighter layout (FedEx): one short line under each figure with the breakdown on hover, the labor change
+   * folded to its effects, the trend ahead of it. */
+  focused?: boolean
   /** The account's weekly budget calendar (Admin > Budgets): budget labor and target per week. */
   budgetWeeks?: BudgetWeek[]
   /** The district's school calendar by week (school district accounts): scales a break week's projection. */
@@ -281,7 +286,20 @@ export function Overview({ account, rows, summary, options, flags, headline = tr
     </>
   }
   return <>
-    {headline && <div className="kpi-lg">
+    {headline && focused && <div className="kpi-lg">
+      <Kpi label={invoiceLabel(w, vocab, period)} value={money(summary.all.invoice)} tip={basis || undefined} />
+      <Kpi label={w.labor} value={money(a.cost)} sub={change(a.cost, prev?.cost, money) ?? undefined} tip={laborParts || undefined} />
+      <Kpi label={w.accountLaborPct} value={pct(a.measurePct)} tone={toneOf(accountStatus)} sub={`Target ${pct(target)}`}
+        tip={join(lastClosed ? `${monthLabel(lastClosed)} actual ${pct(actual)}` : null,
+          a.measurePct != null && prev?.measurePct != null ? weekChange(a.measurePct - prev.measurePct, vocab, period) : null) || undefined} />
+      <Kpi label={w.hours} value={hours(a.hours)} sub={`${pct(a.otPct)} OT`} tip={join(`${hours(a.otHours)} OT/DT`, palHrs ? `pallet ${hours(palHrs)}` : null, change(a.hours, prev?.hours, hours))} />
+      {can('data.allocations') && <Kpi label="Margin" value={money(a.margin)} tone={a.margin < 0 ? 'bad' : ''} sub={pct(a.marginPct)}
+        tip={a.allocation > 0 ? `After ${moneyK(a.allocation)} allocation` : undefined} />}
+      {budgetWeek != null && <Kpi label="Vs budget labor" value={`${exEvents - budgetWeek >= 0 ? '+' : '−'}${money(Math.abs(exEvents - budgetWeek))}`} tone={exEvents > budgetWeek ? 'bad' : 'ok'}
+        sub={`Budget ${money(budgetWeek)}`} />}
+      <Kpi label={w.hoursOver} value={hours(over)} tone={over > 0 ? 'bad' : 'ok'} sub={w.over(summary.billed.over, billed.length)} tip={`${hours1(over / perDay)}/day`} />
+    </div>}
+    {headline && !focused && <div className="kpi-lg">
       <Kpi label={invoiceLabel(w, vocab, period)} value={money(summary.all.invoice)} sub={basis || undefined} />
       <Kpi label={w.labor} value={money(a.cost)} sub={join(laborParts, change(a.cost, prev?.cost, money)) || undefined} />
       <Kpi label={w.accountLaborPct} value={pct(a.measurePct)} tone={toneOf(accountStatus)}
@@ -300,6 +318,7 @@ export function Overview({ account, rows, summary, options, flags, headline = tr
       {school && nonBilled.length > 0 && <Kpi label="Special Events" value={money(summary.nonBilled.cost)} sub={`${hours(summary.nonBilled.hours)} hrs, ${hours(summary.nonBilled.otHours)} OT`}
         tip={`Extra billing; excluded from ${w.accountLaborPct.toLowerCase()} (${nonBilled.map((r) => `job ${r.job_number}`).join(', ')})`} />}
     </div>}
+    {lead}
     <Notes summary={summary} account={account} flags={flags} options={options} revenueMonth={revenueMonth}
       extra={selectedProjected && !flags.weekInProgress ? [{ tone: 'warn', key: 'proj', label: 'Labor not in yet', body: `Trend projected from the ${PROJECTION_BASE_WEEKS} weeks before${hasBudget ? ', scaled by weekly budget' : schoolWeeks?.length ? ', scaled by school days' : ''}` }] : []} />
     {school && trendChart}
@@ -320,9 +339,10 @@ export function Overview({ account, rows, summary, options, flags, headline = tr
       {nonBilled.length > 0 && <GroupCard vocab={vocab} name={school ? 'Special Events' : 'Non-billed'} sub={nonBilled.map((r) => `Job ${r.job_number} ${r.site_name}`).join(', ')} badge={null} invoice={0} labor={summary.nonBilled.cost}
         lp={null} lpTone="" otCost={summary.nonBilled.otDollars} otPrior={prevSummary?.nonBilled.otDollars ?? null} otHours={summary.nonBilled.otHours} changeWord={changeWord} w={w} />}
     </div>
-    {headline && !monthMode && weekStart && <WeekChangeCard account={account} weekStart={weekStart} />}
+    {focused && trendChart}
+    {headline && !monthMode && weekStart && <WeekChangeCard account={account} weekStart={weekStart} compact={focused} />}
     {afterGroups}
-    {!school && trendChart}
+    {!school && !focused && trendChart}
     {groups.length > 1 && <ChartCard title={`Labor % by ${segmentLabel(account).toLowerCase()}, ${monthMode ? 'by month' : `last ${trendWeeks} weeks`}`} height={280}
       action={weeksSlider}
       legend={<>{segSeries.map((s, i) => <Swatch key={s.name} color={t.series[i % t.series.length]} label={s.name} />)}

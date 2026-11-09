@@ -2,8 +2,8 @@
 
 Scores and counts come from SQL (routers/leadership.py); Claude reads only the comments of the
 WINDOW_DAYS days up to the account's newest rating (not up to today, so the comments read, and the
-summary, change only when an import brings new or changed ratings, never as days pass) and returns an overall sentiment, a one-line headline and up to five themes with the
-locations they came from, as structured JSON. The result is cached in ops.feedback_summary under a
+summary, change only when an import brings new or changed ratings, never as days pass) and returns an overall sentiment across the sites, a one-line headline naming the sites and up to five themes
+with the locations they came from, as structured JSON. The result is cached in ops.feedback_summary under a
 digest of the comments it read, so Claude is called again only when the comments change, never per
 page view. A stale or missing summary is rebuilt in a background thread while the tile shows the last
 one (or none).
@@ -55,13 +55,16 @@ SCHEMA: dict[str, Any] = {
 }
 
 SYSTEM = (
-    "You summarize customer feedback on janitorial service at FedEx stations for Crane IFS operations "
-    "leaders. Each line is one comment from one station visit: date, location, the star score (1 to 5) "
-    "of each trade rated that visit, and the customer's comment. Return the overall sentiment of the comments, a headline of at most 20 words "
-    "stating what customers are saying, and at most five themes ordered by how many comments raise "
-    "them, each with a label of at most six words, its sentiment, the number of comments that raise "
-    "it and the location codes they came from. Use only what the comments say; do not invent causes, "
-    "sites or numbers. Plain words, no emoji."
+    "You summarize the star-rating comments FedEx leaves on Crane IFS janitorial service for Crane IFS "
+    "operations leaders. FedEx is a single customer: every comment comes from one of its stations (sites), "
+    "so the summary is about how the sites compare, not about customers as a group. Each line is one "
+    "comment from one site visit: date, location code, site name, the star score (1 to 5) of each trade "
+    "rated that visit, and the comment. Return the overall sentiment across the sites, a headline of at "
+    "most 20 words that names the sites behind the main issue or praise (by site name, at most three, "
+    "then how many more), and at most five themes ordered by how many sites raise them, each with a "
+    "label of at most six words, its sentiment, the number of comments that raise it and the location "
+    "codes of the sites it came from. Never write 'customers' or 'customer sentiment'; write about the "
+    "sites. Use only what the comments say; do not invent causes, sites or numbers. Plain words, no emoji."
 )
 
 _running: set[tuple[str, str]] = set()
@@ -77,6 +80,12 @@ def _trade(trade: Any) -> str:
     return t.capitalize() if t else "-"
 
 
+def _site(line: dict[str, Any]) -> str:
+    """The site's WinTeam name without the account prefix ("FedEx - Tracy, CA" -> "Tracy, CA"); "-" when unmatched."""
+    name = " ".join(str(line.get("site_name") or "").split())
+    return name.split(" - ", 1)[1] if name.lower().startswith("fedex - ") else name or "-"
+
+
 def _input(lines: list[dict[str, Any]]) -> str:
     """One line per distinct comment of a visit (location and date): FedEx rates each trade as its own work order
     and often repeats one comment on each, so the trades and their scores are joined and the comment appears once."""
@@ -85,8 +94,9 @@ def _input(lines: list[dict[str, Any]]) -> str:
         comment = " ".join(str(l["comment"]).split())
         v = visits.setdefault((l["feedback_date"], l["location_number"], comment.lower()), {"line": l, "comment": comment, "scores": []})
         v["scores"].append(f"{_trade(l['trade'])} {'-' if l['score'] is None else int(l['score'])}")
-    rows = [f"{v['line']['feedback_date']} | {v['line']['location_number']} | {', '.join(sorted(v['scores']))} | {v['comment']}" for v in visits.values()]
-    return "date | location | trade scores | comment\n" + "\n".join(rows)
+    rows = [f"{v['line']['feedback_date']} | {v['line']['location_number']} | {_site(v['line'])} | {', '.join(sorted(v['scores']))} | {v['comment']}"
+            for v in visits.values()]
+    return "date | location | site | trade scores | comment\n" + "\n".join(rows)
 
 
 ACCOUNT_FILTER = "(account_slug = %(account)s OR (account_slug IS NULL AND %(account)s = 'fedex'))"
@@ -100,7 +110,7 @@ def comments_for(cursor: Any, account: str) -> list[dict[str, Any]]:
         return []
     cursor.execute(
         f"""
-        SELECT feedback_date, location_number, trade, score, comment, wo_number FROM mart.v_service_feedback
+        SELECT feedback_date, location_number, site_name, trade, score, comment, wo_number FROM mart.v_service_feedback
         WHERE feedback_date > %(since)s AND comment IS NOT NULL AND btrim(comment) <> '' AND {ACCOUNT_FILTER}
         ORDER BY feedback_date DESC, wo_number LIMIT %(limit)s
         """,

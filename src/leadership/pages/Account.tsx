@@ -161,11 +161,16 @@ export function Account() {
     subcontracted={(monthMode ? rows : rowsOfWeek(fullWeek.data?.rows, weekStart)).filter((r) => isSubcontracted(r, account))} />
   else if (tab === 'bu' && route.segment && buTabs.includes(route.segment)) body = <BusinessUnit account={account} summary={summary} options={options} segment={route.segment} />
   else if (tab === 'over-budget' && tabs.includes(tab)) body = <SitesOverBudget account={account} summary={summary} options={options} />
-  else if (tab === 'overview' || !tabs.includes(tab)) body = <Overview account={account} rows={rows} summary={summary} options={options} flags={flags}
-    budgetWeeks={budgetWeeks} budgetMonths={budgetMonths} schoolWeeks={school.data?.weeks} payHolidays={payHolidays}
-    afterGroups={can('tab.feedback') && <FeedbackTile account={account} month={monthMode ? month : weekStart ? weekEndOf(weekStart).slice(0, 7) : undefined} />}
-    footer={can('tab.feedback') && feedback.data && feedback.data.lines.length > 0 && <RatingMatrix lines={feedback.data.lines} since={feedback.data.since}
-      action={<button type="button" className="linkbtn" onClick={() => setTab('feedback')}>All feedback</button>} />} />
+  else if (tab === 'overview' || !tabs.includes(tab)) {
+    // FedEx: the lighter layout, its site feedback straight under the headline figures.
+    const focused = account.vocabulary === 'fedex'
+    const feedbackTile = can('tab.feedback') && <FeedbackTile account={account} month={monthMode ? month : weekStart ? weekEndOf(weekStart).slice(0, 7) : undefined} lines={feedback.data?.lines} />
+    body = <Overview account={account} rows={rows} summary={summary} options={options} flags={flags} focused={focused}
+      budgetWeeks={budgetWeeks} budgetMonths={budgetMonths} schoolWeeks={school.data?.weeks} payHolidays={payHolidays}
+      lead={focused && feedbackTile} afterGroups={!focused && feedbackTile}
+      footer={can('tab.feedback') && feedback.data && feedback.data.lines.length > 0 && <RatingMatrix lines={feedback.data.lines} since={feedback.data.since} initial={focused ? 10 : 15}
+        action={<button type="button" className="linkbtn" onClick={() => setTab('feedback')}>All feedback</button>} />} />
+  }
   else if (tab === 'sites') body = <Sites account={account} summary={summary} options={options} selfOnly={selfOnly} ratings={feedback.data?.by_site} />
   else if (tab === 'over-target') body = account.vocabulary === 'amazon' ? <HoursToCut account={account} summary={summary} options={options} /> : <OverTarget account={account} summary={summary} />
   else if (tab === 'overtime') body = <OvertimeTab account={account} summary={summary} />
