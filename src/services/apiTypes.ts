@@ -428,11 +428,13 @@ export interface PortfolioKpis {
   supplies_cost?: number
   other_direct_cost?: number
   payroll_ti_cost?: number
+  /** The estimated part of payroll_ti_cost: labor x the month's burden rate where no actual figure exists. */
+  payroll_ti_estimated?: number
   direct_cost?: number
 }
 
 /** The optional direct-cost breakdown shared by kpis, monthly rows and job rows. */
-export type CostBreakdown = Pick<PortfolioKpis, 'subcontract_cost' | 'supplies_cost' | 'other_direct_cost' | 'payroll_ti_cost' | 'direct_cost'>
+export type CostBreakdown = Pick<PortfolioKpis, 'subcontract_cost' | 'supplies_cost' | 'other_direct_cost' | 'payroll_ti_cost' | 'payroll_ti_estimated' | 'direct_cost'>
 
 export interface PortfolioDeltas {
   revenue_pct: number | null
@@ -461,6 +463,7 @@ export interface PortfolioMonth {
   supplies_cost?: number
   other_direct_cost?: number
   payroll_ti_cost?: number
+  payroll_ti_estimated?: number
   direct_cost?: number
 }
 
@@ -1388,7 +1391,12 @@ export interface LeadershipRow {
 }
 
 /** GET /leadership/company: company health by month. */
-export interface CompanyMoney { revenue: number; direct_labor: number; management_wages: number; subcontractors: number; payroll_taxes: number; gross_profit: number }
+export interface CompanyMoney {
+  revenue: number; direct_labor: number; management_wages: number; subcontractors: number; payroll_taxes: number
+  /** The estimated part of payroll_taxes (labor x the month's burden rate where job cost has none). */
+  payroll_taxes_estimated?: number
+  gross_profit: number
+}
 export interface CompanyMonth extends CompanyMoney {
   month: string
   closed: boolean

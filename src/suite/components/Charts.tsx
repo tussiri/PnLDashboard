@@ -98,6 +98,12 @@ export type CostRow = CostBreakdown & { labor_cost: number }
 /** True when the payload carries the reference-source breakdown (direct_cost is a number). */
 export const hasCostBreakdown = (row: Partial<CostRow> | null | undefined): row is CostRow => typeof row?.direct_cost === 'number'
 export const costParts = (row: CostRow) => costLines.map((line) => ({ ...line, value: Number(row[line.key] ?? 0) }))
+/** ", estimated" when all of payroll taxes and insurance is estimated, ", <amount> estimated" when part of it is, else "". */
+export function tiEstimateNote(row: Pick<CostBreakdown, 'payroll_ti_cost' | 'payroll_ti_estimated'>, fmt: (v: number) => string): string {
+  const est = row.payroll_ti_estimated ?? 0
+  if (!(est > 0)) return ''
+  return Math.abs(est - (row.payroll_ti_cost ?? 0)) < 1 ? ', estimated' : `, ${fmt(est)} estimated`
+}
 
 /** Donut of the direct-cost mix with the itemized list beside it. */
 export function CostDonut({ row, centerLabel = 'direct cost' }: { row: CostRow; centerLabel?: string }) {

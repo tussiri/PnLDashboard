@@ -12,7 +12,10 @@ and every row says which one it used (`revenue_basis`, `labor_basis`):
   subcontract_cost, supplies_cost = materials + equipment_supplies, other_direct_cost,
   direct_cost = total_direct_costs, gross_profit = revenue - total_direct_costs, budget_revenue /
   budget_direct_cost / budget_hours, data_quality_status. `revenue_basis = labor_basis =
-  'job_cost'`; burden_cost is 0 because payroll taxes and insurance are explicit. Hours,
+  'job_cost'`; burden_cost is 0 because payroll taxes and insurance are explicit. Where the job-month has
+  labor and no actual payroll taxes and insurance (the export carries none of GL 41000-42999), payroll_ti_cost
+  is labor x the month's burden rate (ti_rates: app/allocations.py), recorded in payroll_ti_estimated and
+  included in direct_cost and gross_profit. Hours,
   regular/overtime/double-time hours, employee_count, work_days and last_work_date come from
   the effective timekeeping rows when the month has punches, else actual_hours / overtime_hours from the
   job-cost row. A job invoiced or worked in such a month without a job-cost row keeps its AR
@@ -26,7 +29,8 @@ and every row says which one it used (`revenue_basis`, `labor_basis`):
   approves that definition; the UI labels them accordingly. labor_cost = sum(fact_timekeeping
   .labor_cost) (`labor_basis` = the timekeeping rows' labor_cost_basis: 'hours_x_rate' for the API,
   'trailing_job_rate' for the reference source). burden_cost = labor_cost x
-  ops.app_setting.payroll_burden_rate; direct_cost = labor + burden; gross_profit = revenue -
+  ops.app_setting.payroll_burden_rate, or 0 in a month with a burden rate, whose estimated payroll taxes
+  and insurance (labor x rate, payroll_ti_estimated) take its place; direct_cost = labor + burden; gross_profit = revenue -
   direct_cost (subcontract and supplies are not job-linked in the API).
 * scheduled_hours come from core.fact_schedule by work_date month.
 * budget_labor = core.fact_labor_budget_month (daily budget / hours budget comparison / wage by
@@ -64,13 +68,15 @@ transaction (app.weekly.rebuild; rules in docs/executive-pl.md), and its PhotoVa
 """
 from __future__ import annotations
 
+import json
 import logging
 import time
+from datetime import date, timedelta
 from typing import Any
 
 import psycopg
 
-from . import accounts, delivery, leadership, revenue_gap, staffing, weekly
+from . import accounts, allocations, delivery, leadership, revenue_gap, staffing, weekly
 from .config import settings
 from .db import connection
 
@@ -176,9 +182,13 @@ INSERT INTO mart.job_month (
   scheduled_hours, budget_revenue, budget_labor, budget_subcontract, budget_supplies,
   employee_count, work_days, last_work_date, data_quality_status, quality_notes, rebuilt_at,
   source, company, delivery_model, geo_precision, payroll_ti_cost, subcontract_cost, supplies_cost, other_direct_cost,
-  budget_direct_cost, budget_hours, revenue_basis, labor_basis, subcontract_basis, double_time_hours
+  budget_direct_cost, budget_hours, revenue_basis, labor_basis, subcontract_basis, double_time_hours, payroll_ti_estimated
 )
-WITH jobs AS (
+WITH ti_rate AS (
+  -- The burden rate of each month (app/allocations.py), for the payroll taxes and insurance estimate.
+  SELECT key::date AS month, value::numeric AS rate FROM jsonb_each_text(%(ti_rates)s::jsonb)
+),
+jobs AS (
   SELECT j.job_key, j.job_number, j.job_name, pa.account_name AS parent_account,
          j.region_name, j.branch_name, j.service_type, j.vertical, j.manager_name,
          j.city, j.state_province, j.country_code, j.latitude, j.longitude, j.is_active,
@@ -341,8 +351,11 @@ assembled AS (
     CASE WHEN jm.month IS NOT NULL AND jc.job_key IS NOT NULL THEN coalesce(jc.direct_labor, 0)
          WHEN tk.job_key IS NOT NULL THEN coalesce(tk.labor_cost, 0)
          ELSE coalesce(jc.direct_labor, 0) END AS labor_cost,
+    -- The estimated payroll taxes and insurance replace the flat burden rate where a month has a burden rate.
     CASE WHEN jm.month IS NOT NULL AND jc.job_key IS NOT NULL THEN 0
+         WHEN tr.rate IS NOT NULL THEN 0
          ELSE round(coalesce(tk.labor_cost, 0) * %(burden)s::numeric, 2) END AS burden_cost,
+    tr.rate AS ti_rate,
     CASE WHEN jc.job_key IS NOT NULL THEN coalesce(jc.payroll_taxes_insurance, 0) ELSE 0 END AS payroll_ti_cost,
     -- The export's subcontract line wins only where the export row was the one actually used for
     -- this job-month (same gate as revenue); otherwise the AP distributions carry it. Before those
@@ -389,14 +402,22 @@ assembled AS (
   LEFT JOIN parent_jc pj ON pj.job_key = k.job_key AND pj.month = k.month
   LEFT JOIN lb ON lb.job_key = k.job_key AND lb.month = k.month
   LEFT JOIN cust ON cust.job_key = k.job_key
+  LEFT JOIN ti_rate tr ON tr.month = k.month
   WHERE k.month <= date_trunc('month', current_date)::date
+),
+estimated AS (
+  -- Labor with no actual payroll taxes and insurance (the job cost export carries none, the live months
+  -- carry wages only) takes labor x the month's burden rate; an actual figure, once the export has one, wins.
+  SELECT a.*, CASE WHEN a.ti_rate IS NOT NULL AND a.payroll_ti_cost = 0 AND a.labor_cost <> 0
+                   THEN round(a.labor_cost * a.ti_rate, 2) ELSE 0 END AS payroll_ti_estimated
+  FROM assembled a
 ),
 finished AS (
   SELECT a.*,
-         CASE WHEN a.has_jc THEN coalesce(a.jc_direct_cost, 0)
-              ELSE a.labor_cost + a.burden_cost + a.payroll_ti_cost + a.subcontract_cost + a.supplies_cost + a.other_direct_cost END AS direct_cost,
-         CASE WHEN a.has_jc THEN coalesce(a.jc_gross_profit, 0)
-              ELSE a.revenue - (a.labor_cost + a.burden_cost + a.payroll_ti_cost + a.subcontract_cost + a.supplies_cost + a.other_direct_cost) END AS gross_profit,
+         CASE WHEN a.has_jc THEN coalesce(a.jc_direct_cost, 0) + a.payroll_ti_estimated
+              ELSE a.labor_cost + a.burden_cost + a.payroll_ti_cost + a.payroll_ti_estimated + a.subcontract_cost + a.supplies_cost + a.other_direct_cost END AS direct_cost,
+         CASE WHEN a.has_jc THEN coalesce(a.jc_gross_profit, 0) - a.payroll_ti_estimated
+              ELSE a.revenue - (a.labor_cost + a.burden_cost + a.payroll_ti_cost + a.payroll_ti_estimated + a.subcontract_cost + a.supplies_cost + a.other_direct_cost) END AS gross_profit,
          array_remove(ARRAY[
            CASE WHEN a.revenue > 0 AND a.hours = 0 THEN 'revenue_without_hours' END,
            CASE WHEN a.hours > 0 AND a.revenue = 0 THEN 'hours_without_revenue' END,
@@ -404,7 +425,7 @@ finished AS (
            CASE WHEN a.jc_quality = 'warning' THEN 'job_cost_warning' END,
            CASE WHEN a.missing_jc_row AND (a.invoiced_total <> 0 OR a.hours <> 0) THEN 'no_job_cost_row' END
          ], NULL) AS notes
-  FROM assembled a
+  FROM estimated a
 )
 SELECT
   job_key, job_number, job_name, parent_account, customer_number, region_name, branch_name, service_type, vertical,
@@ -418,8 +439,8 @@ SELECT
   employee_count, work_days, last_work_date,
   CASE WHEN cardinality(notes) > 0 THEN 'warning' ELSE 'passed' END,
   to_jsonb(notes), now(),
-  coalesce(source, 'winteam_api'), company, delivery_model, geo_precision, payroll_ti_cost, subcontract_cost, supplies_cost, other_direct_cost,
-  budget_direct_cost, budget_hours, revenue_basis, labor_basis, subcontract_basis, double_time_hours
+  coalesce(source, 'winteam_api'), company, delivery_model, geo_precision, payroll_ti_cost + payroll_ti_estimated, subcontract_cost, supplies_cost, other_direct_cost,
+  budget_direct_cost, budget_hours, revenue_basis, labor_basis, subcontract_basis, double_time_hours, payroll_ti_estimated
 FROM finished
 """
 
@@ -427,7 +448,8 @@ PORTFOLIO_MONTH_SQL = """
 INSERT INTO mart.portfolio_month (
   month, jobs_reporting, revenue, invoiced_total, collected_total, hours, regular_hours, overtime_hours,
   labor_cost, burden_cost, gross_profit, scheduled_hours, budget_revenue, budget_labor, ap_invoiced, ap_paid, rebuilt_at,
-  payroll_ti_cost, subcontract_cost, supplies_cost, other_direct_cost, direct_cost, budget_direct_cost, double_time_hours
+  payroll_ti_cost, subcontract_cost, supplies_cost, other_direct_cost, direct_cost, budget_direct_cost, double_time_hours,
+  payroll_ti_estimated
 )
 WITH jm AS (
   SELECT month,
@@ -438,7 +460,7 @@ WITH jm AS (
          sum(scheduled_hours) AS scheduled_hours, sum(budget_revenue) AS budget_revenue, sum(budget_labor) AS budget_labor,
          sum(payroll_ti_cost) AS payroll_ti_cost, sum(subcontract_cost) AS subcontract_cost, sum(supplies_cost) AS supplies_cost,
          sum(other_direct_cost) AS other_direct_cost, sum(direct_cost) AS direct_cost, sum(budget_direct_cost) AS budget_direct_cost,
-         sum(double_time_hours) AS double_time_hours
+         sum(double_time_hours) AS double_time_hours, sum(payroll_ti_estimated) AS payroll_ti_estimated
   FROM mart.job_month
   GROUP BY month
 ),
@@ -472,7 +494,7 @@ SELECT
   coalesce(jm.labor_cost, 0), coalesce(jm.burden_cost, 0), coalesce(jm.gross_profit, 0), coalesce(jm.scheduled_hours, 0),
   jm.budget_revenue, jm.budget_labor, coalesce(api.ap_invoiced, 0), coalesce(app.ap_paid, 0), now(),
   coalesce(jm.payroll_ti_cost, 0), coalesce(jm.subcontract_cost, 0), coalesce(jm.supplies_cost, 0), coalesce(jm.other_direct_cost, 0),
-  coalesce(jm.direct_cost, 0), jm.budget_direct_cost, coalesce(jm.double_time_hours, 0)
+  coalesce(jm.direct_cost, 0), jm.budget_direct_cost, coalesce(jm.double_time_hours, 0), coalesce(jm.payroll_ti_estimated, 0)
 FROM months m
 LEFT JOIN jm ON jm.month = m.month
 LEFT JOIN api ON api.month = m.month
@@ -489,6 +511,28 @@ def _burden_rate(conn: Any) -> float:
         return max(0.0, float(row["value"])) if row else 0.0
     except (TypeError, ValueError):
         return 0.0
+
+
+def ti_rates(cursor: Any, today: date | None = None) -> dict[str, float]:
+    """The burden rate of every month from the first one that has one through this month, as {'YYYY-MM-01': rate}
+    (app/allocations.py: the Trend Income Statement month at or before it, or a manual monthly rate). Empty when
+    the burden allocation is switched off or nothing is loaded, so payroll taxes and insurance stay unestimated."""
+    cfg = allocations.settings_of(cursor)
+    if not cfg["burden"]["enabled"]:
+        return {}
+    lines, overrides = allocations.statement(cursor), allocations.manual(cursor)
+    starts = [m for m in lines] + [m for m, v in overrides.items() if v.get("burden_rate") is not None]
+    if not starts:
+        return {}
+    last = (today or date.today()).replace(day=1)
+    out: dict[str, float] = {}
+    month = min(starts).replace(day=1)
+    while month <= last:
+        rate = allocations.month_figures(month, cfg, lines, overrides)["burden_rate"]
+        if rate is not None and rate > 0:
+            out[month.isoformat()] = round(float(rate), 6)
+        month = (month + timedelta(days=32)).replace(day=1)
+    return out
 
 
 def _gl_range(conn: Any, class_name: str) -> tuple[int, int]:
@@ -551,6 +595,8 @@ def rebuild_tables() -> tuple[int, int, int]:
     """
     with connection(lock_timeout_ms=settings.mart_rebuild_lock_timeout_seconds * 1000) as conn:
         rate = _burden_rate(conn)
+        with conn.cursor() as cursor:
+            rates = ti_rates(cursor)
         sub_low, sub_high = _gl_range(conn, "subcontract")
         oth_low, oth_high = _gl_range(conn, "other_direct")
         try:
@@ -561,7 +607,7 @@ def rebuild_tables() -> tuple[int, int, int]:
                     logger.info("Delivery model: %s job(s) changed: %s", len(changed),
                                 ", ".join(f"{r['company']} {r['job_number']} {r['to']} ({r['basis']})" for r in changed[:20]))
                 cursor.execute("DELETE FROM mart.job_month")
-                cursor.execute(JOB_MONTH_SQL, {"burden": rate,
+                cursor.execute(JOB_MONTH_SQL, {"burden": rate, "ti_rates": json.dumps(rates),
                                                "subcontract_gl_low": sub_low,
                                                "subcontract_gl_high": sub_high,
                                                "other_direct_gl_low": oth_low,

@@ -30,7 +30,7 @@ export function Financial() {
       return [
         { name: 'Revenue', actual: k.revenue, budget: k.budget_revenue, pctOfRevenue: 100, favorableWhenOver: true },
         { name: 'Labor cost', actual: k.labor_cost, budget: k.budget_labor, pctOfRevenue: pctOf(k.labor_cost), favorableWhenOver: false, sub: true },
-        cost('Payroll taxes & insurance', breakdown.payroll_ti_cost), cost('Subcontractors', breakdown.subcontract_cost), cost('Supplies & materials', breakdown.supplies_cost), cost('Other direct cost', breakdown.other_direct_cost),
+        cost(breakdown.payroll_ti_estimated ? 'Payroll taxes & insurance (estimated)' : 'Payroll taxes & insurance', breakdown.payroll_ti_cost), cost('Subcontractors', breakdown.subcontract_cost), cost('Supplies & materials', breakdown.supplies_cost), cost('Other direct cost', breakdown.other_direct_cost),
         { name: 'Direct cost', actual: direct, budget: null, pctOfRevenue: pctOf(direct), favorableWhenOver: false },
         { name: 'Gross profit', actual: k.gross_profit, budget: k.budget_revenue !== null && k.budget_labor !== null ? k.budget_revenue - k.budget_labor - (direct - k.labor_cost) : null, pctOfRevenue: k.gross_margin_pct, favorableWhenOver: true },
       ]

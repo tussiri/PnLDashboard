@@ -38,10 +38,10 @@ function breakdownOf(labor: number, burden: number, model: DeliveryModel): Requi
   const subcontract_cost = Math.round(burden * shares.sub)
   const supplies_cost = Math.round(burden * shares.sup)
   const other_direct_cost = burden - payroll_ti_cost - subcontract_cost - supplies_cost
-  return { payroll_ti_cost, subcontract_cost, supplies_cost, other_direct_cost, direct_cost: labor + burden }
+  return { payroll_ti_cost, payroll_ti_estimated: 0, subcontract_cost, supplies_cost, other_direct_cost, direct_cost: labor + burden }
 }
 const sumBreakdown = (rows: Required<CostBreakdown>[]): Required<CostBreakdown> => ({
-  payroll_ti_cost: sum(rows, (r) => r.payroll_ti_cost), subcontract_cost: sum(rows, (r) => r.subcontract_cost), supplies_cost: sum(rows, (r) => r.supplies_cost), other_direct_cost: sum(rows, (r) => r.other_direct_cost), direct_cost: sum(rows, (r) => r.direct_cost),
+  payroll_ti_cost: sum(rows, (r) => r.payroll_ti_cost), payroll_ti_estimated: sum(rows, (r) => r.payroll_ti_estimated), subcontract_cost: sum(rows, (r) => r.subcontract_cost), supplies_cost: sum(rows, (r) => r.supplies_cost), other_direct_cost: sum(rows, (r) => r.other_direct_cost), direct_cost: sum(rows, (r) => r.direct_cost),
 })
 const breakdownFor = (metas: DemoJobMeta[], rowsOf: (meta: DemoJobMeta) => DemoJobMonth[]): Required<CostBreakdown> => sumBreakdown(metas.map((meta) => { const rows = rowsOf(meta); return breakdownOf(sum(rows, (r) => r.labor_cost), sum(rows, (r) => r.burden_cost), demoDeliveryModelOf(meta)) }))
 
