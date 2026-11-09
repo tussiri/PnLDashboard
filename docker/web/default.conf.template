@@ -46,8 +46,16 @@ server {
     proxy_send_timeout 900s;
   }
 
+  # index.html names the hashed bundles of the current build. Cached, it keeps pointing at chunks a
+  # redeploy deleted, and opening a lazy view fails with "Failed to fetch dynamically imported module".
+  # Revalidate it on every load; the hashed assets below stay immutable.
   location / {
+    add_header Cache-Control "no-cache" always;
     try_files $uri $uri/ /index.html;
+  }
+
+  location = /index.html {
+    add_header Cache-Control "no-cache" always;
   }
 
   location ~* \.(?:js|css|png|jpg|jpeg|gif|svg|ico|woff2?)$ {
