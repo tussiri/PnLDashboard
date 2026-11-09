@@ -479,3 +479,27 @@ rect.on{opacity:.8}
 
 /* Phones: the whole navigation stays in view on its own row, inside the 16px gutter. */
 @media(max-width:520px){.topbar__in{grid-template-columns:1fr auto;height:auto;padding:8px 16px;gap:6px 10px}.nav{grid-column:1/-1;grid-row:2;flex-wrap:wrap}.nav a{padding:0 7px;font-size:12px}.tabs .tab{padding-left:8px;padding-right:8px}}
+/* Site feedback card (account overview) and the sentiment block it shares with the Feedback tab. */
+.fbc{margin-bottom:14px}
+.fbc__grid{display:grid;grid-template-columns:minmax(260px,1fr) minmax(0,1.7fr);gap:16px;align-items:stretch}
+.fbc__grid.solo{grid-template-columns:1fr}
+.fbc__grid.solo .fbc__score{display:grid;grid-template-columns:auto minmax(0,1.4fr) minmax(0,1fr);gap:12px 28px;align-items:center}
+.fbc__grid.solo .fbc__stats,.fbc__grid.solo .fbc__low{margin-top:0}
+@media(max-width:820px){.fbc__grid.solo .fbc__score{grid-template-columns:1fr}}
+@media(max-width:820px){.fbc__grid{grid-template-columns:1fr}}
+.fbc__score{min-width:0}
+.fbc__big{font-size:36px;line-height:1.1;margin-top:2px}
+.fbc__big .of{font-size:15px}
+.fbc__stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin-top:12px}
+.fbc__low{margin-top:12px}.fbc__low>.kl{display:block}.fbc__low .chips{margin-top:4px}
+.fbs{padding:14px 16px;background:var(--bg2);border-left:4px solid var(--border);border-radius:var(--r);min-width:0}
+.fbs.ok{border-left-color:var(--ok)}.fbs.warn{border-left-color:var(--warn)}.fbs.bad{border-left-color:var(--bad)}
+.fbs .fbt__line{font-size:14px;margin-top:4px;line-height:1.45}
+.fbs__themes{list-style:none;margin:12px 0 0;padding:10px 0 0;border-top:0.5px solid var(--border);display:grid;gap:7px}
+.fbs__themes li{display:grid;grid-template-columns:minmax(0,13em) minmax(0,1fr) auto;gap:12px;font-size:12px;align-items:baseline}
+.fbs__themes li>.ks{margin:0;font-variant-numeric:tabular-nums}
+.fbs__theme{font-weight:600}.fbs__theme.ok{color:var(--ok)}.fbs__theme.warn{color:var(--warn)}.fbs__theme.bad{color:var(--bad)}
+.fbs__sites{color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media(max-width:520px){.fbs__themes li{grid-template-columns:1fr auto}.fbs__sites{grid-column:1/-1;grid-row:2;white-space:normal}}
+.wkchg__more>summary{cursor:pointer;font-size:12px;color:var(--text2);margin-top:2px;width:max-content}
+.wkchg__more[open]>summary{margin-bottom:10px}

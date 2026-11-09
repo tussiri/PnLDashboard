@@ -153,7 +153,7 @@ export function Feedback({ account }: { account: LeadershipAccount }) {
     { key: 'wo', header: 'Work orders', left: true, value: (r) => r.ratings.map((x) => x.wo_number).join(', '), className: 'neutral' },
   ]
   return <>
-    <TabSentiment account={account} />
+    <TabSentiment account={account} names={siteNames(d.lines)} />
     <div className="kpi-lg">
       <Kpi label="Avg rating" value={<>{stars(d.average)}<span className="of"> / 5</span></>} tone={scoreTone(d.average)} sub={`Since ${monthLabel(d.since)}`} />
       <Kpi label="Ratings" value={d.ratings.toLocaleString('en-US')} sub={`${d.sites} sites`} />
@@ -174,6 +174,22 @@ const SENTIMENT: Record<FeedbackSentiment, { label: string; tone: string }> = {
   positive: { label: 'Positive', tone: 'ok' }, mixed: { label: 'Mixed', tone: 'warn' }, negative: { label: 'Negative', tone: 'bad' } }
 const signed = (n: number) => `${n >= 0 ? '+' : '−'}${Math.abs(n).toFixed(2)}`
 
+/** "FedEx - Tracy, CA" -> "Tracy, CA": every site is the same customer's, so its name leads. */
+export const siteShort = (name: string) => name.replace(/^FedEx\s*-\s*/i, '')
+
+/** Location code to site name, from the account's feedback lines. */
+export function siteNames(lines: { location_number: string; site_name: string | null }[]): Map<string, string> {
+  const out = new Map<string, string>()
+  for (const l of lines) if (l.site_name && !out.has(l.location_number)) out.set(l.location_number, siteShort(l.site_name))
+  return out
+}
+
+/** A theme's sites by name: the first three, then how many more. */
+export function themeSites(locations: string[], names: Map<string, string>, shown = 3): string {
+  const all = [...new Set(locations)].map((c) => names.get(c) ?? c)
+  return all.length > shown ? `${all.slice(0, shown).join(', ')}, ${all.length - shown} more` : all.join(', ')
+}
+
 /** The account's feedback overview (scores and the comment summary), refetched while the summary is being rebuilt. */
 function useFeedbackOverview(account: LeadershipAccount, month: string | undefined) {
   const { api, keyPrefix, decision } = useLeadership()
@@ -188,57 +204,65 @@ function useFeedbackOverview(account: LeadershipAccount, month: string | undefin
   return q
 }
 
-/** Claude's read of the recent comments: sentiment, headline and themes, on Home and the Feedback tab. */
-function SentimentTile({ overview: { summary: s, critical_sites: critical = [] } }: { overview: FeedbackOverview }) {
-  const { navigate } = useLeadership()
-  return <>
-    {s.status === 'ready' && s.summary && <div className={`fbt__sent ${SENTIMENT[s.summary.sentiment].tone}`}
-      title={`Claude's read of ${s.comments} comments from the ${s.window_days} days up to the newest rating`}>
-      <div className="fbt__hd"><span className="kl">Customer sentiment, {Math.round((s.window_days ?? 90) / 30)}-month</span><span className="ks">{s.comments} comments</span></div>
-      <div className={`fbt__mood kv ${SENTIMENT[s.summary.sentiment].tone}`}>{SENTIMENT[s.summary.sentiment].label}</div>
-      <p className="fbt__line">{s.summary.headline}</p>
-      {s.summary.themes.length > 0 && <div className="chips">{s.summary.themes.map((t) => <span key={t.theme} className={`chip ${SENTIMENT[t.sentiment].tone}`}
-        title={t.locations.join(', ')}>{t.theme} ({t.mentions})</span>)}</div>}
-      {critical.length > 0 && <div className="fbt__crit"><span className="kl">Most critical</span>
-        {critical.map((c) => <button key={c.location_number} type="button" className={`chip linkbtn ${scoreTone(c.average)}`}
-          title={`${c.ratings} ratings, ${c.low} at 1-2 stars`} onClick={() => c.company && c.job_number && navigate({ site: { company: c.company, job: c.job_number } })}>
-          {c.site_name ?? c.location_number}: {stars(c.average)}</button>)}</div>}
-    </div>}
-    {s.status === 'pending' && <div className="fbt__sent"><span className="kl">Customer sentiment updating</span></div>}
-  </>
+/** Claude's read of the recent comments across the sites: sentiment, headline and themes with the sites behind each. */
+function SentimentBlock({ overview: { summary: s }, names }: { overview: FeedbackOverview; names: Map<string, string> }) {
+  if (s.status === 'pending' && !s.summary) return <div className="fbs"><span className="kl">Sentiment by site updating</span></div>
+  if (s.status !== 'ready' || !s.summary) return null
+  const mood = SENTIMENT[s.summary.sentiment]
+  return <div className={`fbs ${mood.tone}`} title={`Claude's read of ${s.comments} comments from the ${s.window_days} days up to the newest rating`}>
+    <div className="fbt__hd"><span className="kl">Sentiment by site, last {Math.round((s.window_days ?? 90) / 30)} months</span><span className="ks">{s.comments} comments</span></div>
+    <div className={`fbt__mood kv ${mood.tone}`}>{mood.label}</div>
+    <p className="fbt__line">{s.summary.headline}</p>
+    {s.summary.themes.length > 0 && <ul className="fbs__themes">{s.summary.themes.map((t) => <li key={t.theme}>
+      <span className={`fbs__theme ${SENTIMENT[t.sentiment].tone}`}>{t.theme}</span>
+      <span className="fbs__sites" title={themeSites(t.locations, names, 99)}>{themeSites(t.locations, names)}</span>
+      <span className="ks">{t.mentions}</span></li>)}</ul>}
+  </div>
 }
 
-/** The Feedback tab's sentiment tile; the summary covers the newest ratings whatever month is picked. */
-function TabSentiment({ account }: { account: LeadershipAccount }) {
+/** The Feedback tab's sentiment; the summary covers the newest ratings whatever month is picked. */
+function TabSentiment({ account, names }: { account: LeadershipAccount; names: Map<string, string> }) {
   const q = useFeedbackOverview(account, undefined)
-  return q.data ? <SentimentTile overview={q.data} /> : null
+  return q.data && q.data.summary.status === 'ready' ? <div className="card fbc fbc--solo"><SentimentBlock overview={q.data} names={names} /></div> : null
 }
 
-/** Home: the account's customer feedback at a glance. Scores for the month to date, the prior month and 12 months
- * (computed from the ratings), and Claude's summary of the last 90 days of comments, labeled as such. */
-export function FeedbackTile({ account, month }: { account: LeadershipAccount; month: string | undefined }) {
+/** The account's site feedback at a glance, at the top of its overview: the star rating (12 months, month to date,
+ * prior month, 1-2 stars) and the lowest rated sites beside Claude's read of the last 90 days of comments. */
+export function FeedbackTile({ account, month, lines = [] }: { account: LeadershipAccount; month: string | undefined
+  /** The account's feedback lines, to name the sites behind each theme. */
+  lines?: Line[] }) {
   const { navigate } = useLeadership()
   const q = useFeedbackOverview(account, month)
+  const names = useMemo(() => siteNames(lines), [lines])
   const d = q.data
   if (q.error || !d || !d.year.ratings) return null
   const cur = d.current
   const change = cur?.average != null && d.prior?.average != null ? cur.average - d.prior.average : null
-  const s = d.summary
   const lows = [...new Map(d.low_sites.map((l) => [l.location_number, l])).values()]
+  const critical = d.critical_sites ?? []
+  const open = (c: { company: string | null; job_number: string | null }) => c.company && c.job_number && navigate({ site: { company: c.company, job: c.job_number } })
   const href = formatRoute({ view: 'account', account: account.slug, tab: 'feedback' })
-  return <section className="card fbt" aria-label={`${account.name} customer feedback`}>
-    <div className="ct"><span>Customer feedback</span><a className="ks" href={href}>All feedback</a></div>
-    <SentimentTile overview={d} />
-    <div className="kpi4">
-      <Kpi label={`Avg rating, ${monthLabel(d.month)} MTD`} value={cur?.average != null ? <>{stars(cur.average)}<span className="of"> / 5</span></> : '–'}
-        tone={scoreTone(cur?.average ?? null)} sub={cur ? `${cur.ratings} ratings${change != null ? `; ${signed(change)} vs prior month` : ''}` : 'No ratings yet'} />
-      <Kpi label="Prior month" value={d.prior?.average != null ? stars(d.prior.average) : '–'} tone={scoreTone(d.prior?.average ?? null)}
-        sub={d.prior ? `${d.prior.ratings} ratings` : undefined} />
-      <Kpi label="12-month avg" value={stars(d.year.average)} tone={scoreTone(d.year.average)} sub={`${d.year.ratings.toLocaleString('en-US')} ratings`} />
-      <Kpi label="1-2 stars MTD" value={cur?.low ?? 0} tone={cur?.low ? 'bad' : 'ok'}
-        sub={lows.length ? lows.slice(0, 4).map((l) => l.location_number).join(', ') + (lows.length > 4 ? `, ${lows.length - 4} more` : '') : undefined} />
+  const hasSentiment = d.summary.status === 'ready' || d.summary.status === 'pending'
+  return <section className="card fbc" aria-label={`${account.name} site feedback`}>
+    <div className="ct"><span>Site feedback</span><a className="ks" href={href}>All feedback</a></div>
+    <div className={`fbc__grid${hasSentiment ? '' : ' solo'}`}>
+      <div className="fbc__score">
+        <div className="fbc__head"><div className="kl">Star rating, 12 months</div>
+          <div className={`fbc__big kv ${scoreTone(d.year.average)}`}>{stars(d.year.average)}<span className="of"> / 5</span></div>
+          <div className="ks">{d.year.ratings.toLocaleString('en-US')} ratings</div></div>
+        <div className="fbc__stats">
+          <Kpi small label={`${monthShort(d.month)} MTD`} value={cur?.average != null ? stars(cur.average) : '–'} tone={scoreTone(cur?.average ?? null)}
+            sub={cur ? `${cur.ratings} ratings` : 'No ratings'} tip={change != null ? `${signed(change)} vs prior month` : undefined} />
+          <Kpi small label={d.prior ? monthShort(d.prior.month) : 'Prior month'} value={d.prior?.average != null ? stars(d.prior.average) : '–'}
+            tone={scoreTone(d.prior?.average ?? null)} sub={d.prior ? `${d.prior.ratings} ratings` : undefined} />
+          <Kpi small label="1-2 stars MTD" value={cur?.low ?? 0} tone={cur?.low ? 'bad' : 'ok'}
+            tip={lows.length ? lows.map((l) => `${siteShort(l.site_name ?? l.location_number)} ${stars(l.score)}`).join(', ') : undefined} />
+        </div>
+        {critical.length > 0 && <div className="fbc__low"><span className="kl">Lowest rated</span>
+          <div className="chips">{critical.map((c) => <button key={c.location_number} type="button" className={`chip linkbtn ${scoreTone(c.average)}`}
+            title={`${c.ratings} ratings, ${c.low} at 1-2 stars`} onClick={() => open(c)}>{siteShort(c.site_name ?? c.location_number)} {stars(c.average)}</button>)}</div></div>}
+      </div>
+      {hasSentiment && <SentimentBlock overview={d} names={names} />}
     </div>
-    {lows.length > 0 && <div className="chips">{lows.slice(0, 8).map((l) => <button key={l.location_number} type="button" className="chip linkbtn"
-      onClick={() => l.company && l.job_number && navigate({ site: { company: l.company, job: l.job_number } })}>{l.site_name ?? l.location_number}: {stars(l.score)}</button>)}</div>}
   </section>
 }
