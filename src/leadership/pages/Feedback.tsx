@@ -257,7 +257,14 @@ function RatingStrip({ months, latest }: { months: { month: string; average: num
   </div>
 }
 
-/** The account's site feedback at a glance, at the top of its overview: the 12-month star rating and its months, the
+/** The average star rating over the given months, weighted by each month's scored ratings; null without any. */
+export function recentScore(months: { average: number | null; scored: number }[]): number | null {
+  const scored = months.reduce((t, m) => t + (m.average == null ? 0 : m.scored), 0)
+  return scored ? Math.round((months.reduce((t, m) => t + (m.average ?? 0) * m.scored, 0) / scored) * 100) / 100 : null
+}
+
+/** The account's site feedback at a glance, at the top of its overview: the star rating over the last three rated
+ * months beside the 12 months by month, the
  * latest rated month, 1-2 stars over the last three rated months and the lowest rated sites, beside Claude's read of
  * the last 90 days of comments. */
 export function FeedbackTile({ account, month, lines = [] }: { account: LeadershipAccount; month: string | undefined
@@ -271,7 +278,7 @@ export function FeedbackTile({ account, month, lines = [] }: { account: Leadersh
   const byMonth = new Map(d.months.map((m) => [m.month.slice(0, 7), m]))
   const axis = monthAxis(d.year.since, d.month).slice(-12).map((m) => {
     const x = byMonth.get(m.slice(0, 7))
-    return { month: m, average: x?.average ?? null, ratings: x?.ratings ?? 0, low: x?.low ?? 0 }
+    return { month: m, average: x?.average ?? null, ratings: x?.ratings ?? 0, scored: x?.scored ?? 0, low: x?.low ?? 0 }
   })
   // The ratings lag the calendar: lead with the newest month that has any, against the rated month before it.
   const rated = axis.filter((m) => m.average != null)
@@ -281,6 +288,7 @@ export function FeedbackTile({ account, month, lines = [] }: { account: Leadersh
   const recent = rated.slice(-3)
   const recentLow = recent.reduce((t, m) => t + m.low, 0)
   const recentRatings = recent.reduce((t, m) => t + m.ratings, 0)
+  const recentAverage = recentScore(recent)
   const critical = d.critical_sites ?? []
   const open = (c: { company: string | null; job_number: string | null }) => c.company && c.job_number && navigate({ site: { company: c.company, job: c.job_number } })
   const href = formatRoute({ view: 'account', account: account.slug, tab: 'feedback' })
@@ -290,9 +298,9 @@ export function FeedbackTile({ account, month, lines = [] }: { account: Leadersh
     <div className={`fbc__grid${hasSentiment ? '' : ' solo'}`}>
       <div className="fbc__score">
         <div className="fbc__top">
-          <div><div className="kl">Star rating, 12 months</div>
-            <div className={`fbc__big ${scoreTone(d.year.average)}`}>{stars(d.year.average)}<span className="of"> / 5</span></div>
-            <div className="ks">{d.year.ratings.toLocaleString('en-US')} ratings</div></div>
+          <div><div className="kl">Star rating, last {recent.length || 3} months</div>
+            <div className={`fbc__big ${scoreTone(recentAverage)}`}>{stars(recentAverage)}<span className="of"> / 5</span></div>
+            <div className="ks">{recentRatings.toLocaleString('en-US')} ratings{recent.length ? `, ${monthShort(recent[0].month)} to ${monthShort(recent.at(-1)!.month)}` : ''}</div></div>
           <RatingStrip months={axis} latest={latest?.month ?? null} />
         </div>
         <dl className="fbc__facts">

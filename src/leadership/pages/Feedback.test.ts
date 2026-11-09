@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { groupVisits, siteNames, siteShort, themeSites, tradeName } from './Feedback'
+import { groupVisits, recentScore, siteNames, siteShort, themeSites, tradeName } from './Feedback'
 
 const line = (wo: string, trade: string, score: number | null, comment: string | null, date = '2026-07-02', loc = 'NIPA') => ({
   wo_number: wo, location_number: loc, provider_name: null, trade, feedback: 'Satisfactory', feedback_date: date, comment, score,
@@ -46,5 +46,12 @@ describe('siteShort', () => {
     expect(siteShort('FXE_EWNA New Bern NC')).toBe('New Bern NC')
     expect(siteShort('FXE-MKEA')).toBe('MKEA')
     expect(siteShort('NIPA')).toBe('NIPA')
+  })
+})
+
+describe('recentScore', () => {
+  it('weights each month by its scored ratings and skips months without any', () => {
+    expect(recentScore([{ average: 4, scored: 30 }, { average: 2, scored: 10 }, { average: null, scored: 0 }])).toBe(3.5)
+    expect(recentScore([])).toBeNull()
   })
 })
