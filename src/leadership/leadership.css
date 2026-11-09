@@ -278,13 +278,7 @@ tr.row-detail>td{padding:8px 0 14px 16px;text-align:left}
 .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:7px;vertical-align:1px}
 .kpi-grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
 .chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:10px}
-.fbt{margin-bottom:12px}
-.fbt__sent{color:var(--text);margin-bottom:10px;padding:14px 16px;background:var(--bg2);border:none;border-left:4px solid var(--border);border-radius:var(--r)}
-.fbt__sent.ok{border-left-color:var(--ok)}.fbt__sent.warn{border-left-color:var(--warn)}.fbt__sent.bad{border-left-color:var(--bad)}
-.fbt__sent .chips{margin-top:10px}
-.fbt__crit{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:10px}.fbt__crit>.kl{margin:0 2px 0 0}
-.fbt__mood{font-size:26px;margin-top:4px}
-.fbt__sent .fbt__line{font-size:15px;margin-top:4px}
+.fbt__sent{color:var(--text);margin-bottom:10px;padding:12px 16px;background:var(--bg2);border:none;border-radius:var(--r)}
 .fbt__hd{display:flex;align-items:center;gap:8px;flex-wrap:wrap;line-height:1.3}
 .fbt__hd>.kl,.fbt__hd>.ks{margin:0}
 .fbt__line{margin:6px 0 0;font-size:13px;color:var(--text)}
@@ -479,27 +473,71 @@ rect.on{opacity:.8}
 
 /* Phones: the whole navigation stays in view on its own row, inside the 16px gutter. */
 @media(max-width:520px){.topbar__in{grid-template-columns:1fr auto;height:auto;padding:8px 16px;gap:6px 10px}.nav{grid-column:1/-1;grid-row:2;flex-wrap:wrap}.nav a{padding:0 7px;font-size:12px}.tabs .tab{padding-left:8px;padding-right:8px}}
-/* Site feedback card (account overview) and the sentiment block it shares with the Feedback tab. */
-.fbc{margin-bottom:14px}
-.fbc__grid{display:grid;grid-template-columns:minmax(260px,1fr) minmax(0,1.7fr);gap:16px;align-items:stretch}
+/* Site feedback card (account overview) and the sentiment block it shares with the Feedback tab. Two columns split
+   by a hairline: the scores, then the sentiment. Flat inside the card: no boxes within it. */
+.fbc{margin-bottom:14px;padding:16px 20px 18px}
+.fbc>.ct{margin-bottom:14px}
+.fbc__grid{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:0}
+.fbc__grid>*+*{border-left:0.5px solid var(--border);padding-left:24px;margin-left:24px}
 .fbc__grid.solo{grid-template-columns:1fr}
-.fbc__grid.solo .fbc__score{display:grid;grid-template-columns:auto minmax(0,1.4fr) minmax(0,1fr);gap:12px 28px;align-items:center}
-.fbc__grid.solo .fbc__stats,.fbc__grid.solo .fbc__low{margin-top:0}
-@media(max-width:820px){.fbc__grid.solo .fbc__score{grid-template-columns:1fr}}
-@media(max-width:820px){.fbc__grid{grid-template-columns:1fr}}
-.fbc__score{min-width:0}
-.fbc__big{font-size:36px;line-height:1.1;margin-top:2px}
-.fbc__big .of{font-size:15px}
-.fbc__stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin-top:12px}
-.fbc__low{margin-top:12px}.fbc__low>.kl{display:block}.fbc__low .chips{margin-top:4px}
-.fbs{padding:14px 16px;background:var(--bg2);border-left:4px solid var(--border);border-radius:var(--r);min-width:0}
-.fbs.ok{border-left-color:var(--ok)}.fbs.warn{border-left-color:var(--warn)}.fbs.bad{border-left-color:var(--bad)}
-.fbs .fbt__line{font-size:14px;margin-top:4px;line-height:1.45}
-.fbs__themes{list-style:none;margin:12px 0 0;padding:10px 0 0;border-top:0.5px solid var(--border);display:grid;gap:7px}
-.fbs__themes li{display:grid;grid-template-columns:minmax(0,13em) minmax(0,1fr) auto;gap:12px;font-size:12px;align-items:baseline}
-.fbs__themes li>.ks{margin:0;font-variant-numeric:tabular-nums}
-.fbs__theme{font-weight:600}.fbs__theme.ok{color:var(--ok)}.fbs__theme.warn{color:var(--warn)}.fbs__theme.bad{color:var(--bad)}
-.fbs__sites{color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-@media(max-width:520px){.fbs__themes li{grid-template-columns:1fr auto}.fbs__sites{grid-column:1/-1;grid-row:2;white-space:normal}}
+.fbc__score{min-width:0;display:flex;flex-direction:column;gap:16px}
+.fbc__top{display:flex;align-items:flex-end;justify-content:space-between;gap:20px}
+.fbc__big{font-size:40px;font-weight:600;line-height:1.05;margin:4px 0 2px;font-variant-numeric:tabular-nums;letter-spacing:-0.02em}
+.fbc__big .of{font-size:15px;font-weight:400;color:var(--text3);letter-spacing:0}
+.fbc__strip{display:grid;grid-template-columns:repeat(12,minmax(6px,14px));gap:4px;align-items:end;flex:0 1 auto}
+.fbc__col{display:flex;flex-direction:column;align-items:center;gap:4px}
+.fbc__bar{height:44px;width:100%;display:flex;align-items:flex-end;background:var(--bg2);border-radius:2px;overflow:hidden}
+.fbc__bar>span{display:block;width:100%;background:var(--text3);border-radius:2px 2px 0 0}
+.fbc__bar>span.ok{background:var(--ok)}.fbc__bar>span.warn{background:var(--warn)}.fbc__bar>span.bad{background:var(--bad)}
+.fbc__col:not(.on) .fbc__bar>span{opacity:.55}
+.fbc__m{font-size:10px;color:var(--text3);line-height:1}
+.fbc__col.on .fbc__m{color:var(--text);font-weight:600}
+.fbc__facts{display:grid;grid-template-columns:1fr 1fr;border-top:0.5px solid var(--border);padding-top:14px}
+.fbc__facts>div+div{border-left:0.5px solid var(--border);padding-left:16px}
+.fbc__facts dt{font-size:11px;color:var(--text3)}
+.fbc__facts dd{margin:0}
+.fbc__facts dd:not(.ks){font-size:22px;font-weight:600;font-variant-numeric:tabular-nums;margin:3px 0 1px}
+.fbc__low{border-top:0.5px solid var(--border);padding-top:12px}
+.fbc__low ul{list-style:none;margin:6px 0 0;padding:0}
+.fbc__low li{display:grid;grid-template-columns:minmax(0,1fr) auto 3em;gap:12px;align-items:baseline;padding:5px 0;font-size:13px}
+.fbc__low li+li{border-top:0.5px solid var(--border)}
+.fbc__low li>.linkbtn{text-align:left;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fbc__low li>.linkbtn:not(:disabled):hover{color:var(--accent);text-decoration:underline}
+.fbc__low li>.ks{margin:0}
+.fbc__low li>b{text-align:right;font-variant-numeric:tabular-nums}
+.fbs{min-width:0}
+.fbs__hd{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.fbs__hd>.kl{margin:0}
+.fbs__n{margin:0 0 0 auto}
+.fbs__line{margin:10px 0 0;font-size:16px;line-height:1.45;color:var(--text);max-width:68ch;text-wrap:pretty}
+.fbs__themes{width:100%;border-collapse:collapse;margin-top:16px;font-size:13px;table-layout:fixed}
+.fbs__themes th{font-size:11px;font-weight:400;color:var(--text3);text-align:right;padding:0 0 6px;border-bottom:0.5px solid var(--border)}
+.fbs__themes th.l{text-align:left}
+.fbs__themes th:first-child{width:42%}.fbs__themes th:last-child{width:6.5em}
+.fbs__themes td{padding:8px 0;border-bottom:0.5px solid var(--border);vertical-align:baseline}
+.fbs__themes tr:last-child td{border-bottom:none}
+.fbs__themes td.num{text-align:right;font-variant-numeric:tabular-nums;color:var(--text2)}
+.fbs__themes td.fbs__theme{font-weight:600;padding-right:16px;white-space:normal;overflow-wrap:anywhere;line-height:1.35}
+.fbs__theme.ok{color:var(--ok)}.fbs__theme.warn{color:var(--warn)}.fbs__theme.bad{color:var(--bad)}
+.fbs__sites{color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-right:12px!important}
+@media(max-width:900px){.fbc__grid{grid-template-columns:1fr}.fbc__grid>*+*{border-left:none;padding-left:0;margin-left:0;border-top:0.5px solid var(--border);padding-top:16px;margin-top:16px}}
+@media(max-width:520px){.fbc{padding:14px 16px}.fbc__top{flex-direction:column;align-items:flex-start}.fbs__themes th:first-child{width:46%}.fbs__line{font-size:15px}}
+/* The FedEx overview: figures inside a card sit flat, split by hairlines, instead of a box within a box. */
+.ov-focus .card .kpi{background:none;border:none;border-radius:0;padding:2px 14px}
+.ov-focus .card .kpi4>.kpi:first-child,.ov-focus .card .kpi-lg>.kpi:first-child{padding-left:0}
+.ov-focus .card .kpi4>.kpi+.kpi,.ov-focus .card .kpi-lg>.kpi+.kpi{border-left:0.5px solid var(--border)}
+.ov-focus .card .kpi4,.ov-focus .card .kpi-lg{gap:0}
+.ov-focus .seg-hdr{margin-bottom:14px}
+@container (max-width:420px){.ov-focus .card .kpi4>.kpi:nth-child(odd){padding-left:0;border-left:none}.ov-focus .card .kpi4{row-gap:12px}}
 .wkchg__more>summary{cursor:pointer;font-size:12px;color:var(--text2);margin-top:2px;width:max-content}
 .wkchg__more[open]>summary{margin-bottom:10px}
+.ov{display:contents}
+/* Without a sentiment summary the scores run across the card in three columns. */
+@media(min-width:901px){
+  .fbc__grid.solo .fbc__score{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr) minmax(0,1.15fr);gap:0;align-items:start}
+  .fbc__grid.solo .fbc__score>*+*{border-top:none;padding-top:0;border-left:0.5px solid var(--border);padding-left:24px;margin-left:24px}
+  .fbc__grid.solo .fbc__top{justify-content:flex-start;gap:28px}
+  .fbc__grid.solo .fbc__facts{grid-template-columns:1fr;row-gap:14px}
+  .fbc__grid.solo .fbc__facts>div+div{border-left:none;padding-left:0;border-top:0.5px solid var(--border);padding-top:12px}
+  .fbc__grid.solo .fbc__low ul{margin-top:2px}
+}
