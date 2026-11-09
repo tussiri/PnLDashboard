@@ -174,8 +174,13 @@ const SENTIMENT: Record<FeedbackSentiment, { label: string; tone: string }> = {
   positive: { label: 'Positive', tone: 'ok' }, mixed: { label: 'Mixed', tone: 'warn' }, negative: { label: 'Negative', tone: 'bad' } }
 const signed = (n: number) => `${n >= 0 ? '+' : '−'}${Math.abs(n).toFixed(2)}`
 
-/** "FedEx - Tracy, CA" -> "Tracy, CA": every site is the same customer's, so its name leads. */
-export const siteShort = (name: string) => name.replace(/^FedEx\s*-\s*/i, '')
+/** A site's name without the customer's prefixes: "FedEx - Tracy, CA" -> "Tracy, CA", and the ServiceChannel
+ * location codes "FXG_854 / 3854 Lake Havasu City AZ" -> "Lake Havasu City AZ", "FXE_EWNA New Bern NC" -> "New Bern NC".
+ * A name that is only a code stays as it is. */
+export const siteShort = (name: string) => {
+  const n = name.replace(/^FedEx\s*-\s*/i, '').replace(/^FX[A-Z]?[_-][A-Z0-9]+(\s*\/\s*\d+)?\s+/i, '').trim()
+  return /^FX[A-Z]?[_-][A-Z0-9]+$/i.test(n) ? n.replace(/^FX[A-Z]?[_-]/i, '') : n || name
+}
 
 /** Location code to site name, from the account's feedback lines. */
 export function siteNames(lines: { location_number: string; site_name: string | null }[]): Map<string, string> {
@@ -204,30 +209,57 @@ function useFeedbackOverview(account: LeadershipAccount, month: string | undefin
   return q
 }
 
-/** Claude's read of the recent comments across the sites: sentiment, headline and themes with the sites behind each. */
+/** The months from `since` through `last` (both YYYY-MM-..), oldest first, as YYYY-MM-01. */
+export function monthAxis(since: string, last: string): string[] {
+  const out: string[] = []
+  let [y, m] = since.slice(0, 7).split('-').map(Number)
+  while (`${y}-${String(m).padStart(2, '0')}` <= last.slice(0, 7)) {
+    out.push(`${y}-${String(m).padStart(2, '0')}-01`)
+    if (++m > 12) { m = 1; y++ }
+  }
+  return out
+}
+
+/** Claude's read of the recent comments across the sites: sentiment, headline and a table of themes with the sites behind each. */
 function SentimentBlock({ overview: { summary: s }, names }: { overview: FeedbackOverview; names: Map<string, string> }) {
-  if (s.status === 'pending' && !s.summary) return <div className="fbs"><span className="kl">Sentiment by site updating</span></div>
+  if (s.status === 'pending' && !s.summary) return <div className="fbs"><div className="fbs__hd"><span className="kl">Sentiment by site</span><span className="badge bnone">Updating</span></div></div>
   if (s.status !== 'ready' || !s.summary) return null
   const mood = SENTIMENT[s.summary.sentiment]
-  return <div className={`fbs ${mood.tone}`} title={`Claude's read of ${s.comments} comments from the ${s.window_days} days up to the newest rating`}>
-    <div className="fbt__hd"><span className="kl">Sentiment by site, last {Math.round((s.window_days ?? 90) / 30)} months</span><span className="ks">{s.comments} comments</span></div>
-    <div className={`fbt__mood kv ${mood.tone}`}>{mood.label}</div>
-    <p className="fbt__line">{s.summary.headline}</p>
-    {s.summary.themes.length > 0 && <ul className="fbs__themes">{s.summary.themes.map((t) => <li key={t.theme}>
-      <span className={`fbs__theme ${SENTIMENT[t.sentiment].tone}`}>{t.theme}</span>
-      <span className="fbs__sites" title={themeSites(t.locations, names, 99)}>{themeSites(t.locations, names)}</span>
-      <span className="ks">{t.mentions}</span></li>)}</ul>}
+  return <div className="fbs" title={`Claude's read of ${s.comments} comments from the ${s.window_days} days up to the newest rating`}>
+    <div className="fbs__hd"><span className="kl">Sentiment by site, last {Math.round((s.window_days ?? 90) / 30)} months</span>
+      <span className={`badge b${mood.tone}`}>{mood.label}</span><span className="ks fbs__n">{s.comments} comments</span></div>
+    <p className="fbs__line">{s.summary.headline}</p>
+    {s.summary.themes.length > 0 && <table className="fbs__themes">
+      <thead><tr><th className="l">Theme</th><th className="l">Sites</th><th>Comments</th></tr></thead>
+      <tbody>{s.summary.themes.map((t) => <tr key={t.theme}>
+        <td className={`l fbs__theme ${SENTIMENT[t.sentiment].tone}`}>{t.theme}</td>
+        <td className="l fbs__sites" title={themeSites(t.locations, names, 99)}>{themeSites(t.locations, names)}</td>
+        <td className="num">{t.mentions}</td></tr>)}</tbody>
+    </table>}
   </div>
 }
 
 /** The Feedback tab's sentiment; the summary covers the newest ratings whatever month is picked. */
 function TabSentiment({ account, names }: { account: LeadershipAccount; names: Map<string, string> }) {
   const q = useFeedbackOverview(account, undefined)
-  return q.data && q.data.summary.status === 'ready' ? <div className="card fbc fbc--solo"><SentimentBlock overview={q.data} names={names} /></div> : null
+  return q.data && q.data.summary.status === 'ready' ? <div className="card fbc"><SentimentBlock overview={q.data} names={names} /></div> : null
 }
 
-/** The account's site feedback at a glance, at the top of its overview: the star rating (12 months, month to date,
- * prior month, 1-2 stars) and the lowest rated sites beside Claude's read of the last 90 days of comments. */
+/** Monthly averages sit between 3 and 5 stars: the strip starts at 3 so a month's move shows (exact values on hover). */
+const STRIP_FLOOR = 3
+/** Average star rating by month over the 12 months; a month without ratings is an empty slot. */
+function RatingStrip({ months, latest }: { months: { month: string; average: number | null; ratings: number }[]; latest: string | null }) {
+  return <div className="fbc__strip" role="img" aria-label={`Average star rating by month: ${months.map((m) => `${monthShort(m.month)} ${m.average == null ? 'no ratings' : stars(m.average)}`).join(', ')}`}>
+    {months.map((m) => <div key={m.month} className={`fbc__col${m.month === latest ? ' on' : ''}`} title={m.average == null ? `${monthLabel(m.month)}: no ratings` : `${monthLabel(m.month)}: ${m.average.toFixed(2)} from ${m.ratings} ratings`}>
+      <div className="fbc__bar"><span className={scoreTone(m.average)} style={{ height: m.average == null ? 0 : `${Math.max(6, Math.min(100, ((m.average - STRIP_FLOOR) / (5 - STRIP_FLOOR)) * 100))}%` }} /></div>
+      <span className="fbc__m">{monthShort(m.month).slice(0, 1)}</span>
+    </div>)}
+  </div>
+}
+
+/** The account's site feedback at a glance, at the top of its overview: the 12-month star rating and its months, the
+ * latest rated month, 1-2 stars over the last three rated months and the lowest rated sites, beside Claude's read of
+ * the last 90 days of comments. */
 export function FeedbackTile({ account, month, lines = [] }: { account: LeadershipAccount; month: string | undefined
   /** The account's feedback lines, to name the sites behind each theme. */
   lines?: Line[] }) {
@@ -236,9 +268,19 @@ export function FeedbackTile({ account, month, lines = [] }: { account: Leadersh
   const names = useMemo(() => siteNames(lines), [lines])
   const d = q.data
   if (q.error || !d || !d.year.ratings) return null
-  const cur = d.current
-  const change = cur?.average != null && d.prior?.average != null ? cur.average - d.prior.average : null
-  const lows = [...new Map(d.low_sites.map((l) => [l.location_number, l])).values()]
+  const byMonth = new Map(d.months.map((m) => [m.month.slice(0, 7), m]))
+  const axis = monthAxis(d.year.since, d.month).slice(-12).map((m) => {
+    const x = byMonth.get(m.slice(0, 7))
+    return { month: m, average: x?.average ?? null, ratings: x?.ratings ?? 0, low: x?.low ?? 0 }
+  })
+  // The ratings lag the calendar: lead with the newest month that has any, against the rated month before it.
+  const rated = axis.filter((m) => m.average != null)
+  const latest = rated.at(-1) ?? null
+  const before = rated.at(-2) ?? null
+  const change = latest && before ? latest.average! - before.average! : null
+  const recent = rated.slice(-3)
+  const recentLow = recent.reduce((t, m) => t + m.low, 0)
+  const recentRatings = recent.reduce((t, m) => t + m.ratings, 0)
   const critical = d.critical_sites ?? []
   const open = (c: { company: string | null; job_number: string | null }) => c.company && c.job_number && navigate({ site: { company: c.company, job: c.job_number } })
   const href = formatRoute({ view: 'account', account: account.slug, tab: 'feedback' })
@@ -247,20 +289,24 @@ export function FeedbackTile({ account, month, lines = [] }: { account: Leadersh
     <div className="ct"><span>Site feedback</span><a className="ks" href={href}>All feedback</a></div>
     <div className={`fbc__grid${hasSentiment ? '' : ' solo'}`}>
       <div className="fbc__score">
-        <div className="fbc__head"><div className="kl">Star rating, 12 months</div>
-          <div className={`fbc__big kv ${scoreTone(d.year.average)}`}>{stars(d.year.average)}<span className="of"> / 5</span></div>
-          <div className="ks">{d.year.ratings.toLocaleString('en-US')} ratings</div></div>
-        <div className="fbc__stats">
-          <Kpi small label={`${monthShort(d.month)} MTD`} value={cur?.average != null ? stars(cur.average) : '–'} tone={scoreTone(cur?.average ?? null)}
-            sub={cur ? `${cur.ratings} ratings` : 'No ratings'} tip={change != null ? `${signed(change)} vs prior month` : undefined} />
-          <Kpi small label={d.prior ? monthShort(d.prior.month) : 'Prior month'} value={d.prior?.average != null ? stars(d.prior.average) : '–'}
-            tone={scoreTone(d.prior?.average ?? null)} sub={d.prior ? `${d.prior.ratings} ratings` : undefined} />
-          <Kpi small label="1-2 stars MTD" value={cur?.low ?? 0} tone={cur?.low ? 'bad' : 'ok'}
-            tip={lows.length ? lows.map((l) => `${siteShort(l.site_name ?? l.location_number)} ${stars(l.score)}`).join(', ') : undefined} />
+        <div className="fbc__top">
+          <div><div className="kl">Star rating, 12 months</div>
+            <div className={`fbc__big ${scoreTone(d.year.average)}`}>{stars(d.year.average)}<span className="of"> / 5</span></div>
+            <div className="ks">{d.year.ratings.toLocaleString('en-US')} ratings</div></div>
+          <RatingStrip months={axis} latest={latest?.month ?? null} />
         </div>
-        {critical.length > 0 && <div className="fbc__low"><span className="kl">Lowest rated</span>
-          <div className="chips">{critical.map((c) => <button key={c.location_number} type="button" className={`chip linkbtn ${scoreTone(c.average)}`}
-            title={`${c.ratings} ratings, ${c.low} at 1-2 stars`} onClick={() => open(c)}>{siteShort(c.site_name ?? c.location_number)} {stars(c.average)}</button>)}</div></div>}
+        <dl className="fbc__facts">
+          <div><dt>{latest ? monthLabel(latest.month) : 'Latest month'}</dt>
+            <dd className={scoreTone(latest?.average ?? null)}>{latest ? stars(latest.average) : '–'}</dd>
+            <dd className="ks">{latest ? `${latest.ratings} ratings${change != null ? `, ${signed(change)} vs ${monthShort(before!.month)}` : ''}` : 'No ratings'}</dd></div>
+          <div><dt>1-2 stars, last {recent.length || 3} months</dt>
+            <dd className={recentLow ? 'bad' : 'ok'}>{recentLow}</dd>
+            <dd className="ks">{recentRatings ? `${Math.round((recentLow / recentRatings) * 100)}% of ${recentRatings} ratings` : 'No ratings'}</dd></div>
+        </dl>
+        {critical.length > 0 && <div className="fbc__low"><div className="kl">Lowest rated, last 3 months</div>
+          <ul>{critical.map((c) => <li key={c.location_number}>
+            <button type="button" className="linkbtn" disabled={!c.job_number} onClick={() => open(c)}>{siteShort(c.site_name ?? c.location_number)}</button>
+            <span className="ks">{c.ratings} ratings</span><b className={scoreTone(c.average)}>{stars(c.average)}</b></li>)}</ul></div>}
       </div>
       {hasSentiment && <SentimentBlock overview={d} names={names} />}
     </div>

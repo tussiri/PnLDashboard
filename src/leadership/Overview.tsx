@@ -285,7 +285,7 @@ export function Overview({ account, rows, summary, options, flags, headline = tr
       {footer}
     </>
   }
-  return <>
+  return <div className={focused ? 'ov-focus' : 'ov'}>
     {headline && focused && <div className="kpi-lg">
       <Kpi label={invoiceLabel(w, vocab, period)} value={money(summary.all.invoice)} tip={basis || undefined} />
       <Kpi label={w.labor} value={money(a.cost)} sub={change(a.cost, prev?.cost, money) ?? undefined} tip={laborParts || undefined} />
@@ -375,7 +375,7 @@ export function Overview({ account, rows, summary, options, flags, headline = tr
     </div>}
     {can('data.qa') && <QaCards account={account} sites={sites} weekStart={period === 'week' ? weekStart ?? null : null} />}
     {footer}
-  </>
+  </div>
 }
 
 /** OT cost against the prior period: "+12.4% WoW", tinted bad when it rose and ok when it fell. */

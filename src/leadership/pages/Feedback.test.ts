@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { groupVisits, siteNames, themeSites, tradeName } from './Feedback'
+import { groupVisits, siteNames, siteShort, themeSites, tradeName } from './Feedback'
 
 const line = (wo: string, trade: string, score: number | null, comment: string | null, date = '2026-07-02', loc = 'NIPA') => ({
   wo_number: wo, location_number: loc, provider_name: null, trade, feedback: 'Satisfactory', feedback_date: date, comment, score,
@@ -36,5 +36,15 @@ describe('themeSites', () => {
     expect(themeSites(['0731', 'NIPA', '0731'], names)).toBe('Oklahoma City, OK, NIPA')
     expect(themeSites(['0731', 'NIPA', '3123', 'ZZZZ'], names)).toBe('Oklahoma City, OK, NIPA, 3123 Ridgewood, NY, 1 more')
     expect(themeSites(['ZZZZ'], names)).toBe('ZZZZ')
+  })
+})
+
+describe('siteShort', () => {
+  it('drops the customer and ServiceChannel prefixes', () => {
+    expect(siteShort('FedEx - Tracy, CA')).toBe('Tracy, CA')
+    expect(siteShort('FXG_854 / 3854 Lake Havasu City AZ')).toBe('Lake Havasu City AZ')
+    expect(siteShort('FXE_EWNA New Bern NC')).toBe('New Bern NC')
+    expect(siteShort('FXE-MKEA')).toBe('MKEA')
+    expect(siteShort('NIPA')).toBe('NIPA')
   })
 })
