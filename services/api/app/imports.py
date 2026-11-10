@@ -650,6 +650,8 @@ def load_file(conn: Any, file_name: str, content: bytes, *, kind: str | None = N
             read_error = f"could not read the file: {exc.__class__.__name__}"
         else:
             read_error = None
+        if kind in (None, "job_income_statement") and native_exports.native_layout(headers) == "trend_by_job":
+            return _load_trend_by_job(conn, cursor, file_name, rows, digest, origin, uploaded_by)
         if kind == "job_income_statement" or (kind is None and detect_kind(file_name, headers) == "job_income_statement"):
             return _load_job_income_statement(conn, cursor, file_name, content, digest, origin, uploaded_by)
         if kind in (None, "contract") and file_name.lower().endswith((".xlsx", ".xlsm")) and award.is_award(content):
@@ -749,6 +751,26 @@ def _load_job_income_statement(conn: Any, cursor: Any, file_name: str, content: 
     company_pl.load_lines(cursor, result["import_file_id"], parsed.records)
     conn.commit()
     logger.info("Imported %s %s: %s lines", kind, file_name, len(parsed.records))
+    return result
+
+
+def _load_trend_by_job(conn: Any, cursor: Any, file_name: str, rows: list[dict[str, Any]], digest: str, origin: str,
+                       uploaded_by: str | None) -> dict[str, Any]:
+    """The Trend Income Statement by job query (native_exports.trend_by_job), loaded as the Cross Tab by job."""
+    kind = "job_income_statement"
+    if _duplicate(cursor, kind, digest):
+        return _log(cursor, conn, kind, file_name, digest, origin, "duplicate", len(rows), 0, [], None, None, [], uploaded_by)
+    parsed = Parsed(kind=kind, rows_read=len(rows))
+    native_exports.trend_by_job(rows, parsed, _company_aliases(cursor), company_pl.settings_of(cursor)["gl_categories"])
+    if not parsed.records:
+        return _log(cursor, conn, kind, file_name, digest, origin, "failed", len(rows), 0, [], None, None, parsed.errors or ["no rows"], uploaded_by)
+    months = [r["month"] for r in parsed.records]
+    companies = sorted({r["company"] for r in parsed.records if r["company"]})
+    result = _log(cursor, None, kind, file_name, digest, origin, "loaded", len(rows), len(parsed.records), companies,
+                  min(months), max(months), parsed.errors, uploaded_by)
+    company_pl.load_lines(cursor, result["import_file_id"], parsed.records)
+    conn.commit()
+    logger.info("Imported trend by job %s: %s lines", file_name, len(parsed.records))
     return result
 
 

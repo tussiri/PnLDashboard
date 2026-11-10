@@ -22,6 +22,15 @@
   ("... - 20261020141521050.xlsx", else today); the run date's own month is still open and is skipped,
   and months whose every line is zero are left alone.
 
+* Trend Income Statement by job (``trend_by_job``): the P&L Trend Income Statement Monthly Dashboard Export query
+  (GL Report Template FormatID 6), one row per job and GL line with FiscalYear, LastClosedMonthEnd and amount1..amount12,
+  where amount(n + 1) is fiscal period n (amount1 is 0). Loaded as the Cross Tab Income Statement by job
+  (core.fact_job_income_statement_month): every closed period's month, job and line. Period n is month n of the GL fiscal
+  year holding LastClosedMonthEnd (fiscal_year_start). Revenue lines are the credit lines (NormallyADebit false), turned
+  positive; debit lines classify by GL account number (an optional GLAccountNumber column, through the company P&L
+  gl_categories) else by the template's line prefixes (TREND_JOB_PREFIXES). The company is the TenantDatabase column (company_aliases, else "Sarus" when the name
+  has it, else Crane IFS) when present, else blank (any company). Lines with no job load under job '' ("No job").
+
 Company labels come from the company_aliases setting by name first (Sarus and Crane are separate
 WinTeam databases whose company numbers overlap), then from company_numbers.
 """
@@ -61,6 +70,8 @@ def native_layout(headers: Iterable[Any]) -> str | None:
         return "labor_summary"
     if {"storedtotalhours", "workdate", "totallabordollars"} <= keys:
         return "paid_timekeeping"
+    if {"glaccountdescription", "normallyadebit", "amount1", "amount12", "jobnumber", "fiscalyear", "lastclosedmonthend"} <= keys:
+        return "trend_by_job"
     if {"glaccountdescription", "normallyadebit", "amount1", "amount12"} <= keys:
         return "trend_income_statement"
     if {"glaccountnumber", "actualdollars"} <= keys and ("periodstartdate" in keys or "fiscalperiod" in keys):
@@ -69,7 +80,7 @@ def native_layout(headers: Iterable[Any]) -> str | None:
 
 
 LAYOUT_KIND = {"labor_summary": "pay_report", "job_cost_gl": "job_cost", "paid_timekeeping": "pay_report",
-               "trend_income_statement": "income_statement"}
+               "trend_income_statement": "income_statement", "trend_by_job": "job_income_statement"}
 
 
 class Rows:
@@ -410,3 +421,70 @@ def trend_income_statement(rows: list[dict[str, Any]], parsed: Any, run_date: da
 
 def _group(description: str) -> str:
     return description.split(":")[0].strip().lower()
+
+
+# FormatID 6 line names -> company P&L categories, by prefix (first match wins), for an export without GL account numbers.
+# Lines not listed (facility, finance, marketing, office, professional fees, support staff, officers, vehicle expense,
+# franchise) are operating expense.
+TREND_JOB_PREFIXES: list[tuple[str, str]] = [
+    ("direct labor:sales staff", "operating_expense"),
+    ("direct labor", "direct_labor"),
+    ("direct production labor taxes", "payroll_taxes_insurance"),
+    ("direct production labor: healthcare", "payroll_taxes_insurance"),
+    ("direct production labor", "direct_labor"),
+    ("operation workers comp", "payroll_taxes_insurance"),
+    ("fica expense", "payroll_taxes_insurance"), ("medicare expense", "payroll_taxes_insurance"),
+    ("futa expense", "payroll_taxes_insurance"), ("suta expense", "payroll_taxes_insurance"),
+    ("subcontractor", "subcontractors"),
+    ("direct production resources", "supplies"), ("sarus: production supplies", "supplies"),
+    ("other production expense", "other_direct"), ("production vehicle expenses", "other_direct"),
+    ("employee costs", "other_direct"), ("operation liability insurance", "other_direct"), ("sarus: travel", "other_direct"),
+]
+
+
+def trend_job_category(description: str) -> str:
+    low = " ".join(description.lower().replace(" :", ":").replace(": ", ":").split())
+    return next((c for prefix, c in TREND_JOB_PREFIXES if low.startswith(prefix.replace(": ", ":"))), "operating_expense")
+
+
+def trend_by_job(rows: list[dict[str, Any]], parsed: Any, aliases: dict[str, str], gl_ranges: list[dict[str, str]]) -> None:
+    """Append Cross Tab records {month, company, job_number, job_name, line, label, gl_account, category, amount} to `parsed`."""
+    from .company_pl import classify
+    from .imports import clean_text, parse_date, parse_number
+
+    totals: dict[tuple[date, str, str, str], dict[str, Any]] = {}
+    for n, raw in enumerate(rows, start=2):
+        r = Rows(raw)
+        description = clean_text(r.get("GLAccountDescription"))
+        if not description:
+            continue
+        try:
+            closed = parse_date(r.get("LastClosedMonthEnd"))
+            if closed is None:
+                raise ValueError("no LastClosedMonthEnd")
+            debit = str(r.get("NormallyADebit") or "").strip().lower() in ("true", "1", "yes")
+            amounts = [parse_number(r.get(f"amount{m}")) or Decimal(0) for m in range(1, 13)]
+        except (ValueError, ArithmeticError) as exc:
+            parsed.error(f"line {n}: {exc}")
+            continue
+        start = fiscal_year_start(closed.replace(day=1))
+        last = closed.replace(day=1)
+        tenant = clean_text(r.get("TenantDatabase"))
+        company = (aliases.get(tenant) or ("Sarus" if "sarus" in tenant.lower() else "Crane IFS")) if tenant else ""
+        job = clean_text(r.get("jobnumber")) or ""
+        job = job.split(".")[0] if job.replace(".", "").isdigit() else job
+        gl = clean_text(r.get("GLAccountNumber"))
+        label = " ".join(description.split())
+        category = "revenue" if not debit else classify(f"{gl} - {label}", gl_ranges) if gl else trend_job_category(label)
+        if debit and category == "revenue":
+            category = "operating_expense"
+        for i, amount in enumerate(amounts[1:], start=1):
+            month = _add_months(start, i - 1)
+            if not amount or month > last:
+                continue
+            key = (month, company, job, label)
+            slot = totals.setdefault(key, {"month": month, "company": company, "job_number": job,
+                                           "job_name": clean_text(r.get("jobdescription")) or ("No job" if not job else None),
+                                           "line": label, "label": label, "gl_account": gl, "category": category, "amount": Decimal(0)})
+            slot["amount"] += amount if debit else -amount
+    parsed.records.extend(v for v in totals.values() if v["amount"])
