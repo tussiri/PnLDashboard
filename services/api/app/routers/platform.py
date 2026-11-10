@@ -389,12 +389,14 @@ def hr_status() -> dict[str, Any]:
 @router.post("/integrations/hr/sync", dependencies=[Depends(require_admin), Depends(refresh_gate)])
 def hr_sync() -> dict[str, Any]:
     """Pull the last weeks of site staffing from HrDashboard (GET only) and upsert them. No mart rebuild
-    is needed: the staffing route reads core.hr_site_staffing_week directly. Employee names too, when their
-    token is set."""
+    is needed: the staffing route reads core.hr_site_staffing_week directly. Sends HR each job's monthly
+    billing as well. Employee names too, when their token is set."""
     if not hrdashboard.configured() and not hrdashboard.names_configured():
         raise HTTPException(status_code=409, detail="HrDashboard is not configured (HR_BASE_URL and HR_EXPORT_TOKEN or HR_NAMES_TOKEN)")
     try:
         result = hrdashboard.sync() if hrdashboard.configured() else {"status": "succeeded"}
+        if hrdashboard.configured():
+            result["billing"] = hrdashboard.push_billing()
         if hrdashboard.names_configured():
             result["names"] = hrdashboard.sync_names()
         return jsonable(result)

@@ -105,3 +105,41 @@ def test_names_need_their_own_token(monkeypatch):
     assert hrdashboard.configured() and not hrdashboard.names_configured()
     monkeypatch.setattr(hrdashboard, "settings", SimpleNamespace(hr_base_url="http://hr.test", hr_export_token="", hr_names_token="names"))
     assert hrdashboard.names_configured() and not hrdashboard.configured()
+
+
+TENANTS = {"Crane": "primary", "Sarus": "SAR"}
+
+
+def test_a_billing_row_goes_back_under_hrs_own_tenant_and_number():
+    row = {"winteam_company": "Sarus", "winteam_job_number": "1001", "revenue_month": date(2026, 10, 1), "revenue_month_amount": 21266.004}
+    assert hrdashboard.billing_row(row, TENANTS) == {"tenant": "SAR", "jobNumber": "1001", "month": "2026-10-01", "amount": 21266.0}
+
+
+def test_skips_billing_for_a_company_hr_has_no_tenant_for():
+    row = {"winteam_company": "Other", "winteam_job_number": "1", "revenue_month": date(2026, 10, 1), "revenue_month_amount": 5}
+    assert hrdashboard.billing_row(row, TENANTS) is None
+    assert hrdashboard.billing_row({**row, "winteam_company": "Crane", "revenue_month": None}, TENANTS) is None
+
+
+def test_posts_billing_and_reads_the_stored_count():
+    seen: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.update(method=request.method, path=request.url.path, body=request.content)
+        return httpx.Response(200, json={"stored": 1, "skipped": 0})
+    c = httpx.Client(base_url="http://hr.test", transport=httpx.MockTransport(handler))
+    rows = [{"tenant": "primary", "jobNumber": "857", "month": "2026-10-01", "amount": 21266.0}]
+    assert hrdashboard.send_billing(c, rows)["stored"] == 1
+    assert seen["method"] == "POST" and seen["path"] == hrdashboard.BILLING_PATH
+    assert b'"jobNumber":"857"' in seen["body"].replace(b" ", b"")
+
+
+@pytest.mark.parametrize(("status", "match"), [(401, "export token"), (503, "SERVICE_API_TOKEN_HASHES"), (404, "HTTP 404")])
+def test_maps_billing_errors(status, match):
+    with pytest.raises(hrdashboard.HrDashboardError, match=match):
+        hrdashboard.send_billing(client({"error": "x"}, status), [])
+
+
+def test_rejects_a_billing_answer_without_a_count():
+    with pytest.raises(hrdashboard.HrDashboardError, match="no stored count"):
+        hrdashboard.send_billing(client({"ok": True}), [])

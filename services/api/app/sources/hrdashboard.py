@@ -9,7 +9,12 @@ Each pull asks for the last LOOKBACK_WEEKS weeks and upserts them into core.hr_s
 Hires and separations are overwritten; the current-state figures (positions, filled, open, active
 headcount) only ever replace a NULL or an older value with a value, never a value with a NULL, so
 past weeks keep what HR said while they were current. Runs are recorded in ops.integration_sync_run
-(integration 'hrdashboard'). Nothing here writes to HrDashboard.
+(integration 'hrdashboard'). The pulls never write to HrDashboard.
+
+Site billing is the one thing sent the other way (`POST /api/service/v1/pnl/site-billing`, same token):
+each job's monthly billing, the revenue_month_amount mart.leadership_week bases the weekly invoice on,
+for the jobs HR's staffing feed has named. HR budgets its district overtime report from it. It runs
+after the marts are rebuilt and is recorded as resource 'site_billing'.
 
 Guard: an answer with no rows changes nothing; HR answering with no sites at all is far likelier to
 be an HR problem than every site vanishing, so the run is recorded as failed.
@@ -38,6 +43,8 @@ RESOURCE = "site_staffing"
 PATH = "/api/service/v1/pnl/site-staffing"
 NAMES_RESOURCE = "employee_names"
 NAMES_PATH = "/api/service/v1/pnl/employee-names"
+BILLING_RESOURCE = "site_billing"
+BILLING_PATH = "/api/service/v1/pnl/site-billing"
 LOOKBACK_WEEKS = 8
 
 
@@ -273,6 +280,69 @@ def sync_names() -> dict[str, Any]:
         raise HrDashboardError(message) from exc
     _record(run_id, "succeeded", started, fetched, counts["loaded"], None, NAMES_RESOURCE)
     return {"status": "succeeded", "fetched": fetched, **counts}
+
+
+# The jobs are the ones HR's staffing feed named, so each goes back under HR's own tenant and number.
+# One row per job and revenue month; the latest week's figure for that month wins.
+BILLING_SQL = """
+SELECT DISTINCT ON (h.winteam_company, h.winteam_job_number, w.revenue_month)
+       h.winteam_company, h.winteam_job_number, w.revenue_month, w.revenue_month_amount
+FROM mart.leadership_week w
+JOIN (SELECT DISTINCT winteam_company, winteam_job_number, job_key
+      FROM core.hr_site_staffing_week WHERE job_key IS NOT NULL) h ON h.job_key = w.job_key
+WHERE w.revenue_month IS NOT NULL AND w.revenue_month_amount > 0 AND w.week_start >= %s
+ORDER BY h.winteam_company, h.winteam_job_number, w.revenue_month, w.week_start DESC
+"""
+
+
+def billing_row(r: dict[str, Any], tenants: dict[str, str]) -> dict[str, Any] | None:
+    """One row of the body HR takes, or None when the job's company has no HR tenant."""
+    tenant = tenants.get(str(r.get("winteam_company") or ""))
+    month, amount = r.get("revenue_month"), r.get("revenue_month_amount")
+    if not tenant or month is None or amount is None:
+        return None
+    return {"tenant": tenant, "jobNumber": str(r["winteam_job_number"]), "month": month.isoformat(), "amount": round(float(amount), 2)}
+
+
+def send_billing(client: httpx.Client, rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """POST the rows; HR answers how many it stored and skipped."""
+    response = client.post(BILLING_PATH, json={"data": rows})
+    if response.status_code == 401:
+        raise HrDashboardError("HrDashboard refused the export token (HTTP 401)")
+    if response.status_code == 503:
+        raise HrDashboardError("HrDashboard's service API is not configured (SERVICE_API_TOKEN_HASHES unset)")
+    if response.status_code >= 400:
+        raise HrDashboardError(f"HrDashboard answered HTTP {response.status_code} on {BILLING_PATH}")
+    body = response.json()
+    if not isinstance(body.get("stored"), int):
+        raise HrDashboardError(f"Unexpected HrDashboard response on {BILLING_PATH}: no stored count")
+    return body
+
+
+def push_billing() -> dict[str, Any]:
+    """Send HR each job's monthly billing for the last LOOKBACK_WEEKS weeks. Nothing to send is not a
+    failure: before the first staffing pull there are no jobs to name. Raises on failure after recording it."""
+    if not configured():
+        raise HrDashboardError("HrDashboard is not configured (HR_BASE_URL and HR_EXPORT_TOKEN)")
+    started = datetime.now(timezone.utc)
+    run_id = str(uuid.uuid4())
+    tenants = {company: tenant for tenant, company in tenant_companies(settings.hr_tenant_companies).items()}
+    rows: list[dict[str, Any]] = []
+    try:
+        with connection() as conn, conn.cursor() as cursor:
+            cursor.execute(BILLING_SQL, (started.date() - timedelta(weeks=LOOKBACK_WEEKS),))
+            rows = [b for b in (billing_row(r, tenants) for r in cursor.fetchall()) if b is not None]
+        stored = 0
+        if rows:
+            with _client() as client:
+                stored = send_billing(client, rows)["stored"]
+    except (HrDashboardError, httpx.HTTPError, ValueError) as exc:
+        message = str(exc)[:500] or exc.__class__.__name__
+        logger.warning("HrDashboard billing push failed: %s", message)
+        _record(run_id, "failed", started, len(rows), 0, message, BILLING_RESOURCE)
+        raise HrDashboardError(message) from exc
+    _record(run_id, "succeeded", started, len(rows), stored, None, BILLING_RESOURCE)
+    return {"status": "succeeded", "sent": len(rows), "stored": stored}
 
 
 def status() -> dict[str, Any]:
