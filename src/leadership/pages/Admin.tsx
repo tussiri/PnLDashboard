@@ -369,6 +369,7 @@ function DataTab() {
         <button type="button" className="btn" disabled={busy} onClick={() => run('WinTeam synced', (o) => api.syncAll({ overridePause: o }))}>Sync WinTeam</button>
         <button type="button" className="btn" disabled={busy} onClick={() => run('Sarus synced', (o) => api.syncSarus({ overridePause: o }))}>Sync Sarus</button>
         <button type="button" className="btn" disabled={busy} onClick={() => run('PhotoValidation synced', (o) => api.syncPhotoValidation(undefined, { overridePause: o }))}>Sync PhotoValidation</button>
+        <button type="button" className="btn" disabled={busy} title="Pulls site staffing and employee names from the HR dashboard and sends it each site's monthly billing" onClick={() => run('HR synced', (o) => api.syncHr(undefined, { overridePause: o }))}>Sync HR</button>
         <button type="button" className="btn" disabled={busy} onClick={() => run('Marts rebuilt', (o) => api.rebuildMarts(undefined, { overridePause: o }))}>Rebuild marts</button>
         {busy && <span className="ks">Running</span>}
       </div>
