@@ -3,7 +3,7 @@ import { useApiQuery } from '../../hooks/useApiQuery'
 import type { BudgetMonth, CompanyMonth, CompanyResponse, LeadershipRow } from '../../services/apiTypes'
 import { queryKey } from '../../services/queryClient'
 import { RevenueMarginChart, seriesColor, StackedMoneyChart, useTokens } from '../charts'
-import { CompanyPl } from '../CompanyPl'
+import { CompanyTabs } from './CompanyTabs'
 import { CompanyStory, STORY_PERIODS } from '../CompanyStory'
 import { hasStatement, netProfitOf, onStatementBasis } from '../storyMetrics'
 import { rowsOfWeek, segmentOrder, useRows } from '../data'
@@ -113,6 +113,7 @@ export function Company() {
   const subtitle = [last ? `Year to date through ${monthLabel(last.month)}` : null, updatedLine(config.data)].filter(Boolean).join('. ')
   return <>
     <PageHeader title="Company" subtitle={subtitle} account={false} target={false} />
+    <CompanyTabs />
     {q.error ? <LoadError error={q.error} onRetry={q.refetch} /> : !q.data ? <Skeleton height={420} /> : !months.length ? <Empty>No job cost loaded.</Empty> : <>
       {story && <>
         <div className="sect-row"><h2 className="sect-h">At a glance</h2><Pills label="Period" options={STORY_PERIODS} value={period} onChange={setPeriod} /></div>
@@ -121,7 +122,6 @@ export function Company() {
             lines: lines.map((l) => ({ slug: l.slug, name: l.name, laborPct: l.summary?.account.measurePct ?? null, target: l.target, watchBand: l.watchBand, overHours: l.summary?.headerOverHours ?? null })) }}
           budgets={budgetsQuery.data ?? null} budgetsLoading={budgetsQuery.loading} period={period} />
       </>}
-      <CompanyPl />
       {story && <h2 className="sect-h">Supporting detail</h2>}
       <div className="kpi-lg">
         <Kpi label={`Revenue ${year} YTD`} value={money(revenue)} sub={`${ytd.length} closed months`} />

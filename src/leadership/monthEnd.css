@@ -1,0 +1,29 @@
+/* Month-end company view (MonthEnd.tsx): the monthly P&L tables, ranked customer lists and the GL bridge. */
+.me table.pl{font-size:11.5px}
+.me table.pl th,.me table.pl td{padding:5px 6px}
+.me table.pl td,.me table.pl thead th{text-align:right}
+.me table.pl thead th:first-child,.me table.pl tbody th{text-align:left}
+.me table.pl tbody th{font-weight:400;color:var(--text);font-size:11.5px;padding-right:12px;border-bottom:0.5px solid var(--border);white-space:nowrap}
+.me table.pl tbody th.wrap{white-space:normal;min-width:220px;max-width:420px}
+.me table.pl tr.sec th{font-weight:600;font-size:11px;color:var(--text2);background:var(--bg2);padding-top:7px;padding-bottom:5px}
+.me table.pl tr.key th,.me table.pl tr.key td{font-weight:600}
+.me table.pl .pc{color:var(--text3);font-size:10.5px;padding-left:1px;padding-right:9px}
+.me table.pl .pc.bad{color:var(--bad)}
+.me table.pl .sel{background:color-mix(in srgb,var(--accent) 9%,transparent)}
+.me table.pl .tcol:not(.pc){border-left:0.5px solid var(--border2)}
+.me table.pl tbody tr:hover td,.me table.pl tbody tr:hover th{background:var(--bg2)}
+.me table.pl tbody tr:hover td.sel{background:color-mix(in srgb,var(--accent) 14%,transparent)}
+.me table.bridge{max-width:760px}
+.me .me-groups{grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr))}
+.me .me-accounts{grid-template-columns:repeat(2,minmax(0,1fr))}
+.me .charts2.even{grid-template-columns:1fr 1fr}
+.me .rk-list{list-style:none}
+.me .rk{display:grid;grid-template-columns:24px minmax(0,1fr) auto;column-gap:10px;row-gap:2px;padding:10px 0;border-top:0.5px solid var(--border)}
+.me .rk:first-child{border-top:none;padding-top:2px}
+.me .rk-n{grid-row:span 2;font-size:12px;font-weight:600;color:var(--text3);font-variant-numeric:tabular-nums}
+.me .rk-name{font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.me .rk-v{font-size:13px;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.me .rk-sub{font-size:11px;color:var(--text3)}
+.me .rk-m{font-size:11px;color:var(--text2);text-align:right;white-space:nowrap}
+@media(max-width:900px){.me .me-accounts,.me .charts2.even{grid-template-columns:1fr}}
+@media(max-width:520px){.me .kpi4{grid-template-columns:repeat(2,minmax(0,1fr))}}

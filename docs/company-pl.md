@@ -1,6 +1,6 @@
 # Company P&L on Finance's basis
 
-Migration 058, `services/api/app/company_pl.py`, Company page section "Company P&L", Admin tabs
+Migration 058, `services/api/app/company_pl.py`, Company > Month end (`src/leadership/MonthEnd.tsx`), Admin tabs
 Overhead rule, Adjustments and Contracts. Built to reproduce Finance's Company P&L workbook
 (`Company_PL_ex_Education_FedEx_Subs.xlsx`, built from the WinTeam Cross Tab Income Statement by job and
 tied to the GL Trend).
@@ -65,6 +65,23 @@ Missing sub invoices (top of Admin > Adjustments): for a month, every subcontrac
 billed but whose subcontractor cost on the GL is under 90% of the month before, with the gap as the
 suggested accrual and what Relay holds that is not in WinTeam yet. Checked rows are booked as accruals
 reversing the next month.
+
+## Month-end view (Company > Month end)
+
+`#/company/month-end/<tab>?p=<period>`, the tabs of Finance's Company P&L dashboard on these figures. The
+period is one month, the latest year to date (`ytd`) or the last two months (`last2`); monthly tables show
+every month with the year to date and the last two months as columns.
+
+| Tab | Figures |
+|---|---|
+| Overview | Revenue, gross profit, corporate overhead and net profit against the prior month; net after overhead by group with company net; group cards; revenue by group; overhead net cost and % of revenue |
+| Monthly P&L | Company lines, then each group's revenue, gross profit, net before overhead, direct staff, fixed charge, pool share and net after overhead, in dollars and % of that section's revenue |
+| Customers | Customers (the job's account, else its WinTeam customer, else the Cross Tab job name) before and after their share of overhead; top and bottom three; top 10 and bottom 5 chart |
+| Major accounts | Featured accounts' P&L lines by month, before and after overhead |
+| Companies | Each company (Crane IFS, Sarus) net of its own overhead jobs, and combined |
+| Corporate overhead | Net cost, % of revenue, fixed charges, direct staff, the pool and who carries it |
+| EBITA | Net profit plus interest, amortization and income taxes (setting `ebita_addbacks`, matched on line names); by group, own add-backs plus a share of the overhead jobs' by the overhead carried; depreciation reported, not added back |
+| Preview | The latest month: the GL as posted (the month less its adjustments), each adjustment, the pro forma; by group against the prior month |
 
 ## Weekly invoice basis (Admin > Accounts)
 

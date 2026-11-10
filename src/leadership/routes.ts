@@ -11,6 +11,7 @@
  *   #/admin/imports
  *   #/labor?from=2026-10-26&to=2026-11-01&show=punches&job=Crane%20West~500&q=smith
  *   #/account/fedex/invoices?from=2026-10-01&to=2026-10-31&by=service   (FedEx invoices from Relay)
+ *   #/company/month-end/customers?p=ytd      (the month-end company P&L; p: a month YYYY-MM, ytd or last2)
  *
  * `week` is the week-ending Sunday the views display (the API maps any date to its Monday week);
  * `target` is a percentage (64.5) and overrides the account target while present.
@@ -23,6 +24,9 @@ export const ACCOUNT_TABS = ['overview', 'bu', 'compare', 'sites', 'pallet', 'ov
 export type AccountTab = (typeof ACCOUNT_TABS)[number]
 export const ADMIN_TABS = ['accounts', 'jobs', 'regions', 'budgets', 'calendars', 'allocations', 'overhead', 'adjustments', 'contracts', 'imports', 'mailbox', 'data', 'users'] as const
 export const ANALYTICS_TABS = ['accounts', 'units'] as const
+/** The month-end company view's tabs (src/leadership/MonthEnd.tsx). */
+export const MONTH_END_TABS = ['overview', 'pl', 'customers', 'accounts', 'companies', 'overhead', 'ebita', 'preview'] as const
+export type MonthEndTab = (typeof MONTH_END_TABS)[number]
 export type AnalyticsTab = (typeof ANALYTICS_TABS)[number]
 /** Analytics suite groups (super administrators only). The pages of each group live in src/suite/pages.tsx. */
 export const SUITE_GROUPS = ['finance', 'operations'] as const
@@ -34,6 +38,8 @@ export interface Route {
   account?: string
   tab?: AccountTab
   adminTab?: AdminTab
+  /** Company: the month-end view, its tab (overview when absent) and its period (a month YYYY-MM, ytd or last2; the latest month when absent). */
+  monthEnd?: { tab?: MonthEndTab; period?: string }
   /** Analytics: the drill-down (accounts) or the business units overview (units). */
   analyticsTab?: AnalyticsTab
   /** Analytics suite: the group, its page (the group's first page when absent) and an open site (job number). */
@@ -97,7 +103,15 @@ export function parseRoute(hash: string): Route {
       if (third) route.suite.page = third
       if (third && fourth) route.suite.job = fourth
     }
-  } else if (first === 'company') route.view = 'company'
+  } else if (first === 'company') {
+    route.view = 'company'
+    if (second === 'month-end') {
+      route.monthEnd = {}
+      if ((MONTH_END_TABS as readonly string[]).includes(third ?? '') && third !== 'overview') route.monthEnd.tab = third as MonthEndTab
+      const p = params.get('p')
+      if (p && (/^\d{4}-\d{2}$/.test(p) || p === 'ytd' || p === 'last2')) route.monthEnd.period = p
+    }
+  }
   else if (first === 'labor') {
     route.view = 'labor'
     const from = params.get('from'), to = params.get('to'), show = params.get('show'), job = params.get('job')
@@ -154,8 +168,10 @@ export function formatRoute(route: Route): string {
     : route.view === 'admin'
       ? `admin${route.adminTab && route.adminTab !== 'accounts' ? `/${route.adminTab}` : ''}`
       : route.view === 'analytics' && route.suite ? ['portfolio', route.suite.group, ...(route.suite.page ? [route.suite.page, ...(route.suite.job ? [route.suite.job] : [])] : [])].map(encodeURIComponent).join('/')
-        : route.view === 'analytics' ? (route.analyticsTab === 'units' ? 'portfolio/units' : 'portfolio') : route.view
+        : route.view === 'analytics' ? (route.analyticsTab === 'units' ? 'portfolio/units' : 'portfolio')
+          : route.view === 'company' && route.monthEnd ? `company/month-end${route.monthEnd.tab && route.monthEnd.tab !== 'overview' ? `/${route.monthEnd.tab}` : ''}` : route.view
   const params = new URLSearchParams()
+  if (route.view === 'company' && route.monthEnd?.period) params.set('p', route.monthEnd.period)
   if (route.account && route.view !== 'account' && route.view !== 'admin') params.set('account', route.account)
   if (route.week && route.view !== 'admin') params.set('week', route.week)
   if (route.target != null && route.view !== 'admin') params.set('target', String(route.target))

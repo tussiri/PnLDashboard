@@ -1451,7 +1451,11 @@ export interface CompanyPlSettings {
   groups: CompanyPlGroupSetting[]
   pool_basis: 'revenue'
   gl_categories: { from: string; to: string; category: PlCategory }[]
+  /** EBITA add-backs: GL lines whose name matches `match` (case-insensitive), first match wins. Depreciation is reported, not added back. */
+  ebita_addbacks?: { kind: AddbackKind; match: string }[]
 }
+
+export type AddbackKind = 'interest' | 'amortization' | 'income_tax' | 'depreciation'
 
 /** One line set of the company P&L: categories, direct costs, gross profit and net before overhead. */
 export interface PlLines extends Record<PlCategory, number> {
@@ -1474,6 +1478,27 @@ export interface CompanyPlGroup extends PlLines {
 
 export interface CompanyPlAccount extends PlLines { name: string; overhead: number; after_overhead: number }
 
+/** A customer: the job's account, else its WinTeam customer, else the job's name; `group` is where most of its revenue sits. */
+export interface CompanyPlCustomer { name: string; group: string; jobs: string[]; revenue: number; gross_profit: number; before_overhead: number; overhead: number; after_overhead: number }
+
+/** A company (Crane IFS, Sarus): its jobs before overhead, less the net cost of its own overhead jobs. */
+export interface CompanyPlCompany extends PlLines { overhead: number; net_profit: number }
+
+/** EBITA: net profit plus interest, amortization and income taxes; a group adds back its own and its share of the overhead jobs'. */
+export interface CompanyPlEbita extends Record<AddbackKind, number> {
+  addback: number
+  corporate_addback: number
+  ebita: number
+  groups: Record<string, { own: number; corporate: number; ebita: number }>
+}
+
+/** An adjustment applied to the month. revenue_effect, cost_effect and net_effect are on the company; `groups` on each group's net
+ * before overhead ('overhead' for the overhead jobs). The GL as posted is the month less these effects. */
+export interface CompanyPlAppliedAdjustment {
+  adjustment_id: number; kind: AdjustmentKind; category: PlCategory; amount: number; effect: number; description: string; reversal: boolean
+  job?: string | null; groups?: Record<string, number>; revenue_effect?: number; cost_effect?: number; net_effect?: number
+}
+
 export interface CompanyPlMonth {
   month: string
   company: {
@@ -1484,7 +1509,10 @@ export interface CompanyPlMonth {
   overhead: { cost: number; revenue_on_overhead_jobs: number; fixed: number; direct_staff: number; pool: number }
   groups: CompanyPlGroup[]
   accounts: Record<string, CompanyPlAccount>
-  adjustments: { adjustment_id: number; kind: AdjustmentKind; category: PlCategory; amount: number; effect: number; description: string; reversal: boolean }[]
+  customers?: CompanyPlCustomer[]
+  companies?: Record<string, CompanyPlCompany>
+  ebita?: CompanyPlEbita
+  adjustments: CompanyPlAppliedAdjustment[]
 }
 
 export interface CompanyPlResponse { settings: CompanyPlSettings; months: CompanyPlMonth[]; loaded: { month: string; loaded_at: string | null; companies: string[] }[] }
