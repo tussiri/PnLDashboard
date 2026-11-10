@@ -238,8 +238,11 @@ Development users (dev mode only; configured users with the same username take p
 | `admin`     | `dev-admin`     | admin     |
 
 The login page shows a "Development sign-in" notice with these accounts when the API reports dev
-mode. When no API is reachable at all, the front end offers a browser-only "Demo sign-in" that
-accepts the same three accounts and opens the labeled demo dataset; nothing is sent anywhere.
+mode. When no API is reachable at all, a development build (`pnpm dev`) offers a browser-only "Demo
+sign-in" that accepts the same three accounts and opens the labeled demo dataset; nothing is sent
+anywhere. A production build never does: it shows "Dashboard unavailable" and asks the API again every
+10 seconds until it answers (a deploy or restart in progress, or an outage). Only a build made with
+`VITE_DEMO_SIGN_IN=true` on purpose offers the demo sign-in; never set it on Render.
 
 ## Production variables
 

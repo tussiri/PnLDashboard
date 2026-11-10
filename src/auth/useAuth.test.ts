@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { ApiError } from '../services/api'
-import { apiAbsent } from './useAuth'
+import { apiAbsent, demoSignInAllowed } from './useAuth'
 
 describe('auth backend detection', () => {
   it('falls back to the browser-only demo sign-in when no API answers /auth/mode', () => {
@@ -15,5 +15,14 @@ describe('auth backend detection', () => {
     expect(apiAbsent(new ApiError(401, 'Unauthorized', '/auth/mode'))).toBe(false)
     expect(apiAbsent(new ApiError(403, 'Forbidden', '/auth/mode'))).toBe(false)
     expect(apiAbsent(new ApiError(400, 'Bad request', '/auth/mode'))).toBe(false)
+  })
+})
+
+describe('demo sign-in in production', () => {
+  it('is offered only by development builds or a build that asks for it', () => {
+    expect(demoSignInAllowed({ DEV: true })).toBe(true)
+    expect(demoSignInAllowed({ DEV: false, VITE_DEMO_SIGN_IN: 'true' })).toBe(true)
+    expect(demoSignInAllowed({ DEV: false })).toBe(false)
+    expect(demoSignInAllowed({ DEV: false, VITE_DEMO_SIGN_IN: '1' })).toBe(false)
   })
 })
