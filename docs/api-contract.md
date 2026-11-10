@@ -939,3 +939,10 @@ site's weeks add `contract_month`, `relay_fixed` and `variable_avg`. Import kind
 Migration 072 moves every account to the `contract` invoice basis (shown as "Current month"): per site, its contract,
 else the AR billed for the week's month, else the last closed month, ÷ the divisor (4.33). Accounts billed in arrears
 (Amazon, FedEx) read the last closed month until the month's invoices post. New accounts default to it.
+
+### GL net profit (account headline)
+
+| `GET /leadership/gl-profit?account=&from=YYYY-MM` | Account access. `{account, from, workers_comp_rate, months: [{month, revenue, net_profit, workers_comp_added, adjustments, adjustment_lines: [{adjustment_id, kind, category, description, effect}], adjusted_net_profit}]}` from the account's Trend Income Statement (import kind `income_statement`), else the Cross Tab Income Statement by job summed over the account's jobs (`source` `trend_income_statement` or `cross_tab`; revenue less every other line, wages = direct labor, workers' comp = lines labelled workers comp). A month with neither is left out. `workers_comp_added` = − rate × (wages + management wages) when the statement has no workers' comp line; rate = setting `gl_net_profit.workers_comp_rate` (default 0.06). `adjustments`: Finance's adjustments on the account's jobs (an accrual in its month, reversed in its reverse_month, none once cleared; a reclass where it crosses into or out of the account); revenue adds, costs subtract. |
+
+When the fiscal year has GL months, the account's fiscal headline is the GL net profit to date (sum of
+`adjusted_net_profit` through the selected week's month); otherwise revenue less labor from the weekly rows.

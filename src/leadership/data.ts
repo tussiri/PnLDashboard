@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { useApiQuery } from '../hooks/useApiQuery'
-import type { BudgetMonth, BudgetWeek, LeadershipAccount, LeadershipConfig, LeadershipMonth, LeadershipMonthlyJob, LeadershipMonthlyResponse, LeadershipMonthResponse, LeadershipRow, LeadershipRowsResponse, SchoolDayType, SchoolWeek } from '../services/apiTypes'
+import type { BudgetMonth, BudgetWeek, GlProfitResponse, LeadershipAccount, LeadershipConfig, LeadershipMonth, LeadershipMonthlyJob, LeadershipMonthlyResponse, LeadershipMonthResponse, LeadershipRow, LeadershipRowsResponse, SchoolDayType, SchoolWeek } from '../services/apiTypes'
 import { queryKey } from '../services/queryClient'
 import { accountSummary, type AccountSummary, type MetricOptions } from './metrics'
 import { addDays } from './routes'
@@ -199,6 +199,13 @@ export function syncConcerns(integration: string, rows: LeadershipRow[]): boolea
 }
 
 /** Closed months of one account (job cost and Relay AR / AP per job, and its income statement). */
+/** The account's GL net profit by month from `from` (YYYY-MM-DD); empty months when no income statement is loaded. */
+export function useGlProfit(account: string | undefined, from: string | undefined) {
+  const { api, keyPrefix, decision } = useLeadership()
+  const key = decision && account && from ? queryKey(`${keyPrefix}/leadership/gl-profit`, { account, from }) : null
+  return useApiQuery<GlProfitResponse>(key, (signal) => api.glProfit(account!, from!, signal), [api, account, from])
+}
+
 export function useMonthly(account: string | undefined, months = 3) {
   const { api, keyPrefix, decision } = useLeadership()
   const key = decision && account ? queryKey(`${keyPrefix}/leadership/monthly`, { account, months }) : null
