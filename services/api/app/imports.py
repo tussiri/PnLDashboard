@@ -22,6 +22,8 @@ Two feeds, CSV (UTF-8, header row) or XLSX (first sheet):
   month (app/company_pl.py parses it, title rows included). A file replaces its month (and company).
 * `contract` - monthly contract billing per job with an effective date (company, job number,
   effective from, monthly amount), the `contract` invoice basis. Upserted by job and date.
+  A store award workbook ("Store #", "Revenue per Month", "Hours per Month") loads as contracts too:
+  app/award.py matches each store to its WinTeam job by the code in the job name.
 
 Headers are matched case- and punctuation-insensitively against the WinTeam column names in
 FIELD_ALIASES, so "TotalLaborDollars", "Total Labor Dollars" and "total_labor_dollars" are the same
@@ -43,7 +45,7 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Iterable
 
-from . import company_pl, native_exports
+from . import award, company_pl, native_exports
 from .sources import rules
 
 logger = logging.getLogger(__name__)
@@ -650,6 +652,8 @@ def load_file(conn: Any, file_name: str, content: bytes, *, kind: str | None = N
             read_error = None
         if kind == "job_income_statement" or (kind is None and detect_kind(file_name, headers) == "job_income_statement"):
             return _load_job_income_statement(conn, cursor, file_name, content, digest, origin, uploaded_by)
+        if kind in (None, "contract") and file_name.lower().endswith((".xlsx", ".xlsm")) and award.is_award(content):
+            return _load_award_file(conn, cursor, file_name, content, digest, origin, uploaded_by)
         if kind == "contract" or (kind is None and detect_kind(file_name, headers) == "contract"):
             return _load_contract_file(conn, cursor, file_name, headers, rows, digest, origin, uploaded_by)
         layout = native_exports.native_layout(headers)
@@ -762,6 +766,29 @@ def _load_contract_file(conn: Any, cursor: Any, file_name: str, headers: list[st
                   min(dates), max(dates), parsed.errors, uploaded_by)
     company_pl.load_contracts(cursor, parsed.records, uploaded_by)
     conn.commit()
+    return result
+
+
+def _load_award_file(conn: Any, cursor: Any, file_name: str, content: bytes, digest: str, origin: str,
+                     uploaded_by: str | None) -> dict[str, Any]:
+    """A store award workbook (app/award.py): per-store flat monthly revenue, NTE hours and bill rate as contracts."""
+    kind = "contract"
+    if _duplicate(cursor, kind, digest):
+        return _log(cursor, conn, kind, file_name, digest, origin, "duplicate", 0, 0, [], None, None, [], uploaded_by)
+    stores, errors, read = award.parse(award.sheets(content))
+    cursor.execute(award.JOBS_SQL)
+    records, missing = award.match(stores, [dict(r) for r in cursor.fetchall()], date.today())
+    if missing:
+        errors.append(f"no WinTeam job for {len(missing)} store(s): {', '.join(sorted(missing))}")
+    if not records:
+        return _log(cursor, conn, kind, file_name, digest, origin, "failed", read, 0, [], None, None, errors or ["no stores"], uploaded_by)
+    dates = [r["effective_from"] for r in records]
+    companies = sorted({r["company"] for r in records})
+    result = _log(cursor, None, kind, file_name, digest, origin, "loaded", read, len(records), companies, min(dates), max(dates),
+                  errors, uploaded_by)
+    award.load(cursor, records, uploaded_by)
+    conn.commit()
+    logger.info("Imported award %s: %s stores", file_name, len(records))
     return result
 
 

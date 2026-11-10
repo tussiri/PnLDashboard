@@ -1234,7 +1234,7 @@ export interface ExecutiveAccountsResponse {
 export type LeadershipRole = 'site' | 'catch_all' | 'non_billed' | 'pallet'
 export type LeadershipLaborBasis = 'pay_report' | 'payroll_rate' | 'trailing_rate_estimate'
 export type LeadershipRevenueMethod = 'monthly_div' | 'weekly_billing' | 'per_visit'
-export type LeadershipSegmentSource = 'explicit' | 'sub_account' | 'company' | 'fallback'
+export type LeadershipSegmentSource = 'explicit' | 'sub_account' | 'company' | 'fallback' | 'subregion'
 
 export interface LeadershipSegment {
   name: string
@@ -1370,6 +1370,10 @@ export interface LeadershipRow {
   revenue_month_variable?: number | null
   /** The monthly contract in effect on the week's last day (Admin > Contracts), the `contract` invoice basis. */
   contract_month?: number | null
+  /** Not-to-exceed hours per month of that contract (the store award), when it has them. */
+  contract_nte_hours?: number | null
+  /** AR billed for the week's month; an account billed on its parent job has it spread over its rows by revenue-month billing. The `contract` basis's fallback. */
+  current_month_invoice?: number | null
   /** The Relay contract's monthly fee (FedEx sites). */
   relay_fixed?: number | null
   /** Average monthly billing above the fixed fee over the revenue month and the two before it. */
