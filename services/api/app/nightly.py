@@ -14,6 +14,7 @@ Steps, each isolated so one failure does not stop the others:
      only when the file changed; a district that fails is recorded on Admin > School calendars and does
      not fail the run
   7. one mart rebuild (marts, weekly leadership mart, account assignment, forecasts)
+     and, after it, each job's monthly billing sent to HrDashboard (hrdashboard.push_billing)
 
 Schedule: ops.app_setting `nightly_sync` = {"enabled", "hour", "minute", "timezone", "window_hours",
 "import_inbox", "winteam", "sarus"}. A run starts only inside the window after the run time, so a
@@ -144,6 +145,8 @@ def run_nightly(schedule: dict[str, Any] | None = None) -> dict[str, Any]:
             return {}
         step("school_calendar", read_calendars)
     step("marts", lambda: marts.rebuild_all(initiated_by="nightly"))
+    if schedule.get("hr") and hrdashboard.configured():
+        step("hr_billing", hrdashboard.push_billing)
     step("week_change", lambda: {"explained": week_changes.warm()})
 
     # ops.integration_sync_run allows running | succeeded | failed: any failed step marks the run
