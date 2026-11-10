@@ -188,6 +188,8 @@ services:
       # unset on crane-ifs-api fails the blueprint sync.
       - key: HR_BASE_URL
         sync: false
+      - key: HR_EXPORT_TOKEN
+        sync: false
       - key: HR_NAMES_TOKEN
         sync: false
       - key: RELAY_BASE_URL

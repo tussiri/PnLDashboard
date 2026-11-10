@@ -1,7 +1,7 @@
 import type {
   FullSyncResult, LeadershipAccount, LeadershipAccountJob, LeadershipAccountPatch, LeadershipConfig, LeadershipImportFile, LeadershipImportKind,
   LeadershipJobMapping, SiteRegion, LeadershipRowsQuery, LeadershipRowsResponse, LeadershipSegment, LeadershipSiteResponse, LeadershipVendorsResponse, LeadershipDirectoryResponse, FedexInvoicesResponse, FedexInvoiceBasis, LeadershipFeedbackResponse, FeedbackOverview, WeekChangeResponse, LaborHoursResponse, LeadershipQaResponse, LeadershipBudgetResponse, BudgetPlanRow, SchoolCalendarLoad, SchoolCalendarResponse, SchoolDayType, SchoolDistrict, BudgetWeekRow, GlProfitResponse, LeadershipMonthlyResponse, ServiceTicketsResponse, MailInboxStatus, MailInboxSetting, MailPollResult, CompanyResponse, LeadershipMonthResponse, AllocationStatus, AllocationSettings, AllocationMonth, CompanyPlResponse, CompanyPlSettings, PlAdjustment, PlAdjustmentInput, PlAdjustmentsResponse, JobContract, PlCategory, SubAccrualSuggestion,
-  PauseOverride, PhotoValidationSyncResult, RebuildResult, StaffingJobResponse, StaffingSitesResponse, SyncOptions, SyncRunsResponse, SystemStatus } from './apiTypes'
+  HrSyncResult, PauseOverride, PhotoValidationSyncResult, RebuildResult, StaffingJobResponse, StaffingSitesResponse, SyncOptions, SyncRunsResponse, SystemStatus } from './apiTypes'
 
 /**
  * The live API expresses ratio fields as fractions (gross_margin_pct: 0.25, pct_over: -0.046)
@@ -122,7 +122,7 @@ export const api = {
   /** On demand (the nightly and interval schedules run server-side). */
   syncAll: (options?: SyncOptions, signal?: AbortSignal) => request<FullSyncResult>('/integrations/winteam/sync', { method: 'POST', admin: true, query: syncQuery(options), signal, timeoutMs: 900_000 }),
   syncSarus: (options?: SyncOptions, signal?: AbortSignal) => request<FullSyncResult>('/integrations/winteam/sarus/sync', { method: 'POST', admin: true, query: syncQuery(options), signal, timeoutMs: 900_000 }),
-  syncHr: (signal?: AbortSignal, options?: PauseOverride) => request<Record<string, unknown>>('/integrations/hr/sync', { method: 'POST', admin: true, query: pauseQuery(options), signal, timeoutMs: 300_000 }),
+  syncHr: (signal?: AbortSignal, options?: PauseOverride) => request<HrSyncResult>('/integrations/hr/sync', { method: 'POST', admin: true, query: pauseQuery(options), signal, timeoutMs: 300_000 }),
   syncPhotoValidation: (signal?: AbortSignal, options?: PauseOverride) => request<PhotoValidationSyncResult>('/integrations/photovalidation/sync', { method: 'POST', admin: true, query: pauseQuery(options), signal, timeoutMs: 300_000 }),
   rebuildMarts: (signal?: AbortSignal, options?: PauseOverride) => request<RebuildResult>('/marts/rebuild', { method: 'POST', admin: true, query: pauseQuery(options), signal, timeoutMs: 600_000 }),
   syncRuns: (limit = 25, signal?: AbortSignal) => request<SyncRunsResponse>('/integrations/winteam/runs', { query: { limit }, signal }),
