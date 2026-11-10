@@ -2037,6 +2037,14 @@ export interface HrSiteStaffingWeek {
   state_week?: string | null
 }
 
+/** POST /integrations/hr/sync (admin): what each part did; a `skipped` text says which setting is missing. */
+export interface HrSyncResult {
+  status: string
+  staffing_skipped?: string | null
+  billing?: { status?: string; sent?: number; stored?: number; skipped?: string | null }
+  names?: Record<string, unknown>
+}
+
 /** GET /integrations/photovalidation */
 export interface PhotoValidationStatus {
   configured: boolean

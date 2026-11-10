@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useApiQuery } from '../../hooks/useApiQuery'
 import { ApiError } from '../../services/api'
-import type { LeadershipAccount, LeadershipAccountJob, LeadershipAccountPatch, SiteRegion, LeadershipImportFile, LeadershipImportKind, LeadershipRole, SyncRunsResponse, MailInboxStatus, MailRule } from '../../services/apiTypes'
+import type { HrSyncResult, LeadershipAccount, LeadershipAccountJob, LeadershipAccountPatch, SiteRegion, LeadershipImportFile, LeadershipImportKind, LeadershipRole, SyncRunsResponse, MailInboxStatus, MailRule } from '../../services/apiTypes'
 import { queryClient, queryKey } from '../../services/queryClient'
 import { inSentence } from '../data'
 import { ADMIN_TABS, type AdminTab } from '../routes'
@@ -28,18 +28,19 @@ function useAction() {
   const { decision, redetect } = useLeadership()
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null)
-  /** `done` is the success message; a failure shows the error. A refresh refused by the weekly refresh pause (423)
+  /** `done` is the success message, or works it out from the result; a failure shows the error. A refresh refused by the weekly refresh pause (423)
    * asks once whether to run it anyway, and `fn(true)` sends the override. */
-  const run = async (done: string, fn: (overridePause: boolean) => Promise<unknown>) => {
+  const run = async <T,>(done: string | ((result: T) => { ok: boolean; text: string }), fn: (overridePause: boolean) => Promise<T>) => {
     setBusy(true); setMessage(null)
     try {
-      try { await fn(false) }
+      let result: T
+      try { result = await fn(false) }
       catch (e) {
         if (!(e instanceof ApiError && e.status === 423)) throw e
         if (!window.confirm(`${e.detail}\n\nRun it anyway?`)) { setMessage({ ok: false, text: e.detail }); return }
-        await fn(true)
+        result = await fn(true)
       }
-      setMessage({ ok: true, text: done }); refreshAll(); if (decision?.mode === 'demo') redetect()
+      setMessage(typeof done === 'string' ? { ok: true, text: done } : done(result)); refreshAll(); if (decision?.mode === 'demo') redetect()
     }
     catch (e) { setMessage({ ok: false, text: errorText(e) }) }
     finally { setBusy(false) }
@@ -369,7 +370,7 @@ function DataTab() {
         <button type="button" className="btn" disabled={busy} onClick={() => run('WinTeam synced', (o) => api.syncAll({ overridePause: o }))}>Sync WinTeam</button>
         <button type="button" className="btn" disabled={busy} onClick={() => run('Sarus synced', (o) => api.syncSarus({ overridePause: o }))}>Sync Sarus</button>
         <button type="button" className="btn" disabled={busy} onClick={() => run('PhotoValidation synced', (o) => api.syncPhotoValidation(undefined, { overridePause: o }))}>Sync PhotoValidation</button>
-        <button type="button" className="btn" disabled={busy} title="Pulls site staffing and employee names from the HR dashboard and sends it each site's monthly billing" onClick={() => run('HR synced', (o) => api.syncHr(undefined, { overridePause: o }))}>Sync HR</button>
+        <button type="button" className="btn" disabled={busy} title="Pulls site staffing and employee names from the HR dashboard and sends it each site's monthly billing" onClick={() => run(hrSyncMessage, (o) => api.syncHr(undefined, { overridePause: o }))}>Sync HR</button>
         <button type="button" className="btn" disabled={busy} onClick={() => run('Marts rebuilt', (o) => api.rebuildMarts(undefined, { overridePause: o }))}>Rebuild marts</button>
         {busy && <span className="ks">Running</span>}
       </div>
@@ -393,4 +394,12 @@ export function Admin() {
       {tab === 'accounts' ? <AccountsTab /> : tab === 'jobs' ? <JobsTab /> : tab === 'regions' ? <RegionsTab /> : tab === 'imports' ? <ImportsTab /> : tab === 'budgets' ? <BudgetsAdmin /> : tab === 'calendars' ? <SchoolCalendarsAdmin /> : tab === 'mailbox' ? <MailboxTab /> : tab === 'users' ? <UsersTab /> : tab === 'allocations' ? <AllocationsTab /> : <DataTab />}
     </section>
   </>
+}
+
+/** What a Sync HR run did, so a part that was skipped for a missing setting is not read as done. */
+export function hrSyncMessage(result: HrSyncResult): { ok: boolean; text: string } {
+  const skipped = [...new Set([result.staffing_skipped, result.billing?.skipped].filter(Boolean))]
+  if (skipped.length > 0) return { ok: false, text: `HR sync incomplete: ${skipped.join('; ')}` }
+  const sent = result.billing?.sent ?? 0
+  return { ok: true, text: `HR synced. Billing sent for ${sent.toLocaleString('en-US')} site months, ${(result.billing?.stored ?? 0).toLocaleString('en-US')} stored.` }
 }
