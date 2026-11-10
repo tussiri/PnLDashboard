@@ -45,7 +45,17 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     ],
     "pool_basis": "revenue",
     "gl_categories": [],
+    # EBITA add-backs: lines whose name matches `match` (a case-insensitive pattern), first match wins.
+    # Depreciation is reported but not added back (EBITA, not EBITDA).
+    "ebita_addbacks": [
+        {"kind": "interest", "match": "interest"},
+        {"kind": "amortization", "match": "amorti[sz]"},
+        {"kind": "income_tax", "match": "income tax|franchise tax"},
+        {"kind": "depreciation", "match": "depreciat"},
+    ],
 }
+ADDBACK_KINDS = ("interest", "amortization", "income_tax", "depreciation")
+ADDED_BACK = ("interest", "amortization", "income_tax")
 
 
 # ---------------------------------------------------------------------------------------------- settings
@@ -108,7 +118,28 @@ def validate_settings(value: dict[str, Any]) -> dict[str, Any]:
             raise ValueError("gl_categories: from and to must be GL account numbers, from ≤ to")
         clean_ranges.append({"from": lo, "to": hi, "category": r["category"]})
     out["gl_categories"] = clean_ranges
+    addbacks = out["ebita_addbacks"]
+    if not isinstance(addbacks, list):
+        raise ValueError("ebita_addbacks must be a list of {kind, match}")
+    clean_addbacks = []
+    for a in addbacks:
+        if not isinstance(a, dict) or a.get("kind") not in ADDBACK_KINDS or not str(a.get("match") or "").strip():
+            raise ValueError(f"ebita_addbacks: each entry needs a kind in {', '.join(ADDBACK_KINDS)} and a match pattern")
+        try:
+            re.compile(str(a["match"]))
+        except re.error:
+            raise ValueError(f"ebita_addbacks: {a['match']!r} is not a valid pattern") from None
+        clean_addbacks.append({"kind": a["kind"], "match": str(a["match"]).strip()})
+    out["ebita_addbacks"] = clean_addbacks
     return out
+
+
+def addback_kind(label: str, addbacks: list[dict[str, str]]) -> str | None:
+    """The EBITA add-back a GL line is (interest, amortization, income_tax, depreciation), or None."""
+    for a in addbacks:
+        if re.search(a["match"], label or "", re.IGNORECASE):
+            return a["kind"]
+    return None
 
 
 # ------------------------------------------------------------------------------------- line classification
@@ -440,9 +471,10 @@ def adjusted_lines(month: date, lines: list[dict[str, Any]], adjustments: list[d
 
 
 def build_month(month: date, lines: list[dict[str, Any]], job_meta: dict[tuple[str, str], dict[str, Any]], adjustments: list[dict[str, Any]],
-                cfg: dict[str, Any], account_names: dict[str, str] | None = None) -> dict[str, Any]:
-    """One month of the company P&L. `lines`: {company, job_number, category, amount}; `job_meta`:
-    (company, job_number) -> {account, delivery_model, job_name} (a ('', job) key matches any company)."""
+                cfg: dict[str, Any], account_names: dict[str, str] | None = None, addbacks: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    """One month of the company P&L. `lines`: {company, job_number, category, amount, job_name?}; `job_meta`:
+    (company, job_number) -> {account, delivery_model, customer, job_name} (a ('', job) key matches any company);
+    `addbacks`: {company, job_number, kind, amount}, the EBITA add-back lines (addback_kind)."""
     groups = cfg["groups"]
     overhead_jobs = set(cfg["overhead_jobs"])
     lines, applied = adjusted_lines(month, lines, adjustments)
@@ -450,20 +482,30 @@ def build_month(month: date, lines: list[dict[str, Any]], job_meta: dict[tuple[s
     def meta_of(company: str, job: str) -> dict[str, Any] | None:
         return job_meta.get((company, job)) or job_meta.get(("", job))
 
+    def is_overhead(job: str) -> bool:
+        return job in overhead_jobs or job.split(":")[-1] in overhead_jobs
+
     company_all, operating, overhead = _zero(), _zero(), _zero()
     by_group = {g["key"]: _zero() for g in groups}
     by_account: dict[str, dict[str, float]] = {}
+    by_company: dict[str, dict[str, float]] = {}
+    company_overhead: dict[str, dict[str, float]] = {}
     job_group: dict[tuple[str, str], str] = {}
     job_lines: dict[tuple[str, str], dict[str, float]] = {}
+    job_names: dict[tuple[str, str], str] = {}
     for r in lines:
         cat, amount, job = r["category"], float(r["amount"]), str(r["job_number"])
         company_all[cat] += amount
-        bare = job.split(":")[-1]
-        if job in overhead_jobs or bare in overhead_jobs:
+        company = r.get("company") or ""
+        if is_overhead(job):
             overhead[cat] += amount
+            company_overhead.setdefault(company, _zero())[cat] += amount
             continue
         operating[cat] += amount
-        key = (r.get("company") or "", job)
+        by_company.setdefault(company, _zero())[cat] += amount
+        key = (company, job)
+        if r.get("job_name") and key not in job_names:
+            job_names[key] = str(r["job_name"])
         meta = meta_of(*key)
         g = job_group.setdefault(key, group_of(meta, groups))
         by_group[g][cat] += amount
@@ -492,22 +534,98 @@ def build_month(month: date, lines: list[dict[str, Any]], job_meta: dict[tuple[s
                            "pool_charge": round(pool_share, 2), "pool_share": round(pool_share / pool, 4) if pool and k in sharing else None,
                            "overhead": round(load[k], 2), "after_overhead": round(p["before_overhead"] - load[k], 2),
                            "margin": round((p["before_overhead"] - load[k]) / p["revenue"], 4) if p["revenue"] else None})
-    # An account carries its jobs' share of their group's overhead by revenue.
-    account_load: dict[str, float] = {}
+    # An account (and a customer) carries its jobs' share of their group's overhead by revenue.
+    job_load: dict[tuple[str, str], float] = {}
     for key, jl in job_lines.items():
         g = job_group[key]
         g_rev = by_group[g]["revenue"]
-        if g_rev > 0 and jl["revenue"] > 0:
-            account = (meta_of(*key) or {}).get("account") or "other"
-            account_load[account] = account_load.get(account, 0.0) + load[g] * jl["revenue"] / g_rev
+        job_load[key] = load[g] * jl["revenue"] / g_rev if g_rev > 0 and jl["revenue"] > 0 else 0.0
+    account_load: dict[str, float] = {}
+    for key, oh in job_load.items():
+        account = (meta_of(*key) or {}).get("account") or "other"
+        account_load[account] = account_load.get(account, 0.0) + oh
     accounts_out = {}
     for slug, al in by_account.items():
         p = _pl(al)
         oh = account_load.get(slug, 0.0)
         accounts_out[slug] = {"name": (account_names or {}).get(slug, "Other" if slug == "other" else slug), **p, "overhead": round(oh, 2),
                               "after_overhead": round(p["before_overhead"] - oh, 2)}
+    # Customers: the job's account, else its WinTeam customer, else the job itself.
+    by_customer: dict[str, dict[str, Any]] = {}
+    for key, jl in job_lines.items():
+        meta = meta_of(*key) or {}
+        name = meta.get("customer") or job_names.get(key) or meta.get("job_name") or f"Job {key[1]}"
+        c = by_customer.setdefault(name, {"lines": _zero(), "overhead": 0.0, "jobs": set(), "group": job_group[key], "group_revenue": {}})
+        for cat in CATEGORIES:
+            c["lines"][cat] += jl[cat]
+        c["overhead"] += job_load[key]
+        c["jobs"].add(key[1])
+        c["group_revenue"][job_group[key]] = c["group_revenue"].get(job_group[key], 0.0) + jl["revenue"]
+    customers_out = []
+    for name, c in by_customer.items():
+        p = _pl(c["lines"])
+        if not (p["revenue"] or p["before_overhead"]):
+            continue
+        customers_out.append({"name": name, "group": max(c["group_revenue"], key=lambda k: c["group_revenue"][k]), "jobs": sorted(c["jobs"]),
+                              "revenue": p["revenue"], "gross_profit": p["gross_profit"], "before_overhead": p["before_overhead"],
+                              "overhead": round(c["overhead"], 2), "after_overhead": round(p["before_overhead"] - c["overhead"], 2)})
+    customers_out.sort(key=lambda c: -c["revenue"])
+    # Companies: each company's jobs before overhead, less the net cost of its own overhead jobs.
+    companies_out = {}
+    for name in sorted(set(by_company) | set(company_overhead)):
+        p = _pl(by_company.get(name, _zero()))
+        oh_lines = company_overhead.get(name, _zero())
+        oh = sum(oh_lines[c] for c in CATEGORIES if c != "revenue") - oh_lines["revenue"]
+        companies_out[name or "Unassigned"] = {**p, "overhead": round(oh, 2), "net_profit": round(p["before_overhead"] - oh, 2)}
     op = _pl(operating)
     net = op["before_overhead"] - overhead_cost
+    # EBITA: net profit plus interest, amortization and income taxes. A group adds back those on its own jobs
+    # and its share of those on the overhead jobs, in proportion to the overhead it carries.
+    corp = {k: 0.0 for k in ADDBACK_KINDS}
+    own = {g["key"]: {k: 0.0 for k in ADDBACK_KINDS} for g in groups}
+    for a in addbacks or []:
+        job, amount = str(a["job_number"]), float(a["amount"])
+        if is_overhead(job):
+            corp[a["kind"]] += amount
+        else:
+            key = (a.get("company") or "", job)
+            own[job_group.get(key) or group_of(meta_of(*key), groups)][a["kind"]] += amount
+    total = {k: corp[k] + sum(o[k] for o in own.values()) for k in ADDBACK_KINDS}
+    added = sum(total[k] for k in ADDED_BACK)
+    corp_added = sum(corp[k] for k in ADDED_BACK)
+    ebita_groups = {}
+    for g in groups_out:
+        k = g["key"]
+        own_added = sum(own[k][x] for x in ADDED_BACK)
+        corp_share = corp_added * load[k] / overhead_cost if overhead_cost else 0.0
+        ebita_groups[k] = {"own": round(own_added, 2), "corporate": round(corp_share, 2), "ebita": round(g["after_overhead"] + own_added + corp_share, 2)}
+
+    def where(company: str | None, job: Any) -> str:
+        if is_overhead(str(job)):
+            return "overhead"
+        key = (company or "", str(job))
+        return job_group.get(key) or group_of(meta_of(*key), groups)
+
+    def effects(a: dict[str, Any]) -> dict[str, float]:
+        """An adjustment's effect on net before overhead by group ('overhead': on the overhead jobs' net)."""
+        sign = 1.0 if a["category"] == "revenue" else -1.0
+        out: dict[str, float] = {}
+        if a["kind"] == "accrual":
+            out[where(a.get("to_company"), a["to_job"])] = sign * float(a["effect"])
+        elif a["kind"] == "reclass":
+            f, t = where(a.get("from_company"), a["from_job"]), where(a.get("to_company"), a["to_job"])
+            out[f] = out.get(f, 0.0) - sign * float(a["amount"])
+            out[t] = out.get(t, 0.0) + sign * float(a["amount"])
+        return {k: round(v, 2) for k, v in out.items() if abs(v) >= 0.005}
+
+    def adjustment_out(a: dict[str, Any]) -> dict[str, Any]:
+        accrual = a["kind"] == "accrual"
+        revenue = accrual and a["category"] == "revenue"
+        return {"adjustment_id": a["adjustment_id"], "kind": a["kind"], "category": a["category"], "amount": float(a["amount"]),
+                "effect": a["effect"], "description": a["description"], "reversal": accrual and a["month"] != month,
+                "job": a.get("to_job"), "groups": effects(a),
+                "revenue_effect": round(a["effect"], 2) if revenue else 0.0, "cost_effect": round(a["effect"], 2) if accrual and not revenue else 0.0,
+                "net_effect": round(a["effect"] if revenue else -a["effect"], 2) if accrual else 0.0}
     return {
         "month": month.isoformat(),
         "company": {"revenue": round(company_all["revenue"], 2), "operating_revenue": op["revenue"], **{c: op[c] for c in DIRECT},
@@ -520,9 +638,11 @@ def build_month(month: date, lines: list[dict[str, Any]], job_meta: dict[tuple[s
                      "fixed": round(sum(fixed.values()), 2), "direct_staff": round(sum(staff.values()), 2), "pool": round(pool, 2)},
         "groups": groups_out,
         "accounts": accounts_out,
-        "adjustments": [{"adjustment_id": a["adjustment_id"], "kind": a["kind"], "category": a["category"], "amount": float(a["amount"]),
-                         "effect": a["effect"], "description": a["description"], "reversal": a["kind"] == "accrual" and a["month"] != month}
-                        for a in applied],
+        "customers": customers_out,
+        "companies": companies_out,
+        "ebita": {**{k: round(total[k], 2) for k in ADDBACK_KINDS}, "addback": round(added, 2), "corporate_addback": round(corp_added, 2),
+                  "ebita": round(net + added, 2), "groups": ebita_groups},
+        "adjustments": [adjustment_out(a) for a in applied],
     }
 
 
@@ -550,16 +670,24 @@ def job_meta(cursor: Any) -> dict[tuple[str, str], dict[str, Any]]:
           FROM mart.leadership_week WHERE week_start >= current_date - 120 ORDER BY company, job_number, week_start DESC
         )
         SELECT aj.company, aj.job_number, CASE WHEN a.featured AND aj.role IS DISTINCT FROM 'non_billed' THEN aj.account_slug END AS account,
-               l.delivery_model
+               l.delivery_model, a.name AS account_name
         FROM ops.account_job aj LEFT JOIN ops.account a ON a.slug = aj.account_slug
         LEFT JOIN latest l ON l.company = aj.company AND l.job_number = aj.job_number
         """
     )
     out: dict[tuple[str, str], dict[str, Any]] = {}
     for r in cursor.fetchall():
-        meta = {"account": r["account"], "delivery_model": r["delivery_model"]}
+        meta = {"account": r["account"], "delivery_model": r["delivery_model"], "customer": r["account_name"]}
         out[(r["company"], r["job_number"])] = meta
         out.setdefault(("", r["job_number"]), meta)
+    # Jobs without an account: their WinTeam customer and name.
+    cursor.execute("SELECT company, job_number, job_name, nullif(trim(customer_name), '') AS customer FROM core.dim_job WHERE valid_to IS NULL")
+    for r in cursor.fetchall():
+        for key in ((r["company"] or "", r["job_number"]), ("", r["job_number"])):
+            meta = out.setdefault(key, {"account": None, "delivery_model": None, "customer": None})
+            meta.setdefault("job_name", r["job_name"])
+            if not meta.get("customer"):
+                meta["customer"] = r["customer"]
     return out
 
 
@@ -570,11 +698,22 @@ def report(cursor: Any, months: int = 12) -> dict[str, Any]:
     keys = sorted(r["month"] for r in cursor.fetchall())
     if not keys:
         return {"settings": cfg, "months": [], "loaded": []}
-    cursor.execute("SELECT month, company, job_number, category, sum(amount) AS amount FROM core.fact_job_income_statement_month "
+    cursor.execute("SELECT month, company, job_number, category, sum(amount) AS amount, max(job_name) AS job_name FROM core.fact_job_income_statement_month "
                    "WHERE month = ANY(%s) GROUP BY month, company, job_number, category", (keys,))
     by_month: dict[date, list[dict[str, Any]]] = {}
     for r in cursor.fetchall():
-        by_month.setdefault(r["month"], []).append({"company": r["company"], "job_number": r["job_number"], "category": r["category"], "amount": float(r["amount"])})
+        by_month.setdefault(r["month"], []).append({"company": r["company"], "job_number": r["job_number"], "category": r["category"],
+                                                    "amount": float(r["amount"]), "job_name": r["job_name"]})
+    # EBITA add-backs: cost lines whose name matches a pattern of ebita_addbacks.
+    addbacks: dict[date, list[dict[str, Any]]] = {}
+    if cfg["ebita_addbacks"]:
+        pattern = "|".join(f"({a['match']})" for a in cfg["ebita_addbacks"])
+        cursor.execute("SELECT month, company, job_number, coalesce(label, line) AS label, sum(amount) AS amount FROM core.fact_job_income_statement_month "
+                       "WHERE month = ANY(%s) AND category <> 'revenue' AND coalesce(label, line) ~* %s GROUP BY 1, 2, 3, 4", (keys, pattern))
+        for r in cursor.fetchall():
+            kind = addback_kind(r["label"], cfg["ebita_addbacks"])
+            if kind:
+                addbacks.setdefault(r["month"], []).append({"company": r["company"], "job_number": r["job_number"], "kind": kind, "amount": float(r["amount"])})
     cursor.execute("SELECT slug, name FROM ops.account")
     names = {r["slug"]: r["name"] for r in cursor.fetchall()}
     meta = job_meta(cursor)
@@ -584,7 +723,7 @@ def report(cursor: Any, months: int = 12) -> dict[str, Any]:
                    "WHERE month = ANY(%s) GROUP BY month ORDER BY month", (keys,))
     loaded = [{"month": r["month"].isoformat(), "loaded_at": r["loaded_at"].isoformat() if r["loaded_at"] else None,
                "companies": [c for c in (r["companies"] or []) if c]} for r in cursor.fetchall()]
-    return {"settings": cfg, "months": [build_month(m, by_month.get(m, []), meta, adjustments, cfg, names) for m in keys], "loaded": loaded}
+    return {"settings": cfg, "months": [build_month(m, by_month.get(m, []), meta, adjustments, cfg, names, addbacks.get(m)) for m in keys], "loaded": loaded}
 
 
 def _month(value: Any) -> date | None:

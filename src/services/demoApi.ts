@@ -4,6 +4,7 @@
  * labeled demo. Actions that would change data are not available in demo mode.
  */
 import { ApiError, type LiveApi } from './api'
+import { demoCompanyPl } from './demoCompanyPl'
 import { demoLeadershipConfig, demoLeadershipMonthly, demoLeadershipRows, demoLeadershipSite, demoLeadershipVendors, demoStaffingJob, demoStaffingSites } from './demoLeadership'
 
 export type DashboardApi = LiveApi
@@ -60,7 +61,7 @@ export function createDemoApi(options: DemoApiOptions = {}): DashboardApi {
     allocationStatus: () => notAvailable('Allocations'),
     updateAllocationSettings: () => notAvailable('Allocations'),
     updateAllocationMonth: () => notAvailable('Allocations'),
-    companyPl: (_months, signal) => settle(() => ({ settings: { overhead_jobs: [], groups: [], pool_basis: 'revenue' as const, gl_categories: [] }, months: [], loaded: [] }), signal),
+    companyPl: (months = 12, signal) => settle(() => { const pl = demoCompanyPl(); return { ...pl, months: pl.months.slice(-months) } }, signal),
     companyPlSettings: () => notAvailable('Overhead rule'),
     updateCompanyPlSettings: () => notAvailable('Overhead rule'),
     plAdjustments: () => notAvailable('Adjustments'),

@@ -370,14 +370,14 @@ export function OtWeekChart({ labels, otHours, otPct, otDollars, current, onPick
 }
 
 /** Margin by site, worst first (AR − AP). */
-export function MarginChart({ labels, values, tones, details }: { labels: string[]; values: number[]; tones: ('ok' | 'warn' | 'bad' | 'neutral')[]; details: string[] }) {
+export function MarginChart({ labels, values, tones, details, ariaLabel = 'Margin by site, worst first' }: { labels: string[]; values: number[]; tones: ('ok' | 'warn' | 'bad' | 'neutral')[]; details: string[]; ariaLabel?: string }) {
   const t = useTokens()
   const o = base(t)
   const data = { labels, datasets: [{ label: 'Margin', data: values, backgroundColor: tones.map((x) => tone(t, x)), ...bar, maxBarThickness: 14 }] }
   const options: ChartOptions<'bar'> = { ...o, indexAxis: 'y',
     scales: { x: { ...o.scales!.x, ticks: { color: t.text2, callback: (v) => `$${Number(v) / 1000}K` } }, y: { ...o.scales!.y, grid: { display: false }, ticks: { color: t.text2, autoSkip: false, font: { size: 10 } } } },
     plugins: { ...o.plugins, tooltip: { ...o.plugins!.tooltip, callbacks: { label: (c) => details[c.dataIndex] ?? money(c.parsed.x) } } } }
-  return <Bar data={data} options={options} aria-label="Margin by site, worst first" role="img" />
+  return <Bar data={data} options={options} aria-label={ariaLabel} role="img" />
 }
 
 /** Revenue by month (closed months solid, open months muted) with gross margin % on its own axis. */
@@ -427,4 +427,57 @@ export function TrendLinesChart({ labels, series, target }: { labels: string[]; 
       return `${c.dataset.label}: ${raw == null ? '–' : `${(raw * 100).toFixed(1)}%`}`
     } } } } }
   return <Line data={data} options={options} aria-label={`Labor % by week for ${series.map((s) => s.label).join(', ')}`} role="img" />
+}
+
+const moneyTick = (v: number | string) => { const n = Math.abs(Number(v)); const s = n >= 1e6 ? `$${+(n / 1e6).toFixed(1)}M` : `$${Math.round(n / 1e3)}K`; return Number(v) < 0 ? `(${s})` : s }
+const pickHandlers = (onPick?: (index: number) => void) => ({
+  onClick: (_e: unknown, els: { index: number }[]) => { if (onPick && els.length) onPick(els[0].index) },
+  onHover: (e: { native?: { target?: EventTarget | null } }, els: unknown[]) => { const el = e.native?.target as HTMLElement | null; if (el && onPick) el.style.cursor = els.length ? 'pointer' : 'default' },
+})
+
+/** Stacked dollar bars by month, one series per group, with an optional total line (company net profit); months
+ * outside the selected period are faded and a click picks a month. */
+export function StackedBarsLineChart({ labels, series, line, selected, onPick, ariaLabel }: {
+  labels: string[]; series: { label: string; data: number[]; color: string }[]; line?: { label: string; data: number[] }
+  selected?: boolean[]; onPick?: (index: number) => void; ariaLabel: string }) {
+  const t = useTokens()
+  const o = base(t) as unknown as ChartOptions<'bar'>
+  const fade = (color: string) => labels.map((_, i) => (selected && !selected[i] ? withAlpha(color, 0.35) : color))
+  const data = { labels, datasets: [
+    ...series.map((s) => ({ type: 'bar' as const, label: s.label, data: s.data, backgroundColor: fade(s.color), stack: 'g', order: 2, ...bar, borderRadius: 0 })),
+    ...(line ? [{ type: 'line' as const, label: line.label, data: line.data, borderColor: t.text, backgroundColor: t.text, borderWidth: 2, pointRadius: 3, pointBorderColor: t.bg, pointBorderWidth: 1.5, stack: 'line', order: 1, tension: 0 }] : []),
+  ] } as unknown as ChartData<'bar'>
+  const options = { ...o, ...pickHandlers(onPick), interaction: { mode: 'index', intersect: false },
+    scales: { x: { ...o.scales!.x, stacked: true, grid: { display: false } }, y: { ...o.scales!.y, stacked: true, ticks: { color: t.text2, callback: moneyTick } } },
+    plugins: { ...o.plugins, tooltip: { ...o.plugins!.tooltip, callbacks: { label: (c: { dataset: { label?: string }; parsed: { y: number | null } }) => `${c.dataset.label}: ${money(c.parsed.y)}` } } } } as unknown as ChartOptions<'bar'>
+  return <Chart type="bar" data={data} options={options} aria-label={ariaLabel} role="img" />
+}
+
+/** Dollar bars by month with a percentage line on its own right axis (overhead net cost and its share of revenue). */
+export function MoneyPctChart({ labels, bars, pct: share, selected, onPick, ariaLabel }: {
+  labels: string[]; bars: { label: string; data: number[] }; pct: { label: string; data: (number | null)[] }
+  selected?: boolean[]; onPick?: (index: number) => void; ariaLabel: string }) {
+  const t = useTokens()
+  const o = base(t) as unknown as ChartOptions<'bar'>
+  const data = { labels, datasets: [
+    { type: 'bar' as const, label: bars.label, data: bars.data, backgroundColor: labels.map((_, i) => (selected && !selected[i] ? t.accent2 : t.accent)), yAxisID: 'y', order: 2, ...bar },
+    { type: 'line' as const, label: share.label, data: share.data.map((v) => (v == null ? null : v * 100)), borderColor: t.bad, backgroundColor: t.bad, borderWidth: 2, pointRadius: 3, yAxisID: 'y1', order: 1, tension: 0 },
+  ] } as unknown as ChartData<'bar'>
+  const options = { ...o, ...pickHandlers(onPick), interaction: { mode: 'index', intersect: false },
+    scales: { x: { ...o.scales!.x, grid: { display: false } }, y: { ...o.scales!.y, beginAtZero: true, ticks: { color: t.text2, callback: moneyTick } },
+      y1: { position: 'right', beginAtZero: true, grid: { display: false }, border: { display: false }, ticks: { color: t.text2, callback: (v: number | string) => `${v}%` } } },
+    plugins: { ...o.plugins, tooltip: { ...o.plugins!.tooltip, callbacks: { label: (c: { dataset: { label?: string; yAxisID?: string }; parsed: { y: number | null } }) =>
+      c.dataset.yAxisID === 'y1' ? `${c.dataset.label}: ${c.parsed.y == null ? '–' : `${c.parsed.y.toFixed(1)}%`}` : `${c.dataset.label}: ${money(c.parsed.y)}` } } } } as unknown as ChartOptions<'bar'>
+  return <Chart type="bar" data={data} options={options} aria-label={ariaLabel} role="img" />
+}
+
+/** Grouped dollar bars by category: one bar per series (the prior month against this month). */
+export function GroupedMoneyChart({ labels, series, ariaLabel }: { labels: string[]; series: { label: string; data: number[]; color: string }[]; ariaLabel: string }) {
+  const t = useTokens()
+  const o = base(t)
+  const data = { labels, datasets: series.map((s) => ({ label: s.label, data: s.data, backgroundColor: s.color, ...bar, maxBarThickness: 32 })) }
+  const options: ChartOptions<'bar'> = { ...o, interaction: { mode: 'index', intersect: false },
+    scales: { x: { ...o.scales!.x, grid: { display: false } }, y: { ...o.scales!.y, ticks: { color: t.text2, callback: moneyTick } } },
+    plugins: { ...o.plugins, tooltip: { ...o.plugins!.tooltip, callbacks: { label: (c) => `${c.dataset.label}: ${money(c.parsed.y)}` } } } }
+  return <Bar data={data} options={options} aria-label={ariaLabel} role="img" />
 }

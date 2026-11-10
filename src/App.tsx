@@ -13,13 +13,15 @@ import { Skeleton } from './leadership/ui'
 
 /** The analytics suite is its own chunk: only a super administrator's browser ever requests it. */
 const Suite = lazy(() => import('./suite/Suite'))
+/** The month-end company view, its own chunk too. */
+const MonthEnd = lazy(() => import('./leadership/MonthEnd'))
 
 function Page() {
   const { route, config, decision, user, can, unlimited, superAdmin } = useLeadership()
   if (!decision || (!config.data && !config.error)) return <Skeleton height={420} />
   // Company (the landing page) and Portfolio cover every account: a user limited to some accounts, or without
   // the permission, lands on their account instead.
-  if (route.view === 'company' && unlimited && can('view.company')) return <Company />
+  if (route.view === 'company' && unlimited && can('view.company')) return route.monthEnd ? <Suspense fallback={<Skeleton height={420} />}><MonthEnd /></Suspense> : <Company />
   if (route.view === 'analytics' && route.suite && superAdmin) return <Suspense fallback={<Skeleton height={420} />}><Suite /></Suspense>
   if (route.view === 'analytics' && unlimited && can('view.analytics')) return <Analytics />
   if (route.view === 'admin') return <Admin />

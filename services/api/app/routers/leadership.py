@@ -627,6 +627,7 @@ class CompanyPlSettingsIn(BaseModel):
     groups: list[dict[str, Any]] | None = None
     pool_basis: str | None = None
     gl_categories: list[dict[str, Any]] | None = None
+    ebita_addbacks: list[dict[str, Any]] | None = None
 
 
 @router.get("/company-pl/settings", dependencies=[Depends(require_admin)])
