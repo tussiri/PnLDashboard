@@ -20,6 +20,7 @@ Two feeds, CSV (UTF-8, header row) or XLSX (first sheet):
   "Company" (or All, Total, Crane IFS) is the company-wide statement behind the allocations.
 * `job_income_statement` - the Cross Tab Income Statement by job: every GL line on every job for a
   month (app/company_pl.py parses it, title rows included). A file replaces its month (and company).
+* `service_ticket` - the FedEx service ticket tracker (app/service_tickets.py): one row per ticket, upserted by number.
 * `contract` - monthly contract billing per job with an effective date (company, job number,
   effective from, monthly amount), the `contract` invoice basis. Upserted by job and date.
   A store award workbook ("Store #", "Revenue per Month", "Hours per Month") loads as contracts too:
@@ -45,12 +46,12 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Iterable
 
-from . import award, company_pl, native_exports
+from . import award, company_pl, native_exports, service_tickets
 from .sources import rules
 
 logger = logging.getLogger(__name__)
 
-KINDS = ("pay_report", "job_cost", "income_statement", "service_feedback", "qa_score", "job_income_statement", "contract")
+KINDS = ("pay_report", "job_cost", "income_statement", "service_feedback", "qa_score", "job_income_statement", "contract", "service_ticket")
 # Income statement Account values that mean the company-wide statement (allocations, Company view).
 COMPANY_SCOPE = "__company__"
 COMPANY_WORDS = {"company", "all", "total", "crane ifs", "all companies", "consolidated"}
@@ -172,6 +173,8 @@ def detect_kind(file_name: str, headers: Iterable[Any]) -> str | None:
     if re.search(r"cross\s*tab", name):
         return "job_income_statement"
     keys = {compact(h) for h in headers}
+    if "ticket" in keys and "serviceissuetype" in keys:
+        return "service_ticket"
     if keys & {"effectivefrom", "effectivedate"} and keys & {"monthlyamount", "monthlycontract", "contractamount"}:
         return "contract"
     if {"totallabordollars", "workdate"} <= keys or {"totaldollars", "workdate"} <= keys:
@@ -656,6 +659,8 @@ def load_file(conn: Any, file_name: str, content: bytes, *, kind: str | None = N
             return _load_job_income_statement(conn, cursor, file_name, content, digest, origin, uploaded_by)
         if kind in (None, "contract") and file_name.lower().endswith((".xlsx", ".xlsm")) and award.is_award(content):
             return _load_award_file(conn, cursor, file_name, content, digest, origin, uploaded_by)
+        if kind == "service_ticket" or (kind is None and detect_kind(file_name, headers) == "service_ticket"):
+            return _load_service_tickets(conn, cursor, file_name, headers, rows, digest, origin, uploaded_by)
         if kind == "contract" or (kind is None and detect_kind(file_name, headers) == "contract"):
             return _load_contract_file(conn, cursor, file_name, headers, rows, digest, origin, uploaded_by)
         layout = native_exports.native_layout(headers)
@@ -771,6 +776,23 @@ def _load_trend_by_job(conn: Any, cursor: Any, file_name: str, rows: list[dict[s
     company_pl.load_lines(cursor, result["import_file_id"], parsed.records)
     conn.commit()
     logger.info("Imported trend by job %s: %s lines", file_name, len(parsed.records))
+    return result
+
+
+def _load_service_tickets(conn: Any, cursor: Any, file_name: str, headers: list[str], rows: list[dict[str, Any]], digest: str,
+                          origin: str, uploaded_by: str | None) -> dict[str, Any]:
+    """The FedEx service ticket tracker (app/service_tickets.py), upserted by ticket number."""
+    kind = service_tickets.KIND
+    if _duplicate(cursor, kind, digest):
+        return _log(cursor, conn, kind, file_name, digest, origin, "duplicate", len(rows), 0, [], None, None, [], uploaded_by)
+    records, errors = service_tickets.parse(headers, rows)
+    if not records:
+        return _log(cursor, conn, kind, file_name, digest, origin, "failed", len(rows), 0, [], None, None, errors or ["no tickets"], uploaded_by)
+    days = [r["date_received"] for r in records if r["date_received"]]
+    result = _log(cursor, None, kind, file_name, digest, origin, "loaded", len(rows), len(records), sorted({r["opco"] for r in records if r["opco"]}),
+                  min(days) if days else None, max(days) if days else None, errors, uploaded_by)
+    service_tickets.load(cursor, result["import_file_id"], records)
+    conn.commit()
     return result
 
 

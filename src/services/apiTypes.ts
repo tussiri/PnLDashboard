@@ -1706,6 +1706,35 @@ export interface LeadershipFeedbackLine {
   site_name: string | null; account_slug: string | null; match_basis: 'relay' | 'job_name' | null
 }
 /** GET /leadership/feedback */
+/** GET /leadership/service-tickets: FedEx service tickets and how star ratings ran ahead of them. */
+export interface ServiceTicket {
+  ticket_number: string; status: string | null; open: boolean; assigned_to: string | null; opco: string | null
+  location_number: string; location_label: string | null; city_state: string | null; provider: string | null
+  issue_type: string | null; escalation_level: string | null; date_received: string | null; date_acknowledged: string | null
+  date_closed: string | null; expected_close: string | null; days_open: number | null; notes: string | null; latest_note: string | null
+  company: string | null; job_number: string | null; site_name: string | null; match_basis: 'relay' | 'job_name' | null
+}
+export interface TicketRateBand { band: string; observations: number; tickets: number; rate: number | null }
+export interface TicketRisk {
+  location_number: string; site_name: string | null; company: string | null; job_number: string | null
+  ratings: number; average: number | null; low: number; band: string; risk: number | null
+  tickets: number; last_ticket: string | null; latest_low_comment: string | null; latest_low_date: string | null
+}
+export interface TicketBefore { ticket_number: string; location_number: string; date_received: string; ratings_before: number; average_before: number | null; low_before: number; average_overall: number | null }
+export interface ServiceTicketsResponse {
+  account: string; as_of: string; tickets: ServiceTicket[]; open: number; unmatched: number
+  lookback_days: number; horizon_days: number
+  /** Location-months by the average rating over the lookback: how many had a ticket within the horizon. */
+  bands: TicketRateBand[]; low_split: TicketRateBand[]
+  /** Correlation between a location-month's average rating and a ticket following (negative: lower ratings, more tickets). */
+  correlation: number | null; observations: number
+  /** Ticket rate under 3.0 ÷ ticket rate at 4.5 and up. */
+  lift: number | null
+  /** Locations with no open ticket, by the band rate of their last lookback days of ratings. */
+  risk: TicketRisk[]
+  before: TicketBefore[]
+}
+
 export interface LeadershipFeedbackResponse {
   account: string; since: string; lines: LeadershipFeedbackLine[]
   ratings: number; average: number | null; low: number; sites: number; unmatched: number
