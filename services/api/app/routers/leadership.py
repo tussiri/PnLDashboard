@@ -408,7 +408,8 @@ base AS (
          -- the company but not in the account, as in the weekly account figures (metrics.ts accountRows).
          CASE WHEN a.featured AND aj.role IS DISTINCT FROM 'non_billed' THEN aj.account_slug ELSE 'other' END AS account,
          m.revenue, m.labor_cost AS direct_labor, coalesce(jc.management_wages, 0) AS management_wages,
-         m.subcontract_cost AS subcontractors, m.payroll_ti_cost AS payroll_taxes_insurance, m.gross_profit,
+         m.subcontract_cost AS subcontractors, m.payroll_ti_cost AS payroll_taxes_insurance,
+         m.payroll_ti_estimated AS payroll_taxes_estimated, m.gross_profit,
          -- The leadership mart's rule (app/leadership.py, relay_revenue): a subcontracted Relay (FedEx) site
          -- takes Relay AR as its revenue for any month with some, since from July 2026 its contract revenue
          -- is booked to a GL line with no job and its job cost carries only the OS line. Never Sarus.
@@ -428,7 +429,7 @@ base AS (
 jc AS (
   SELECT month, company, job_number, account,
          CASE WHEN relay_revenue THEN relay_ar ELSE revenue END AS revenue,
-         direct_labor, management_wages, subcontractors, payroll_taxes_insurance,
+         direct_labor, management_wages, subcontractors, payroll_taxes_insurance, payroll_taxes_estimated,
          CASE WHEN relay_revenue THEN coalesce(gross_profit, 0) + relay_ar - coalesce(revenue, 0) ELSE gross_profit END AS gross_profit
   FROM base
 ),
@@ -439,13 +440,14 @@ tk AS (
 )
 SELECT months.month, jc.company, jc.account, sum(jc.revenue) AS revenue, sum(jc.direct_labor) AS direct_labor,
        sum(jc.management_wages) AS management_wages, sum(jc.subcontractors) AS subcontractors,
-       sum(jc.payroll_taxes_insurance) AS payroll_taxes, sum(jc.gross_profit) AS gross_profit, max(tk.labor) AS timekeeping_labor,
+       sum(jc.payroll_taxes_insurance) AS payroll_taxes, sum(jc.payroll_taxes_estimated) AS payroll_taxes_estimated,
+       sum(jc.gross_profit) AS gross_profit, max(tk.labor) AS timekeeping_labor,
        sum(jc.revenue - jc.gross_profit) FILTER (WHERE coalesce(jc.revenue, 0) = 0) AS unbilled_cost
 FROM months LEFT JOIN jc USING (month) LEFT JOIN tk USING (month)
 GROUP BY months.month, jc.company, jc.account
 ORDER BY months.month
 """
-MONEY = ("revenue", "direct_labor", "management_wages", "subcontractors", "payroll_taxes", "gross_profit")
+MONEY = ("revenue", "direct_labor", "management_wages", "subcontractors", "payroll_taxes", "payroll_taxes_estimated", "gross_profit")
 
 # A month is closed when its job cost labor is at least CLOSED_LABOR_SHARE of timekeeping labor and the
 # cost booked to jobs with no revenue that month (after the Relay AR rule) is under UNBILLED_COST_SHARE of
@@ -454,6 +456,12 @@ MONEY = ("revenue", "direct_labor", "management_wages", "subcontractors", "payro
 # with their subcontract cost and no revenue), which read as a loss rather than as an open month.
 CLOSED_LABOR_SHARE = 0.7
 UNBILLED_COST_SHARE = 0.20
+
+
+def burden_beyond(m: dict[str, Any], rate: float) -> float:
+    """A month's burden allocation less the payroll taxes and insurance its gross profit already carries (actual
+    or estimated in mart.job_month), so the burden is never taken twice."""
+    return max(0.0, (m["direct_labor"] - m["management_wages"]) * rate - m["payroll_taxes"])
 
 
 def is_closed(m: dict[str, Any]) -> bool:
@@ -507,7 +515,7 @@ def leadership_company(request: Request, months: int = Query(14, ge=1, le=36)) -
             m["statement"] = lines.get(key, {})
             m["allocations"] = {
                 "management_wages": m["management_wages"] if cfg["management_wages"]["enabled"] else 0.0,
-                "burden": (m["direct_labor"] - m["management_wages"]) * fig["burden_rate"] if cfg["burden"]["enabled"] and fig["burden_rate"] else 0.0,
+                "burden": burden_beyond(m, fig["burden_rate"]) if cfg["burden"]["enabled"] and fig["burden_rate"] else 0.0,
                 "overhead": (fig["overhead_pool"] or 0.0) if cfg["overhead"]["enabled"] else 0.0,
                 "burden_rate": fig["burden_rate"], "burden_source": fig["burden_source"],
                 "overhead_source": fig["overhead_source"],

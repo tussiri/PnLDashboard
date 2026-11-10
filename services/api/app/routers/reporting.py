@@ -136,6 +136,7 @@ SELECT coalesce(sum(jm.revenue), 0) AS revenue,
        sum(jm.budget_subcontract) AS budget_subcontract,
        sum(jm.budget_supplies) AS budget_supplies,
        coalesce(sum(jm.payroll_ti_cost), 0) AS payroll_ti_cost,
+       coalesce(sum(jm.payroll_ti_estimated), 0) AS payroll_ti_estimated,
        coalesce(sum(jm.subcontract_cost), 0) AS subcontract_cost,
        coalesce(sum(jm.supplies_cost), 0) AS supplies_cost,
        coalesce(sum(jm.other_direct_cost), 0) AS other_direct_cost,
@@ -390,7 +391,8 @@ def portfolio_summary(rng: MonthRange = Depends(resolve_request_range), filters:
                      sum(jm.collected_total) AS collected_total, sum(jm.budget_revenue) AS budget_revenue,
                      sum(jm.labor_cost) AS labor_cost, sum(jm.budget_labor) AS budget_labor, sum(jm.gross_profit) AS gross_profit,
                      sum(jm.hours) AS hours, sum(jm.overtime_hours) AS overtime_hours, sum(jm.scheduled_hours) AS scheduled_hours,
-                     sum(jm.payroll_ti_cost) AS payroll_ti_cost, sum(jm.subcontract_cost) AS subcontract_cost,
+                     sum(jm.payroll_ti_cost) AS payroll_ti_cost, sum(jm.payroll_ti_estimated) AS payroll_ti_estimated,
+                     sum(jm.subcontract_cost) AS subcontract_cost,
                      sum(jm.supplies_cost) AS supplies_cost, sum(jm.other_direct_cost) AS other_direct_cost, sum(jm.direct_cost) AS direct_cost,
                      count(*) FILTER (WHERE jm.revenue <> 0 OR jm.hours <> 0) AS jobs_reporting
               FROM mart.job_month jm
@@ -403,7 +405,8 @@ def portfolio_summary(rng: MonthRange = Depends(resolve_request_range), filters:
                    coalesce(jm.overtime_hours, 0) AS overtime_hours, coalesce(jm.scheduled_hours, 0) AS scheduled_hours,
                    coalesce(jm.jobs_reporting, 0) AS jobs_reporting,
                    coalesce(pm.ap_invoiced, 0) AS ap_invoiced, coalesce(pm.ap_paid, 0) AS ap_paid,
-                   coalesce(jm.payroll_ti_cost, 0) AS payroll_ti_cost, coalesce(jm.subcontract_cost, 0) AS subcontract_cost,
+                   coalesce(jm.payroll_ti_cost, 0) AS payroll_ti_cost, coalesce(jm.payroll_ti_estimated, 0) AS payroll_ti_estimated,
+                   coalesce(jm.subcontract_cost, 0) AS subcontract_cost,
                    coalesce(jm.supplies_cost, 0) AS supplies_cost, coalesce(jm.other_direct_cost, 0) AS other_direct_cost,
                    coalesce(jm.direct_cost, 0) AS direct_cost
             FROM months m
@@ -448,6 +451,7 @@ def portfolio_summary(rng: MonthRange = Depends(resolve_request_range), filters:
             "ap_invoiced": f0(ap.get("ap_invoiced")),
             "ap_paid": f0(ap.get("ap_paid")),
             "payroll_ti_cost": f0(now.get("payroll_ti_cost")),
+            "payroll_ti_estimated": f0(now.get("payroll_ti_estimated")),
             "subcontract_cost": f0(now.get("subcontract_cost")),
             "supplies_cost": f0(now.get("supplies_cost")),
             "other_direct_cost": f0(now.get("other_direct_cost")),

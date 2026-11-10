@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Bar, BarChart, CartesianGrid, ComposedChart, LabelList, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { QueryCard } from '../components/CardState'
-import { CostDonut, CostMix, CostStack, costParts, hasCostBreakdown } from '../components/Charts'
+import { CostDonut, CostMix, CostStack, costParts, hasCostBreakdown, tiEstimateNote } from '../components/Charts'
 import { ChartTooltip, LegendToggles, gridProps, monthTick, series, useSeriesToggle, xAxisProps, yAxisProps } from '../components/ChartKit'
 import { DataGrid, type Column } from '../components/DataGrid'
 import { KpiCard } from '../components/KpiCard'
@@ -59,7 +59,7 @@ export function Expenses() {
         : <KpiCard label="Payroll burden" loading={jobs.loading} value={money(burden)} delta={null} context={k?.labor_cost ? `${percent((burden / k.labor_cost) * 100)} of labor` : ''} favorable="down" />}
       <KpiCard label="Labor cost" loading={labor.loading} value={money(k?.labor_cost)} delta={null} context={k?.budget_labor ? `${signed(k.labor_variance, (v) => money(v))} vs budget` : 'No labor budget in range'} trend={labor.data?.monthly.map((m) => m.labor_cost)} favorable="down" />
       {breakdown
-        ? <KpiCard label="Payroll taxes & insurance" loading={summary.loading} value={money(breakdown.payroll_ti_cost)} delta={null} context={k?.labor_cost ? `${percent(((breakdown.payroll_ti_cost ?? 0) / k.labor_cost) * 100)} of labor` : ''} trend={summary.data?.monthly.map((m) => m.payroll_ti_cost ?? 0)} favorable="down" />
+        ? <KpiCard label="Payroll taxes & insurance" loading={summary.loading} value={money(breakdown.payroll_ti_cost)} delta={null} context={k?.labor_cost ? `${percent(((breakdown.payroll_ti_cost ?? 0) / k.labor_cost) * 100)} of labor${tiEstimateNote(breakdown, money)}` : ''} trend={summary.data?.monthly.map((m) => m.payroll_ti_cost ?? 0)} favorable="down" />
         : <KpiCard label="Overtime cost estimate" loading={labor.loading} value={money(k?.overtime_cost_estimate)} delta={null} context={`${percent(k?.overtime_pct)} of hours`} trend={labor.data?.monthly.map((m) => m.overtime_hours)} favorable="down" />}
       <KpiCard label="AP invoiced" loading={ap.loading} value={money(ap.data?.kpis.invoiced)} delta={null} context={apContext} trend={ap.data?.monthly.map((m) => m.invoiced)} favorable="down" />
     </div>

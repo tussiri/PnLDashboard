@@ -130,11 +130,12 @@ export function per100(closed: CompanyMonth[]): Per100Story | null {
   const labor = sum(closed, (m) => m.direct_labor)
   const subcontractors = sum(closed, (m) => m.subcontractors)
   const taxes = sum(closed, (m) => m.payroll_taxes)
+  const taxesEstimated = sum(closed, (m) => m.payroll_taxes_estimated ?? 0) > 0
   const profit = sum(closed, (m) => m.gross_profit)
   let other = revenue - profit - labor - subcontractors - taxes
   if (other < 0 && -other <= OTHER_TOLERANCE * revenue) other = 0
   const amounts: [Per100Key, string, number][] = [
-    ['labor', 'Direct labor', labor], ['subcontractors', 'Subcontractors', subcontractors], ['taxes', 'Payroll taxes and insurance', taxes],
+    ['labor', 'Direct labor', labor], ['subcontractors', 'Subcontractors', subcontractors], ['taxes', taxesEstimated ? 'Payroll taxes and insurance (estimated)' : 'Payroll taxes and insurance', taxes],
     ['other', 'Other job cost', other], ['profit', 'Gross profit', profit],
   ]
   if (amounts.some(([, , v]) => v < 0)) return null
