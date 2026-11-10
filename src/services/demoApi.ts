@@ -55,7 +55,6 @@ export function createDemoApi(options: DemoApiOptions = {}): DashboardApi {
         source_changes: { sites: 0, change: 0, transitions: {} }, groups: [], recent: [], average_prior: null, vs_average_pct: null, prior_vs_average_pct: null, holidays: { current: [], prior: [] }, summary: { status: 'off' as const } }
     }, signal),
     leadershipFeedbackOverview: (account, month, signal) => settle(() => ({ account, month: `${month ?? ''}-01`, current: null, prior: null, months: [], year: { ratings: 0, average: null, since: '' }, low_sites: [], summary: { status: 'off' as const } }), signal),
-    analyzeFeedback: (_account, _wo, signal) => settle(() => ({ status: 'off' as const }), signal),
     serviceTickets: (account, signal) => settle(() => ({ account, as_of: '', tickets: [], open: 0, unmatched: 0, lookback_days: 60, horizon_days: 60, bands: [], low_split: [], correlation: null, observations: 0, lift: null, risk: [], before: [] }), signal),
     leadershipFeedback: (account, _months, signal) => settle(() => ({ account, since: '', lines: [], ratings: 0, average: null, low: 0, sites: 0, unmatched: 0, by_site: [] }), signal),
     leadershipMonthly: (account, _months, signal) => settle(() => demoLeadershipMonthly(account), signal),
