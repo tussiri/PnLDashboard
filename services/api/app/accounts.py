@@ -119,7 +119,7 @@ def apply_seed(cursor: Any, data: dict[str, Any]) -> dict[str, int]:
                 "featured": True, "sort": 100, "target_labor_pct": 0.645, "watch_band": 0.10, "revenue_method": "monthly_div",
                 "revenue_divisor": 4.33, "budget_reliability_ratio": 0.80, "source_parent_accounts": [],
                 "segment_source": "explicit", "revenue_allocation": "none", "cost_basis": "labor", "segment_label": "Segment", "vendor_label": "Vendor", "vocabulary": "amazon", "vendor_factor": 1,
-                "invoice_basis": "last_month", "group_by": "segment", "split_subcontracted": False, **{k: v for k, v in account.items() if k not in ("segments", "jobs")},
+                "invoice_basis": "contract", "group_by": "segment", "split_subcontracted": False, **{k: v for k, v in account.items() if k not in ("segments", "jobs")},
             },
         )
         counts["accounts"] += cursor.rowcount
