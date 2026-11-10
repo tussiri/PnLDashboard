@@ -84,7 +84,7 @@ function AccountEditor({ account }: { account: LeadershipAccount }) {
         <option value="amazon">Amazon report</option><option value="fedex">FedEx report</option><option value="school">School district report</option></select></label>
       <label className="field"><span>Invoice basis</span><select value={draft.invoice_basis} onChange={(e) => setDraft({ ...draft, invoice_basis: e.target.value as LeadershipAccount['invoice_basis'] })}>
         <option value="last_month">Last closed month</option><option value="run_rate_3m">3-month run rate</option>
-        <option value="latest_fixed_avg_variable">Latest fixed + 3-month avg variable</option><option value="contract">Contract (Admin, Contracts)</option></select></label>
+        <option value="latest_fixed_avg_variable">Latest fixed + 3-month avg variable</option><option value="contract">Current month (contract, else month billed, else last month)</option></select></label>
       <label className="field"><span>Groups</span><select value={draft.group_by} onChange={(e) => setDraft({ ...draft, group_by: e.target.value as LeadershipAccount['group_by'] })}>
         <option value="segment">{draft.segment_label}s</option><option value="pallet">Pallet sites / Janitorial only</option></select></label>
       <label className="field"><span>Subcontracted sites</span><select value={draft.split_subcontracted ? 'split' : 'in'} onChange={(e) => setDraft({ ...draft, split_subcontracted: e.target.value === 'split' })}>

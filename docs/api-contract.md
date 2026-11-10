@@ -935,3 +935,7 @@ site's weeks add `contract_month`, `relay_fixed` and `variable_avg`. Import kind
 * `segment_source` adds `subregion`: a site's segment is its subregion when that is one of the account's segments,
   else the fallback (`ops.segment_in_effect`). Apple / Retail uses it (segments SoCal and NorCal at a 62% target,
   Florida and Georgia at 67%, Other), with subcontracted stores on their own tab and the `contract` basis ÷ 4.33.
+
+Migration 072 moves every account to the `contract` invoice basis (shown as "Current month"): per site, its contract,
+else the AR billed for the week's month, else the last closed month, ÷ the divisor (4.33). Accounts billed in arrears
+(Amazon, FedEx) read the last closed month until the month's invoices post. New accounts default to it.
