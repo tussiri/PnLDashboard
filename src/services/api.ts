@@ -122,6 +122,7 @@ export const api = {
   /** On demand (the nightly and interval schedules run server-side). */
   syncAll: (options?: SyncOptions, signal?: AbortSignal) => request<FullSyncResult>('/integrations/winteam/sync', { method: 'POST', admin: true, query: syncQuery(options), signal, timeoutMs: 900_000 }),
   syncSarus: (options?: SyncOptions, signal?: AbortSignal) => request<FullSyncResult>('/integrations/winteam/sarus/sync', { method: 'POST', admin: true, query: syncQuery(options), signal, timeoutMs: 900_000 }),
+  syncHr: (signal?: AbortSignal, options?: PauseOverride) => request<Record<string, unknown>>('/integrations/hr/sync', { method: 'POST', admin: true, query: pauseQuery(options), signal, timeoutMs: 300_000 }),
   syncPhotoValidation: (signal?: AbortSignal, options?: PauseOverride) => request<PhotoValidationSyncResult>('/integrations/photovalidation/sync', { method: 'POST', admin: true, query: pauseQuery(options), signal, timeoutMs: 300_000 }),
   rebuildMarts: (signal?: AbortSignal, options?: PauseOverride) => request<RebuildResult>('/marts/rebuild', { method: 'POST', admin: true, query: pauseQuery(options), signal, timeoutMs: 600_000 }),
   syncRuns: (limit = 25, signal?: AbortSignal) => request<SyncRunsResponse>('/integrations/winteam/runs', { query: { limit }, signal }),
