@@ -11,6 +11,9 @@ The **Cross Tab Income Statement by job**, one file per month (per company datab
 run per company). Upload it on Admin > Imports as "Cross Tab Income Statement by job", or name it
 `job_income_statement_YYYY-MM.xlsx` / anything containing "Cross Tab", or mail it to the reports mailbox.
 
+The P&L Trend Income Statement Monthly Dashboard Export query by job (FormatID 6, with FiscalYear and
+LastClosedMonthEnd columns) loads the same table, every closed month of the fiscal year at once (docs/export-feeds.md).
+
 * Layout: wide (a line label column, then one column per job, "101 - Amazon DFW7") or long (Job Number,
   Description, Amount, optional Period and Company). Title rows above the header are read for the
   period ("For the Period 9/1/2026 to 9/30/2026") and the company name.
