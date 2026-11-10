@@ -43,14 +43,18 @@ export function Labor() {
   const scoped = useMemo(() => ({ ...query, account: account || query.account }), [query, account])
   const scopedParams = { ...params, account: account || params.account }
   const labor = useReportQuery<LaborSummary>('labor/summary', (api, signal) => api.laborSummary(scoped, signal), scopedParams)
+  // The account tabs list every account in the global scope, not just the one picked; with no
+  // account picked this is the same request as the one above and shares its cache entry.
+  const unscopedParams = { ...params, account: params.account }
+  const portfolio = useReportQuery<LaborSummary>('labor/summary', (api, signal) => api.laborSummary(query, signal), unscopedParams)
   // Pace is about the month in progress: default to the latest mart month (not the closed anchor)
   // unless the user picked a month explicitly.
   const paceMonth = filters.month ?? dimensions?.latest_month ?? undefined
   const paceQuery = useMemo(() => ({ month: paceMonth, account: account || filters.account || undefined }), [paceMonth, filters.account, account])
   const pace = useReportQuery<LaborPace>('labor/pace', (api, signal) => api.laborPace(paceQuery, signal), paceQuery as Record<string, unknown>)
   const k = labor.data?.kpis
-  const accounts = useMemo(() => [...(labor.data?.by_account ?? [])].sort((a, b) => b.labor_cost - a.labor_cost), [labor.data])
-  const allAccounts = useMemo(() => (account ? accounts.filter((a) => a.parent_account === account) : accounts), [accounts, account])
+  const accounts = useMemo(() => [...(portfolio.data?.by_account ?? labor.data?.by_account ?? [])].sort((a, b) => b.labor_cost - a.labor_cost), [portfolio.data, labor.data])
+  const allAccounts = useMemo(() => [...(labor.data?.by_account ?? [])].sort((a, b) => b.labor_cost - a.labor_cost).filter((a) => !account || a.parent_account === account), [labor.data, account])
   const paceRow = pace.data?.rows.find((r) => (account ? r.scope !== 'portfolio' && r.name === account : r.scope === 'portfolio')) ?? pace.data?.rows[0]
   const target = k?.target_labor_pct ?? null
   const laborPct = k?.labor_pct_revenue ?? null
