@@ -1,6 +1,6 @@
 import type {
   FullSyncResult, LeadershipAccount, LeadershipAccountJob, LeadershipAccountPatch, LeadershipConfig, LeadershipImportFile, LeadershipImportKind,
-  LeadershipJobMapping, SiteRegion, LeadershipRowsQuery, LeadershipRowsResponse, LeadershipSegment, LeadershipSiteResponse, LeadershipVendorsResponse, LeadershipDirectoryResponse, FedexInvoicesResponse, FedexInvoiceBasis, LeadershipFeedbackResponse, FeedbackOverview, WeekChangeResponse, LaborHoursResponse, LeadershipQaResponse, LeadershipBudgetResponse, BudgetPlanRow, SchoolCalendarLoad, SchoolCalendarResponse, SchoolDayType, SchoolDistrict, BudgetWeekRow, LeadershipMonthlyResponse, MailInboxStatus, MailInboxSetting, MailPollResult, CompanyResponse, LeadershipMonthResponse, AllocationStatus, AllocationSettings, AllocationMonth, CompanyPlResponse, CompanyPlSettings, PlAdjustment, PlAdjustmentInput, PlAdjustmentsResponse, JobContract, PlCategory, SubAccrualSuggestion,
+  LeadershipJobMapping, SiteRegion, LeadershipRowsQuery, LeadershipRowsResponse, LeadershipSegment, LeadershipSiteResponse, LeadershipVendorsResponse, LeadershipDirectoryResponse, FedexInvoicesResponse, FedexInvoiceBasis, LeadershipFeedbackResponse, FeedbackOverview, WeekChangeResponse, LaborHoursResponse, LeadershipQaResponse, LeadershipBudgetResponse, BudgetPlanRow, SchoolCalendarLoad, SchoolCalendarResponse, SchoolDayType, SchoolDistrict, BudgetWeekRow, GlProfitResponse, LeadershipMonthlyResponse, MailInboxStatus, MailInboxSetting, MailPollResult, CompanyResponse, LeadershipMonthResponse, AllocationStatus, AllocationSettings, AllocationMonth, CompanyPlResponse, CompanyPlSettings, PlAdjustment, PlAdjustmentInput, PlAdjustmentsResponse, JobContract, PlCategory, SubAccrualSuggestion,
   PauseOverride, PhotoValidationSyncResult, RebuildResult, StaffingJobResponse, StaffingSitesResponse, SyncOptions, SyncRunsResponse, SystemStatus } from './apiTypes'
 
 /**
@@ -169,6 +169,7 @@ export const api = {
   fedexInvoices: (query: { account: string; date_from: string; date_to: string; basis: FedexInvoiceBasis }, signal?: AbortSignal) =>
     request<FedexInvoicesResponse>('/leadership/fedex-invoices', { query, signal, rawRatios: true }),
   leadershipMonthly: (account: string, months = 3, signal?: AbortSignal) => request<LeadershipMonthlyResponse>('/leadership/monthly', { query: { account, months }, signal, rawRatios: true }),
+  glProfit: (account: string, from: string, signal?: AbortSignal) => request<GlProfitResponse>('/leadership/gl-profit', { query: { account, from }, signal, rawRatios: true }),
   leadershipMonth: (account: string, month: string, signal?: AbortSignal) => request<LeadershipMonthResponse>('/leadership/month', { query: { account, month }, signal, rawRatios: true }),
   leadershipCompany: (months = 14, signal?: AbortSignal) => request<CompanyResponse>('/leadership/company', { query: { months }, signal, rawRatios: true }),
   allocationStatus: (signal?: AbortSignal) => request<AllocationStatus>('/leadership/allocations', { admin: true, signal, rawRatios: true }),

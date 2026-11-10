@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field
 from .. import allocations, accounts, company_pl, companycam, delivery, imports, marts
 from .. import month as month_module
 from .. import budget as budget_module
-from .. import budget_file, directory, fedex_invoices, feedback_ai, mail_inbox, permissions, week_changes
+from .. import budget_file, directory, fedex_invoices, feedback_ai, gl_profit, mail_inbox, permissions, week_changes
 from .. import school_calendar
 from ..common import allowed_accounts, current_user, jsonable, refresh_gate, require_account, require_admin, source_block
 from ..db import connection
@@ -506,6 +506,41 @@ def is_closed(m: dict[str, Any]) -> bool:
     if m["timekeeping_labor"] and m["direct_labor"] < CLOSED_LABOR_SHARE * m["timekeeping_labor"]:
         return False
     return m["unbilled_cost"] < UNBILLED_COST_SHARE * m["revenue"]
+
+
+@router.get("/gl-profit")
+def leadership_gl_profit(account: str = Query(..., description="An account slug"),
+                         since: str = Query(..., alias="from", description="First month (YYYY-MM)"),
+                         request: Request = None) -> dict[str, Any]:  # type: ignore[assignment]
+    """The account's net profit by month from its GL Trend Income Statement, with workers' comp added where the
+    statement has none and Finance's adjustments on its jobs (app/gl_profit.py)."""
+    if request is not None:
+        require_account(request, account)
+    try:
+        first = date.fromisoformat(f"{since[:7]}-01")
+    except ValueError:
+        raise HTTPException(status_code=422, detail="from must be YYYY-MM") from None
+    with connection() as conn, conn.cursor() as cursor:
+        cursor.execute("SELECT 1 FROM ops.account WHERE slug = %s", (account,))
+        if cursor.fetchone() is None:
+            raise HTTPException(status_code=404, detail=f"Unknown account {account!r}")
+        cursor.execute("SELECT month, line, amount FROM core.fact_income_statement_month WHERE account_slug = %s AND month >= %s", (account, first))
+        statement: dict[date, dict[str, float]] = {}
+        for r in cursor.fetchall():
+            statement.setdefault(r["month"], {})[r["line"]] = float(r["amount"])
+        cursor.execute("SELECT job_number FROM ops.account_job WHERE account_slug = %s", (account,))
+        jobs = {str(r["job_number"]) for r in cursor.fetchall()}
+        # A month without the account's own statement takes the Cross Tab Income Statement by job over its jobs.
+        cursor.execute(gl_profit.CROSS_TAB_SQL, {"account": account, "first": first})
+        for month, lines in gl_profit.cross_tab_statement([dict(r) for r in cursor.fetchall()]).items():
+            statement.setdefault(month, lines)
+        cursor.execute("SELECT * FROM ops.pl_adjustment WHERE month >= %(f)s OR reverse_month >= %(f)s", {"f": first})
+        adjustments = gl_profit.adjustment_effects([dict(r) for r in cursor.fetchall()], jobs)
+        cursor.execute("SELECT value FROM ops.app_setting WHERE key = %s", (gl_profit.SETTING,))
+        row = cursor.fetchone()
+    rate = gl_profit.rate_of(row["value"] if row else None)
+    return jsonable({"account": account, "from": first.isoformat(), "workers_comp_rate": rate,
+                     "months": gl_profit.months(statement, adjustments, rate)})
 
 
 @router.get("/company", dependencies=[Depends(permissions.require_permission("view.company"))])

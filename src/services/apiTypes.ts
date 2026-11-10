@@ -1594,6 +1594,28 @@ export interface LeadershipMonthlyJob {
   months: Record<string, LeadershipMonth>
 }
 
+/** GET /leadership/gl-profit: an account's net profit by month from its GL Trend Income Statement. */
+export interface GlProfitMonth {
+  month: string
+  /** The account's Trend Income Statement, else the Cross Tab Income Statement by job over its jobs. */
+  source: 'trend_income_statement' | 'cross_tab'
+  revenue: number | null
+  net_profit: number
+  /** − rate × (wages + management wages) when the statement has no workers' comp line, else 0. */
+  workers_comp_added: number
+  /** Net effect of Finance's adjustments on the account's jobs in the month. */
+  adjustments: number
+  adjustment_lines: { adjustment_id: number | null; kind: string; category: string; description: string | null; effect: number }[]
+  adjusted_net_profit: number
+}
+
+export interface GlProfitResponse {
+  account: string
+  from: string
+  workers_comp_rate: number
+  months: GlProfitMonth[]
+}
+
 export interface LeadershipMonthlyResponse {
   account: string
   months: string[]

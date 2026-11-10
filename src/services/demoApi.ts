@@ -57,6 +57,7 @@ export function createDemoApi(options: DemoApiOptions = {}): DashboardApi {
     leadershipFeedbackOverview: (account, month, signal) => settle(() => ({ account, month: `${month ?? ''}-01`, current: null, prior: null, months: [], year: { ratings: 0, average: null, since: '' }, low_sites: [], summary: { status: 'off' as const } }), signal),
     leadershipFeedback: (account, _months, signal) => settle(() => ({ account, since: '', lines: [], ratings: 0, average: null, low: 0, sites: 0, unmatched: 0, by_site: [] }), signal),
     leadershipMonthly: (account, _months, signal) => settle(() => demoLeadershipMonthly(account), signal),
+    glProfit: (account, from, signal) => settle(() => ({ account, from: `${from.slice(0, 7)}-01`, workers_comp_rate: 0.06, months: [] }), signal),
     leadershipMonth: (account, month, signal) => settle(() => ({ month, account, rows: [] }), signal),
     leadershipCompany: (_months, signal) => settle(() => ({ months: [], accounts: [] }), signal),
     allocationStatus: () => notAvailable('Allocations'),
