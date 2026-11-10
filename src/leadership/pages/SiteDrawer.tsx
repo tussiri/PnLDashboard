@@ -5,7 +5,7 @@ import { useApiQuery } from '../../hooks/useApiQuery'
 import type { DeliveryBasis, HrSiteStaffingWeek, LeadershipBudgetResponse, LeadershipSiteResponse, StaffingJobResponse, StaffingRequestLine } from '../../services/apiTypes'
 import { queryKey } from '../../services/queryClient'
 import { TrendChart } from '../charts'
-import { includesVendor, rowsOfWeek, segmentOrder, useRows, vendorLabel, weekBudgetOf } from '../data'
+import { includesVendor, prepareRows, rowsOfWeek, segmentOrder, useRows, vendorLabel, weekBudgetOf } from '../data'
 import { hours, hours1, money, pct, pts, rate } from '../format'
 import { accountSummary, siteMetrics } from '../metrics'
 import { monthLabel, weekLabel, weekTick } from '../routes'
@@ -114,7 +114,10 @@ export function SiteDrawer({ company, job }: { company: string; job: string }) {
       return cache.get(week)!
     }
   }, [hasBudget, account, accountWeeks.data, budget.data, route.payHolidays, options])
-  const weeks = useMemo(() => (q.data?.weeks ?? []).map((r) => { const wt = targetOf(r.week_start); return siteMetrics(r, wt == null ? options : { ...options, target: wt }) }), [q.data, options, targetOf])
+  // A FedEx station's pallet job folds into the site, as on the account pages (the API sends both).
+  const siteWeeks = useMemo(() => prepareRows(q.data?.weeks ?? [], accountBySlug, { keepSubcontracted: true })
+    .filter((r) => r.job_number === job || (r.kids ?? []).includes(job)), [q.data, accountBySlug, job])
+  const weeks = useMemo(() => siteWeeks.map((r) => { const wt = targetOf(r.week_start); return siteMetrics(r, wt == null ? options : { ...options, target: wt }) }), [siteWeeks, options, targetOf])
   const weekTargets = hasBudget && weeks.some((r) => targetOf(r.week_start) != null) ? weeks.map((r) => targetOf(r.week_start)) : undefined
   const current = weeks.find((r) => r.week_start === weekStart)
   const site = q.data?.site
