@@ -410,7 +410,7 @@ are Monday-based; the views label them by the week-ending Sunday. Any date in a 
 
 ```
 LeadershipAccount = { slug, name, featured, sort, target_labor_pct, watch_band, revenue_method: 'monthly_div'|'weekly_billing'|'per_visit',
-  revenue_divisor, budget_reliability_ratio, source_parent_accounts: [], segment_source: 'explicit'|'sub_account'|'company'|'fallback',
+  revenue_divisor, budget_reliability_ratio, source_parent_accounts: [], segment_source: 'explicit'|'sub_account'|'company'|'fallback'|'subregion',
   fallback_segment, revenue_allocation: 'none'|'budget_hours', cost_basis: 'labor'|'labor_plus_vendor', segment_label, vendor_label,
   segments: [{name, sort, target_labor_pct|null}], sites, needs_review, updated_at, updated_by }
 LeadershipRow = { week_start, week_end, company, job_number, site_name, parent_account, account_slug|null (Other), segment, role: 'site'|'catch_all'|'non_billed',
@@ -914,3 +914,24 @@ month). FedEx uses the first and Crowley ISD the second (migration 058). Rows of
 site's weeks add `contract_month`, `relay_fixed` and `variable_avg`. Import kinds add `job_income_statement`
 (file name `job_income_statement_*` or containing "Cross Tab"; a file replaces its month and company) and
 `contract` (columns Company, Job Number, Effective From, Monthly Amount; upserted).
+
+### Store award, current-month billing and subregion rules (migration 071)
+
+* The `contract` invoice basis reads the job's contract in effect on the week's last day, else
+  `current_month_invoice`, else the revenue month. `current_month_invoice` is the AR billed for the week's month
+  (the month of its last day). Per account and week, when no site carries current-month AR but the account does
+  (a district billed on its parent job, e.g. Crowley ISD 910), the account's AR is spread over its rows by their
+  revenue-month billing. A contract with `contract_nte_hours` (a store award) bills a store only in a week with hours.
+* Rows of `GET /leadership/rows` and a site's weeks add `contract_nte_hours` (not-to-exceed hours per month) and
+  `current_month_invoice`.
+* A store award workbook loads as import kind `contract`: any sheet with "Store #" and "Revenue per Month" headers
+  (plus "Hours per Month", "Cost per Hour (Bill Rate)", optional "Effective From"); a store listed on several sheets
+  keeps its first row. Each store matches the WinTeam job whose name carries its code (`Apple - R550 - ...`); the
+  contract starts on the Effective From, else the job's start date, else the upload's month. `ops.job_contract`
+  adds `nte_hours` and `bill_rate`. Stores with no job are listed in the import's errors.
+* `ops.subregion_rule` names a subregion from a site's state and 5-digit ZIP range, per account. The subregion in
+  effect is the Admin override, else the rule, else the WinTeam state (`ops.site_subregion`). Apple: California
+  90000-93599 SoCal, 93600-96199 NorCal; FL Florida; GA Georgia.
+* `segment_source` adds `subregion`: a site's segment is its subregion when that is one of the account's segments,
+  else the fallback (`ops.segment_in_effect`). Apple / Retail uses it (segments SoCal and NorCal at a 62% target,
+  Florida and Georgia at 67%, Other), with subcontracted stores on their own tab and the `contract` basis ÷ 4.33.

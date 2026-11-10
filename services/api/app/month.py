@@ -68,7 +68,7 @@ rjm AS MATERIALIZED (SELECT * FROM mart.v_relay_job_month WHERE month <= %(first
 last_ar AS (SELECT DISTINCT ON (job_number) job_number, ar_revenue FROM rjm WHERE month < %(first)s::date AND ar_revenue > 0 ORDER BY job_number, month DESC)
 SELECT m.*, j.latitude, j.longitude, j.city, j.state_province, j.parent_job_number,
        coalesce(sr.region, nullif(btrim(j.region_name), '')) AS region,
-       coalesce(sr.subregion, nullif(btrim(j.state_province), '')) AS subregion,
+       ops.site_subregion(ajr.account_slug, sr.subregion, j.state_province, j.postal_code) AS subregion,
        jc.revenue AS jc_revenue, jc.subcontractors AS jc_sub, jc.management_wages,
        r.ar_revenue, r.ar_invoices, r.ap_amount AS relay_ap, r.payables,
        pj.revenue AS prior_revenue, pj.direct_labor AS prior_labor, pj.subcontractors AS prior_sub,
@@ -77,6 +77,7 @@ SELECT m.*, j.latitude, j.longitude, j.city, j.state_province, j.parent_job_numb
 FROM m
 LEFT JOIN core.dim_job j ON j.job_key = m.job_key
 LEFT JOIN ops.site_region sr ON sr.company = m.company AND sr.job_number = m.job_number
+LEFT JOIN ops.account_job ajr ON ajr.company = m.company AND ajr.job_number = m.job_number
 LEFT JOIN jcm jc ON jc.job_number = m.job_number AND jc.month = %(first)s::date
 LEFT JOIN jcm pj ON pj.job_number = m.job_number AND pj.month = %(prior)s::date
 -- Relay (FedEx) is keyed by Crane's WinTeam job numbers; Sarus reuses some of them (300 is FXE Pittsburgh
@@ -89,8 +90,9 @@ LEFT JOIN mart.v_relay_job_contract c ON c.job_number = m.job_number AND m.compa
 
 ACCOUNTS_SQL = """
 SELECT aj.company, aj.job_number, aj.account_slug, aj.role, aj.needs_review,
-       CASE WHEN aj.role = 'site' THEN coalesce(aj.segment, a.fallback_segment) END AS segment, a.revenue_allocation
+       ops.segment_in_effect(aj.account_slug, aj.role, aj.segment, v.subregion) AS segment, a.revenue_allocation
 FROM ops.account_job aj LEFT JOIN ops.account a ON a.slug = aj.account_slug
+LEFT JOIN ops.v_site_region v ON v.company = aj.company AND v.job_number = aj.job_number
 """
 
 

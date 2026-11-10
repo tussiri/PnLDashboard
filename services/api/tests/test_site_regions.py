@@ -13,7 +13,7 @@ def test_weekly_and_month_rows_take_the_override_else_winteam():
     for sql in (leadership.ROW_SQL, month.MONTH_SQL):
         s = flat(sql)
         assert "coalesce(sr.region, nullif(btrim(j.region_name), '')) AS region" in s
-        assert "coalesce(sr.subregion, nullif(btrim(j.state_province), '')) AS subregion" in s
+        assert "ops.site_subregion(" in s and "sr.subregion, j.state_province, j.postal_code) AS subregion" in s
         assert "LEFT JOIN ops.site_region sr ON sr.company = " in s
 
 

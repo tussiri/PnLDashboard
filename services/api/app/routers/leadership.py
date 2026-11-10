@@ -45,8 +45,15 @@ WITH rr_key AS (
   FROM mart.leadership_week
   WHERE week_start BETWEEN %(first)s AND %(last)s AND revenue_month IS NOT NULL
 ),
+cm AS (
+  -- AR billed for each job's service month (the current-month part of the contract invoice basis).
+  SELECT job_key, service_month, sum(revenue_total) AS ar
+  FROM mart.v_ar_invoice_effective
+  WHERE service_month BETWEEN date_trunc('month', %(first)s::date)::date AND date_trunc('month', %(last)s::date + 6)::date
+  GROUP BY job_key, service_month
+),
 ct AS (
-  SELECT company, job_number, monthly_amount, effective_from,
+  SELECT company, job_number, monthly_amount, nte_hours, effective_from,
          coalesce(lead(effective_from) OVER (PARTITION BY company, job_number ORDER BY effective_from), 'infinity'::date) AS effective_to
   FROM ops.job_contract
 ),
@@ -77,7 +84,7 @@ rr AS (
   GROUP BY k.job_key, k.company, k.job_number, k.revenue_month, k.delivery_model, k.revenue_month_basis
 )
 SELECT w.week_start, w.week_end, w.company, w.job_number, w.site_name, w.parent_account,
-       aj.account_slug, CASE WHEN aj.role = 'site' THEN coalesce(aj.segment, a.fallback_segment) END AS segment,
+       aj.account_slug, ops.segment_in_effect(aj.account_slug, aj.role, aj.segment, ops.site_subregion(aj.account_slug, sr.subregion, j.state_province, j.postal_code)) AS segment,
        CASE WHEN aj.account_slug IS NULL THEN 'site' ELSE aj.role END AS role,
        coalesce(aj.needs_review, false) AS needs_review,
        w.hours, w.ot_hours, w.labor, w.labor_basis, w.ot_dollars, w.budget_hours, w.budget_dollars,
@@ -88,11 +95,13 @@ SELECT w.week_start, w.week_end, w.company, w.job_number, w.site_name, w.parent_
        w.consumables_cost, w.consumables_basis,
        j.latitude, j.longitude, j.city, j.state_province, j.parent_job_number,
        coalesce(sr.region, nullif(btrim(j.region_name), '')) AS region,
-       coalesce(sr.subregion, nullif(btrim(j.state_province), '')) AS subregion,
+       ops.site_subregion(aj.account_slug, sr.subregion, j.state_province, j.postal_code) AS subregion,
        coalesce(jw.dt_hours, 0) AS dt_hours,
        rr.revenue_run_rate, rr.variable_run_rate, vm.revenue_variable AS revenue_month_variable, rr.relay_fixed, rr.variable_avg,
        a.revenue_allocation AS _allocation, w.revenue_month_budget_hours AS _rm_budget_hours, w.revenue_month_hours AS _rm_hours,
-       mw.management_wages AS _mgmt_month, coalesce(ctc.monthly_amount, cta.monthly_amount) AS contract_month
+       mw.management_wages AS _mgmt_month, coalesce(ctc.monthly_amount, cta.monthly_amount) AS contract_month,
+       CASE WHEN ctc.job_number IS NOT NULL THEN ctc.nte_hours ELSE cta.nte_hours END AS contract_nte_hours,
+       cm.ar AS _current_ar
 FROM mart.leadership_week w
 LEFT JOIN ops.account_job aj ON aj.company = w.company AND aj.job_number = w.job_number
 LEFT JOIN ops.account a ON a.slug = aj.account_slug
@@ -108,6 +117,7 @@ LEFT JOIN rr ON rr.job_key = w.job_key AND rr.revenue_month = w.revenue_month
 -- contract row for the job's company wins over one without a company (any company).
 LEFT JOIN ct ctc ON ctc.company = w.company AND ctc.job_number = w.job_number AND w.week_end >= ctc.effective_from AND w.week_end < ctc.effective_to
 LEFT JOIN ct cta ON cta.company = '' AND cta.job_number = w.job_number AND w.week_end >= cta.effective_from AND w.week_end < cta.effective_to
+LEFT JOIN cm ON cm.job_key = w.job_key AND cm.service_month = date_trunc('month', w.week_end)::date
 WHERE w.week_start BETWEEN %(first)s AND %(last)s
 """
 
@@ -165,6 +175,31 @@ def allocate_parent_billing(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     for r in rows:
         for key in ("_allocation", "_rm_budget_hours", "_rm_hours"):
             r.pop(key, None)
+    return rows
+
+
+def spread_current_month(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """current_month_invoice: the AR billed for the week's month (the month of its last day), the contract invoice
+    basis's fallback when a job has no contract row. Per account and week, when no site carries current-month AR
+    but the account does (a district billed on its parent job, e.g. Crowley ISD 910), the account's current-month
+    AR is spread over its rows by their revenue-month billing; otherwise each row keeps its own. None when there is
+    none, so the basis falls back to the revenue month. Removes the internal `_current_ar`."""
+    groups: dict[tuple[Any, str], list[tuple[dict[str, Any], float]]] = {}
+    for r in rows:
+        own = float(r.pop("_current_ar", None) or 0)
+        r["current_month_invoice"] = round(own, 2) if own > 0 else None
+        if r.get("account_slug"):
+            groups.setdefault((r["account_slug"], r["week_start"]), []).append((r, own))
+    for group in groups.values():
+        if any(own > 0 for r, own in group if r["role"] == "site"):
+            continue
+        pool = sum(own for _, own in group)
+        weights = [max(float(r["revenue_month_amount"] or 0), 0.0) for r, _ in group]
+        total = sum(weights)
+        if pool <= 0 or total <= 0:
+            continue
+        for (r, _), w in zip(group, weights):
+            r["current_month_invoice"] = round(pool * w / total, 2) if w > 0 else None
     return rows
 
 
@@ -301,7 +336,7 @@ def leadership_rows(
             sql += " AND aj.account_slug = %(account)s"
             params["account"] = account
         cursor.execute(sql + " ORDER BY w.week_start, aj.account_slug NULLS LAST, w.job_number", params)
-        rows = allocations.apply(cursor, allocate_parent_billing([jsonable(dict(r)) for r in cursor.fetchall()]))
+        rows = allocations.apply(cursor, spread_current_month(allocate_parent_billing([jsonable(dict(r)) for r in cursor.fetchall()])))
     week_list = [(first + timedelta(weeks=i)).isoformat() for i in range(weeks)]
     if request is not None:
         rows = permissions.strip(current_user(request), rows)
@@ -927,7 +962,7 @@ def leadership_site(company: str, job_number: str, weeks: int = Query(13, ge=1, 
         else:
             cursor.execute(ROW_SQL + " AND w.job_key = %(job_key)s ORDER BY w.week_start",
                            {"first": first, "last": anchor, "job_key": site["job_key"]})
-        rows = [r for r in allocations.apply(cursor, allocate_parent_billing([jsonable(dict(r)) for r in cursor.fetchall()]))
+        rows = [r for r in allocations.apply(cursor, spread_current_month(allocate_parent_billing([jsonable(dict(r)) for r in cursor.fetchall()])))
                 if r["company"] == company and r["job_number"] == job_number]
         invoices = subcontractor_invoices(cursor, site["job_key"], invoice_months)
     photos: dict[str, Any] = {"configured": companycam.configured(), "project_id": site["companycam_project_id"], "items": None, "error": None}

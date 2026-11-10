@@ -228,9 +228,15 @@ describe('Finance invoice bases', () => {
     expect(monthlyInvoiceOf(row, 'latest_fixed_avg_variable')).toBe(40000 + 24000)
     expect(monthlyInvoiceOf({ ...row, revenue_month_variable: null }, 'latest_fixed_avg_variable')).toBe(70000)
   })
-  it('the month contract, else the revenue month (Crowley)', () => {
-    expect(monthlyInvoiceOf(row, 'contract')).toBe(25575)
+  it('the month contract, else the current month billed, else the revenue month (Crowley, Apple)', () => {
+    expect(monthlyInvoiceOf({ ...row, current_month_invoice: 90000 }, 'contract')).toBe(25575)
+    expect(monthlyInvoiceOf({ ...row, contract_month: null, current_month_invoice: 90000 }, 'contract')).toBe(90000)
     expect(monthlyInvoiceOf({ ...row, contract_month: null }, 'contract')).toBe(70000)
+    expect(monthlyInvoiceOf({ ...row, current_month_invoice: 90000 }, 'last_month')).toBe(70000)
+    // A store on the award bills only in a week with hours.
+    expect(monthlyInvoiceOf({ ...row, contract_nte_hours: 303, hours: 0 }, 'contract')).toBe(0)
+    expect(monthlyInvoiceOf({ ...row, contract_nte_hours: 303, hours: 60 }, 'contract')).toBe(25575)
+    expect(monthlyInvoiceOf({ ...row, hours: 0 }, 'contract')).toBe(25575)
   })
   it('keeps last month and the run rate', () => {
     expect(monthlyInvoiceOf(row, 'last_month')).toBe(70000)

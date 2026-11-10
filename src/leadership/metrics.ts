@@ -11,7 +11,8 @@ export type RevenueMethod = 'monthly_div' | 'weekly_billing'
 /**
  * last_month: the revenue month ÷ divisor; run_rate_3m: the 3-month average ÷ divisor;
  * latest_fixed_avg_variable: the revenue month's fixed billing plus the 3-month average variable billing ÷ divisor
- * (Finance's FedEx report); contract: the month's contract ÷ divisor, else the revenue month (Finance's Crowley report).
+ * (Finance's FedEx report); contract: the month's contract ÷ divisor, else the week's month AR ÷ divisor, else the revenue
+ * month (Finance's Crowley and Apple reports).
  */
 export type InvoiceBasis = 'last_month' | 'run_rate_3m' | 'latest_fixed_avg_variable' | 'contract'
 export type LaborStatus = 'on_target' | 'watch' | 'over' | 'no_billing'
@@ -59,6 +60,10 @@ export interface WeekRow {
   revenue_month_variable?: number | null
   /** The monthly contract in effect on the week's last day. */
   contract_month?: number | null
+  /** Not-to-exceed hours per month of that contract (the store award). */
+  contract_nte_hours?: number | null
+  /** AR billed for the week's month (an account billed on its parent job spread over its rows); the contract basis's fallback. */
+  current_month_invoice?: number | null
   /** The Relay contract's monthly fee (FedEx sites), the fixed part of latest_fixed_avg_variable. */
   relay_fixed?: number | null
   /** Average monthly billing above the fixed fee over the revenue month and the two before it (Relay AR less the contract, else the OS line). */
@@ -189,7 +194,7 @@ export function invoiceOf(row: WeekRow, opts: MetricOptions): number {
   return monthlyInvoiceOf(row, opts.invoiceBasis) / (opts.divisor ?? DEFAULTS.divisor)
 }
 
-type InvoiceRow = Pick<WeekRow, 'revenue_month_amount' | 'revenue_run_rate' | 'variable_run_rate' | 'revenue_month_variable' | 'contract_month' | 'relay_fixed' | 'variable_avg'>
+type InvoiceRow = Pick<WeekRow, 'revenue_month_amount' | 'revenue_run_rate' | 'variable_run_rate' | 'revenue_month_variable' | 'contract_month' | 'current_month_invoice' | 'relay_fixed' | 'variable_avg'> & Partial<Pick<WeekRow, 'hours' | 'contract_nte_hours'>>
 
 /**
  * The monthly billing behind a row's weekly invoice under a basis, as fixed + variable (variable null when the
@@ -198,7 +203,9 @@ type InvoiceRow = Pick<WeekRow, 'revenue_month_amount' | 'revenue_run_rate' | 'v
  */
 export function invoiceParts(row: InvoiceRow, basis?: InvoiceBasis): { fixed: number; variable: number | null } {
   if (basis === 'run_rate_3m' && row.revenue_run_rate != null) return { fixed: row.revenue_run_rate - (row.variable_run_rate ?? 0), variable: row.variable_run_rate ?? null }
-  if (basis === 'contract' && row.contract_month != null) return { fixed: row.contract_month, variable: null }
+  // A store award (a contract with NTE hours) bills a store only in a week it was worked.
+  if (basis === 'contract' && row.contract_month != null) return { fixed: row.contract_nte_hours != null && row.hours === 0 ? 0 : row.contract_month, variable: null }
+  if (basis === 'contract' && row.current_month_invoice != null) return { fixed: row.current_month_invoice, variable: null }
   if (basis === 'latest_fixed_avg_variable') {
     if (row.relay_fixed != null) return { fixed: row.relay_fixed, variable: row.variable_avg ?? 0 }
     if (row.revenue_month_variable != null) return { fixed: row.revenue_month_amount - row.revenue_month_variable, variable: row.variable_run_rate ?? row.revenue_month_variable }

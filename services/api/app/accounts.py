@@ -25,7 +25,7 @@ INVOICE_BASES = ("last_month", "run_rate_3m", "latest_fixed_avg_variable", "cont
 GROUP_BYS = ("segment", "pallet")
 # A WinTeam child job named "... Pallet" rolls into its parent site (migration 037).
 PALLET_NAME = r"pallet\s*$"
-SEGMENT_SOURCES = ("explicit", "sub_account", "company", "fallback")
+SEGMENT_SOURCES = ("explicit", "sub_account", "company", "fallback", "subregion")
 REVENUE_METHODS = ("monthly_div", "weekly_billing", "per_visit")
 REVENUE_ALLOCATIONS = ("none", "budget_hours")
 COST_BASES = ("labor", "labor_plus_vendor")
