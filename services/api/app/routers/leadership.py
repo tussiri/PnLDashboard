@@ -998,7 +998,9 @@ def leadership_site(company: str, job_number: str, weeks: int = Query(13, ge=1, 
             cursor.execute(ROW_SQL + " AND w.job_key = %(job_key)s ORDER BY w.week_start",
                            {"first": first, "last": anchor, "job_key": site["job_key"]})
         rows = [r for r in allocations.apply(cursor, spread_current_month(allocate_parent_billing([jsonable(dict(r)) for r in cursor.fetchall()])))
-                if r["company"] == company and r["job_number"] == job_number]
+                # The site and its pallet job (a FedEx station's pallet work), which the browser folds into the site as the
+                # account pages do (src/leadership/data.ts prepareRows).
+                if r["company"] == company and (r["job_number"] == job_number or (r.get("role") == "pallet" and r.get("parent_job_number") == job_number))]
         invoices = subcontractor_invoices(cursor, site["job_key"], invoice_months)
     photos: dict[str, Any] = {"configured": companycam.configured(), "project_id": site["companycam_project_id"], "items": None, "error": None}
     if photos["configured"] and site["companycam_project_id"]:
