@@ -1224,21 +1224,6 @@ def leadership_service_tickets(account: str = Query(..., description="An account
             "unmatched": sum(1 for t in out if not t["job_number"]), **jsonable(analysis)}
 
 
-class FeedbackAnalyzeIn(BaseModel):
-    account: str
-    wo_numbers: list[str] = Field(..., min_length=1, max_length=20000)
-
-
-@router.post("/feedback/analyze", dependencies=[Depends(permissions.require_permission("tab.feedback"))])
-def leadership_feedback_analyze(body: FeedbackAnalyzeIn, request: Request = None) -> dict[str, Any]:  # type: ignore[assignment]
-    """Claude's sentiment analysis of the comments on the ratings a Feedback explorer slice holds (by work order).
-    The comments are read here, never sent by the browser; a slice analyzed before is served from the cache."""
-    if request is not None:
-        require_account(request, body.account)
-    with connection() as conn, conn.cursor() as cursor:
-        return jsonable(feedback_ai.analyze_slice(cursor, body.account, body.wo_numbers))
-
-
 @router.get("/feedback/overview", dependencies=[Depends(permissions.require_permission("tab.feedback"))])
 def leadership_feedback_overview(account: str = Query(..., description="An account slug"),
                                  month: str | None = Query(None, description="YYYY-MM; default this month"),

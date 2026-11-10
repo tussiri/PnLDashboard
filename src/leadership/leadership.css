@@ -541,14 +541,3 @@ rect.on{opacity:.8}
   .fbc__grid.solo .fbc__facts>div+div{border-left:none;padding-left:0;border-top:0.5px solid var(--border);padding-top:12px}
   .fbc__grid.solo .fbc__low ul{margin-top:2px}
 }
-/* Ratings explorer (pages/FeedbackExplorer.tsx) */
-.explorer .explorer-filters{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;align-items:end;margin-bottom:10px}
-.explorer .explorer-controls{display:grid;grid-template-columns:minmax(150px,220px) minmax(0,1fr);gap:16px;align-items:end;margin-bottom:12px}
-.explorer .explorer-slider input[type=range]{width:100%;accent-color:var(--accent)}
-.explorer .card{box-shadow:none;border:0.5px solid var(--border);margin-top:12px}
-.explorer .explorer-ai{border-top:0.5px solid var(--border);margin-top:14px;padding-top:10px}
-.explorer .slice-headline{font-size:14px;margin:6px 0 8px;display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
-.explorer .sentiment-bar{display:flex;height:8px;border-radius:4px;overflow:hidden;background:var(--bg2);margin-bottom:6px}
-.explorer .sentiment-bar i{display:block;height:100%}
-.explorer .sentiment-bar i.ok{background:var(--ok)}.explorer .sentiment-bar i.warn{background:var(--warn)}.explorer .sentiment-bar i.bad{background:var(--bad)}
-@media(max-width:640px){.explorer .explorer-controls{grid-template-columns:1fr}}
