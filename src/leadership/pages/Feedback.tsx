@@ -5,6 +5,7 @@ import { queryKey } from '../../services/queryClient'
 import { formatRoute, monthLabel, monthShort } from '../routes'
 import { useLeadership } from '../state'
 import { Empty, Kpi, LoadError, Skeleton, SortTable, type Column } from '../ui'
+import { ServiceTickets } from './ServiceTickets'
 
 type Line = LeadershipFeedbackResponse['lines'][number]
 type Site = LeadershipFeedbackResponse['by_site'][number]
@@ -160,6 +161,7 @@ export function Feedback({ account }: { account: LeadershipAccount }) {
       <Kpi label="1-2 stars" value={d.low.toLocaleString('en-US')} tone={d.low ? 'bad' : 'ok'} sub={d.ratings ? `${Math.round((d.low / d.ratings) * 100)}% of ratings` : undefined} />
       <Kpi label="Unmatched locations" value={d.unmatched.toLocaleString('en-US')} tone={d.unmatched ? 'warn' : ''} sub="No WinTeam job" />
     </div>
+    <ServiceTickets account={account} />
     <RatingMatrix lines={d.lines} since={d.since} initial={50} step={50} />
     <div className="card"><div className="ct"><span>By site</span></div>
       <SortTable caption="Feedback by site" rows={d.by_site} columns={siteCols} defaultSort={{ key: 'avg', dir: 1 }} pageSize={25}

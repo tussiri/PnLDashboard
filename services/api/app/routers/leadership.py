@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field
 from .. import allocations, accounts, company_pl, companycam, delivery, imports, marts
 from .. import month as month_module
 from .. import budget as budget_module
-from .. import budget_file, directory, fedex_invoices, feedback_ai, gl_profit, mail_inbox, permissions, week_changes
+from .. import budget_file, directory, fedex_invoices, feedback_ai, gl_profit, mail_inbox, permissions, service_tickets, week_changes
 from .. import school_calendar
 from ..common import allowed_accounts, current_user, jsonable, refresh_gate, require_account, require_admin, source_block
 from ..db import connection
@@ -1181,6 +1181,37 @@ HAVING count(*) >= 2 AND avg(score) < 4
 ORDER BY avg(score), count(*) FILTER (WHERE score <= 2) DESC, location_number
 LIMIT 3
 """
+
+
+@router.get("/service-tickets", dependencies=[Depends(permissions.require_permission("tab.feedback"))])
+def leadership_service_tickets(account: str = Query(..., description="An account slug"), request: Request = None) -> dict[str, Any]:  # type: ignore[assignment]
+    """The account's service tickets (migration 074) and how its star ratings ran ahead of them
+    (app/service_tickets.py analyze). The tracker and the ratings are FedEx's, so an unmatched location counts for fedex."""
+    if request is not None:
+        require_account(request, account)
+    scope = "(account_slug = %(account)s OR (account_slug IS NULL AND %(account)s = 'fedex'))"
+    with connection() as conn, conn.cursor() as cursor:
+        cursor.execute("SELECT 1 FROM ops.account WHERE slug = %s", (account,))
+        if cursor.fetchone() is None:
+            raise HTTPException(status_code=404, detail=f"Unknown account {account!r}")
+        cursor.execute(f"SELECT * FROM mart.v_service_ticket WHERE {scope} ORDER BY date_received DESC NULLS LAST, ticket_number", {"account": account})
+        tickets = [dict(r) for r in cursor.fetchall()]
+        cursor.execute(f"""SELECT location_number, feedback_date, score, comment, site_name, company, job_number FROM mart.v_service_feedback
+                           WHERE {scope} AND feedback_date >= %(since)s""", {"account": account, "since": months_back(24)})
+        feedback = [dict(r) for r in cursor.fetchall()]
+    today = date.today()
+    out = []
+    for t in tickets:
+        opened = service_tickets.is_open(t["status"])
+        end = t["date_closed"] or (today if opened else None)
+        out.append(jsonable({k: t[k] for k in ("ticket_number", "status", "assigned_to", "opco", "location_number", "location_label", "city_state",
+                                               "provider", "issue_type", "escalation_level", "date_received", "date_acknowledged", "date_closed",
+                                               "expected_close", "notes", "company", "job_number", "site_name", "match_basis")}
+                            | {"open": opened, "days_open": (end - t["date_received"]).days if end and t["date_received"] else None,
+                               "latest_note": service_tickets.latest_note(t["notes"])}))
+    analysis = service_tickets.analyze(feedback, tickets, today)
+    return {"account": account, "as_of": today.isoformat(), "tickets": out, "open": sum(1 for t in out if t["open"]),
+            "unmatched": sum(1 for t in out if not t["job_number"]), **jsonable(analysis)}
 
 
 @router.get("/feedback/overview", dependencies=[Depends(permissions.require_permission("tab.feedback"))])
