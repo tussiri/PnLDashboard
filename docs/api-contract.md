@@ -623,11 +623,13 @@ HrDashboard's `GET /api/service/v1/pnl/site-staffing` for the last 8 weeks with 
 Site-level counts only. Hires and separations are the week's; positions, filled, open and headcount are how
 the site stood when HR last answered during that week, and a pull never replaces a held value with null.
 
-Site billing, added 2026-11-10: after the nightly mart rebuild (and on `POST /integrations/hr/sync`) the
-connector sends HrDashboard each job's monthly billing, `POST /api/service/v1/pnl/site-billing` with the
-same token: `{data: [{tenant, jobNumber, month, amount}]}`, where amount is `mart.leadership_week`'s
-`revenue_month_amount` (the month the weekly invoice is based on) for the last 8 weeks, for every job that has one.
-HR budgets its district overtime report from it. Recorded as resource `site_billing`.
+Site billing, added 2026-11-10: after the nightly mart rebuild (and on `POST /integrations/hr/sync`, the
+Admin "Sync HR" button) the connector sends HrDashboard each job's monthly billing, `POST
+/api/service/v1/pnl/site-billing` with the same token: `{data: [{tenant, jobNumber, month, amount}]}`. The
+amount is the one the leadership views show: on a contract-basis account the `ops.job_contract` amount in
+effect on the week's last day, otherwise (and with no contract) `mart.leadership_week`'s
+`revenue_month_amount`. The month is the one the week ends in; the last 8 weeks are sent, for every job that
+has a figure. HR budgets its district overtime report from it. Recorded as resource `site_billing`.
 
 | Route | Response |
 |---|---|

@@ -12,8 +12,8 @@ past weeks keep what HR said while they were current. Runs are recorded in ops.i
 (integration 'hrdashboard'). The pulls never write to HrDashboard.
 
 Site billing is the one thing sent the other way (`POST /api/service/v1/pnl/site-billing`, same token):
-each job's monthly billing, the revenue_month_amount mart.leadership_week bases the weekly invoice on,
-for every job that has one. HR budgets its district overtime report from it. It runs
+each job's monthly billing as the leadership views show it (the contract on a contract-basis account,
+else the revenue month's amount), for every job that has one. HR budgets its district overtime report from it. It runs
 after the marts are rebuilt and is recorded as resource 'site_billing'.
 
 Guard: an answer with no rows changes nothing; HR answering with no sites at all is far likelier to
@@ -282,14 +282,45 @@ def sync_names() -> dict[str, Any]:
     return {"status": "succeeded", "fetched": fetched, **counts}
 
 
-# Every job with billing goes back under the WinTeam database and number HR knows it by: the job maps
-# give a job's own number in its tenant (migrations 012 and 026). HR's staffing feed is not consulted, so a
-# site HR sends no staffing for still gets its billing. One row per job and revenue month; the latest
-# week's figure for that month wins.
+# Each job's monthly billing as the leadership views show it (routers/leadership.py ROW_SQL): on an account
+# whose invoice basis is the contract, the contract in effect on the week's last day (ops.job_contract, the
+# job's company first, then any company), else the job's own AR billed for that month; otherwise, and where
+# a job has neither, the revenue month's amount. An account's AR billed on its parent job is not spread over
+# its sites here as the views do. The month is the one the week ends in, so HR reads "the billing in effect that month".
+#
+# Every job goes back under the WinTeam database and number HR knows it by: the job maps give a job's own
+# number in its tenant (migrations 012 and 026). HR's staffing feed is not consulted, so a site HR sends no
+# staffing for still gets its billing. One row per job and month; the latest week's figure wins.
 BILLING_SQL = """
-SELECT DISTINCT ON (h.winteam_company, h.winteam_job_number, w.revenue_month)
-       h.winteam_company, h.winteam_job_number, w.revenue_month, w.revenue_month_amount
-FROM mart.leadership_week w
+WITH ct AS (
+  SELECT company, job_number, monthly_amount, effective_from,
+         coalesce(lead(effective_from) OVER (PARTITION BY company, job_number ORDER BY effective_from), 'infinity'::date) AS effective_to
+  FROM ops.job_contract
+),
+cm AS (
+  SELECT job_key, service_month, sum(revenue_total) AS ar
+  FROM mart.v_ar_invoice_effective
+  WHERE service_month >= date_trunc('month', %s::date)::date
+  GROUP BY job_key, service_month
+),
+billed AS (
+  SELECT w.job_key, w.week_start, date_trunc('month', w.week_end)::date AS month,
+         coalesce(CASE WHEN a.invoice_basis = 'contract'
+                       THEN coalesce(ctc.monthly_amount, cta.monthly_amount, nullif(cm.ar, 0)) END,
+                  w.revenue_month_amount) AS amount
+  FROM mart.leadership_week w
+  LEFT JOIN ops.account_job aj ON aj.company = w.company AND aj.job_number = w.job_number
+  LEFT JOIN ops.account a ON a.slug = aj.account_slug
+  LEFT JOIN ct ctc ON ctc.company = w.company AND ctc.job_number = w.job_number
+                  AND w.week_end >= ctc.effective_from AND w.week_end < ctc.effective_to
+  LEFT JOIN ct cta ON cta.company = '' AND cta.job_number = w.job_number
+                  AND w.week_end >= cta.effective_from AND w.week_end < cta.effective_to
+  LEFT JOIN cm ON cm.job_key = w.job_key AND cm.service_month = date_trunc('month', w.week_end)::date
+  WHERE w.week_start >= %s
+)
+SELECT DISTINCT ON (h.winteam_company, h.winteam_job_number, b.month)
+       h.winteam_company, h.winteam_job_number, b.month AS revenue_month, b.amount AS revenue_month_amount
+FROM billed b
 JOIN (
   SELECT 'Crane' AS winteam_company, a.raw_job_number AS winteam_job_number, a.job_key
   FROM mart.v_api_job_map a
@@ -298,9 +329,9 @@ JOIN (
   SELECT 'Sarus', s.raw_job_number, s.job_key
   FROM mart.v_sarus_job_map s
   WHERE s.job_key IS NOT NULL AND s.company = 'Sarus' AND s.raw_job_number NOT LIKE '%%:%%'
-) h ON h.job_key = w.job_key
-WHERE w.revenue_month IS NOT NULL AND w.revenue_month_amount > 0 AND w.week_start >= %s
-ORDER BY h.winteam_company, h.winteam_job_number, w.revenue_month, w.week_start DESC
+) h ON h.job_key = b.job_key
+WHERE b.amount > 0
+ORDER BY h.winteam_company, h.winteam_job_number, b.month, b.week_start DESC
 """
 
 
@@ -339,7 +370,8 @@ def push_billing() -> dict[str, Any]:
     rows: list[dict[str, Any]] = []
     try:
         with connection() as conn, conn.cursor() as cursor:
-            cursor.execute(BILLING_SQL, (started.date() - timedelta(weeks=LOOKBACK_WEEKS),))
+            since = started.date() - timedelta(weeks=LOOKBACK_WEEKS)
+            cursor.execute(BILLING_SQL, (since, since))
             rows = [b for b in (billing_row(r, tenants) for r in cursor.fetchall()) if b is not None]
         stored = 0
         if rows:
