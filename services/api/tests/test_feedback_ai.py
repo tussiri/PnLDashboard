@@ -92,3 +92,45 @@ def test_the_comment_window_ends_at_the_newest_rating_not_today():
         def fetchone(self):
             return {"latest": None}
     assert feedback_ai.comments_for(Empty(), "fedex") == []
+
+
+SLICE = {"sentiment": "negative", "counts": {"positive": 0, "mixed": 0, "negative": 2}, "headline": "North Raleigh docks not cleaned.",
+         "themes": [{"theme": "Docks not cleaned", "sentiment": "negative", "mentions": 2, "locations": ["NRBA"], "quote": "not cleaning fully"}],
+         "watch": [{"location": "NRBA", "reason": "Repeated dock complaints"}]}
+
+
+class FakeCursor:
+    def __init__(self, lines, cached=None):
+        self.lines, self.cached, self.sql, self.connection = lines, cached, [], SimpleNamespace(commit=lambda: None)
+        self._last = None
+
+    def execute(self, sql, params=None):
+        self.sql.append((sql, params))
+        self._last = "select_lines" if "FROM mart.v_service_feedback" in sql else "cache" if "FROM ops.feedback_summary" in sql else "write"
+
+    def fetchall(self):
+        return [dict(l, wo_number=str(i), region="Southeast") for i, l in enumerate(self.lines)]
+
+    def fetchone(self):
+        return self.cached if self._last == "cache" else None
+
+
+def test_slice_analysis_reads_comments_server_side_and_caches(monkeypatch):
+    monkeypatch.setattr(feedback_ai, "settings", replace(feedback_ai.settings, anthropic_api_key="test"))
+    client = FakeClient(SLICE)
+    cur = FakeCursor(LINES)
+    out = feedback_ai.analyze_slice(cur, "fedex", ["0", "1", "2"], client=client)
+    assert out["status"] == "ready" and out["cached"] is False and out["summary"]["watch"][0]["location"] == "NRBA"
+    call = client.calls[0]
+    assert call["system"] == feedback_ai.SLICE_SYSTEM and call["output_config"]["format"]["schema"] == feedback_ai.SLICE_SCHEMA
+    assert "| Southeast |" in call["messages"][0]["content"]
+    assert any("INSERT INTO ops.feedback_summary" in sql for sql, _ in cur.sql)
+    # The same slice again is served from the cache without calling Claude.
+    cached = FakeCursor(LINES, cached={"summary": SLICE, "model": "m", "generated_at": SimpleNamespace(isoformat=lambda: "2026-11-10")})
+    again = feedback_ai.analyze_slice(cached, "fedex", ["0", "1", "2"], client=FakeClient(SLICE))
+    assert again["cached"] is True and again["summary"] == SLICE
+
+
+def test_slice_analysis_off_without_a_key(monkeypatch):
+    monkeypatch.setattr(feedback_ai, "settings", replace(feedback_ai.settings, anthropic_api_key=""))
+    assert feedback_ai.analyze_slice(FakeCursor(LINES), "fedex", ["0"]) == {"status": "off"}

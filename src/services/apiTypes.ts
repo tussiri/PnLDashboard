@@ -1704,6 +1704,19 @@ export interface LeadershipFeedbackLine {
   wo_number: string; location_number: string; provider_name: string | null; trade: string | null; feedback: string | null
   feedback_date: string; comment: string | null; score: number | null; company: string | null; job_number: string | null
   site_name: string | null; account_slug: string | null; match_basis: 'relay' | 'job_name' | null
+  /** The site's region and subregion in effect, its delivery model, and FedEx's operating company (FXG: a station number, FXE: a code). */
+  region?: string | null; subregion?: string | null; delivery_model?: 'self_perform' | 'subcontracted' | null; opco?: 'FXG' | 'FXE' | null
+}
+/** POST /leadership/feedback/analyze: Claude's reading of the comments on a slice of ratings (an AI summary, labeled as such). */
+export interface FeedbackSliceAnalysis {
+  status: 'off' | 'none' | 'ready' | 'failed'
+  cached?: boolean; model?: string; generated_at?: string; error?: string
+  comments?: number; ratings_with_comments?: number; truncated?: boolean; window?: { from: string; to: string }
+  summary?: {
+    sentiment: FeedbackSentiment; counts: Record<FeedbackSentiment, number>; headline: string
+    themes: { theme: string; sentiment: FeedbackSentiment; mentions: number; locations: string[]; quote: string }[]
+    watch: { location: string; reason: string }[]
+  }
 }
 /** GET /leadership/feedback */
 /** GET /leadership/service-tickets: FedEx service tickets and how star ratings ran ahead of them. */

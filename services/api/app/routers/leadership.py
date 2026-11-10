@@ -1107,10 +1107,18 @@ def subcontractor_invoices(cursor: Any, job_key: int, months: int) -> dict[str, 
     return {"since": since.isoformat(), "vendor_type_ids": type_ids, "total": round(sum(l["amount"] or 0 for l in lines), 2), "lines": lines}
 
 
+# Each rating with the slices the Feedback explorer cuts by: the site's region and subregion in effect
+# (ops.v_site_region), its delivery model, and FedEx's operating company from the location (a Ground station is a
+# number, an Express location a code).
 FEEDBACK_SQL = """
-SELECT wo_number, location_number, provider_name, trade, feedback, feedback_date, comment, score, company, job_number,
-       site_name, account_slug, match_basis
-FROM mart.v_service_feedback
+SELECT * FROM (
+  SELECT f.wo_number, f.location_number, f.provider_name, f.trade, f.feedback, f.feedback_date, f.comment, f.score, f.company,
+         f.job_number, f.site_name, f.account_slug, f.match_basis, sr.region, sr.subregion, j.delivery_model,
+         CASE WHEN btrim(f.location_number) ~ '^[0-9]+$' THEN 'FXG' ELSE 'FXE' END AS opco
+  FROM mart.v_service_feedback f
+  LEFT JOIN ops.v_site_region sr ON sr.company = f.company AND sr.job_number = f.job_number
+  LEFT JOIN core.dim_job j ON j.valid_to IS NULL AND j.company = f.company AND j.job_number = f.job_number
+) f
 WHERE feedback_date >= %(since)s
 """
 
@@ -1214,6 +1222,21 @@ def leadership_service_tickets(account: str = Query(..., description="An account
     analysis = service_tickets.analyze(feedback, tickets, today)
     return {"account": account, "as_of": today.isoformat(), "tickets": out, "open": sum(1 for t in out if t["open"]),
             "unmatched": sum(1 for t in out if not t["job_number"]), **jsonable(analysis)}
+
+
+class FeedbackAnalyzeIn(BaseModel):
+    account: str
+    wo_numbers: list[str] = Field(..., min_length=1, max_length=20000)
+
+
+@router.post("/feedback/analyze", dependencies=[Depends(permissions.require_permission("tab.feedback"))])
+def leadership_feedback_analyze(body: FeedbackAnalyzeIn, request: Request = None) -> dict[str, Any]:  # type: ignore[assignment]
+    """Claude's sentiment analysis of the comments on the ratings a Feedback explorer slice holds (by work order).
+    The comments are read here, never sent by the browser; a slice analyzed before is served from the cache."""
+    if request is not None:
+        require_account(request, body.account)
+    with connection() as conn, conn.cursor() as cursor:
+        return jsonable(feedback_ai.analyze_slice(cursor, body.account, body.wo_numbers))
 
 
 @router.get("/feedback/overview", dependencies=[Depends(permissions.require_permission("tab.feedback"))])
