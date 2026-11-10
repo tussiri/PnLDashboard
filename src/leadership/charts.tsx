@@ -481,3 +481,19 @@ export function GroupedMoneyChart({ labels, series, ariaLabel }: { labels: strin
     plugins: { ...o.plugins, tooltip: { ...o.plugins!.tooltip, callbacks: { label: (c) => `${c.dataset.label}: ${money(c.parsed.y)}` } } } }
   return <Bar data={data} options={options} aria-label={ariaLabel} role="img" />
 }
+
+/** Running-average star ratings (1 to 5), one line per group; the tooltip gives each point's rating count. */
+export function RatingLinesChart({ labels, series, ariaLabel }: { labels: string[]; series: { label: string; color: string; data: (number | null)[]; counts: number[] }[]; ariaLabel: string }) {
+  const t = useTokens()
+  const o = base(t) as unknown as ChartOptions<'line'>
+  const data = { labels, datasets: series.map((s, i) => ({ label: s.label, data: s.data, borderColor: s.color, backgroundColor: s.color,
+    borderWidth: i === 0 ? 2.5 : 1.75, pointRadius: 0, pointHoverRadius: 4, spanGaps: true, tension: 0.25 })) }
+  const options: ChartOptions<'line'> = { ...o, interaction: { mode: 'index', intersect: false },
+    scales: { x: { ...o.scales!.x, grid: { display: false }, ticks: { ...o.scales!.x?.ticks, maxTicksLimit: 12 } }, y: { ...o.scales!.y, min: 1, max: 5, ticks: { color: t.text2, stepSize: 1 } } },
+    plugins: { ...o.plugins, legend: { display: series.length > 1, position: 'bottom', labels: { color: t.text2, boxWidth: 10, font: { size: 11 } } },
+      tooltip: { ...o.plugins!.tooltip, callbacks: { label: (c) => {
+        const s = series[c.datasetIndex]
+        return `${s.label}: ${c.parsed.y == null ? '–' : c.parsed.y.toFixed(2)} (${s.counts[c.dataIndex]} ratings)`
+      } } } } }
+  return <Line data={data} options={options} aria-label={ariaLabel} role="img" />
+}
