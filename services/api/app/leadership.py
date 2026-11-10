@@ -4,6 +4,9 @@ Rebuilt after mart.job_week in every mart rebuild (marts.rebuild_tables). The ac
 stored: routers/leadership.py joins ops.account_job at read time.
 
 * Keys: every (job, Monday week) in mart.job_week or the imported pay report.
+* Setting weekly_labor_source (migration 073): 'winteam_rates' (the default) prices every week from the WinTeam
+  punches and ignores pay report coverage, the CDO's basis; 'pay_report' applies the coverage rule below. The pay
+  report stays loaded either way, for comparison.
 * Pay report coverage: a company's week counts as covered when core.pay_report_coverage spans each
   of its days that have passed (a nightly export window through yesterday covers the current week so
   far). Covered weeks take hours, overtime hours (OT + DT), labor and overtime dollars (full pay)
@@ -123,13 +126,14 @@ week_cover AS (
   WHERE (SELECT count(*) FROM cov_days c WHERE c.company = jb.company AND c.day BETWEEN k.week_start AND k.week_start + 6)
         >= least(7, current_date - k.week_start)
     AND k.week_start < current_date
+    AND %(pay_report_labor)s
 ),
 month_cover AS (
   SELECT m.month, c.company
   FROM jc_months m
   JOIN cov_days c ON c.day BETWEEN m.month AND (m.month + interval '1 month' - interval '1 day')::date
   GROUP BY 1, 2
-  HAVING count(*) = extract(day FROM (m.month + interval '1 month' - interval '1 day'))
+  HAVING count(*) = extract(day FROM (m.month + interval '1 month' - interval '1 day')) AND %(pay_report_labor)s
 ),
 pr_month AS (
   SELECT jb.job_key, date_trunc('month', p.work_date)::date AS month, sum(p.total_dollars) AS labor
@@ -246,8 +250,19 @@ FROM relay a
 """
 
 
+LABOR_SOURCES = ("winteam_rates", "pay_report")
+
+
+def pay_report_labor(value: Any) -> bool:
+    """Whether a covering pay report replaces the WinTeam-priced labor (setting weekly_labor_source); default no."""
+    return value == "pay_report"
+
+
 def rebuild(cursor: Any, subcontract_gl: tuple[int, int]) -> int:
     """Empty (DELETE, so readers are not blocked; see marts.rebuild_tables) and refill mart.leadership_week inside the caller's transaction; returns the row count."""
+    cursor.execute("SELECT value FROM ops.app_setting WHERE key = 'weekly_labor_source'")
+    row = cursor.fetchone()
     cursor.execute("DELETE FROM mart.leadership_week")
-    cursor.execute(REBUILD_SQL, {"subcontract_gl_low": subcontract_gl[0], "subcontract_gl_high": subcontract_gl[1]})
+    cursor.execute(REBUILD_SQL, {"subcontract_gl_low": subcontract_gl[0], "subcontract_gl_high": subcontract_gl[1],
+                                 "pay_report_labor": pay_report_labor(row["value"] if row else None)})
     return cursor.rowcount
