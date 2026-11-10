@@ -13,7 +13,7 @@ past weeks keep what HR said while they were current. Runs are recorded in ops.i
 
 Site billing is the one thing sent the other way (`POST /api/service/v1/pnl/site-billing`, same token):
 each job's monthly billing, the revenue_month_amount mart.leadership_week bases the weekly invoice on,
-for the jobs HR's staffing feed has named. HR budgets its district overtime report from it. It runs
+for every job that has one. HR budgets its district overtime report from it. It runs
 after the marts are rebuilt and is recorded as resource 'site_billing'.
 
 Guard: an answer with no rows changes nothing; HR answering with no sites at all is far likelier to
@@ -282,14 +282,23 @@ def sync_names() -> dict[str, Any]:
     return {"status": "succeeded", "fetched": fetched, **counts}
 
 
-# The jobs are the ones HR's staffing feed named, so each goes back under HR's own tenant and number.
-# One row per job and revenue month; the latest week's figure for that month wins.
+# Every job with billing goes back under the WinTeam database and number HR knows it by: the job maps
+# give a job's own number in its tenant (migrations 012 and 026). HR's staffing feed is not consulted, so a
+# site HR sends no staffing for still gets its billing. One row per job and revenue month; the latest
+# week's figure for that month wins.
 BILLING_SQL = """
 SELECT DISTINCT ON (h.winteam_company, h.winteam_job_number, w.revenue_month)
        h.winteam_company, h.winteam_job_number, w.revenue_month, w.revenue_month_amount
 FROM mart.leadership_week w
-JOIN (SELECT DISTINCT winteam_company, winteam_job_number, job_key
-      FROM core.hr_site_staffing_week WHERE job_key IS NOT NULL) h ON h.job_key = w.job_key
+JOIN (
+  SELECT 'Crane' AS winteam_company, a.raw_job_number AS winteam_job_number, a.job_key
+  FROM mart.v_api_job_map a
+  WHERE a.job_key IS NOT NULL AND a.company IS DISTINCT FROM 'Sarus' AND a.raw_job_number NOT LIKE '%%:%%'
+  UNION
+  SELECT 'Sarus', s.raw_job_number, s.job_key
+  FROM mart.v_sarus_job_map s
+  WHERE s.job_key IS NOT NULL AND s.company = 'Sarus' AND s.raw_job_number NOT LIKE '%%:%%'
+) h ON h.job_key = w.job_key
 WHERE w.revenue_month IS NOT NULL AND w.revenue_month_amount > 0 AND w.week_start >= %s
 ORDER BY h.winteam_company, h.winteam_job_number, w.revenue_month, w.week_start DESC
 """
@@ -321,7 +330,7 @@ def send_billing(client: httpx.Client, rows: list[dict[str, Any]]) -> dict[str, 
 
 def push_billing() -> dict[str, Any]:
     """Send HR each job's monthly billing for the last LOOKBACK_WEEKS weeks. Nothing to send is not a
-    failure: before the first staffing pull there are no jobs to name. Raises on failure after recording it."""
+    failure. Raises on failure after recording it."""
     if not configured():
         raise HrDashboardError("HrDashboard is not configured (HR_BASE_URL and HR_EXPORT_TOKEN)")
     started = datetime.now(timezone.utc)
