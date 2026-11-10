@@ -37,8 +37,16 @@ def test_insert_and_select_lists_align_with_the_table():
         assert re.search(rf"^\s+(ADD COLUMN IF NOT EXISTS )?{column} ", ddl, re.M), column
 
 
-def test_takes_the_subcontract_gl_range_as_parameters():
-    assert set(re.findall(r"%\((\w+)\)s", REBUILD_SQL)) == {"subcontract_gl_low", "subcontract_gl_high"}
+def test_takes_the_subcontract_gl_range_and_labor_source_as_parameters():
+    assert set(re.findall(r"%\((\w+)\)s", REBUILD_SQL)) == {"subcontract_gl_low", "subcontract_gl_high", "pay_report_labor"}
+
+
+def test_weekly_labor_comes_from_winteam_rates_unless_set_to_the_pay_report():
+    from app.leadership import pay_report_labor
+    assert pay_report_labor(None) is False and pay_report_labor("winteam_rates") is False and pay_report_labor("pay_report") is True
+    flat = " ".join(REBUILD_SQL.split())
+    assert "AND k.week_start < current_date AND %(pay_report_labor)s )" in flat
+    assert "- interval '1 day')) AND %(pay_report_labor)s )" in flat
 
 
 def test_has_no_bare_percent_signs():

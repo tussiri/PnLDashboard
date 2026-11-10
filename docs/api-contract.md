@@ -946,3 +946,7 @@ else the AR billed for the week's month, else the last closed month, ÷ the divi
 
 When the fiscal year has GL months, the account's fiscal headline is the GL net profit to date (sum of
 `adjusted_net_profit` through the selected week's month); otherwise revenue less labor from the weekly rows.
+
+Setting `weekly_labor_source` (migration 073): `winteam_rates` (default) prices every week's labor, and the prior
+month's, from the WinTeam punches at their pay rates; `pay_report` lets a covering pay report replace them. Loaded pay
+reports stay in `core.fact_pay_report` either way.
