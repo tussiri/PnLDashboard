@@ -66,7 +66,7 @@ function SetupForm({ onDone }: { onDone: (username: string, password: string) =>
 }
 
 export function LoginPage() {
-  const { signIn, backend, apiMode, signInOptions } = useAuth()
+  const { signIn, backend, apiMode, signInOptions, retry } = useAuth()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
@@ -96,6 +96,16 @@ export function LoginPage() {
   }
 
   if (setup) return <main className="login" aria-labelledby="login-title"><SetupForm onDone={signIn} /></main>
+
+  // Production with no API answering (a deploy or restart in progress, or an outage): no sign-in at all.
+  if (backend === 'unavailable') return <main className="login" aria-labelledby="login-title">
+    <form onSubmit={(e) => { e.preventDefault(); retry() }} noValidate>
+      <span className="brand">Crane IFS</span>
+      <h1 id="login-title">Dashboard unavailable</h1>
+      <p className="hint" style={{ marginTop: 0 }} role="status" title="The dashboard service is not answering, usually while an update is deploying. This page checks again every few seconds.">Checking again shortly</p>
+      <button type="submit" className="btn primary">Try again</button>
+    </form>
+  </main>
 
   const fields = <>
     <label>Username<input type="text" name="username" autoComplete="username" autoFocus={!microsoft} value={username} onChange={(e) => setUsername(e.target.value)} disabled={busy} required /></label>

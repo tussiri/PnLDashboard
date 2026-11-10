@@ -6,11 +6,13 @@ import { demoAuthenticate, type AuthUser } from './roles'
 
 /**
  * Where sign-in is decided:
- *   api   the reporting API answered /auth/mode; sessions are HttpOnly cookies issued by /auth/login
- *   demo  no API is reachable; a browser-only sign-in accepts the three development users so the
- *         labeled demo dataset can still be explored (nothing is sent anywhere)
+ *   api          the reporting API answered /auth/mode; sessions are HttpOnly cookies issued by /auth/login
+ *   demo         no API is reachable in a development build; a browser-only sign-in accepts the three
+ *                development users so the labeled demo dataset can still be explored (nothing is sent anywhere)
+ *   unavailable  no API is reachable in a production build: no sign-in is offered, and /auth/mode is retried
+ *                until the API answers (a deploy or restart in progress, or the API is down)
  */
-export type AuthBackend = 'api' | 'demo'
+export type AuthBackend = 'api' | 'demo' | 'unavailable'
 export type AuthStatus = 'checking' | 'signed_out' | 'signed_in'
 
 export interface AuthState {
@@ -23,10 +25,22 @@ export interface AuthState {
   signInOptions: SignInOptions
   signIn: (username: string, password: string) => Promise<void>
   signOut: () => Promise<void>
+  /** Ask /auth/mode again now (the unavailable page's button). */
+  retry: () => void
 }
 
 const AuthContext = createContext<AuthState | null>(null)
 const DEMO_SESSION_KEY = 'crane-ifs-demo-session'
+/** How long to wait before asking /auth/mode again while the API is unreachable. */
+export const API_RETRY_MS = 10_000
+
+/**
+ * Whether the browser-only demo sign-in may be offered: development builds only, or a build made with
+ * VITE_DEMO_SIGN_IN=true on purpose. A production build never offers it, so a deploy or an API outage
+ * cannot put development accounts on the live sign-in page.
+ */
+export const demoSignInAllowed = (env: { DEV?: boolean; VITE_DEMO_SIGN_IN?: string } = import.meta.env): boolean =>
+  env.DEV === true || env.VITE_DEMO_SIGN_IN === 'true'
 
 /**
  * Whether a failed GET /auth/mode means "no API here": a network error or timeout, a 5xx, or a 404
@@ -50,6 +64,7 @@ export function AuthProvider({ children, forced }: { children: ReactNode; forced
   const [backend, setBackend] = useState<AuthBackend>(forced?.backend ?? 'api')
   const [apiMode, setApiMode] = useState<AuthMode | null>(forced?.apiMode ?? null)
   const [signInOptions, setSignInOptions] = useState<SignInOptions>({ microsoft: false, password: 'all' })
+  const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
     if (forced) return
@@ -70,13 +85,22 @@ export function AuthProvider({ children, forced }: { children: ReactNode; forced
       } catch (error) {
         if (controller.signal.aborted) return
         if (!apiAbsent(error)) { setBackend('api'); setStatus('signed_out'); return }
-        setBackend('demo'); setApiMode(null)
+        setApiMode(null)
+        if (!demoSignInAllowed()) { setBackend('unavailable'); setUser(null); setStatus('signed_out'); return }
+        setBackend('demo')
         const existing = readDemoSession()
         setUser(existing); setStatus(existing ? 'signed_in' : 'signed_out')
       }
     })()
     return () => controller.abort()
-  }, [forced])
+  }, [forced, attempt])
+
+  // Unreachable API in production: ask again until it answers, then the real sign-in appears on its own.
+  useEffect(() => {
+    if (forced || backend !== 'unavailable') return
+    const timer = window.setTimeout(() => setAttempt((n) => n + 1), API_RETRY_MS)
+    return () => window.clearTimeout(timer)
+  }, [forced, backend, attempt])
 
   // A 401 from any data call (expired cookie, restarted API with a new secret) returns to the login page.
   useEffect(() => {
@@ -87,6 +111,7 @@ export function AuthProvider({ children, forced }: { children: ReactNode; forced
   }, [backend])
 
   const signIn = useCallback(async (username: string, password: string) => {
+    if (backend === 'unavailable') throw new ApiError(503, 'The dashboard is unavailable right now. Try again in a minute.', '/auth/login')
     if (backend === 'demo') {
       const found = demoAuthenticate(username, password)
       if (!found) throw new ApiError(401, 'Invalid username or password', '/auth/login')
@@ -106,7 +131,9 @@ export function AuthProvider({ children, forced }: { children: ReactNode; forced
     queryClient.invalidate()
   }, [backend])
 
-  const value = useMemo<AuthState>(() => ({ status, user, backend, apiMode, signInOptions, signIn, signOut }), [status, user, backend, apiMode, signInOptions, signIn, signOut])
+  const retry = useCallback(() => { setStatus('checking'); setAttempt((n) => n + 1) }, [])
+
+  const value = useMemo<AuthState>(() => ({ status, user, backend, apiMode, signInOptions, signIn, signOut, retry }), [status, user, backend, apiMode, signInOptions, signIn, signOut, retry])
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 
