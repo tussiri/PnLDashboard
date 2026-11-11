@@ -192,7 +192,7 @@ export function Account() {
         onChange={(e) => navigate({ selfOnly: e.target.checked || undefined }, { replace: true })} />Hide {subcontracted} subcontracted</label>}
         {!monthMode && (budgetWeeks?.some((x) => x.holiday > 0) ?? false) && <label className="check"><input type="checkbox" checked={payHolidays}
           onChange={(e) => navigate({ payHolidays: e.target.checked || undefined }, { replace: true })} />Pay stat holidays</label>}</>} />
-    {account && !amazonWeek && !monthMode && weekStart && <FiscalHero account={account} options={options} weekStart={weekStart} startMonth={school.data?.weeks.length ? 7 : 1}
+    {account && vocab !== 'fedex' && !amazonWeek && !monthMode && weekStart && <FiscalHero account={account} options={options} weekStart={weekStart} startMonth={school.data?.weeks.length ? 7 : 1}
       budgetWeeks={budgetWeeks} budgetMonths={budgetMonths} payHolidays={payHolidays} />}
     <nav className="tabs" role="tablist" aria-label="Account views">
       {navTabs.slice(0, 1).map(tabButton)}
