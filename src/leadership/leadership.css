@@ -552,6 +552,7 @@ rect.on{opacity:.8}
 .fx-seg button:hover{color:var(--text)}
 .fx-seg button[aria-pressed="true"]{background:var(--text);color:var(--bg)}
 .fx-bar select{min-height:32px}
+.fx-bar .check{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--text2);cursor:pointer;white-space:nowrap;min-height:32px}
 .fx-bar input[type=search]{width:200px}
 .fx-sum{display:flex;justify-content:space-between;gap:8px 12px;flex-wrap:wrap;font-size:12px;color:var(--text3);align-items:center}
 .fx-sum b{color:var(--text);font-weight:600}
