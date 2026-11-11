@@ -5,14 +5,15 @@ import { queryKey } from '../../services/queryClient'
 import { formatRoute, monthLabel, monthShort } from '../routes'
 import { useLeadership } from '../state'
 import { Empty, Kpi, LoadError, Skeleton, SortTable, type Column } from '../ui'
-import { ServiceTickets } from './ServiceTickets'
+import { FeedbackBoard, useServiceTickets } from './FeedbackBoard'
 
 type Line = LeadershipFeedbackResponse['lines'][number]
 type Site = LeadershipFeedbackResponse['by_site'][number]
 
 export const stars = (score: number | null) => (score == null ? '–' : score.toFixed(score % 1 ? 1 : 0))
 export const scoreTone = (score: number | null) => (score == null ? '' : score <= 2 ? 'bad' : score < 4 ? 'warn' : 'ok')
-const MONTHS = 12
+/** Two years, so any period up to 12 months has a prior period to compare with. */
+const MONTHS = 24
 
 /** "JANITORIAL DOCK" -> "Dock". */
 export const tradeName = (trade: string | null) => {
@@ -123,53 +124,18 @@ export function RatingMatrix({ lines, since, initial = 15, step = 25, title = 'S
   </div>
 }
 
-/** Customer feedback and star ratings at the account's sites (the ServiceChannel feedback export). */
+/** Customer feedback and star ratings at the account's sites (the ServiceChannel feedback export), with the
+ * service tickets and the sentiment summary. */
 export function Feedback({ account }: { account: LeadershipAccount }) {
-  const { api, keyPrefix, decision, navigate } = useLeadership()
+  const { api, keyPrefix, decision } = useLeadership()
   const q = useApiQuery<LeadershipFeedbackResponse>(decision ? queryKey(`${keyPrefix}/leadership/feedback`, { account: account.slug, months: MONTHS }) : null,
     (signal) => api.leadershipFeedback(account.slug, MONTHS, signal), [api, account.slug])
+  const tickets = useServiceTickets(account)
+  const overview = useFeedbackOverview(account, undefined)
   if (q.error) return <LoadError error={q.error} onRetry={q.refetch} />
   if (!q.data) return <Skeleton height={320} />
-  const d = q.data
-  if (!d.lines.length) return <Empty>No feedback since {monthLabel(d.since)}.</Empty>
-  const open = (r: { company: string | null; job_number: string | null }) => r.company && r.job_number && navigate({ site: { company: r.company, job: r.job_number } })
-  const siteName = (r: { site_name: string | null; location_number: string }) => r.site_name ?? `Location ${r.location_number}`
-  const siteCols: Column<Site>[] = [
-    { key: 'site', header: 'Site', left: true, value: siteName, className: 'nm' },
-    { key: 'loc', header: 'Location', left: true, value: (r) => r.location_number },
-    { key: 'avg', header: 'Avg rating', value: (r) => r.average, render: (r) => <span className={scoreTone(r.average)}>{stars(r.average)}</span> },
-    { key: 'n', header: 'Ratings', value: (r) => r.ratings },
-    { key: 'low', header: '1-2 stars', value: (r) => r.low, render: (r) => <span className={r.low ? 'bad' : ''}>{r.low}</span> },
-    { key: 'last', header: 'Latest', left: true, value: (r) => r.latest_date ?? '' },
-    { key: 'comment', header: 'Latest comment', left: true, value: (r) => r.latest_comment ?? '', className: 'wrap' },
-  ]
-  const visits = groupVisits(d.lines)
-  const visitCols: Column<Visit>[] = [
-    { key: 'date', header: 'Date', left: true, value: (r) => r.feedback_date },
-    { key: 'site', header: 'Site', left: true, value: siteName, className: 'nm' },
-    { key: 'loc', header: 'Location', left: true, value: (r) => r.location_number },
-    { key: 'score', header: 'Ratings', value: (r) => r.average, render: visitScores,
-      csv: (r) => r.ratings.map((x) => `${tradeName(x.trade)} ${stars(x.score)}`).join('; ') },
-    { key: 'comment', header: 'Comment', left: true, value: (r) => r.comments.join(' / '), className: 'wrap' },
-    { key: 'wo', header: 'Work orders', left: true, value: (r) => r.ratings.map((x) => x.wo_number).join(', '), className: 'neutral' },
-  ]
-  return <>
-    <TabSentiment account={account} names={siteNames(d.lines)} />
-    <div className="kpi-lg">
-      <Kpi label="Avg rating" value={<>{stars(d.average)}<span className="of"> / 5</span></>} tone={scoreTone(d.average)} sub={`Since ${monthLabel(d.since)}`} />
-      <Kpi label="Ratings" value={d.ratings.toLocaleString('en-US')} sub={`${d.sites} sites`} />
-      <Kpi label="1-2 stars" value={d.low.toLocaleString('en-US')} tone={d.low ? 'bad' : 'ok'} sub={d.ratings ? `${Math.round((d.low / d.ratings) * 100)}% of ratings` : undefined} />
-      <Kpi label="Unmatched locations" value={d.unmatched.toLocaleString('en-US')} tone={d.unmatched ? 'warn' : ''} sub="No WinTeam job" />
-    </div>
-    <ServiceTickets account={account} />
-    <RatingMatrix lines={d.lines} since={d.since} initial={50} step={50} />
-    <div className="card"><div className="ct"><span>By site</span></div>
-      <SortTable caption="Feedback by site" rows={d.by_site} columns={siteCols} defaultSort={{ key: 'avg', dir: 1 }} pageSize={25}
-        onRowClick={open} rowLabel={(r) => `Open ${siteName(r)}`} csvName={`${account.slug}-feedback-by-site`} /></div>
-    <div className="card"><div className="ct"><span>Visits</span><span className="ks">{visits.length.toLocaleString('en-US')} visits, {d.ratings.toLocaleString('en-US')} ratings</span></div>
-      <SortTable caption="Feedback by visit" rows={visits} columns={visitCols} defaultSort={{ key: 'date', dir: -1 }} pageSize={50}
-        onRowClick={open} rowLabel={(r) => `Open ${siteName(r)}`} csvName={`${account.slug}-feedback`} /></div>
-  </>
+  if (!q.data.lines.length) return <Empty>No feedback since {monthLabel(q.data.since)}.</Empty>
+  return <FeedbackBoard account={account} lines={q.data.lines} tickets={tickets.data} overview={overview.data} />
 }
 
 const SENTIMENT: Record<FeedbackSentiment, { label: string; tone: string }> = {
@@ -198,7 +164,7 @@ export function themeSites(locations: string[], names: Map<string, string>, show
 }
 
 /** The account's feedback overview (scores and the comment summary), refetched while the summary is being rebuilt. */
-function useFeedbackOverview(account: LeadershipAccount, month: string | undefined) {
+export function useFeedbackOverview(account: LeadershipAccount, month: string | undefined) {
   const { api, keyPrefix, decision } = useLeadership()
   const q = useApiQuery<FeedbackOverview>(decision ? queryKey(`${keyPrefix}/leadership/feedback/overview`, { account: account.slug, month }) : null,
     (signal) => api.leadershipFeedbackOverview(account.slug, month, signal), [api, account.slug, month])

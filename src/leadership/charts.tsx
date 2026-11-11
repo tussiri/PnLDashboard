@@ -482,3 +482,46 @@ export function GroupedMoneyChart({ labels, series, ariaLabel }: { labels: strin
   return <Bar data={data} options={options} aria-label={ariaLabel} role="img" />
 }
 
+
+/** Star ratings by month: the share at 1-2 stars and at 3 stars stacked on a percent axis that fits the data, and the
+ * average rating on the right axis. Ratings per month in the tooltip title. */
+export function RatingShareChart({ labels, low, three, average, ratings }: { labels: string[]; low: (number | null)[]; three: (number | null)[]; average: (number | null)[]; ratings: number[] }) {
+  const t = useTokens()
+  const o = base(t) as unknown as ChartOptions<'bar'>
+  const top = Math.max(10, ...low.map((v, i) => ((v ?? 0) + (three[i] ?? 0)) * 100))
+  const avgs = average.filter((v): v is number => v != null)
+  const floor = avgs.length ? Math.max(1, Math.floor((Math.min(...avgs) - 0.3) * 2) / 2) : 3
+  const data = { labels, datasets: [
+    { type: 'bar' as const, label: '1-2 stars', data: low.map((v) => (v == null ? null : v * 100)), backgroundColor: t.bad, stack: 's', yAxisID: 'y', order: 2, ...bar, borderSkipped: false, borderRadius: 2 },
+    { type: 'bar' as const, label: '3 stars', data: three.map((v) => (v == null ? null : v * 100)), backgroundColor: withAlpha(t.warn, 0.75), stack: 's', yAxisID: 'y', order: 2, ...bar, borderSkipped: false, borderRadius: 2 },
+    { type: 'line' as const, label: 'Avg rating', data: average, borderColor: t.text, backgroundColor: t.text, borderWidth: 2, pointRadius: 2.5, tension: 0.25, spanGaps: true, yAxisID: 'y1', order: 1 },
+  ] } as unknown as ChartData<'bar'>
+  const options = { ...o, interaction: { mode: 'index', intersect: false },
+    scales: { x: { ...o.scales!.x, stacked: true, grid: { display: false } },
+      y: { ...o.scales!.y, stacked: true, beginAtZero: true, max: Math.ceil(top / 5) * 5 + 5, ticks: { color: t.text2, callback: (v: number | string) => `${v}%` } },
+      y1: { position: 'right', min: floor, max: 5, grid: { display: false }, border: { display: false }, ticks: { color: t.text2, stepSize: 0.5 } } },
+    plugins: { ...o.plugins, tooltip: { ...o.plugins!.tooltip, callbacks: {
+      title: (items: { dataIndex: number; label: string }[]) => (items.length ? `${items[0].label}, ${ratings[items[0].dataIndex].toLocaleString('en-US')} ratings` : ''),
+      label: (c: { dataset: { label?: string; yAxisID?: string }; parsed: { y: number | null } }) =>
+        `${c.dataset.label}: ${c.parsed.y == null ? '–' : c.dataset.yAxisID === 'y1' ? c.parsed.y.toFixed(2) : `${c.parsed.y.toFixed(1)}%`}` } } } } as unknown as ChartOptions<'bar'>
+  return <Chart type="bar" data={data} options={options} role="img" aria-label="Share of 1-2 and 3 star ratings and the average rating by month" />
+}
+
+/** Service tickets received by month as bars, with the average star rating as a line on the right axis. */
+export function TicketMonthChart({ labels, tickets, average }: { labels: string[]; tickets: number[]; average: (number | null)[] }) {
+  const t = useTokens()
+  const o = base(t) as unknown as ChartOptions<'bar'>
+  const avgs = average.filter((v): v is number => v != null)
+  const floor = avgs.length ? Math.max(1, Math.floor((Math.min(...avgs) - 0.3) * 2) / 2) : 3
+  const data = { labels, datasets: [
+    { type: 'bar' as const, label: 'Tickets received', data: tickets, backgroundColor: t.accent2, yAxisID: 'y', order: 2, ...bar },
+    { type: 'line' as const, label: 'Avg rating', data: average, borderColor: t.text, backgroundColor: t.text, borderWidth: 2, pointRadius: 2.5, tension: 0.25, spanGaps: true, yAxisID: 'y1', order: 1 },
+  ] } as unknown as ChartData<'bar'>
+  const options = { ...o, interaction: { mode: 'index', intersect: false },
+    scales: { x: { ...o.scales!.x, grid: { display: false } }, y: { ...o.scales!.y, beginAtZero: true, ticks: { color: t.text2, precision: 0 } },
+      y1: { position: 'right', min: floor, max: 5, grid: { display: false }, border: { display: false }, ticks: { color: t.text2, stepSize: 0.5 } } },
+    plugins: { ...o.plugins, tooltip: { ...o.plugins!.tooltip, callbacks: {
+      label: (c: { dataset: { label?: string; yAxisID?: string }; parsed: { y: number | null } }) =>
+        `${c.dataset.label}: ${c.parsed.y == null ? '–' : c.dataset.yAxisID === 'y1' ? c.parsed.y.toFixed(2) : c.parsed.y}` } } } } as unknown as ChartOptions<'bar'>
+  return <Chart type="bar" data={data} options={options} role="img" aria-label="Service tickets received and the average star rating by month" />
+}
