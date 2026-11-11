@@ -143,3 +143,33 @@ def test_maps_billing_errors(status, match):
 def test_rejects_a_billing_answer_without_a_count():
     with pytest.raises(hrdashboard.HrDashboardError, match="no stored count"):
         hrdashboard.send_billing(client({"ok": True}), [])
+
+
+def test_the_account_listing_goes_under_hrs_own_tenants():
+    accounts = [{"slug": "amazon", "name": "Amazon", "sort": 1}, {"slug": "apple-retail", "name": "Apple / Retail", "sort": 9}]
+    jobs = [{"company": "Crane", "job_number": "550", "account_slug": "apple-retail"},
+            {"company": "Sarus", "job_number": 1001, "account_slug": "amazon"},
+            {"company": "Other", "job_number": "1", "account_slug": "amazon"}]
+    assert hrdashboard.account_listing(accounts, jobs, TENANTS) == {
+        "accounts": accounts,
+        "jobs": [{"tenant": "primary", "jobNumber": "550", "account": "apple-retail"},
+                 {"tenant": "SAR", "jobNumber": "1001", "account": "amazon"}],
+    }
+
+
+def test_posts_the_account_listing_and_reads_the_stored_count():
+    seen: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.update(method=request.method, path=request.url.path)
+        return httpx.Response(200, json={"accounts": 1, "stored": 1, "skipped": 0})
+    c = httpx.Client(base_url="http://hr.test", transport=httpx.MockTransport(handler))
+    body = {"accounts": [{"slug": "amazon", "name": "Amazon", "sort": 1}], "jobs": [{"tenant": "primary", "jobNumber": "500", "account": "amazon"}]}
+    assert hrdashboard.send_accounts(c, body)["stored"] == 1
+    assert seen == {"method": "POST", "path": hrdashboard.ACCOUNTS_PATH}
+
+
+@pytest.mark.parametrize(("status", "match"), [(401, "export token"), (503, "SERVICE_API_TOKEN_HASHES"), (404, "deploy HR first"), (400, "HTTP 400")])
+def test_maps_account_listing_errors(status, match):
+    with pytest.raises(hrdashboard.HrDashboardError, match=match):
+        hrdashboard.send_accounts(client({"error": "x"}, status), {"accounts": [], "jobs": []})

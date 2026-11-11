@@ -391,7 +391,7 @@ def hr_status() -> dict[str, Any]:
 def hr_sync() -> dict[str, Any]:
     """Pull the last weeks of site staffing from HrDashboard (GET only) and upsert them. No mart rebuild
     is needed: the staffing route reads core.hr_site_staffing_week directly. Sends HR each job's monthly
-    billing as well. Employee names too, when their token is set."""
+    billing and the account listing as well. Employee names too, when their token is set."""
     if not hrdashboard.configured() and not hrdashboard.names_configured():
         raise HTTPException(status_code=409, detail="HrDashboard is not configured (HR_BASE_URL and HR_EXPORT_TOKEN or HR_NAMES_TOKEN)")
     try:
@@ -400,6 +400,7 @@ def hr_sync() -> dict[str, Any]:
         missing = None if hrdashboard.configured() else "HR_EXPORT_TOKEN is not set on the API service"
         result = hrdashboard.sync() if hrdashboard.configured() else {"status": "succeeded", "staffing_skipped": missing}
         result["billing"] = hrdashboard.push_billing() if hrdashboard.configured() else {"status": "skipped", "skipped": missing}
+        result["accounts"] = hrdashboard.push_accounts() if hrdashboard.configured() else {"status": "skipped", "skipped": missing}
         if hrdashboard.names_configured():
             result["names"] = hrdashboard.sync_names()
         return jsonable(result)

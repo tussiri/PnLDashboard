@@ -19,6 +19,12 @@ after the marts are rebuilt and is recorded as resource 'site_billing'.
 Guard: an answer with no rows changes nothing; HR answering with no sites at all is far likelier to
 be an HR problem than every site vanishing, so the run is recorded as failed.
 
+The account listing goes the same way (`POST /api/service/v1/pnl/accounts`, same token): the featured
+accounts and the jobs in each, as the leadership views group them (a non-billed job is left out, as it is
+'other' there). HR replaces its listing with it and groups its sites, Account filter and reports by it. It
+runs after the marts are rebuilt, so jobs assigned on the rebuild go too, and is recorded as resource
+'account_listing'. No accounts to send is a failure, since HR refuses an empty listing.
+
 Employee names (`GET /api/service/v1/pnl/employee-names`, migration 064) are a separate pull with their
 own token, HR_NAMES_TOKEN: employee number and name, replacing core.hr_employee_name whole, under the same
 guard. Names go to the labor hours report only and are never logged or put in a run's error message.
@@ -45,6 +51,8 @@ NAMES_RESOURCE = "employee_names"
 NAMES_PATH = "/api/service/v1/pnl/employee-names"
 BILLING_RESOURCE = "site_billing"
 BILLING_PATH = "/api/service/v1/pnl/site-billing"
+ACCOUNTS_RESOURCE = "account_listing"
+ACCOUNTS_PATH = "/api/service/v1/pnl/accounts"
 LOOKBACK_WEEKS = 8
 
 
@@ -384,6 +392,74 @@ def push_billing() -> dict[str, Any]:
         raise HrDashboardError(message) from exc
     _record(run_id, "succeeded", started, len(rows), stored, None, BILLING_RESOURCE)
     return {"status": "succeeded", "sent": len(rows), "stored": stored}
+
+
+ACCOUNTS_SQL = "SELECT slug, name, sort FROM ops.account WHERE featured ORDER BY sort, name"
+
+ACCOUNT_JOBS_SQL = """
+SELECT aj.company, aj.job_number, aj.account_slug
+FROM ops.account_job aj
+JOIN ops.account a ON a.slug = aj.account_slug
+WHERE a.featured AND aj.role IS DISTINCT FROM 'non_billed' AND aj.job_number NOT LIKE '%:%'
+ORDER BY aj.company, aj.job_number
+"""
+
+
+def account_listing(accounts: list[dict[str, Any]], jobs: list[dict[str, Any]], tenants: dict[str, str]) -> dict[str, Any]:
+    """The body HR takes. A job whose company has no HR tenant is left out."""
+    return {
+        "accounts": [{"slug": a["slug"], "name": a["name"], "sort": int(a["sort"])} for a in accounts],
+        "jobs": [
+            {"tenant": tenants[j["company"]], "jobNumber": str(j["job_number"]), "account": j["account_slug"]}
+            for j in jobs
+            if j.get("company") in tenants
+        ],
+    }
+
+
+def send_accounts(client: httpx.Client, body: dict[str, Any]) -> dict[str, Any]:
+    """POST the listing; HR answers how many jobs it stored and skipped."""
+    response = client.post(ACCOUNTS_PATH, json=body)
+    if response.status_code == 401:
+        raise HrDashboardError("HrDashboard refused the export token (HTTP 401)")
+    if response.status_code == 503:
+        raise HrDashboardError("HrDashboard's service API is not configured (SERVICE_API_TOKEN_HASHES unset)")
+    if response.status_code == 404:
+        raise HrDashboardError(f"HrDashboard has no {ACCOUNTS_PATH} yet (HTTP 404): deploy HR first")
+    if response.status_code >= 400:
+        raise HrDashboardError(f"HrDashboard answered HTTP {response.status_code} on {ACCOUNTS_PATH}")
+    answer = response.json()
+    if not isinstance(answer.get("stored"), int):
+        raise HrDashboardError(f"Unexpected HrDashboard response on {ACCOUNTS_PATH}: no stored count")
+    return answer
+
+
+def push_accounts() -> dict[str, Any]:
+    """Send HR the featured accounts and their jobs. Raises on failure after recording it."""
+    if not configured():
+        raise HrDashboardError("HrDashboard is not configured (HR_BASE_URL and HR_EXPORT_TOKEN)")
+    started = datetime.now(timezone.utc)
+    run_id = str(uuid.uuid4())
+    tenants = {company: tenant for tenant, company in tenant_companies(settings.hr_tenant_companies).items()}
+    jobs = 0
+    try:
+        with connection() as conn, conn.cursor() as cursor:
+            cursor.execute(ACCOUNTS_SQL)
+            accounts = [dict(r) for r in cursor.fetchall()]
+            cursor.execute(ACCOUNT_JOBS_SQL)
+            body = account_listing(accounts, [dict(r) for r in cursor.fetchall()], tenants)
+        jobs = len(body["jobs"])
+        if not body["accounts"]:
+            raise HrDashboardError("No featured accounts to send")
+        with _client() as client:
+            stored = send_accounts(client, body)["stored"]
+    except (HrDashboardError, httpx.HTTPError, ValueError) as exc:
+        message = str(exc)[:500] or exc.__class__.__name__
+        logger.warning("HrDashboard account push failed: %s", message)
+        _record(run_id, "failed", started, jobs, 0, message, ACCOUNTS_RESOURCE)
+        raise HrDashboardError(message) from exc
+    _record(run_id, "succeeded", started, jobs, stored, None, ACCOUNTS_RESOURCE)
+    return {"status": "succeeded", "accounts": len(body["accounts"]), "sent": jobs, "stored": stored}
 
 
 def status() -> dict[str, Any]:
