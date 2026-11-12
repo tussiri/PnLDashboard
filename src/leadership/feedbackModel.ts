@@ -136,23 +136,6 @@ export function recentWindow(ratings: Rating[], days = 90) {
   return { last, since: d.toISOString().slice(0, 10) }
 }
 
-export interface Mover { key: string; site: string; company: string | null; job: string | null; region: string; delivery: Delivery
-  now: number; was: number; change: number; ratings: number; priorRatings: number; comment: string | null; commentDate: string | null }
-/** Sites whose average moved most against the prior period; at least `min` ratings in each. */
-export function movers(current: Rating[], prior: Rating[], min = 3, shown = 5): { down: Mover[]; up: Mover[] } {
-  const pre = groupBy(prior, (r) => r.key)
-  const rows: Mover[] = []
-  for (const [key, g] of groupBy(current, (r) => r.key)) {
-    const p = pre.get(key)
-    if (g.length < min || !p || p.length < min) continue
-    const now = mean(g.map((r) => r.score))!, was = mean(p.map((r) => r.score))!
-    const c = g.filter((r) => r.comment).sort((a, b) => b.date.localeCompare(a.date))[0]
-    rows.push({ key, site: g[0].site, company: g[0].company, job: g[0].job, region: g[0].region, delivery: g[0].delivery, now, was, change: now - was, ratings: g.length, priorRatings: p.length, comment: c?.comment ?? null, commentDate: c?.date ?? null })
-  }
-  return { down: rows.filter((r) => r.change <= -0.1).sort((a, b) => a.change - b.change).slice(0, shown),
-    up: rows.filter((r) => r.change >= 0.1).sort((a, b) => b.change - a.change).slice(0, shown) }
-}
-
 /** A ticket placed on the rated sites: its site key, and the region and delivery model of that site's ratings. */
 export interface Ticket extends ServiceTicket { key: string; site: string; loc: string; job: string | null; region: string; delivery: Delivery; rated: boolean; month: string | null }
 export function placeTickets(tickets: ServiceTicket[], ratings: Rating[]): Ticket[] {
@@ -198,18 +181,23 @@ export const issueGroup = (type: string | null) => {
 /** One row per site for the watchlist. `adjusted` pulls the average toward the filtered average by 5 ratings, so a
  * site with one low rating does not top the list. */
 export interface SiteRow { key: string; site: string; loc: string; company: string | null; job: string | null; region: string; delivery: Delivery
-  ratings: number; average: number; adjusted: number; low: number; tickets: number; months: Record<string, number>; latest: string | null; latestDate: string }
-export function siteRows(rows: Rating[], tickets: Ticket[], prior = 5): SiteRow[] {
+  ratings: number; average: number; adjusted: number; low: number; tickets: number; months: Record<string, number>; latest: string | null; latestDate: string
+  /** Average change against the prior period; null with fewer than `minPrior` ratings there. */
+  change: number | null }
+export function siteRows(rows: Rating[], tickets: Ticket[], prior = 5, before: Rating[] | null = null, minPrior = 3): SiteRow[] {
   const overall = mean(rows.map((r) => r.score)) ?? 0
   const tBy = groupBy(tickets, (t) => t.key)
+  const pre = before ? groupBy(before, (r) => r.key) : new Map<string, Rating[]>()
   return [...groupBy(rows, (r) => r.key)].map(([key, g]) => {
     const average = mean(g.map((r) => r.score))!
     const months: Record<string, number> = {}
     for (const [m, xs] of groupBy(g, (r) => r.month)) months[m] = mean(xs.map((r) => r.score))!
     const c = g.filter((r) => r.comment).sort((a, b) => b.date.localeCompare(a.date))[0]
+    const p = pre.get(key)
     return { key, site: g[0].site, loc: g[0].loc, company: g[0].company, job: g[0].job, region: g[0].region, delivery: g[0].delivery,
       ratings: g.length, average, adjusted: (g.length * average + prior * overall) / (g.length + prior), low: g.filter((r) => r.score <= 2).length,
       tickets: new Set((tBy.get(key) ?? []).map((t) => t.ticket_number)).size, months, latest: c?.comment ?? null,
-      latestDate: g.reduce((m, r) => (r.date > m ? r.date : m), '') }
+      latestDate: g.reduce((m, r) => (r.date > m ? r.date : m), ''),
+      change: p && p.length >= minPrior ? average - mean(p.map((r) => r.score))! : null }
   })
 }

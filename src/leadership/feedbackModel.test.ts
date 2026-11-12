@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { LeadershipFeedbackLine, ServiceTicket } from '../services/apiTypes'
 import {
-  commentVisits, defaultFilters, inMonths, inScope, monthList, movers, placeTickets, priorRange, siteRows, summarize, ticketStats, toRatings,
+  commentVisits, defaultFilters, inMonths, inScope, monthList, placeTickets, priorRange, siteRows, summarize, ticketStats, toRatings,
 } from './feedbackModel'
 
 const line = (o: Partial<LeadershipFeedbackLine>): LeadershipFeedbackLine => ({
@@ -61,14 +61,12 @@ describe('feedbackModel', () => {
     expect(v[0]).toMatchObject({ date: '2026-04-10', comments: ['Dock not cleaned'], min: 1 })
   })
 
-  it('ranks movers with enough ratings in both periods', () => {
+  it('compares each site with the prior period', () => {
     const cur = toRatings([1, 2, 2].map((score) => line({ score, feedback_date: '2026-04-01' })))
     const pre = toRatings([5, 5, 4].map((score) => line({ score, feedback_date: '2026-02-01' })))
-    const m = movers(cur, pre)
-    expect(m.down).toHaveLength(1)
-    expect(m.down[0].change).toBeCloseTo(5 / 3 - 14 / 3)
-    expect(m.down[0]).toMatchObject({ ratings: 3, priorRatings: 3 })
-    expect(movers(cur.slice(0, 2), pre).down).toHaveLength(0)
+    expect(siteRows(cur, [], 5, pre)[0].change).toBeCloseTo(5 / 3 - 14 / 3)
+    expect(siteRows(cur, [], 5, pre.slice(0, 2))[0].change).toBeNull()
+    expect(siteRows(cur, [])[0].change).toBeNull()
   })
 
   it('places tickets on rated sites and compares ratings around them', () => {

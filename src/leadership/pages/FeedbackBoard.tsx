@@ -6,7 +6,7 @@ import { queryKey } from '../../services/queryClient'
 import { RatingShareChart, TicketMonthChart } from '../charts'
 import {
   DELIVERY_LABEL, OPCO_LABEL, TRADES, commentVisits, defaultFilters, distribution, groupBy, inMonths, inScope, issueGroup, mean, monthList, monthly,
-  movers, normLoc, placeTickets, priorRange, recentWindow, siteRows, summarize, ticketStats, toRatings, type Filters, type Mover, type Rating,
+  normLoc, placeTickets, priorRange, recentWindow, siteRows, summarize, ticketStats, toRatings, type Filters, type Rating,
   type SiteRow, type Ticket, type Trade,
 } from '../feedbackModel'
 import { monthLabel, monthShort } from '../routes'
@@ -31,7 +31,7 @@ const SENT_TONE = { positive: 'ok', mixed: 'warn', negative: 'bad' } as const
 type Overview = FeedbackOverview
 type Theme = NonNullable<Overview['summary']['summary']>['themes'][number]
 
-/** The Feedback tab: filters over 24 months of star ratings, with the sentiment summary, movers, service tickets and a site watchlist. */
+/** The Feedback tab: filters over 24 months of star ratings, with the sentiment summary, service tickets and a site watchlist. */
 export function FeedbackBoard({ account, lines, tickets, overview }: { account: LeadershipAccount; lines: LeadershipFeedbackLine[]
   tickets: ServiceTicketsResponse | undefined; overview: Overview | undefined }) {
   const { navigate } = useLeadership()
@@ -137,9 +137,8 @@ export function FeedbackBoard({ account, lines, tickets, overview }: { account: 
           onTheme={(i) => set({ theme: f.theme === i ? null : i })} onSite={(q) => set({ q })} />
         <Comments rows={theme ? v.rows.filter((r) => r.date > recent.since && theme.locations.some((l) => normLoc(l) === normLoc(r.loc))) : v.rows} theme={theme} onOpen={open} />
       </div>
-      <Movers current={v.rows} prior={v.prior} months={months} range={v.pr} now={{ from: f.from, to: f.to }} onOpen={open} onSite={(q) => set({ q })} />
       {!!tickets?.tickets.length && <Tickets rows={v.rows} scoped={v.unstarred} tickets={v.periodTix} all={v.tix} months={months} f={f} meta={tickets} account={account} onOpen={open} />}
-      <Watchlist rows={v.rows} tickets={v.periodTix} months={months.slice(Math.max(f.from, f.to - 5), f.to + 1)} account={account} onOpen={open} hasTickets={!!tickets?.tickets.length} />
+      <Watchlist rows={v.rows} prior={v.prior} priorLabel={v.pr ? monthSpan(months[v.pr.from], months[v.pr.to]) : ''} tickets={v.periodTix} months={months.slice(Math.max(f.from, f.to - 5), f.to + 1)} account={account} onOpen={open} hasTickets={!!tickets?.tickets.length} />
     </>}
   </div>
 }
@@ -240,28 +239,6 @@ function Comments({ rows, theme, onOpen }: { rows: Rating[]; theme: Theme | null
   </section>
 }
 
-function Movers({ current, prior, months, range, now, onOpen, onSite }: { current: Rating[]; prior: Rating[] | null; months: string[]; range: { from: number; to: number } | null
-  now: { from: number; to: number }; onOpen: (r: { company: string | null; job: string | null }) => void; onSite: (q: string) => void }) {
-  const cur = monthSpan(months[now.from], months[now.to])
-  const was = range ? monthSpan(months[range.from], months[range.to]) : ''
-  const m = prior ? movers(current, prior) : null
-  const list = (xs: Mover[] | undefined, empty: string): ReactNode => (!m ? <Empty>No prior period for this range.</Empty> : xs!.length
-    ? <div className="fx-mv"><div className="fx-mv__h" aria-hidden="true"><span>Site</span><span>Prior avg</span><span>Current avg</span><span>Change</span></div>
-      {xs!.map((r) => <button key={r.key} type="button" className="fx-mv__r" onClick={() => (r.job ? onOpen(r) : onSite(r.site))}
-        aria-label={`${r.site}: ${r.was.toFixed(2)} prior, ${r.now.toFixed(2)} current, ${signed(r.change)}`}>
-      <span className="fx-mv__nm">{r.site}<small>{r.region}, {DELIVERY_LABEL[r.delivery]}</small></span>
-      <span className="fx-mv__v meta">{r.was.toFixed(2)}<small>{r.priorRatings} ratings</small></span>
-      <span className="fx-mv__v"><b className={avgTone(r.now)}>{r.now.toFixed(2)}</b><small>{r.ratings} ratings</small></span>
-      <span className={`fx-mv__d ${r.change < 0 ? 'bad' : 'ok'}`}>{signed(r.change)}</span>
-      {r.comment && <span className="fx-mv__c"><span className="meta">Latest comment{r.commentDate ? `, ${dLabel(r.commentDate)}` : ''}: </span>{r.comment}</span>}</button>)}</div>
-    : <Empty>{empty}</Empty>)
-  const head = (t: string) => <div className="ct"><span>{t}</span><span className="ks">{was ? `${cur} vs ${was}` : cur}</span></div>
-  return <div className="fx-grid fx-1-1">
-    <section className="card">{head('Declined most')}{list(m?.down, 'No site fell by 0.1 or more.')}</section>
-    <section className="card">{head('Improved most')}{list(m?.up, 'No site rose by 0.1 or more.')}</section>
-  </div>
-}
-
 function Tickets({ rows, scoped, tickets, all, months, f, meta, account, onOpen }: { rows: Rating[]; scoped: Rating[]; tickets: Ticket[]; all: Ticket[]; months: string[]; f: Filters
   meta: ServiceTicketsResponse; account: LeadershipAccount; onOpen: (r: { company: string | null; job: string | null }) => void }) {
   const today = new Date().toISOString().slice(0, 10)
@@ -322,9 +299,9 @@ function Tickets({ rows, scoped, tickets, all, months, f, meta, account, onOpen 
   </>
 }
 
-function Watchlist({ rows, tickets, months, account, onOpen, hasTickets }: { rows: Rating[]; tickets: Ticket[]; months: string[]; account: LeadershipAccount
+function Watchlist({ rows, prior, priorLabel, tickets, months, account, onOpen, hasTickets }: { rows: Rating[]; prior: Rating[] | null; priorLabel: string; tickets: Ticket[]; months: string[]; account: LeadershipAccount
   onOpen: (r: { company: string | null; job: string | null }) => void; hasTickets: boolean }) {
-  const data = siteRows(rows, tickets)
+  const data = siteRows(rows, tickets, 5, prior)
   const cols: Column<SiteRow>[] = [
     { key: 'site', header: 'Site', left: true, value: (r) => r.site, className: 'nm' },
     { key: 'region', header: 'Region', left: true, value: (r) => r.region },
@@ -332,6 +309,8 @@ function Watchlist({ rows, tickets, months, account, onOpen, hasTickets }: { row
     { key: 'n', header: 'Ratings', value: (r) => r.ratings },
     { key: 'avg', header: 'Avg', value: (r) => r.average, render: (r) => <span className={avgTone(r.average)}>{r.average.toFixed(2)}</span> },
     { key: 'adj', header: 'Adjusted', value: (r) => r.adjusted, render: (r) => <b className={avgTone(r.adjusted)}>{r.adjusted.toFixed(2)}</b> },
+    ...(prior ? [{ key: 'chg', header: 'Change', value: (r: SiteRow) => r.change,
+      render: (r: SiteRow) => r.change == null ? <span className="meta">–</span> : <span className={r.change <= -0.1 ? 'bad' : r.change >= 0.1 ? 'ok' : 'meta'}>{signed(r.change)}</span> }] : []),
     { key: 'low', header: '1-2 stars', value: (r) => r.low, render: (r) => <span className={r.low ? 'bad' : ''}>{r.low}</span> },
     ...(hasTickets ? [{ key: 'tickets', header: 'Tickets', value: (r: SiteRow) => r.tickets }] : []),
     ...months.map((m): Column<SiteRow> => ({ key: `m${m}`, header: monthShort(`${m}-01`), value: (r) => r.months[m] ?? null, className: 'fx-heat',
@@ -340,7 +319,7 @@ function Watchlist({ rows, tickets, months, account, onOpen, hasTickets }: { row
       csv: (r) => r.latest, className: 'wrap fx-clamp' },
   ]
   return <section className="card fx-card"><div className="ct"><span>Site watchlist</span>
-    <span className="ks" title="The site's average pulled toward the filtered average by 5 ratings">Adjusted avg, lowest first</span></div>
+    <span className="ks" title="Adjusted: the site's average pulled toward the filtered average by 5 ratings. Change: avg vs the prior period, sites with 3 or more prior ratings">Adjusted avg, lowest first{priorLabel ? `; change vs ${priorLabel}` : ''}</span></div>
     <SortTable caption="Site watchlist" rows={data} columns={cols} defaultSort={{ key: 'adj', dir: 1 }} pageSize={25}
       onRowClick={onOpen} rowLabel={(r) => `Open ${r.site}`} csvName={`${account.slug}-site-watchlist`} /></section>
 }
