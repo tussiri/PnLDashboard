@@ -33,6 +33,7 @@ const PUNCH_COLUMNS: Column<LaborHoursPunch>[] = [
 const EMPLOYEE_COLUMNS: Column<Employee>[] = [
   { key: 'number', header: 'Employee', left: true, value: (r) => r.employee_number },
   { key: 'name', header: 'Name', left: true, value: (r) => r.employee_name, render: (r) => r.employee_name ?? DASH },
+  { key: 'title', header: 'Title', left: true, value: (r) => r.title, render: (r) => r.title ?? DASH },
   { key: 'company', header: 'Company', left: true, value: (r) => r.company },
   { key: 'sites', header: 'Sites', value: (r) => r.sites },
   { key: 'days', header: 'Days', value: (r) => r.days },
@@ -69,7 +70,7 @@ export function LaborHours() {
   const d = q.data
   const search = (route.q ?? '').trim().toLowerCase()
   const employees = useMemo(() => (d?.employees ?? []).flatMap((e) => {
-    if (search && !`${e.employee_number} ${e.employee_name ?? ''}`.toLowerCase().includes(search)) return []
+    if (search && !`${e.employee_number} ${e.employee_name ?? ''} ${e.title ?? ''}`.toLowerCase().includes(search)) return []
     if (!route.job) return [e]
     const punches = e.punches.filter((p) => jobId(p.company, p.job_number) === route.job)
     if (!punches.length) return []

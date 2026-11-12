@@ -123,6 +123,16 @@ def test_hr_names_win_and_the_export_fills_in():
         ("Crane West", "1"): "Person, Hr", ("Crane West", "2"): "Export, Only", ("Sarus", "1"): "Person, Sarus"}
 
 
+def test_titles_come_from_hr_by_winteam_database():
+    rows = [punch("1", "64", D1, 8), punch("2", "64", D1, 8), punch("1", "9", D1, 8, company="Sarus")]
+    titles = lh.titles_for(rows, {("Crane", "1"): "Supervisor", ("Sarus", "1"): "Cleaner"})
+    assert titles == {("Crane West", "1"): "Supervisor", ("Sarus", "1"): "Cleaner"}
+    built = lh.build(rows, {}, {}, D1, D2, ["CA"], titles)
+    assert {(e["company"], e["employee_number"]): e["title"] for e in built["employees"]} == {
+        ("Crane West", "1"): "Supervisor", ("Crane West", "2"): None, ("Sarus", "1"): "Cleaner"}
+    assert all(e["title"] is None for e in report(rows)["employees"])
+
+
 def test_full_name():
     assert lh.full_name("Test", "Person") == "Person, Test"
     assert lh.full_name("", "Person") == "Person"

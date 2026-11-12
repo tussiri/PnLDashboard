@@ -26,7 +26,7 @@ runs after the marts are rebuilt, so jobs assigned on the rebuild go too, and is
 'account_listing'. No accounts to send is a failure, since HR refuses an empty listing.
 
 Employee names (`GET /api/service/v1/pnl/employee-names`, migration 064) are a separate pull with their
-own token, HR_NAMES_TOKEN: employee number and name, replacing core.hr_employee_name whole, under the same
+own token, HR_NAMES_TOKEN: employee number, name and job title (migration 075), replacing core.hr_employee_name whole, under the same
 guard. Names go to the labor hours report only and are never logged or put in a run's error message.
 """
 from __future__ import annotations
@@ -229,14 +229,15 @@ def sync() -> dict[str, Any]:
     return {"status": "succeeded", "fetched": fetched, **counts}
 
 
-def name_row(r: dict[str, Any], companies: dict[str, str]) -> tuple[str, str, str, str] | None:
-    """One name tuple, or None for a row whose tenant has no company mapping or which has no number or name."""
+def name_row(r: dict[str, Any], companies: dict[str, str]) -> tuple[str, str, str, str, str | None] | None:
+    """One name tuple, the job title last (None when HR sends none), or None for a row whose tenant has no
+    company mapping or which has no number or name."""
     company = companies.get(str(r.get("tenant") or ""))
     number = str(r.get("employeeNumber") or "").strip()
     first, last = str(r.get("firstName") or "").strip(), str(r.get("lastName") or "").strip()
     if not company or not number or not (first or last):
         return None
-    return (company, number, first, last)
+    return (company, number, first, last, str(r.get("title") or "").strip() or None)
 
 
 def fetch_names(client: httpx.Client) -> dict[str, Any]:
@@ -261,7 +262,7 @@ def load_names(body: dict[str, Any], companies: dict[str, str]) -> dict[str, int
         raise HrDashboardError("HrDashboard returned no employee names with a mapped tenant; nothing was changed")
     with connection() as conn, conn.cursor() as cursor:
         cursor.execute("DELETE FROM core.hr_employee_name")
-        cursor.executemany("INSERT INTO core.hr_employee_name (winteam_company, employee_number, first_name, last_name) VALUES (%s, %s, %s, %s)",
+        cursor.executemany("INSERT INTO core.hr_employee_name (winteam_company, employee_number, first_name, last_name, title) VALUES (%s, %s, %s, %s, %s)",
                            list(tuples.values()))
         conn.commit()
     return {"loaded": len(tuples), "skipped": len(body["data"]) - len(tuples)}

@@ -72,14 +72,17 @@ def test_rejects_a_response_without_data():
         hrdashboard.fetch(client({"asOf": "2026-10-09"}), date(2026, 10, 9))
 
 
-def test_a_name_row_keeps_the_number_and_name_only():
-    row = hrdashboard.name_row({"tenant": "primary", "employeeNumber": 51024, "firstName": " Test ", "lastName": "Person", "workEmail": "x"}, COMPANIES)
-    assert row == ("Crane", "51024", "Test", "Person")
+def test_a_name_row_keeps_the_number_name_and_title_only():
+    row = hrdashboard.name_row({"tenant": "primary", "employeeNumber": 51024, "firstName": " Test ", "lastName": "Person", "workEmail": "x",
+                                "title": " Supervisor "}, COMPANIES)
+    assert row == ("Crane", "51024", "Test", "Person", "Supervisor")
 
 
 def test_skips_names_it_cannot_key():
     good = {"tenant": "SAR", "employeeNumber": "7", "firstName": "A", "lastName": "B"}
-    assert hrdashboard.name_row(good, COMPANIES) == ("Sarus", "7", "A", "B")
+    # An HR that sends no title yet, or a blank one, still loads.
+    assert hrdashboard.name_row(good, COMPANIES) == ("Sarus", "7", "A", "B", None)
+    assert hrdashboard.name_row({**good, "title": " "}, COMPANIES) == ("Sarus", "7", "A", "B", None)
     assert hrdashboard.name_row({**good, "tenant": "XYZ"}, COMPANIES) is None
     assert hrdashboard.name_row({**good, "employeeNumber": " "}, COMPANIES) is None
     assert hrdashboard.name_row({**good, "firstName": "", "lastName": None}, COMPANIES) is None
