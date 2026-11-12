@@ -38,7 +38,7 @@ ORDER BY t.company, t.employee_source_id, t.work_date, t.in_time NULLS LAST, t.t
 # The API carries no names. HrDashboard's are current; the export's punches fill in the rest, and an
 # employee in neither has none.
 HR_NAMES_SQL = """
-SELECT winteam_company, employee_number, last_name, first_name
+SELECT winteam_company, employee_number, last_name, first_name, title
 FROM core.hr_employee_name
 WHERE employee_number = ANY(%(employees)s)
 """
@@ -63,6 +63,16 @@ def names_for(rows: Iterable[Mapping[str, Any]], hr: Mapping[tuple[str, str], st
         name = hr.get((namespace_for(who[0]), who[1])) or export.get(who)
         if name:
             out[who] = name
+    return out
+
+
+def titles_for(rows: Iterable[Mapping[str, Any]], hr: Mapping[tuple[str, str], str]) -> dict[tuple[str | None, str], str]:
+    """Each punch employee's job title from HrDashboard, keyed as `names_for` keys names."""
+    out: dict[tuple[str | None, str], str] = {}
+    for who in {(r["company"], r["employee_source_id"]) for r in rows}:
+        title = hr.get((namespace_for(who[0]), who[1]))
+        if title:
+            out[who] = title
     return out
 
 
@@ -95,7 +105,8 @@ def _hours(value: Any) -> float:
 
 
 def build(rows: Iterable[Mapping[str, Any]], names: Mapping[tuple[str | None, str], str], labels: Mapping[str, str],
-          date_from: date, date_to: date, states: list[str]) -> dict[str, Any]:
+          date_from: date, date_to: date, states: list[str],
+          titles: Mapping[tuple[str | None, str], str] | None = None) -> dict[str, Any]:
     """The response of GET /labor-hours from the punch rows, in employee and work date order."""
     employees: dict[tuple[str | None, str], dict[str, Any]] = {}
     sites: dict[tuple[str | None, str], dict[str, Any]] = {}
@@ -104,7 +115,7 @@ def build(rows: Iterable[Mapping[str, Any]], names: Mapping[tuple[str | None, st
         site_id = (r["job_company"], r["job_number"])
         employee = employees.setdefault(who, {
             "company": r["company"], "employee_number": r["employee_source_id"], "employee_name": names.get(who),
-            "hours": 0.0, "lunch_hours": 0.0, "days": set(), "site_ids": set(), "punches": []})
+            "title": (titles or {}).get(who), "hours": 0.0, "lunch_hours": 0.0, "days": set(), "site_ids": set(), "punches": []})
         site = sites.setdefault(site_id, {
             "company": r["job_company"], "job_number": r["job_number"], "site_name": r["job_name"], "city": r["city"],
             "state": r["state_province"], "hours": 0.0, "employee_ids": set(), "punches": 0})
@@ -120,7 +131,7 @@ def build(rows: Iterable[Mapping[str, Any]], names: Mapping[tuple[str | None, st
         site["employee_ids"].add(who)
         site["punches"] += 1
     employee_out = [{
-        "company": e["company"], "employee_number": e["employee_number"], "employee_name": e["employee_name"],
+        "company": e["company"], "employee_number": e["employee_number"], "employee_name": e["employee_name"], "title": e["title"],
         "sites": len(e["site_ids"]), "days": len(e["days"]), "hours": round(e["hours"], 2), "lunch_hours": round(e["lunch_hours"], 2),
         "punches": e["punches"]} for e in employees.values()]
     site_out = [{
@@ -145,7 +156,9 @@ def report(cursor: Any, date_from: date, date_to: date, accounts: frozenset[str]
     rows = cursor.fetchall()
     employees = sorted({r["employee_source_id"] for r in rows})
     cursor.execute(HR_NAMES_SQL, {"employees": employees})
-    hr = {(r["winteam_company"], r["employee_number"]): full_name(r["first_name"], r["last_name"]) for r in cursor.fetchall()}
+    held = cursor.fetchall()
+    hr = {(r["winteam_company"], r["employee_number"]): full_name(r["first_name"], r["last_name"]) for r in held}
+    hr_titles = {(r["winteam_company"], r["employee_number"]): r["title"] for r in held if r.get("title")}
     cursor.execute(EXPORT_NAMES_SQL, {"employees": employees})
     export = {(r["company"], r["employee_source_id"]): r["employee_name"] for r in cursor.fetchall()}
-    return build(rows, names_for(rows, hr, export), labels, date_from, date_to, states)
+    return build(rows, names_for(rows, hr, export), labels, date_from, date_to, states, titles_for(rows, hr_titles))

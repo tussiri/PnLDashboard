@@ -2093,5 +2093,5 @@ export interface LaborHoursResponse {
   totals: { employees: number; sites: number; punches: number; hours: number }
   sites: { company: string | null; job_number: string; site_name: string | null; city: string | null; state: string | null; employees: number; punches: number; hours: number }[]
   /** employee_name is null when neither HrDashboard nor an export names the employee (the timekeeping API carries none). */
-  employees: { company: string | null; employee_number: string; employee_name: string | null; sites: number; days: number; hours: number; lunch_hours: number; punches: LaborHoursPunch[] }[]
+  employees: { company: string | null; employee_number: string; employee_name: string | null; title: string | null; sites: number; days: number; hours: number; lunch_hours: number; punches: LaborHoursPunch[] }[]
 }

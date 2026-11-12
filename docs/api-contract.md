@@ -791,12 +791,12 @@ punched, zero and negative adjustments included.
 
 The timekeeping API has no names. Migration 064 holds HrDashboard's in `core.hr_employee_name`: the nightly
 sync and `POST /integrations/hr/sync` pull `GET /api/service/v1/pnl/employee-names` with `HR_BASE_URL` and
-its own `HR_NAMES_TOKEN`, number and name only, replacing the table whole unless the answer has no rows. The
+its own `HR_NAMES_TOKEN`, number, name and job title (migration 075), replacing the table whole unless the answer has no rows. The
 report alone reads it; a name comes from HR, else the exports.
 
 | Route | Rule |
 |---|---|
-| `GET /labor-hours?date_from=YYYY-MM-DD&date_to=YYYY-MM-DD` | Permission `report.labor-hours`. A user limited to accounts sees those accounts' sites. Default period: the last complete Monday-Sunday week; at most 92 days, else `422`. `{date_from, date_to, states, through, totals: {employees, sites, punches, hours}, sites: [{company, job_number, site_name, city, state, employees, punches, hours}], employees: [{company, employee_number, employee_name, sites, days, hours, lunch_hours, punches: [{work_date, company, job_number, site_name, hours_type, in_time, out_time, lunch_hours, hours}]}]}`. `in_time` and `out_time` are wall clock `HH:MM`, null when WinTeam has none. `employee_name` is `Last, First`, null when neither HrDashboard nor an export names the employee. `hours_type` comes from the export, else `timekeeping_category_labels`, else `Type <id>`. |
+| `GET /labor-hours?date_from=YYYY-MM-DD&date_to=YYYY-MM-DD` | Permission `report.labor-hours`. A user limited to accounts sees those accounts' sites. Default period: the last complete Monday-Sunday week; at most 92 days, else `422`. `{date_from, date_to, states, through, totals: {employees, sites, punches, hours}, sites: [{company, job_number, site_name, city, state, employees, punches, hours}], employees: [{company, employee_number, employee_name, title, sites, days, hours, lunch_hours, punches: [{work_date, company, job_number, site_name, hours_type, in_time, out_time, lunch_hours, hours}]}]}`. `in_time` and `out_time` are wall clock `HH:MM`, null when WinTeam has none. `employee_name` is `Last, First`, null when neither HrDashboard nor an export names the employee. `title` is HrDashboard's WinTeam job title, null when it has none. `hours_type` comes from the export, else `timekeeping_category_labels`, else `Type <id>`. |
 
 ## Navigation, added 2026-10-02
 
