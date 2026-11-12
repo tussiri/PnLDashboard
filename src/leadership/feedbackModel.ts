@@ -137,7 +137,7 @@ export function recentWindow(ratings: Rating[], days = 90) {
 }
 
 export interface Mover { key: string; site: string; company: string | null; job: string | null; region: string; delivery: Delivery
-  now: number; was: number; change: number; ratings: number; comment: string | null }
+  now: number; was: number; change: number; ratings: number; priorRatings: number; comment: string | null; commentDate: string | null }
 /** Sites whose average moved most against the prior period; at least `min` ratings in each. */
 export function movers(current: Rating[], prior: Rating[], min = 3, shown = 5): { down: Mover[]; up: Mover[] } {
   const pre = groupBy(prior, (r) => r.key)
@@ -147,7 +147,7 @@ export function movers(current: Rating[], prior: Rating[], min = 3, shown = 5): 
     if (g.length < min || !p || p.length < min) continue
     const now = mean(g.map((r) => r.score))!, was = mean(p.map((r) => r.score))!
     const c = g.filter((r) => r.comment).sort((a, b) => b.date.localeCompare(a.date))[0]
-    rows.push({ key, site: g[0].site, company: g[0].company, job: g[0].job, region: g[0].region, delivery: g[0].delivery, now, was, change: now - was, ratings: g.length, comment: c?.comment ?? null })
+    rows.push({ key, site: g[0].site, company: g[0].company, job: g[0].job, region: g[0].region, delivery: g[0].delivery, now, was, change: now - was, ratings: g.length, priorRatings: p.length, comment: c?.comment ?? null, commentDate: c?.date ?? null })
   }
   return { down: rows.filter((r) => r.change <= -0.1).sort((a, b) => a.change - b.change).slice(0, shown),
     up: rows.filter((r) => r.change >= 0.1).sort((a, b) => b.change - a.change).slice(0, shown) }

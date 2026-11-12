@@ -20,6 +20,9 @@ const avg2 = (v: number | null) => (v == null ? '–' : v.toFixed(2))
 const avgTone = (v: number | null) => (v == null ? '' : v <= 2.5 ? 'bad' : v < 4 ? 'warn' : 'ok')
 const starTone = (s: number) => (s <= 2 ? 'bad' : s === 3 ? 'warn' : 'ok')
 const mShort = (m: string) => `${monthShort(`${m}-01`)} ${m.slice(2, 4)}`
+/** "Jun to Sep 2026", or "Dec 2025 to May 2026" across a year end. */
+const monthSpan = (a: string, b: string) => a === b ? monthLabel(`${a}-01`)
+  : a.slice(0, 4) === b.slice(0, 4) ? `${monthShort(`${a}-01`)} to ${monthLabel(`${b}-01`)}` : `${monthLabel(`${a}-01`)} to ${monthLabel(`${b}-01`)}`
 const dLabel = (d: string) => `${monthShort(d)} ${Number(d.slice(8, 10))}, ${d.slice(0, 4)}`
 const signed = (n: number, digits = 2) => `${n >= 0 ? '+' : '−'}${Math.abs(n).toFixed(digits)}`
 const PRESETS = [3, 6, 12, 24]
@@ -113,7 +116,7 @@ export function FeedbackBoard({ account, lines, tickets, overview }: { account: 
           <input id="fx-q" type="search" placeholder="Site, location or job" value={f.q} onChange={(e) => set({ q: e.target.value.trim() })} /></div>
       </div>
       <div className="fx-sum">
-        <span><b>{fmt(v.rows.length)}</b> ratings, <b>{fmt(siteCount)}</b> sites, {f.from === f.to ? monthLabel(`${months[f.from]}-01`) : `${mShort(months[f.from])} to ${mShort(months[f.to])}`}</span>
+        <span><b>{fmt(v.rows.length)}</b> ratings, <b>{fmt(siteCount)}</b> sites, {monthSpan(months[f.from], months[f.to])}</span>
         {tags.length > 0 && <span className="fx-tags">{tags.map(([label, patch]) => <span key={label} className="fx-tag">{label}
           <button type="button" aria-label={`Remove ${label}`} onClick={() => set(patch)}><X size={10} aria-hidden="true" /></button></span>)}
           <button type="button" className="linkbtn" onClick={() => set(reset)}>Reset</button></span>}
@@ -134,7 +137,7 @@ export function FeedbackBoard({ account, lines, tickets, overview }: { account: 
           onTheme={(i) => set({ theme: f.theme === i ? null : i })} onSite={(q) => set({ q })} />
         <Comments rows={theme ? v.rows.filter((r) => r.date > recent.since && theme.locations.some((l) => normLoc(l) === normLoc(r.loc))) : v.rows} theme={theme} onOpen={open} />
       </div>
-      <Movers current={v.rows} prior={v.prior} months={months} range={v.pr} onOpen={open} onSite={(q) => set({ q })} />
+      <Movers current={v.rows} prior={v.prior} months={months} range={v.pr} now={{ from: f.from, to: f.to }} onOpen={open} onSite={(q) => set({ q })} />
       {!!tickets?.tickets.length && <Tickets rows={v.rows} scoped={v.unstarred} tickets={v.periodTix} all={v.tix} months={months} f={f} meta={tickets} account={account} onOpen={open} />}
       <Watchlist rows={v.rows} tickets={v.periodTix} months={months.slice(Math.max(f.from, f.to - 5), f.to + 1)} account={account} onOpen={open} hasTickets={!!tickets?.tickets.length} />
     </>}
@@ -237,20 +240,25 @@ function Comments({ rows, theme, onOpen }: { rows: Rating[]; theme: Theme | null
   </section>
 }
 
-function Movers({ current, prior, months, range, onOpen, onSite }: { current: Rating[]; prior: Rating[] | null; months: string[]; range: { from: number; to: number } | null
-  onOpen: (r: { company: string | null; job: string | null }) => void; onSite: (q: string) => void }) {
-  const vs = range ? `vs ${mShort(months[range.from])} to ${mShort(months[range.to])}` : 'No prior period'
+function Movers({ current, prior, months, range, now, onOpen, onSite }: { current: Rating[]; prior: Rating[] | null; months: string[]; range: { from: number; to: number } | null
+  now: { from: number; to: number }; onOpen: (r: { company: string | null; job: string | null }) => void; onSite: (q: string) => void }) {
+  const cur = monthSpan(months[now.from], months[now.to])
+  const was = range ? monthSpan(months[range.from], months[range.to]) : ''
   const m = prior ? movers(current, prior) : null
   const list = (xs: Mover[] | undefined, empty: string): ReactNode => (!m ? <Empty>No prior period for this range.</Empty> : xs!.length
-    ? <div className="fx-mv">{xs!.map((r) => <button key={r.key} type="button" className="fx-mv__r" onClick={() => (r.job ? onOpen(r) : onSite(r.site))}>
-      <span className="fx-mv__nm">{r.site}<small>{r.region}, {DELIVERY_LABEL[r.delivery]}, {r.ratings} ratings</small></span>
-      <span className="fx-mv__v"><span className="meta">{r.was.toFixed(2)} to</span> <b className={avgTone(r.now)}>{r.now.toFixed(2)}</b></span>
+    ? <div className="fx-mv"><div className="fx-mv__h" aria-hidden="true"><span>Site</span><span>Prior avg</span><span>Current avg</span><span>Change</span></div>
+      {xs!.map((r) => <button key={r.key} type="button" className="fx-mv__r" onClick={() => (r.job ? onOpen(r) : onSite(r.site))}
+        aria-label={`${r.site}: ${r.was.toFixed(2)} prior, ${r.now.toFixed(2)} current, ${signed(r.change)}`}>
+      <span className="fx-mv__nm">{r.site}<small>{r.region}, {DELIVERY_LABEL[r.delivery]}</small></span>
+      <span className="fx-mv__v meta">{r.was.toFixed(2)}<small>{r.priorRatings} ratings</small></span>
+      <span className="fx-mv__v"><b className={avgTone(r.now)}>{r.now.toFixed(2)}</b><small>{r.ratings} ratings</small></span>
       <span className={`fx-mv__d ${r.change < 0 ? 'bad' : 'ok'}`}>{signed(r.change)}</span>
-      {r.comment && <span className="fx-mv__c">{r.comment}</span>}</button>)}</div>
+      {r.comment && <span className="fx-mv__c"><span className="meta">Latest comment{r.commentDate ? `, ${dLabel(r.commentDate)}` : ''}: </span>{r.comment}</span>}</button>)}</div>
     : <Empty>{empty}</Empty>)
+  const head = (t: string) => <div className="ct"><span>{t}</span><span className="ks">{was ? `${cur} vs ${was}` : cur}</span></div>
   return <div className="fx-grid fx-1-1">
-    <section className="card"><div className="ct"><span>Declined most</span><span className="ks">{vs}</span></div>{list(m?.down, 'No site fell by 0.1 or more.')}</section>
-    <section className="card"><div className="ct"><span>Improved most</span><span className="ks">{vs}</span></div>{list(m?.up, 'No site rose by 0.1 or more.')}</section>
+    <section className="card">{head('Declined most')}{list(m?.down, 'No site fell by 0.1 or more.')}</section>
+    <section className="card">{head('Improved most')}{list(m?.up, 'No site rose by 0.1 or more.')}</section>
   </div>
 }
 
