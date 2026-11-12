@@ -67,6 +67,7 @@ describe('feedbackModel', () => {
     const m = movers(cur, pre)
     expect(m.down).toHaveLength(1)
     expect(m.down[0].change).toBeCloseTo(5 / 3 - 14 / 3)
+    expect(m.down[0]).toMatchObject({ ratings: 3, priorRatings: 3 })
     expect(movers(cur.slice(0, 2), pre).down).toHaveLength(0)
   })
 
