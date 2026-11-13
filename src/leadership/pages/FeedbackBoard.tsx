@@ -250,6 +250,8 @@ function Tickets({ rows, scoped, tickets, all, months, f, meta, account, onOpen 
   const tBy = groupBy(tickets, (t) => t.month ?? '')
   const rBy = groupBy(rows, (r) => r.month)
   const level = (t: ServiceTicket) => (t.escalation_level ? <span className={`badge ${/2|3|termination/i.test(t.escalation_level) ? 'bbad' : 'bwarn'}`}>{t.escalation_level}</span> : null)
+  const [notesOpen, setNotesOpen] = useState<Set<string>>(() => new Set())
+  const toggleNote = (t: Ticket) => setNotesOpen((prev) => { const next = new Set(prev); if (!next.delete(noteKey(t))) next.add(noteKey(t)); return next })
   const cols: Column<Ticket>[] = [
     { key: 'ticket', header: 'Ticket', left: true, value: (r) => r.ticket_number },
     { key: 'site', header: 'Site', left: true, value: (r) => r.site, className: 'nm' },
@@ -260,19 +262,18 @@ function Tickets({ rows, scoped, tickets, all, months, f, meta, account, onOpen 
     { key: 'days', header: 'Days open', value: (r) => r.days_open },
     { key: 'closed', header: 'Closed', left: true, value: (r) => r.date_closed ?? '' },
     { key: 'owner', header: 'Assigned', left: true, value: (r) => r.assigned_to ?? '' },
-    { key: 'note', header: 'Latest note', left: true, value: (r) => r.latest_note ?? '', render: (r) => <span title={r.latest_note ?? undefined}>{r.latest_note ?? ''}</span>, className: 'wrap fx-clamp', csv: (r) => r.notes },
+    { key: 'note', header: 'Latest note', left: true, value: (r) => r.latest_note ?? '', render: (r) => <TicketNote t={r} open={notesOpen.has(noteKey(r))} onToggle={() => toggleNote(r)} />, className: 'wrap fx-clamp', csv: (r) => r.notes },
   ]
   return <>
     <div className="fx-grid fx-1-1">
       <section className="card"><div className="ct"><span>Open tickets</span><span className="ks">{new Set(openList.map((t) => t.ticket_number)).size} open now</span></div>
         {openList.length ? <div className="fx-tk">{openList.map((t) => {
           const late = !!t.expected_close && t.expected_close < today
-          return <button key={`${t.ticket_number}|${t.loc}`} type="button" className="fx-tk__r" disabled={!t.job} onClick={() => onOpen(t)}>
+          return <div key={`${t.ticket_number}|${t.loc}`} className="fx-tk__i"><button type="button" className="fx-tk__r" disabled={!t.job} onClick={() => onOpen(t)}>
             <span className="fx-tk__nm">{t.site}<small>{t.ticket_number}{t.issue_type ? `, ${t.issue_type}` : ''}{t.assigned_to ? `, ${t.assigned_to}` : ''}</small></span>
             <span className="fx-tk__m">{level(t)}<span className={t.days_open == null ? '' : t.days_open > 60 ? 'bad' : t.days_open > 30 ? 'warn' : ''}><b>{t.days_open ?? '–'}</b> days open</span>
               <span className={`meta ${late ? 'bad' : ''}`}>{t.expected_close ? `Due ${dLabel(t.expected_close)}` : 'No due date'}</span></span>
-            {t.latest_note && <span className="fx-tk__c">{t.latest_note}</span>}
-          </button>
+          </button><TicketNote t={t} className="fx-tk__c" /></div>
         })}</div> : <Empty>No open tickets.</Empty>}
       </section>
       <section className="card"><div className="ct"><span>Tickets and star ratings</span><span className="ks">{fmt(unique)} tickets received in period</span></div>
@@ -295,8 +296,31 @@ function Tickets({ rows, scoped, tickets, all, months, f, meta, account, onOpen 
     </div>
     <section className="card fx-card"><div className="ct"><span>Service tickets</span><span className="ks">{meta.unmatched ? `${meta.unmatched} with no WinTeam job` : `${fmt(all.length)} tickets`}</span></div>
       <SortTable caption="Service tickets" rows={all} columns={cols} defaultSort={{ key: 'status', dir: 1 }} pageSize={10}
-        onRowClick={(r) => onOpen(r)} rowLabel={(r) => `Open ${r.site}`} csvName={`${account.slug}-service-tickets`} /></section>
+        onRowClick={(r) => onOpen(r)} rowLabel={(r) => `Open ${r.site}`}
+        detail={(r) => (notesOpen.has(noteKey(r)) ? <div className="fx-note-full"><b>{r.ticket_number}, {r.site}</b>{noteText(r)}</div> : null)} csvName={`${account.slug}-service-tickets`} /></section>
   </>
+}
+
+/** The full text of a ticket's notes, falling back to the latest note. */
+const noteText = (t: { latest_note: string | null; notes: string | null }) => t.notes?.trim() || t.latest_note?.trim() || ''
+const noteKey = (t: Ticket) => `${t.ticket_number}|${t.loc}`
+
+/**
+ * A ticket's latest note, clamped to two lines, with a toggle for the full notes. Inline, the full
+ * text replaces the clamp; otherwise `onToggle` lets the table show it in a detail row.
+ */
+function TicketNote({ t, className = '', open: controlled, onToggle }: { t: Ticket; className?: string; open?: boolean; onToggle?: () => void }) {
+  const [own, setOwn] = useState(false)
+  const open = controlled ?? own
+  const short = t.latest_note?.trim() || noteText(t)
+  if (!short) return null
+  const all = noteText(t)
+  const more = all !== short || short.length > 90
+  return <span className={`fx-note ${className}${open && !onToggle ? ' is-open' : ''}`}>
+    <span className="fx-note__t">{open && !onToggle ? all : short}</span>
+    {more && <button type="button" className="fx-note__b" aria-expanded={open}
+      onClick={(e) => { e.stopPropagation(); if (onToggle) onToggle(); else setOwn((o) => !o) }}>{open ? 'Show less' : 'Full note'}</button>}
+  </span>
 }
 
 function Watchlist({ rows, prior, priorLabel, tickets, months, account, onOpen, hasTickets }: { rows: Rating[]; prior: Rating[] | null; priorLabel: string; tickets: Ticket[]; months: string[]; account: LeadershipAccount
