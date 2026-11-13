@@ -26,6 +26,20 @@ describe('Sites HR staffing', () => {
     expect(staffedOf(row({}), index([hr('100', { week_start: null, state_week: null })]))).toBeNull()
   })
 
+  it('counts people working as filled where the tracker has no filled count', () => {
+    expect(staffedOf(row({}), index([hr('100', { filled_positions: null, active_headcount: 8 })]))).toMatchObject({ filled: 8, positions: 10, peopleFrom: 'hr' })
+  })
+
+  it('falls back to people who worked per timekeeping when HR has no positions or headcount', () => {
+    const s = staffedOf(row({}), index([hr('100', { budgeted_positions: null, filled_positions: null, active_headcount: null, open_positions: null, people_worked: 12 })]))
+    expect(s).toMatchObject({ positions: null, filled: 12, people: 12, peopleFrom: 'timekeeping' })
+  })
+
+  it('shows a site HR does not send when timekeeping has people', () => {
+    expect(staffedOf(row({}), index([hr('100', { week_start: null, state_week: null, hires: null, separations: null, budgeted_positions: null,
+      filled_positions: null, active_headcount: null, open_positions: null, people_worked: 5 })]))?.filled).toBe(5)
+  })
+
   it('keeps an unknown figure unknown rather than zero', () => {
     expect(staffedOf(row({}), index([hr('100', { budgeted_positions: null })]))?.positions).toBeNull()
   })

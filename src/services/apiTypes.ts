@@ -2015,7 +2015,8 @@ export interface StaffingSitesResponse {
   account: string
   week: string
   configured: boolean
-  sites: (Omit<HrSiteStaffingWeek, 'configured' | 'week_start'> & { company: string; job_number: string; week_start: string | null })[]
+  /** people_worked: distinct employees with hours at the job that week, from PnL's timekeeping (null when none). */
+  sites: (Omit<HrSiteStaffingWeek, 'configured' | 'week_start'> & { company: string; job_number: string; week_start: string | null; people_worked?: number | null })[]
 }
 
 export interface HrSiteStaffingWeek {
