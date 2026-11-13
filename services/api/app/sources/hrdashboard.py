@@ -514,8 +514,16 @@ hr AS (
 )
 SELECT j.company, j.job_number, w.week_start, w.hires, w.separations, s.budgeted_positions, s.positions_source,
        s.filled_positions, s.open_positions, s.active_headcount, s.headcount_source,
-       coalesce(s.hr_as_of, w.hr_as_of) AS hr_as_of, s.week_start AS state_week
+       coalesce(s.hr_as_of, w.hr_as_of) AS hr_as_of, s.week_start AS state_week, p.people_worked
 FROM jobs j
+-- People who worked at the job in the week, from PnL's own timekeeping: the headcount HR reports as
+-- "people who worked" where it has no roster, available for every site with punches.
+LEFT JOIN LATERAL (
+    SELECT nullif(count(DISTINCT t.employee_source_id), 0) AS people_worked
+    FROM core.fact_timekeeping t
+    WHERE t.job_key = j.job_key AND t.work_date BETWEEN %(week)s::date AND %(week)s::date + 6
+      AND coalesce(t.regular_hours, 0) + coalesce(t.overtime_hours, 0) > 0
+) p ON true
 LEFT JOIN hr w ON w.company = j.company AND w.job_number = j.job_number AND w.week_start = %(week)s
 LEFT JOIN LATERAL (
     SELECT x.week_start, x.budgeted_positions, x.positions_source, x.filled_positions, x.open_positions,

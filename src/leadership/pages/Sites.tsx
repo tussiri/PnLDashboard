@@ -16,7 +16,11 @@ import { wordsFor } from '../vocab'
 type Row = SiteMetrics<LeadershipRow>
 
 type HrSite = StaffingSitesResponse['sites'][number]
-interface Staffed { positions: number | null; filled: number | null; open: number | null; headcount: number | null; hires: number; separations: number; source: string | null; asOf: string | null }
+/**
+ * filled: the tracker's filled count, else people (HR's rule: "people working ÷ positions" where the tracker
+ * has no Filled). people: HR's headcount, else people who worked here this week per PnL's timekeeping.
+ */
+interface Staffed { positions: number | null; filled: number | null; people: number | null; peopleFrom: 'hr' | 'timekeeping' | null; open: number | null; headcount: number | null; hires: number; separations: number; source: string | null; asOf: string | null }
 
 const POSITIONS_SOURCE: Record<string, string> = { tracker: 'staffing tracker', budget: 'estimated from budget', observed: 'estimated from roster' }
 const shortDate = (iso: string) => new Date(`${iso}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
@@ -24,13 +28,20 @@ const shortDate = (iso: string) => new Date(`${iso}T00:00:00`).toLocaleDateStrin
 /** Self-performed on the mart's rule (common.delivery_sql): no delivery model and hours counts as self-performed. */
 export const selfPerformed = (r: LeadershipRow) => r.delivery_model === 'self_perform' || (r.delivery_model == null && r.hours > 0)
 
-/** HR figures for a site row, summed over its rolled-in jobs; null when HR has none for any of them. */
+/** HR figures for a site row, summed over its rolled-in jobs, with PnL's people-who-worked count where HR
+ * has no headcount; null when there is nothing for any of them. */
 export function staffedOf(r: Row, hr: Map<string, HrSite>): Staffed | null {
-  const found = (r.kids?.length ? r.kids : [r.job_number]).map((j) => hr.get(`${r.company}|${j}`)).filter((x): x is HrSite => x != null && (x.week_start != null || x.state_week != null))
+  const found = (r.kids?.length ? r.kids : [r.job_number]).map((j) => hr.get(`${r.company}|${j}`))
+    .filter((x): x is HrSite => x != null && (x.week_start != null || x.state_week != null || x.people_worked != null))
   if (!found.length) return null
   const add = (f: (x: HrSite) => number | null | undefined) => (found.some((x) => f(x) != null) ? found.reduce((a, x) => a + (f(x) ?? 0), 0) : null)
   const states = found.map((x) => x.state_week).filter((w): w is string => !!w).sort()
-  return { positions: add((x) => x.budgeted_positions), filled: add((x) => x.filled_positions), open: add((x) => x.open_positions), headcount: add((x) => x.active_headcount),
+  const headcount = add((x) => x.active_headcount)
+  const worked = add((x) => x.people_worked)
+  const people = headcount ?? worked
+  const tracker = add((x) => x.filled_positions)
+  return { positions: add((x) => x.budgeted_positions), filled: tracker ?? people, people, peopleFrom: headcount != null ? 'hr' : worked != null ? 'timekeeping' : null,
+    open: add((x) => x.open_positions), headcount,
     hires: add((x) => x.hires) ?? 0, separations: add((x) => x.separations) ?? 0, source: found.map((x) => x.positions_source).find(Boolean) ?? null, asOf: states[0] ?? null }
 }
 
@@ -85,14 +96,16 @@ export function Sites({ account, summary, options, selfOnly, ratings }: { accoun
   const hrSites = useMemo(() => new Map((staffing.data?.sites ?? []).map((x) => [`${x.company}|${x.job_number}`, x])), [staffing.data])
   const hrShown = Boolean(staffing.data?.configured) && summary.sites.some((r) => r.role === 'site' && selfPerformed(r))
   const staffedRow = (r: Row) => (r.role === 'site' && selfPerformed(r) ? staffedOf(r, hrSites) : null)
-  const staffedTip = (s: Staffed) => [s.headcount != null && `Headcount ${s.headcount}`, `Hires ${s.hires}`, `Separations ${s.separations}`,
+  const staffedTip = (s: Staffed) => [s.positions == null && 'No positions figure in HR',
+    s.people != null && `${s.people} ${s.peopleFrom === 'timekeeping' ? 'worked here this week' : 'on the HR roster'}`, `Hires ${s.hires}`, `Separations ${s.separations}`,
     s.source && `Positions: ${POSITIONS_SOURCE[s.source] ?? s.source}`, s.asOf && `As of ${shortDate(s.asOf)}`].filter(Boolean).join(' · ')
   const staffedCell = (r: Row) => {
     if (r.role !== 'site' || !selfPerformed(r)) return ''
     const s = staffedRow(r)
-    if (!s) return <span className="warn" title="No HR staffing for this job">–</span>
+    if (!s || (s.positions == null && s.filled == null)) return <span className="warn" title={s ? staffedTip(s) : 'No HR staffing for this job'}>–</span>
+    if (s.positions == null) return <span title={staffedTip(s)}>{s.filled}</span>
     const fill = fillOf(s)
-    return <span className={fill == null ? '' : fill < 0.9 ? 'warn' : ''} title={staffedTip(s)}>{s.filled ?? '–'} / {s.positions ?? '–'}</span>
+    return <span className={fill == null ? '' : fill < 0.9 ? 'warn' : ''} title={staffedTip(s)}>{s.filled ?? '–'} / {s.positions}</span>
   }
   const cols: Column<Row>[] = [
     { key: 'job', header: 'Job', left: true, value: (r) => Number(r.job_number) || r.job_number, render: (r) => <>{r.job_number}{(r.kids?.length ?? 1) > 1 && <span className="neutral"> +{r.kids!.slice(1).join(',')}</span>}</> },
@@ -100,7 +113,7 @@ export function Sites({ account, summary, options, selfOnly, ratings }: { accoun
     ...(hasRegions ? [{ key: 'reg', header: 'Region', left: true, value: (r: Row) => `${regionOf(r)} ${subregionOf(r)}`, render: (r: Row) => <>{regionOf(r)} <span className="neutral">{subregionOf(r)}</span></>, csv: (r: Row) => `${regionOf(r)} / ${subregionOf(r)}` }] : []),
     ...(hrShown ? [
       { key: 'staff', header: 'Staffed', value: (r: Row) => fillOf(staffedRow(r)), render: staffedCell,
-        csv: (r: Row) => { const x = staffedRow(r); return x ? `${x.filled ?? ''}/${x.positions ?? ''}` : '' } },
+        csv: (r: Row) => { const x = staffedRow(r); return !x ? '' : x.positions == null ? (x.filled ?? '') : `${x.filled ?? ''}/${x.positions}` } },
       { key: 'open', header: 'Open', value: (r: Row) => staffedRow(r)?.open ?? null, render: (r: Row) => staffedRow(r)?.open ?? '' },
     ] : []),
     ...(hasVariable ? [
@@ -138,9 +151,10 @@ export function Sites({ account, summary, options, selfOnly, ratings }: { accoun
   const staffedRows = selfRows.map(staffedRow).filter((x): x is Staffed => x != null)
   const selfCount = selfRows.length
   const staffedCount = staffedRows.length
+  const positioned = staffedRows.filter((x) => x.positions != null)
   const hrTotal = (list: Staffed[], f: (x: Staffed) => number | null) => (list.some((x) => f(x) != null) ? list.reduce((a, x) => a + (f(x) ?? 0), 0) : '–')
   const tot = <tr className="tot"><td></td><td className="l">Total ({rows.length})</td>{hasRegions && <td></td>}
-    {hrShown && <><td title={`${staffedCount} of ${selfCount} self-performed sites in HR`}>{hrTotal(staffedRows, (x) => x.filled)} / {hrTotal(staffedRows, (x) => x.positions)}</td><td>{hrTotal(staffedRows, (x) => x.open)}</td></>}
+    {hrShown && <><td title={`${staffedCount} of ${selfCount} self-performed sites with staffing; filled / positions over the ${positioned.length} with positions`}>{hrTotal(positioned, (x) => x.filled)} / {hrTotal(positioned, (x) => x.positions)}</td><td>{hrTotal(staffedRows, (x) => x.open)}</td></>}
     {hasVariable && <><td>{money(sum(fixed))}</td><td>{money(sum((r) => variableWk(r, options)))}</td></>}
     <td>{money(s.invoice)}</td><td>{money(sum(directOf))}</td>{hasPallet && <td>{money(sum(palletOf))}</td>}{vendor && <td>{money(s.vendor)}</td>}<td>{money(s.cost)}</td>
     <td className={toneOf(statusOf(s.measurePct, options.target, options.watchBand))}>{pct(s.measurePct)}</td>{Array.from({ length: priorCols }, (_, i) => <td key={i} />)}
